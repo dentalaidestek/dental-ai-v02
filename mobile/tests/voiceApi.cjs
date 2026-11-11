@@ -183,3 +183,15 @@ test('native voice audio rejects null, list and primitive server responses safel
   }
  }finally{global.fetch=original}
 });
+
+test('clinical text API rejects invalid patient and oversized transcripts before upload',async()=>{
+ const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw Error('unexpected request')};
+ try{
+  await assert.rejects(()=>api.extractVoice('token',0,'muayene'),/geçerli bir hasta/);
+  await assert.rejects(()=>api.extractVoice('token',3,'   '),/boş olamaz/);
+  await assert.rejects(()=>api.extractVoice('token',3,'a'.repeat(18001)),/18.000 karakteri/);
+  await assert.rejects(()=>api.finalizeVoice('token',-1,{context:{},insights:[],uncertain:'',conversation_text:'metin'}),/geçerli bir hasta/);
+  await assert.rejects(()=>api.finalizeVoice('token',3,{context:{},insights:[],uncertain:'',conversation_text:'a'.repeat(72001)}),/72.000 karakteri/);
+  assert.equal(calls,0);
+ }finally{global.fetch=original}
+});
