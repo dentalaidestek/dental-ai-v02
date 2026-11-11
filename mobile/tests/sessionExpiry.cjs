@@ -107,3 +107,23 @@ test('analysis history rejects null records even with a cursor and accepts legac
   assert.equal(result.next_before,null);
  }finally{global.fetch=original}
 });
+
+test('clinical media rejects malformed private image pages and stale cursors',async()=>{
+ const modern=require('../src/modernApi.ts'),original=global.fetch;
+ try{
+  for(const body of [
+   {items:[null],next_before:null},
+   {items:[{id:'bad'}],next_before:null},
+   {items:[],next_before:5},
+   {items:[{id:42}],next_before:null},
+   {items:[{id:41}],next_before:42}
+  ]){
+   global.fetch=async()=>new Response(JSON.stringify(body),{status:200});
+   await assert.rejects(()=>modern.getMedia('current',1,42),/geçersiz liste/);
+  }
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:41,original_filename:'x.jpg'}],next_before:null}),{status:200});
+  const page=await modern.getMedia('current',1,42);
+  assert.equal(page.items[0].filename,'x.jpg');
+  assert.equal(page.next_before,null);
+ }finally{global.fetch=original}
+});
