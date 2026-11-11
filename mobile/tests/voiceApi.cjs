@@ -32,7 +32,7 @@ test('voice finalization submits full transcript, clinician review and consent',
  const original=global.fetch;let call;
  global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,final:{summary:'Değerlendirme tamamlandı'}}))};
  try{
-  const payload={context:{fields:{chief_complaint:{value:'Ağrı',quote:'Dişim ağrıyor'}},teeth:[{tooth:'44',status:'OTHER',quote:'44 numarada klinik bulgu görüşüldü'}],literature_topics:[{topic:'endo.general',quote:'Kanal tedavisi konuşuldu'}]},insights:[{finding:'Ağrı'}],uncertain:'Belirsiz ilaç dozu',conversation_text:'Tam görüşme metni'};
+  const payload={context:{fields:{chief_complaint:{value:'Ağrı',quote:'Dişim ağrıyor'}},teeth:[{tooth:'44',status:'OTHER',quote:'44 numarada klinik bulgu görüşüldü'}],literature_topics:[{topic:'endo.general',quote:'Kanal tedavisi konuşuldu'}]},insights:[{quote:'Dişim ağrıyor',observation:'Ağrı bildirimi',suggestion:'Ağrının süresi sorulmalı'}],uncertain:'Belirsiz ilaç dozu',conversation_text:'Tam görüşme metni'};
   const result=await api.finalizeVoice('token',44,payload);
   assert.equal(result.final.summary,'Değerlendirme tamamlandı');
   assert.match(call.url,/\/patients\/44\/voice-exam\/finalize$/);
@@ -338,5 +338,15 @@ test('voice extraction bounds lists and rejects unexpected appointment attribute
    global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',review}));
    await assert.rejects(()=>api.extractVoice('token',4,'görüşme'),/alanları geçersiz/);
   }
+ }finally{global.fetch=original}
+});
+
+test('final voice review enforces 32KB context and quoted clinician evidence before sending',async()=>{
+ const original=global.fetch;let requests=0;global.fetch=async()=>{requests++;throw Error('network should not be called')};
+ const base={uncertain:'',conversation_text:'Klinik görüşme'};
+ try{
+  await assert.rejects(()=>api.finalizeVoice('token',4,{...base,context:{fields:{medical_history:{value:'ğ'.repeat(17000),quote:'ğ'.repeat(17000)}}},insights:[]}),/32 KB/);
+  await assert.rejects(()=>api.finalizeVoice('token',4,{...base,context:{fields:{}},insights:[{finding:'Öneri'}]}),/kanıtları eksik/);
+  assert.equal(requests,0);
  }finally{global.fetch=original}
 });
