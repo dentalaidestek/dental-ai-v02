@@ -1211,7 +1211,7 @@ def mobile_consultation_mark_read(case_id:int, body:MobileConsultationReadReques
 
 
 @router.get("/academic/courses")
-def mobile_academic_courses(user:User=Depends(_mobile_user), before:Optional[int]=None):
+def mobile_academic_courses(user:User=Depends(_mobile_user), before:Optional[int]=Query(None,ge=1)):
     with Session(engine,expire_on_commit=False) as session:
         query=select(StudyCourse).where(StudyCourse.owner_user_id==user.id)
         if before is not None:
@@ -1227,8 +1227,11 @@ def mobile_academic_courses(user:User=Depends(_mobile_user), before:Optional[int
             "updated_at":getattr(c,"updated_at",c.created_at),"created_at":c.created_at,"material_count":counts.get(c.id,0)} for c in rows],"next_before":rows[-1].id if len(page)>50 else None}
 
 @router.get("/academic/courses/{course_id}/messages")
-def mobile_academic_messages(course_id:int,user:User=Depends(_mobile_user), before:Optional[int]=None):
+def mobile_academic_messages(course_id:int,user:User=Depends(_mobile_user), before:Optional[int]=Query(None,ge=1)):
     with Session(engine,expire_on_commit=False) as session:
+        course=session.get(StudyCourse,course_id)
+        if not course or course.owner_user_id!=user.id:
+            raise HTTPException(status_code=404,detail="Ders bulunamadı.")
         query=select(StudyChatMessage).where(StudyChatMessage.course_id==course_id,StudyChatMessage.owner_user_id==user.id)
         if before is not None:
             query=query.where(StudyChatMessage.id<before)
