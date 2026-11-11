@@ -50,3 +50,14 @@ test('mobile notifications and analyses accept the actual FastAPI response contr
   assert.equal(analyses.total,1);assert.equal(analyses.items[0].patient_id,9);
  }finally{global.fetch=original}
 });
+
+test('analysis history uses a bounded cursor and preserves valid empty final pages',async()=>{
+ const modern=require('../src/modernApi.ts'),original=global.fetch,urls=[];
+ try{
+  global.fetch=async url=>{urls.push(String(url));return new Response(JSON.stringify({total:0,next_before:null,items:[]}),{status:200})};
+  await modern.getAnalysisHistory('current');
+  await modern.getAnalysisHistory('current',123);
+  assert.match(urls[0],/\/analyses\?limit=50$/);
+  assert.match(urls[1],/\/analyses\?limit=50&before=123$/);
+ }finally{global.fetch=original}
+});
