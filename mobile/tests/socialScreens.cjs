@@ -82,3 +82,13 @@ test('expert directory does not display previous account results while new accou
  assert.match(directory,/data=\{data\?\.accountToken===token\?data\.items:\[\]\}/);
  assert.match(directory,/request===seq\.current&&activeToken\.current===token/);
 });
+
+test('consultation messages cannot display or overwrite another account or case',()=>{
+ const source=fs.readFileSync(require.resolve('../src/ModernScreens.tsx'),'utf8');
+ const chat=source.slice(source.indexOf('export function ConsultationChat('),source.indexOf('export function Academic('));
+ assert.match(chat,/activeScope\.current=token\+":"\+userId\+":"\+id/);
+ assert.match(chat,/visibleData=data\?\.accountScope===activeScope\.current\?data:null/);
+ assert.match(chat,/request===requestSeq\.current&&scope===activeScope\.current/);
+ assert.match(chat,/data=\{visibleData\?\.messages\|\|\[\]\}/);
+ assert.match(chat,/return\(\)=>\{requestSeq\.current\+\+\}/);
+});
