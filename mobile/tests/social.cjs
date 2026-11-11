@@ -210,15 +210,16 @@ test('active mobile consultation and academic routes receive JSON payloads',asyn
   assert.throws(()=>createConsultation('secret',{expert_user_id:0,clinical_summary:'',question:'?'}),/Geçersiz/);
  }finally{global.fetch=original;}
 });
-test('patient media upload and keyset pagination match backend contract',()=>{
+test('active mobile media routes and analysis pagination contracts',()=>{
  const client=fs.readFileSync(require('node:path').join(__dirname,'../src/api.ts'),'utf8');
- const server=fs.readFileSync(require('node:path').join(__dirname,'../../app/mobile_api.py'),'utf8');
+ const active=fs.readFileSync(require('node:path').join(__dirname,'../../app/mobile_api.py'),'utf8');
  const extended=fs.readFileSync(require('node:path').join(__dirname,'../../app/mobile_modern_api_v3.py'),'utf8');
+ const main=fs.readFileSync(require('node:path').join(__dirname,'../../app/main.py'),'utf8');
+ assert.match(main,/_mobile_mounted_routes/);
  assert.match(client,/body\.append\("file",\{uri:file\.uri/);
- assert.match(server,/file:UploadFile=File\(\.\.\.\)/);
- assert.match(server,/def mobile_analysis_history\([^\n]*before: int \| None = None\)/);
- assert.match(server,/def mobile_patient_media\([^\n]*before:int\|None=None\)/);
- assert.match(server,/next_before/);
- assert.match(server,/PatientMedia\.id < before/);
- assert.match(server,/Analysis\.id < before/);
+ assert.match(active,/file:UploadFile=File\(None\)/);
+ assert.match(active,/@router\.delete\("\/patients\/\{patient_id\}\/media\/\{media_id\}"\)/);
+ assert.match(active,/PatientMedia\.id < before/);
+ assert.match(extended,/def mobile_analysis_history\([^\n]*before: int \| None = None\)/);
+ assert.match(extended,/Analysis\.id < before/);
 });
