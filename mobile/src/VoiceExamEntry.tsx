@@ -55,12 +55,14 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
  function removeExtractedItem(key:"teeth"|"literature_topics"|"source_requests"|"communication"|"decision_barriers"|"follow_up_questions",index:number){
   if(processingLock.current)return;
   generation.current++;
+  const current=review?.review[key];
+  if(!Array.isArray(current)||index<0||index>=current.length)return;
+  setLastRemoved({key,index,item:current[index]});
   setReview(previous=>{
    if(!previous)return previous;
-   const current=previous.review[key];
-   if(!Array.isArray(current)||index<0||index>=current.length)return previous;
-   setLastRemoved({key,index,item:current[index]});
-   return {...previous,review:{...previous.review,[key]:current.filter((_,i)=>i!==index)}};
+   const latest=previous.review[key];
+   if(!Array.isArray(latest)||index>=latest.length)return previous;
+   return {...previous,review:{...previous.review,[key]:latest.filter((_,i)=>i!==index)}};
   });
   setFinalResult(null);
  }
