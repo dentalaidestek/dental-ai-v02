@@ -138,25 +138,25 @@ function Consultations({token,navigation}:{token:string;navigation:any}){
 }
 export function ConsultationChat({token,route,userId}:{token:string;route:any;userId:number}){
  const id=Number(route.params.id),{lastEvent}=useRealtime();
- const[data,setData]=useState<any>(),[text,setText]=useState(""),[sendBusy,setSendBusy]=useState(false),[sendError,setSendError]=useState("");
+ const[data,setData]=useState<any>(),[text,setText]=useState(""),[replyTo,setReplyTo]=useState<number|null>(null),[sendBusy,setSendBusy]=useState(false),[sendError,setSendError]=useState("");
  const activeScope=useRef(token+":"+userId+":"+id);activeScope.current=token+":"+userId+":"+id;
- const requestSeq=useRef(0),sending=useRef(false),pending=useRef<{content:string;id:string;scope:string}|null>(null);
+ const requestSeq=useRef(0),sending=useRef(false),pending=useRef<{content:string;id:string;scope:string;replyTo:number|null}|null>(null);
  const draftKey="dai.consultation.draft."+userId+"."+id;
  const visibleData=data?.accountScope===activeScope.current?data:null;
  const load=useCallback(async()=>{const request=++requestSeq.current,scope=activeScope.current;try{const result=await getConsultation(token,id);if(request===requestSeq.current&&scope===activeScope.current)setData({...result,accountScope:scope})}catch(e){if(request===requestSeq.current&&scope===activeScope.current)setSendError(e instanceof Error?e.message:"Görüşme yüklenemedi.")}},[token,id,userId]);
- useEffect(()=>{setData(null);setSendError("");setSendBusy(false);sending.current=false;pending.current=null;void load();return()=>{requestSeq.current++;sending.current=false}},[load]);
+ useEffect(()=>{setData(null);setSendError("");setSendBusy(false);setReplyTo(null);sending.current=false;pending.current=null;void load();return()=>{requestSeq.current++;sending.current=false}},[load]);
  useEffect(()=>{let active=true;setText("");void SecureStore.getItemAsync(draftKey).then(v=>{if(active)setText(v||"")}).catch(()=>{});return()=>{active=false}},[draftKey]);
  useEffect(()=>{const eventType=String(lastEvent?.event_type||lastEvent?.type||"");const eventCase=Number(lastEvent?.payload?.case_id||lastEvent?.entity_id||0);if(eventCase===id&&["MESSAGE_CREATED","CASE_STATUS_UPDATED","CASE_UPDATED"].includes(eventType))void load()},[lastEvent,load,id]);
  async function send(){
-  const scope=activeScope.current,v=text.trim();if(sending.current||!v||!visibleData)return;
-  if(!pending.current||pending.current.content!==v||pending.current.scope!==scope)pending.current={content:v,scope,id:"native-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2)};
+  const scope=activeScope.current,v=text.trim(),reply=replyTo;if(sending.current||!v||!visibleData)return;
+  if(!pending.current||pending.current.content!==v||pending.current.scope!==scope||pending.current.replyTo!==reply)pending.current={content:v,scope,replyTo:reply,id:"native-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2)};
   const messageId=pending.current.id;sending.current=true;setSendBusy(true);setSendError("");
   try{
-   const result=await sendConsultationMessage(token,id,v,messageId);
+   const result=await sendConsultationMessage(token,id,v,messageId,reply??undefined);
    if(scope!==activeScope.current)return;
    if(!result?.ok||!result?.message?.id)throw Error("Gönderim doğrulanamadı. Tekrar göndermeden önce görüşmeyi yenileyin.");
    if(pending.current?.id===messageId)pending.current=null;
-   setText(current=>current===v?"":current);
+   setText(current=>current===v?"":current);setReplyTo(null);
    // Only remove the saved draft if it still contains the message just sent.
    const saved=await SecureStore.getItemAsync(draftKey).catch(()=>null);
    if(scope!==activeScope.current)return;
@@ -169,9 +169,9 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
  <View style={{backgroundColor:C.white,padding:14,borderBottomWidth:1,borderBottomColor:C.line}}><Text style={s.title}>Vaka #{id} · Güvenli görüşme</Text><Text style={s.muted}>{visibleData?.case?.specialty||"Uzman desteği"} · {visibleData?.case?.status||"Yükleniyor"}</Text></View>
  <FlatList style={s.page} contentContainerStyle={[s.pad,{paddingBottom:20}]} data={visibleData?.messages||[]} keyExtractor={(x:ChatMessage)=>String(x.id)}
  ListEmptyComponent={<Empty title={visibleData?"Henüz mesaj yok":"Görüşme yükleniyor"} sub="Bu görüşmenin mesajları yalnızca yetkili katılımcılara gösterilir."/>}
- renderItem={({item}:any)=><View style={[s.msg,item.sender_user_id===userId?s.mine:s.theirs]}><Text style={s.body}>{item.content|| (item.type==="IMAGE"?"Görsel":"Klinik içerik")}</Text><Text style={s.meta}>{new Date(item.created_at).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}</Text></View>}/>
+ renderItem={({item}:any)=><View style={[s.msg,item.sender_user_id===userId?s.mine:s.theirs]}>{!!item.reply_to_message_id&&<Text style={[s.meta,{color:C.navy,fontWeight:"700"}]}>↩ {String(visibleData?.messages?.find((m:ChatMessage)=>m.id===item.reply_to_message_id)?.content||"Mesaj").slice(0,90)}</Text>}<Text style={s.body}>{item.content|| (item.message_type==="IMAGE"?"Klinik görüntü":item.message_type==="VOICE"?"Ses kaydı":item.message_type==="FILE"?"Dosya":"Klinik içerik")}</Text><View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:12}}><Text style={s.meta}>{new Date(item.created_at).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}</Text><Pressable accessibilityRole="button" accessibilityLabel="Mesajı yanıtla" onPress={()=>setReplyTo(item.id)}><Text style={[s.meta,{color:C.navy,fontWeight:"800"}]}>↩ Yanıtla</Text></Pressable></View></View>}/>
  {!!sendError&&<Pressable accessibilityRole="button" onPress={()=>void load()}><Text style={{color:C.red,paddingHorizontal:16}}>{sendError} · Yenile</Text></Pressable>}
- <View style={s.composer}><TextInput style={[s.input,{flex:1,marginTop:0,maxHeight:120}]} multiline maxLength={4000} value={text} onChangeText={v=>{setText(v);pending.current=null;void SecureStore.setItemAsync(draftKey,v).catch(()=>{})}} editable={!sendBusy&&!!visibleData} placeholder="Mesaj yaz..." placeholderTextColor={C.muted}/><Pressable accessibilityRole="button" style={[s.send,(!visibleData||sendBusy||!text.trim())&&{opacity:.5}]} onPress={()=>void send()} disabled={!visibleData||sendBusy||!text.trim()}><Text style={s.btnT}>{sendBusy?"…":"Gönder"}</Text></Pressable></View>
+ {!!replyTo&&<View style={{backgroundColor:C.soft,padding:10,flexDirection:"row",alignItems:"center",justifyContent:"space-between"}}><Text style={{flex:1,color:C.navy}} numberOfLines={2}>↩ {String(visibleData?.messages?.find((m:ChatMessage)=>m.id===replyTo)?.content||"Mesaja yanıt").slice(0,110)}</Text><Pressable accessibilityRole="button" accessibilityLabel="Yanıtı kaldır" onPress={()=>setReplyTo(null)}><Text style={{fontWeight:"800",color:C.red}}>✕</Text></Pressable></View>}<View style={s.composer}><TextInput style={[s.input,{flex:1,marginTop:0,maxHeight:120}]} multiline maxLength={4000} value={text} onChangeText={v=>{setText(v);pending.current=null;void SecureStore.setItemAsync(draftKey,v).catch(()=>{})}} editable={!sendBusy&&!!visibleData} placeholder="Mesaj yaz..." placeholderTextColor={C.muted}/><Pressable accessibilityRole="button" style={[s.send,(!visibleData||sendBusy||!text.trim())&&{opacity:.5}]} onPress={()=>void send()} disabled={!visibleData||sendBusy||!text.trim()}><Text style={s.btnT}>{sendBusy?"…":"Gönder"}</Text></Pressable></View>
  </KeyboardAvoidingView>;
 }
 
