@@ -153,3 +153,22 @@ test('invalid expert and academic identifiers are rejected before any network re
   assert.equal(calls,0);
  }finally{global.fetch=original;}
 });
+
+test('consultation and notification mutations reject invalid IDs and empty messages without network',async()=>{
+ const {markNotificationRead,getConsultation,sendConsultationMessage}=require('../src/modernApi.ts');
+ const original=global.fetch;let calls=0;
+ global.fetch=async()=>{calls++;return new Response(JSON.stringify({ok:true,message:{id:2}}),{status:200})};
+ try{
+  for(const id of [0,-1,1.5,NaN,Infinity]){
+   assert.throws(()=>markNotificationRead('secret',id),/Geçersiz/);
+   assert.throws(()=>getConsultation('secret',id),/Geçersiz/);
+   assert.throws(()=>sendConsultationMessage('secret',id,'hello','uuid'),/Geçersiz/);
+  }
+  assert.throws(()=>sendConsultationMessage('secret',7,'  ','uuid'),/boş mesaj/);
+  assert.throws(()=>sendConsultationMessage('secret',7,'hello',' '),/eksik istek/);
+  assert.equal(calls,0);
+  await markNotificationRead('secret',2);
+  await sendConsultationMessage('secret',7,'hello','same-uuid');
+  assert.equal(calls,2);
+ }finally{global.fetch=original;}
+});
