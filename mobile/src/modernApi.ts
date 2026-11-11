@@ -26,6 +26,7 @@ export const markNotificationRead=(t:string,id:number)=>{
  return req<{ok:boolean}>("/notifications/"+id+"/read",t,{method:"POST"});
 };
 export const getAnalysisHistory=async(t:string,before?:number)=>{
+ if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz analiz sayfa kimliği.");
  const r=await req<{items:AnalysisHistory[];total:number;next_before?:number|null}>("/analyses?limit=50"+(before!==undefined?`&before=${encodeURIComponent(before)}`:""),t);
  // Older deployed servers omit next_before; treat this as the final page.
  const next_before=r?.next_before??null;
@@ -38,7 +39,11 @@ export const getAnalysisHistory=async(t:string,before?:number)=>{
    throw Error("Analiz sunucusundan geçersiz liste alındı. Tekrar deneyin.");
  return {...r,next_before};
 };
-export const deleteMedia=(t:string,patientId:number,mediaId:number)=>req<{ok:boolean;media_id:number}>(`/patients/${patientId}/media/${mediaId}`,t,{method:"DELETE"});
+export const deleteMedia=(t:string,patientId:number,mediaId:number)=>{
+ if(!Number.isSafeInteger(patientId)||patientId<=0||!Number.isSafeInteger(mediaId)||mediaId<=0)
+  throw Error("Geçersiz hasta veya klinik medya kimliği.");
+ return req<{ok:boolean;media_id:number}>(`/patients/${patientId}/media/${mediaId}`,t,{method:"DELETE"});
+};
 export const getMedia=async(t:string,p:number,before?:number)=>{
  if(!Number.isSafeInteger(p)||p<=0||(before!==undefined&&(!Number.isSafeInteger(before)||before<=0)))
   throw Error("Geçersiz hasta veya sayfa kimliği.");
