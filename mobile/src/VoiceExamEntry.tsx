@@ -108,7 +108,12 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
     <ReviewRemovableSection name="Diş bazlı çıkarımlar" items={review.review.teeth} disabled={processing} onRemove={index=>removeExtractedItem("teeth",index)}/>
     <ReviewRemovableSection name="Kaynak tarama konuları" items={review.review.literature_topics} disabled={processing} onRemove={index=>removeExtractedItem("literature_topics",index)}/>
     <ReviewRemovableSection name="Kaynak terimi adayları" items={review.review.source_requests} disabled={processing} onRemove={index=>removeExtractedItem("source_requests",index)}/>
-    {!!review.review.appointment&&<ResultSection name="Konuşulan randevu" items={review.review.appointment}/>}
+    {!!review.review.appointment&&<View style={{marginTop:12}}>
+     <ResultSection name="Konuşulan randevu" items={review.review.appointment}/>
+     <Pressable accessibilityRole="button" disabled={processing} onPress={()=>{generation.current++;setReview(previous=>previous?{...previous,review:{...previous.review,appointment:undefined}}:previous);setFinalResult(null)}} style={{paddingVertical:12}}>
+      <Text style={{color:processing?muted:"#B42318",fontWeight:"700"}}>Randevu doğrulanmadı — taslaktan çıkar</Text>
+     </Pressable>
+    </View>}
     {!!review.review.uncertain&&<ResultSection name="Belirsiz / doğrulanmamış beyanlar" items={review.review.uncertain}/>}
     {!!lastRemoved&&<Pressable accessibilityRole="button" disabled={processing} onPress={undoRemovedItem} style={{paddingVertical:12}}><Text style={{color:"#1769AA",fontWeight:"800"}}>Son kaldırılan bulguyu geri al</Text></Pressable>}
     <Text style={{color:muted,marginTop:10}}>Bunlar taslak bilgilerdir; hasta dosyasına kaydedilmedi.</Text>
