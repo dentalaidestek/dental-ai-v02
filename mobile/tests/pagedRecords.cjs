@@ -55,3 +55,18 @@ test('non-advancing pagination cursor is closed to prevent endless load-more req
  await h.current.loadMore();h.render();assert.equal(h.current.hasMore,false);
  await h.current.loadMore();h.render();assert.equal(calls,2);
 });
+
+test('invalid initial cursors do not expose endless pagination after refresh',async()=>{
+ for(const cursor of [NaN,Infinity,-1,4,5,1.5]){
+  let calls=0;
+  const h=harness(async()=>{calls++;return {items:[row(4),row(5)],next_before:cursor}},true,false);
+  h.render();await tick();h.render();
+  assert.equal(h.current.hasMore,false,'cursor '+cursor+' should be rejected');
+  await h.current.loadMore();assert.equal(calls,1);
+ }
+});
+test('valid initial cursor remains available for older pages',async()=>{
+ const h=harness(async before=>before?{items:[row(1)],next_before:null}:{items:[row(4),row(5)],next_before:3},true,false);
+ h.render();await tick();h.render();assert.equal(h.current.hasMore,true);
+ await h.current.loadMore();h.render();assert.equal(h.current.items.map(x=>x.id).join(','),'1');
+});
