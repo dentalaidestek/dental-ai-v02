@@ -36,7 +36,17 @@ jobs:
       # Skip them only when installation fails or the workflow is cancelled.
       - name: TypeScript typecheck
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: npm run typecheck
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee "$RUNNER_TEMP/mobile-typecheck.log"
+      - name: Preserve TypeScript diagnostics
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-typecheck-diagnostics
+          path: ${{ runner.temp }}/mobile-typecheck.log
+          if-no-files-found: warn
+          retention-days: 7
       - name: Session and authentication tests
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run test:session
