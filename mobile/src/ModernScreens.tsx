@@ -114,9 +114,10 @@ function chatFilterMatch(item:Consultation,filter:ChatFilter){
 }
 function Consultations({token,navigation}:{token:string;navigation:any}){
  const[search,setSearch]=useState(""),[filter,setFilter]=useState<ChatFilter>("all");
- const{lastEvent}=useRealtime();
+ const{lastEvent}=useRealtime(),isFocused=useIsFocused();
  const pages=usePagedRecords<Consultation>(token,before=>getConsultations(token,before));
  const{items:data,setItems:setData,refresh:load}=pages;
+ useEffect(()=>{if(isFocused)void load()},[isFocused,load]);
  useEffect(()=>{setSearch("");setFilter("all")},[token]);
  useEffect(()=>{
   const type=String(lastEvent?.event_type||lastEvent?.type||"");
