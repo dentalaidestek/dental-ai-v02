@@ -371,16 +371,22 @@ function CommentThread({
     [next, setNext] = useState<number | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const replyGeneration = useRef(0), replyLock = useRef(false);
   useEffect(() => {
+    replyGeneration.current++;
     setReplies([]);
     setNext(null);
     setOpen(false);
-  }, [item.reply_count]);
+    return () => { replyGeneration.current++; };
+  }, [token, postId, item.id, item.reply_count]);
   async function more() {
-    if (busy) return;
+    if (replyLock.current) return;
+    replyLock.current = true;
+    const request = replyGeneration.current;
     setBusy(true);
     try {
       const page = await api.getComments(token, postId, next || 0, item.id);
+      if (request !== replyGeneration.current) return;
       setReplies((v) => [
         ...v,
         ...page.items.filter((x) => !v.some((y) => y.id === x.id)),
@@ -388,9 +394,10 @@ function CommentThread({
       setNext(page.next_cursor);
       setOpen(true);
     } catch (e) {
-      setError(message(e));
+      if (request === replyGeneration.current) setError(message(e));
     } finally {
-      setBusy(false);
+      replyLock.current = false;
+      if (request === replyGeneration.current) setBusy(false);
     }
   }
   async function like() {
