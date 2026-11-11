@@ -2,7 +2,15 @@ const BASE="https://dentalai.tr/api/mobile/v1";
 async function send<T>(token:string,path:string,payload:unknown):Promise<T>{
  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),150000);
  try{const response=await fetch(BASE+path,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(payload),signal:controller.signal});
- const body=await response.json();if(!response.ok||body.ok===false)throw Error(typeof body.detail==="string"?body.detail:body.error||"Klinik değerlendirme başarısız.");return body as T;
+ const raw=await response.text();
+ let body:Record<string,unknown>;
+ try {body=raw?JSON.parse(raw):{};} catch {throw Error("Sunucudan geçersiz klinik değerlendirme yanıtı alındı. Metniniz bu ekranda korunuyor.");}
+ if(!body||typeof body!=="object"||Array.isArray(body))throw Error("Sunucudan geçersiz klinik değerlendirme yanıtı alındı.");
+ if(!response.ok||body.ok===false){
+  const detail=typeof body.detail==="string"?body.detail:typeof body.error==="string"?body.error:"Klinik değerlendirme başarısız.";
+  throw Error(detail);
+ }
+ return body as T;
  }finally{clearTimeout(timeout)}
 }
 export type VoiceField={value:string;quote?:string;edited?:boolean};
