@@ -1024,10 +1024,10 @@ export function DentalFlow({
               disabled={saving}
               onPress={async () => {
                 if (followLock.current) return;
+                const request = profileGeneration.current;
                 followLock.current = true;
                 setSaving(true);
                 try {
-                  const request = profileGeneration.current;
                   const r = await api.setFollow(
                     token,
                     expertId,
@@ -1048,7 +1048,7 @@ export function DentalFlow({
                       setError("Takip güncellendi; güncel sayaç alınamadı: " + message(refreshError));
                   }
                 } catch (e) {
-                  setError(message(e));
+                  if (request === profileGeneration.current) setError(message(e));
                 } finally {
                   followLock.current = false;
                   setSaving(false);
