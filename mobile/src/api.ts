@@ -73,9 +73,9 @@ export const uploadPatientMedia=async(token:string,patientId:number,file:{uri:st
   const detail=typeof data.detail==="string"?data.detail:"Görüntü yüklenemedi.";
   throw new ApiError(response.status,detail);
  }
- if(!data||data.ok!==true||!Number.isSafeInteger(data.media_id)||data.media_id<=0)
+ if(!data?.media||!Number.isSafeInteger(data.media.id)||data.media.id<=0)
   throw new Error("Görüntü kaydı sunucudan doğrulanamadı. Yeniden yüklemeden önce galeriyi kontrol edin.");
- return data as {ok:true;media_id:number};
+ return data as {media:{id:number;original_filename:string;media_type:string}};
 };
 
 export async function createConsultation(token:string,payload:{expert_user_id:number;clinical_summary:string;requester_opinion?:string;question:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string}){return request<{ok:boolean;case_id:number}>("/consultations",token,{method:"POST",body:JSON.stringify(payload)});}
