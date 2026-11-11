@@ -834,10 +834,7 @@ function PostCard({
         >
           {post.author_photo ? (
             <Image
-              source={{
-                uri: api.socialUrl(post.author_photo),
-                headers: { Authorization: "Bearer " + token },
-              }}
+              source={api.socialImageSource(post.author_photo, token)}
               style={s.avatar}
             />
           ) : (
@@ -868,10 +865,7 @@ function PostCard({
       {post.media.map((m) => (
         <Pressable key={m.id} onPress={() => onImage(m.url)}>
           <Image
-            source={{
-              uri: api.socialUrl(m.url),
-              headers: { Authorization: "Bearer " + token },
-            }}
+            source={api.socialImageSource(m.url, token)}
             style={s.photo}
             resizeMode="contain"
           />
@@ -1200,10 +1194,7 @@ export function DentalFlow({
       {image && (
         <Sheet title="Fotoğraf" onClose={() => setImage(null)}>
           <Image
-            source={{
-              uri: api.socialUrl(image),
-              headers: { Authorization: "Bearer " + token },
-            }}
+            source={api.socialImageSource(image, token)}
             style={{ flex: 1 }}
             resizeMode="contain"
           />
