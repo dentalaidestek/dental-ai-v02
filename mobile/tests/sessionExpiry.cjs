@@ -96,3 +96,14 @@ test('analysis history rejects non-advancing cursors and repeated boundary rows'
   assert.equal(page.next_before,122);
  }finally{global.fetch=original}
 });
+
+test('analysis history rejects null records even with a cursor and accepts legacy terminal pages',async()=>{
+ const modern=require('../src/modernApi.ts'),original=global.fetch;
+ try{
+  global.fetch=async()=>new Response(JSON.stringify({items:[null],total:1,next_before:12}),{status:200});
+  await assert.rejects(()=>modern.getAnalysisHistory('current',50),/geçersiz liste/);
+  global.fetch=async()=>new Response(JSON.stringify({items:[],total:0}),{status:200});
+  const result=await modern.getAnalysisHistory('current');
+  assert.equal(result.next_before,null);
+ }finally{global.fetch=original}
+});
