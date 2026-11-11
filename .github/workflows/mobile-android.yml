@@ -57,6 +57,22 @@ jobs:
           path: ${{ runner.temp }}/mobile-typecheck.log
           if-no-files-found: warn
           retention-days: 7
+      - name: Print failed check summary
+        if: ${{ always() }}
+        run: |
+          echo "## Mobile CI diagnostics" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f "$RUNNER_TEMP/mobile-install.log" ]; then
+            echo "### Dependency install (last 45 lines)" >> "$GITHUB_STEP_SUMMARY"
+            echo '\`\`\`text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 45 "$RUNNER_TEMP/mobile-install.log" >> "$GITHUB_STEP_SUMMARY"
+            echo '\`\`\`' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f "$RUNNER_TEMP/mobile-typecheck.log" ]; then
+            echo "### TypeScript (last 75 lines)" >> "$GITHUB_STEP_SUMMARY"
+            echo '\`\`\`text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 75 "$RUNNER_TEMP/mobile-typecheck.log" >> "$GITHUB_STEP_SUMMARY"
+            echo '\`\`\`' >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Session and authentication tests
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run test:session
