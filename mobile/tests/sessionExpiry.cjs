@@ -16,3 +16,21 @@ test('all authenticated JSON clients preserve HTTP status and report 401 only',a
   assert.equal(events.length,1);
  }finally{stop();global.fetch=original;}
 });
+
+test('mobile lists reject malformed server data before rendering clinical or account records',async()=>{
+ const modern=require('../src/modernApi.ts'),original=global.fetch;
+ try{
+  for(const body of [{}, {items:null}, {items:{}}, {items:[null]}, {items:[{id:'bad',title:'Test',message:'Test'}]}]){
+   global.fetch=async()=>new Response(JSON.stringify(body),{status:200});
+   await assert.rejects(()=>modern.getNotifications('current'),/geçersiz liste/);
+  }
+  for(const body of [{}, {items:{}}, {items:[null]}, {items:[{id:'bad',patient_id:1,status:'ready'}]}]){
+   global.fetch=async()=>new Response(JSON.stringify(body),{status:200});
+   await assert.rejects(()=>modern.getAnalysisHistory('current'),/geçersiz liste/);
+  }
+  global.fetch=async()=>new Response(JSON.stringify({items:[],total:0}),{status:200});
+  assert.equal((await modern.getAnalysisHistory('current')).items.length,0);
+  global.fetch=async()=>new Response(JSON.stringify({notifications:[],unread_count:0}),{status:200});
+  assert.equal((await modern.getNotifications('current')).items.length,0);
+ }finally{global.fetch=original}
+});
