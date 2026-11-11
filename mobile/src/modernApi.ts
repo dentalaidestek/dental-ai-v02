@@ -101,20 +101,21 @@ export const sendConsultationMessage=(t:string,id:number,content:string,clientMe
   throw Error("Geçersiz görüşme, boş mesaj veya eksik istek kimliği.");
  return req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content,client_message_id:clientMessageId,...(replyToMessageId?{reply_to_message_id:replyToMessageId}:{})})});
 };
-function validateAcademicPage<T extends {id:number}>(response:{items:T[];next_before?:number|null},before?:number):{items:T[];next_before:number|null}{
+function validateAcademicPage<T extends {id:number}>(response:{items:T[];next_before?:number|null},before?:number,dateOrdered=false):{items:T[];next_before:number|null}{
  const cursor=response?.next_before??null;
  if(!Array.isArray(response?.items)||
     response.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||
     (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0))||
     (response.items.length===0&&cursor!==null)||
-    (before!==undefined&&(response.items.some(item=>item.id>=before)||(cursor!==null&&cursor>=before))))
+    (cursor!==null&&!response.items.some(item=>item.id===cursor))||
+    (before!==undefined&&(dateOrdered?cursor===before:(response.items.some(item=>item.id>=before)||(cursor!==null&&cursor>=before)))))
   throw Error("Akademik kayıt sunucusundan geçersiz sayfa alındı. Tekrar deneyin.");
  return {items:response.items,next_before:cursor};
 }
 export const getCourses=async(t:string,before?:number)=>{
  if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz ders sayfa kimliği.");
  const r=await req<{items:Course[];next_before?:number|null}>("/academic/courses"+(before!==undefined?"?before="+encodeURIComponent(before):""),t);
- return validateAcademicPage(r,before);
+ return validateAcademicPage(r,before,true);
 };
 export const getAcademicMessages=async(t:string,id:number,before?:number)=>{
  if(!Number.isSafeInteger(id)||id<=0||(before!==undefined&&(!Number.isSafeInteger(before)||before<=0)))throw Error("Geçersiz ders veya sayfa kimliği.");
