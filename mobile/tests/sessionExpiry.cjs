@@ -61,3 +61,20 @@ test('analysis history uses a bounded cursor and preserves valid empty final pag
   assert.match(urls[1],/\/analyses\?limit=50&before=123$/);
  }finally{global.fetch=original}
 });
+
+test('analysis pagination rejects invalid cursor metadata and oversized pages',async()=>{
+ const modern=require('../src/modernApi.ts'),original=global.fetch;
+ const row=id=>({id,patient_id:1,status:'READY'});
+ try{
+  for(const body of [
+   {items:[],total:0,next_before:-1},
+   {items:[],total:0,next_before:'bad'},
+   {items:[],total:-1,next_before:null},
+   {items:[],total:'zero',next_before:null},
+   {items:Array.from({length:51},(_,i)=>row(i+1)),total:51,next_before:null}
+  ]){
+   global.fetch=async()=>new Response(JSON.stringify(body),{status:200});
+   await assert.rejects(()=>modern.getAnalysisHistory('current'),/geçersiz liste/);
+  }
+ }finally{global.fetch=original}
+});
