@@ -57,3 +57,22 @@ test('social images never send bearer tokens to external or lookalike hosts',()=
   assert.equal(source.headers,undefined,'unexpected authorization for '+url);
  }
 });
+
+test('expert consultation pages reject malformed records and non-progressing cursors',async()=>{
+ const {getConsultations}=require('../src/modernApi.ts'),original=global.fetch;
+ try{
+  for(const payload of [
+   {items:null,next_before:null},
+   {items:[null],next_before:null},
+   {items:[{id:8}],next_before:10},
+   {items:[{id:8}],next_before:8},
+   {items:[],next_before:4},
+  ]){
+   global.fetch=async()=>new Response(JSON.stringify(payload),{status:200});
+   await assert.rejects(()=>getConsultations('secret',9),/geçersiz liste/);
+  }
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:7,other_display_name:'Uzman'}],next_before:6}),{status:200});
+  const page=await getConsultations('secret',9);
+  assert.equal(page.items[0].other_name,'Uzman');assert.equal(page.next_before,6);
+ }finally{global.fetch=original;}
+});
