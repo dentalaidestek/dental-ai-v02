@@ -274,3 +274,19 @@ test('voice finalization rejects malformed clinician-edited context without netw
   assert.equal(calls,0);
  }finally{global.fetch=original}
 });
+
+test('final clinical payload rejects unrecognized fields and malformed appointments locally',async()=>{
+ const original=global.fetch;let requests=0;global.fetch=async()=>{requests++;throw Error('unexpected request')};
+ const base={insights:[],uncertain:'',conversation_text:'Muayene'};
+ try{
+  for(const context of [
+   {fields:{made_up_field:{value:'veri'}}},
+   {fields:{allergies:{value:'yok',unexpected:true}}},
+   {fields:{allergies:{value:'x'.repeat(3001)}}},
+   {fields:{},appointment:{quote:123}},
+   {fields:{},appointment:{quote:'Saat 14',other:'secret'}},
+   {fields:{},appointment:{acceptance_quote:'x'.repeat(1501)}}
+  ])await assert.rejects(()=>api.finalizeVoice('token',4,{...base,context}),/bağlamı geçersiz/);
+  assert.equal(requests,0);
+ }finally{global.fetch=original}
+});
