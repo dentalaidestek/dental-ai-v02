@@ -959,6 +959,7 @@ export function DentalFlow({
   expertName?: string;
 }) {
   const followLock = useRef(false);
+  const profileGeneration = useRef(0);
   const [mode, setMode] = useState<"discover" | "following">("discover"),
     [compose, setCompose] = useState(false),
     [comments, setComments] = useState<api.SocialPost | null>(null),
@@ -986,14 +987,15 @@ export function DentalFlow({
       p ? v.map((x) => (x.id === id ? p : x)) : v.filter((x) => x.id !== id),
     );
   useEffect(() => {
-    let active = true;
+    const request = ++profileGeneration.current;
     setStats(null);
+    setError("");
     if (expertId)
       api
         .getSocialStats(token, expertId)
-        .then((result) => { if (active) setStats(result); })
-        .catch((e) => { if (active) setError(message(e)); });
-    return () => { active = false; };
+        .then((result) => { if (request === profileGeneration.current) setStats(result); })
+        .catch((e) => { if (request === profileGeneration.current) setError(message(e)); });
+    return () => { profileGeneration.current++; };
   }, [token, expertId]);
   const profile = (id: number, name: string) => {
     setComments(null);
@@ -1025,14 +1027,26 @@ export function DentalFlow({
                 followLock.current = true;
                 setSaving(true);
                 try {
+                  const request = profileGeneration.current;
                   const r = await api.setFollow(
                     token,
                     expertId,
                     !stats.following_by_viewer,
                   );
-                  // Re-read authoritative counts: concurrent follows can change totals.
-                  const latest = await api.getSocialStats(token, expertId);
-                  setStats({ ...latest, following_by_viewer: r.following_by_viewer });
+                  if (request !== profileGeneration.current) return;
+                  // The follow write succeeded; retain its authoritative state even if refreshing counts fails.
+                  setStats((previous) => previous ? {
+                    ...previous,
+                    following_by_viewer: r.following_by_viewer,
+                  } : previous);
+                  try {
+                    const latest = await api.getSocialStats(token, expertId);
+                    if (request === profileGeneration.current)
+                      setStats({ ...latest, following_by_viewer: r.following_by_viewer });
+                  } catch (refreshError) {
+                    if (request === profileGeneration.current)
+                      setError("Takip güncellendi; güncel sayaç alınamadı: " + message(refreshError));
+                  }
                 } catch (e) {
                   setError(message(e));
                 } finally {
