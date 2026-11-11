@@ -508,6 +508,11 @@ class MobileToothUpdate(BaseModel):
     surfaces: Optional[list[str]] = None
 
 
+class MobileSurfaceUpdate(BaseModel):
+    status: str
+    note: Optional[str] = None
+
+
 class MobileScheduleCreate(BaseModel):
     event_type: str
     title: str
@@ -657,6 +662,45 @@ def mobile_delete_schedule(event_id: int, user: User = Depends(_mobile_user)):
         on_loop(_publish_realtime_event, realtime_event)
     return {"ok": True}
 
+
+
+@router.put("/patients/{patient_id}/teeth/{tooth_number}/surfaces/{surface_name}")
+def mobile_update_tooth_surface(
+    patient_id: int,
+    tooth_number: str,
+    surface_name: str,
+    payload: MobileSurfaceUpdate,
+    user: User = Depends(_mobile_user),
+):
+    """Update one clinical surface without changing the whole-tooth observation."""
+    if not _valid_fdi_tooth_number(tooth_number):
+        raise HTTPException(status_code=422, detail="Geçersiz FDI diş numarası.")
+    if surface_name not in {"OCCLUSAL", "INCISAL", "MESIAL", "DISTAL", "BUCCAL", "LINGUAL"}:
+        raise HTTPException(status_code=422, detail="Geçersiz diş yüzeyi.")
+    if payload.status not in {"HEALTHY", "CARIES", "FILLING", "CROWN", "ROOT_CANAL", "EXTRACTED", "IMPLANT", "OTHER"}:
+        raise HTTPException(status_code=422, detail="Geçersiz diş durumu.")
+    if payload.note is not None and len(payload.note) > 2000:
+        raise HTTPException(status_code=422, detail="Yüzey notu 2000 karakteri aşamaz.")
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        if not patient or patient.owner_user_id != user.id:
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        surface = session.exec(select(ToothSurfaceStatus).where(
+            ToothSurfaceStatus.patient_id == patient_id,
+            ToothSurfaceStatus.tooth_number == tooth_number,
+            ToothSurfaceStatus.surface == surface_name,
+        )).first()
+        note = payload.note.strip() if payload.note else None
+        if surface:
+            surface.status, surface.note, surface.updated_at = payload.status, note, datetime.utcnow()
+        else:
+            session.add(ToothSurfaceStatus(patient_id=patient_id, tooth_number=tooth_number,
+                surface=surface_name, status=payload.status, note=note))
+        realtime = _record_realtime_event(session, user.id, "TOOTH_UPDATED", "patient", patient_id,
+            {"patient_id": patient_id, "tooth_number": tooth_number, "surface": surface_name, "surface_status": payload.status})
+        session.commit()
+        on_loop(_publish_realtime_event, realtime)
+        return {"ok": True, "tooth_number": tooth_number, "surface": surface_name, "status": payload.status}
 
 
 @router.post("/patients/{patient_id}/teeth/{tooth_number}")
