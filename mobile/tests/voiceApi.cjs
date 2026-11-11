@@ -203,3 +203,15 @@ test('native voice transcription rejects oversized text before it reaches UI',as
   await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/72.000 karakter sınırını aştı/);
  }finally{global.fetch=original}
 });
+
+test('ASR refuses oversized and empty transcription while preserving local audio',async()=>{
+ const original=global.fetch;
+ try{
+  for(const transcript of ['', '   ', 'x'.repeat(18001)]){
+   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',transcript}));
+   await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/sınır dışında/);
+  }
+  global.fetch=async()=>response(JSON.stringify({ok:true,revision:' ',transcript:'Diş ağrısı'}));
+  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/sınır dışında/);
+ }finally{global.fetch=original}
+});
