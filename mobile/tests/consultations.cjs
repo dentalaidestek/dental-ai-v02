@@ -61,3 +61,27 @@ test('deleted consultation returns empty message page and no cursor',async()=>{
   assert.equal(result.next_before,null);
  });
 });
+
+test('academic courses accept a later numeric ID when created_at cursor moves backward',async()=>{
+ await withFetch(async()=>json({items:[
+  {id:8,title:'Endodonti',material_count:3,updated_at:'2026-11-11'},
+  {id:45,title:'Ortodonti',material_count:2,updated_at:'2026-11-10'}
+ ],next_before:45}),async()=>{
+  const page=await api.getCourses('token',7);
+  assert.equal(page.next_before,45);
+  assert.equal(page.items.length,2);
+ });
+});
+test('academic course cursor must belong to the returned page',async()=>{
+ await withFetch(async()=>json({items:[{id:8,title:'Endodonti'}],next_before:20}),async()=>{
+  await assert.rejects(()=>api.getCourses('token'),/geçersiz sayfa/);
+ });
+});
+test('academic chat messages reject out-of-order IDs and nonadvancing cursors',async()=>{
+ await withFetch(async()=>json({items:[
+  {id:19,role:'assistant',content:'Yanıt',created_at:'2026-11-10'},
+  {id:18,role:'user',content:'Soru',created_at:'2026-11-09'}
+ ],next_before:19}),async()=>{
+  await assert.rejects(()=>api.getAcademicMessages('token',1,20),/geçersiz sayfa/);
+ });
+});
