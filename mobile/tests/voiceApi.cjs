@@ -323,3 +323,20 @@ test('voice clinical tooth statuses match server allowlist in both directions',a
   assert.equal(calls,1);
  }finally{global.fetch=original}
 });
+
+test('voice extraction bounds lists and rejects unexpected appointment attributes',async()=>{
+ const original=global.fetch;
+ try{
+  for(const review of [
+   {fields:{},source_requests:Array.from({length:7},()=>({term:'amoxicillin',quote:'ilaç'}))},
+   {fields:{},literature_topics:Array.from({length:41},()=>({topic:'endo.general',quote:'kanal'}))},
+   {fields:{},communication:Array.from({length:25},()=>({quote:'a',observation:'b',suggestion:'c'}))},
+   {fields:{},appointment:{quote:'yarın',extra:'not permitted'}},
+   {fields:{},appointment:{quote:123}},
+   {fields:{},appointment:{quote:'x'.repeat(1501)}}
+  ]){
+   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',review}));
+   await assert.rejects(()=>api.extractVoice('token',4,'görüşme'),/alanları geçersiz/);
+  }
+ }finally{global.fetch=original}
+});
