@@ -27,10 +27,11 @@ export async function extractVoice(token:string,patientId:number,transcript:stri
  const result=await send<VoiceExtraction>(token,`/patients/${patientId}/voice-exam/text`,{transcript,consent:true});
  if(!result.review||typeof result.review!=="object"||Array.isArray(result.review))throw Error("Klinik çıkarım yanıtında muayene bilgileri bulunamadı. Metninizi koruyup tekrar deneyin.");
  const review=result.review;
- const invalidFields=review.fields!==undefined&&(!review.fields||typeof review.fields!=="object"||Array.isArray(review.fields)||Object.values(review.fields).some(item=>!item||typeof item!=="object"||typeof item.value!=="string"));
+ const allowedFields=new Set(["first_name","last_name","age","chief_complaint","medical_history","family_history","materials","dental_history","oral_habits","medications","allergies","clinical_findings","plan"]);
+ const invalidFields=review.fields!==undefined&&(!review.fields||typeof review.fields!=="object"||Array.isArray(review.fields)||Object.entries(review.fields).some(([key,item])=>!allowedFields.has(key)||!item||typeof item!=="object"||Array.isArray(item)||typeof item.value!=="string"||item.value.length>3000||typeof item.quote!=="string"||item.quote.length>3000));
  const invalidArrays=["teeth","communication","insights","decision_barriers","follow_up_questions","literature_topics","source_requests"].some(key=>{const value=(review as Record<string,unknown>)[key];return value!==undefined&&!Array.isArray(value)});
  const isObject=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==="object"&&!Array.isArray(value);
- const invalidTeeth=Array.isArray(review.teeth)&&review.teeth.some(tooth=>!isObject(tooth)||!/^([1-4][1-8]|[5-8][1-5])$/.test(String(tooth.tooth))||typeof tooth.status!=="string"||typeof tooth.quote!=="string");
+ const invalidTeeth=Array.isArray(review.teeth)&&(review.teeth.length>52||review.teeth.some(tooth=>!isObject(tooth)||!/^([1-4][1-8]|[5-8][1-5])$/.test(String(tooth.tooth))||typeof tooth.status!=="string"||typeof tooth.quote!=="string"||tooth.quote.length>1500));
  const invalidCommunication=Array.isArray(review.communication)&&review.communication.some(item=>!isObject(item)||typeof item.quote!=="string"||typeof item.observation!=="string"||typeof item.suggestion!=="string");
  const invalidSources=(["literature_topics","source_requests"] as const).some(key=>Array.isArray(review[key])&&review[key]!.some(item=>!isObject(item)||typeof item.quote!=="string"||typeof item[key==="literature_topics"?"topic":"term"]!=="string"));
  const invalidListItems=(["decision_barriers","follow_up_questions"] as const).some(key=>Array.isArray(review[key])&&review[key]!.some(item=>!isObject(item)));
