@@ -1141,6 +1141,9 @@ def mobile_consultation(case_id:int,before:Optional[int]=Query(None,ge=1),limit:
         if not c or user.id not in {c.requester_user_id,c.expert_user_id}:
             raise HTTPException(status_code=404,detail="Vaka bulunamadı.")
         query=select(ConsultationMessage).where(ConsultationMessage.case_id==c.id)
+        if c.messages_deleted_at is not None:
+            # Never expose retained or pending-purge messages after chat deletion.
+            query=query.where(ConsultationMessage.id<0)
         if before is not None:
             query=query.where(ConsultationMessage.id<before)
         page=session.exec(query.order_by(ConsultationMessage.id.desc()).limit(limit+1)).all()
