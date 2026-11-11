@@ -1,4 +1,4 @@
-import {useNavigation} from "@react-navigation/native";
+import {useNavigation,useIsFocused} from "@react-navigation/native";
 import React,{useCallback,useEffect,useRef,useState}from"react";
 import * as ImagePicker from"expo-image-picker";
 import * as SecureStore from"expo-secure-store";
@@ -137,7 +137,7 @@ function Consultations({token,navigation}:{token:string;navigation:any}){
  ListEmptyComponent={<Empty title={search||filter!=="all"?"Eşleşen görüşme yok":"Henüz görüşmeniz yok"} sub={pages.hasMore?"Diğer görüşmeleri yükleyerek aramaya devam edin.":"Uzman desteği görüşmeleriniz burada görünecek."}/>}/>;
 }
 export function ConsultationChat({token,route,userId}:{token:string;route:any;userId:number}){
- const id=Number(route.params.id),{lastEvent}=useRealtime();
+ const id=Number(route.params.id),{lastEvent}=useRealtime(),isFocused=useIsFocused();
  const[data,setData]=useState<any>(),[text,setText]=useState(""),[replyTo,setReplyTo]=useState<number|null>(null),[olderBusy,setOlderBusy]=useState(false),[sendBusy,setSendBusy]=useState(false),[sendError,setSendError]=useState("");
  const activeScope=useRef(token+":"+userId+":"+id);activeScope.current=token+":"+userId+":"+id;
  const requestSeq=useRef(0),sending=useRef(false),draftRevision=useRef(0),pending=useRef<{content:string;id:string;scope:string;replyTo:number|null}|null>(null);
@@ -153,14 +153,14 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
  useEffect(()=>{setData(null);setSendError("");setSendBusy(false);setReplyTo(null);sending.current=false;pending.current=null;void load();return()=>{requestSeq.current++;sending.current=false}},[load]);
  useEffect(()=>{let active=true;const revision=++draftRevision.current;setDraftReady(false);setText("");void SecureStore.getItemAsync(draftKey).then(v=>{if(active&&draftRevision.current===revision){setText(v||"");setDraftReady(true)}}).catch(()=>{if(active&&draftRevision.current===revision)setDraftReady(true)});return()=>{active=false;draftRevision.current++}},[draftKey]);
  useEffect(()=>{
-  if(!latestMessageId||visibleData?.case?.messages_deleted_at)return;
+  if(!isFocused||!latestMessageId||visibleData?.case?.messages_deleted_at)return;
   const scope=activeScope.current;
   if(lastReadRequest.current?.scope===scope&&lastReadRequest.current.id>=latestMessageId)return;
   lastReadRequest.current={scope,id:latestMessageId};
   void markConsultationRead(token,id,latestMessageId).catch(()=>{
    if(lastReadRequest.current?.scope===scope&&lastReadRequest.current.id===latestMessageId)lastReadRequest.current=null;
   });
- },[token,id,latestMessageId,visibleData?.case?.messages_deleted_at]);
+ },[token,id,isFocused,latestMessageId,visibleData?.case?.messages_deleted_at]);
  async function loadOlder(){const cursor=visibleData?.next_before,scope=activeScope.current;if(!cursor||olderBusy)return;setOlderBusy(true);try{const page=await getConsultation(token,id,cursor);if(scope!==activeScope.current)return;setData(previous=>previous?.accountScope!==scope?previous:{...previous,next_before:page.next_before??null,messages:[...page.messages,...previous.messages].filter((m:ChatMessage,i:number,all:ChatMessage[])=>all.findIndex(v=>v.id===m.id)===i).sort((a:ChatMessage,b:ChatMessage)=>a.id-b.id)});}catch(e){if(scope===activeScope.current)setSendError(e instanceof Error?e.message:"Önceki mesajlar yüklenemedi.")}finally{if(scope===activeScope.current)setOlderBusy(false)}}
  useEffect(()=>{const eventType=String(lastEvent?.event_type||lastEvent?.type||"");const eventCase=Number(lastEvent?.payload?.case_id||lastEvent?.entity_id||0);if(eventCase===id&&["MESSAGE_CREATED","CASE_STATUS_UPDATED","CASE_UPDATED"].includes(eventType))void load()},[lastEvent,load,id]);
  async function send(){
