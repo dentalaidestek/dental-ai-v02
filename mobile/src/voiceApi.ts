@@ -42,6 +42,16 @@ export async function finalizeVoice(token:string,patientId:number,payload:{conte
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Son değerlendirme için geçerli bir hasta seçin.");
  if(!payload||!payload.context||typeof payload.context!=="object"||Array.isArray(payload.context)||!Array.isArray(payload.insights)||typeof payload.uncertain!=="string")throw Error("Klinik son değerlendirme bilgileri geçersiz. Metniniz korunuyor.");
  if(typeof payload.conversation_text!=="string"||payload.conversation_text.length>72000)throw Error("Görüşme metni 72.000 karakteri aşamaz. Metniniz korunuyor.");
+ const fields=(payload.context as Record<string,unknown>).fields;
+ const teeth=(payload.context as Record<string,unknown>).teeth;
+ const topics=(payload.context as Record<string,unknown>).literature_topics;
+ const requests=(payload.context as Record<string,unknown>).source_requests;
+ const appointment=(payload.context as Record<string,unknown>).appointment;
+ const isRecord=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==="object"&&!Array.isArray(value);
+ const validFields=fields===undefined||(isRecord(fields)&&Object.values(fields).every(item=>isRecord(item)&&typeof item.value==="string"&&(!("quote" in item)||typeof item.quote==="string")&&(!("edited" in item)||typeof item.edited==="boolean")));
+ const validTeeth=teeth===undefined||(Array.isArray(teeth)&&teeth.length<=52&&teeth.every(item=>isRecord(item)&&/^([1-4][1-8]|[5-8][1-5])$/.test(String(item.tooth))&&typeof item.status==="string"&&typeof item.quote==="string"));
+ const validEvidence=(value:unknown,key:"topic"|"term",limit:number)=>value===undefined||(Array.isArray(value)&&value.length<=limit&&value.every(item=>isRecord(item)&&typeof item[key]==="string"&&typeof item.quote==="string"));
+ if(!validFields||!validTeeth||!validEvidence(topics,"topic",40)||!validEvidence(requests,"term",6)||(appointment!=null&&!isRecord(appointment))||payload.insights.length>24||payload.uncertain.length>3000)throw Error("Klinik son değerlendirme bağlamı geçersiz veya sınır dışında. Taslağı kontrol edin; metniniz korunuyor.");
  const result=await send<Record<string,unknown>>(token,`/patients/${patientId}/voice-exam/finalize`,{...payload,consent:true});
  if(!result.final||typeof result.final!=="object"||Array.isArray(result.final))throw Error("Klinik son değerlendirme yanıtı eksik. Metninizi koruyup tekrar deneyin.");
  return result;
