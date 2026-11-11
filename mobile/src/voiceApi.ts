@@ -29,8 +29,13 @@ export async function extractVoice(token:string,patientId:number,transcript:stri
  const review=result.review;
  const invalidFields=review.fields!==undefined&&(!review.fields||typeof review.fields!=="object"||Array.isArray(review.fields)||Object.values(review.fields).some(item=>!item||typeof item!=="object"||typeof item.value!=="string"));
  const invalidArrays=["teeth","communication","insights","decision_barriers","follow_up_questions","literature_topics","source_requests"].some(key=>{const value=(review as Record<string,unknown>)[key];return value!==undefined&&!Array.isArray(value)});
+ const isObject=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==="object"&&!Array.isArray(value);
+ const invalidTeeth=Array.isArray(review.teeth)&&review.teeth.some(tooth=>!isObject(tooth)||!/^([1-4][1-8]|[5-8][1-5])$/.test(String(tooth.tooth))||typeof tooth.status!=="string"||typeof tooth.quote!=="string");
+ const invalidCommunication=Array.isArray(review.communication)&&review.communication.some(item=>!isObject(item)||typeof item.quote!=="string"||typeof item.observation!=="string"||typeof item.suggestion!=="string");
+ const invalidSources=(["literature_topics","source_requests"] as const).some(key=>Array.isArray(review[key])&&review[key]!.some(item=>!isObject(item)||typeof item.quote!=="string"||typeof item[key==="literature_topics"?"topic":"term"]!=="string"));
+ const invalidListItems=(["decision_barriers","follow_up_questions"] as const).some(key=>Array.isArray(review[key])&&review[key]!.some(item=>!isObject(item)));
  const invalidAppointment=review.appointment!=null&&(typeof review.appointment!=="object"||Array.isArray(review.appointment));
- if(invalidFields||invalidArrays||invalidAppointment||(review.uncertain!==undefined&&typeof review.uncertain!=="string"))throw Error("Klinik çıkarım yanıtının alanları geçersiz. Metniniz korunuyor; tekrar deneyin.");
+ if(invalidFields||invalidArrays||invalidTeeth||invalidCommunication||invalidSources||invalidListItems||invalidAppointment||(review.uncertain!==undefined&&typeof review.uncertain!=="string"))throw Error("Klinik çıkarım yanıtının alanları geçersiz. Metniniz korunuyor; tekrar deneyin.");
  return result;
 }
 export async function finalizeVoice(token:string,patientId:number,payload:{context:Record<string,unknown>;insights:Record<string,unknown>[];uncertain:string;conversation_text:string}):Promise<Record<string,unknown>>{
