@@ -62,3 +62,13 @@ test('clinical gallery hides old patient thumbnails and preview before effects r
  assert.match(gallery,/preview\.accountScope!==patientScope\.current/);
  assert.match(gallery,/setD\(\{\.\.\.page,accountScope:patientScope\.current\}\)/);
 });
+
+test('clinical gallery ignores pending page responses from another account before effects run',()=>{
+ const source=fs.readFileSync(require.resolve('../src/ModernScreens.tsx'),'utf8');
+ const gallery=source.slice(source.indexOf('export function MediaGallery('),source.indexOf('export function ExpertDirectory('));
+ assert.match(gallery,/const current=\+\+generation\.current;const scope=patientScope\.current/);
+ assert.match(gallery,/current===generation\.current&&scope===patientScope\.current/);
+ assert.match(gallery,/setD\(\{\.\.\.page,accountScope:scope\}\)/);
+ assert.match(gallery,/previous\.accountScope===scope/);
+ assert.match(gallery,/next_before:page\.next_before,accountScope:previous\.accountScope/);
+});
