@@ -131,3 +131,18 @@ test('native voice audio rejects missing transcription and retains actionable er
  global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1'}));
  try{await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/yanıtı eksik/)}finally{global.fetch=original}
 });
+
+test('clinical communication coaching from extraction is accepted in final payload',async()=>{
+ const original=global.fetch;let finalRequest;
+ const communication=[{quote:'Tedaviden çekiniyorum',observation:'Kaygı',suggestion:'Açıklama yap'}];
+ global.fetch=async(url,init)=>{
+  if(String(url).endsWith('/text'))return response(JSON.stringify({ok:true,revision:'r1',review:{fields:{},communication,decision_barriers:[],follow_up_questions:[]}}));
+  finalRequest=JSON.parse(init.body);return response(JSON.stringify({ok:true,final:{summary:[]}}));
+ };
+ try{
+  const extracted=await api.extractVoice('token',4,'Tedaviden çekiniyorum');
+  assert.deepEqual(extracted.review.communication,communication);
+  await api.finalizeVoice('token',4,{context:{fields:{}},insights:extracted.review.communication,uncertain:'',conversation_text:'Tedaviden çekiniyorum'});
+  assert.deepEqual(finalRequest.insights,communication);
+ }finally{global.fetch=original}
+});
