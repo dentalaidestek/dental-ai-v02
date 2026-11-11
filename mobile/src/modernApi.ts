@@ -77,9 +77,10 @@ export const getConsultations=async(t:string,before?:number)=>{
   throw Error("Uzman görüşmeleri sunucusundan geçersiz liste alındı. Tekrar deneyin.");
  return {next_before:cursor,items:r.items.map(item=>({...item,other_name:item.other_name||item.other_display_name||"",clinical_summary:item.clinical_summary||""})) as Consultation[]};
 };
-export const getConsultation=(t:string,id:number)=>{
+export const getConsultation=(t:string,id:number,before?:number)=>{
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz görüşme kimliği.");
- return req<{case:any;messages:ChatMessage[]}>(`/consultations/${id}`,t);
+ if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz mesaj sayfası.");
+ return req<{case:any;messages:ChatMessage[];next_before?:number|null}>(`/consultations/${id}`+(before!==undefined?`?before=${before}`:""),t);
 };
 export const sendConsultationMessage=(t:string,id:number,content:string,clientMessageId:string,replyToMessageId?:number)=>{
  if(!Number.isSafeInteger(id)||id<=0||!content.trim()||!clientMessageId.trim()||(replyToMessageId!==undefined&&(!Number.isSafeInteger(replyToMessageId)||replyToMessageId<=0)))
