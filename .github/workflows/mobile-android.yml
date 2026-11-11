@@ -86,9 +86,10 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npx expo export --platform android --platform ios
   beta-apk:
-    needs: typecheck
+    # Build an installable internal APK independently so test failures remain visible
+    # without blocking device evaluation; never deploy or publish this artifact.
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 55
     defaults:
       run:
         working-directory: mobile
