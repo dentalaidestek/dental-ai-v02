@@ -70,10 +70,11 @@ export const getConsultations=async(t:string,before?:number)=>{
  if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz görüşme sayfa kimliği.");
  const r=await req<{items:any[];next_before?:number|null}>("/consultations"+(before!==undefined?"?before="+encodeURIComponent(before):""),t);
  const cursor=r?.next_before??null;
- if(!Array.isArray(r?.items)||r.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||
-   (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0))||
+ if(!Array.isArray(r?.items)||r.items.length>50||r.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||
+   new Set(r.items.map(item=>item.id)).size!==r.items.length||
+   (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0||!r.items.some(item=>item.id===cursor)))||
    (r.items.length===0&&cursor!==null)||
-   (before!==undefined&&cursor!==null&&cursor===before))
+   (before!==undefined&&(r.items.some(item=>item.id===before)||cursor===before)))
   throw Error("Uzman görüşmeleri sunucusundan geçersiz liste alındı. Tekrar deneyin.");
  return {next_before:cursor,items:r.items.map(item=>({...item,other_display_name:String(item.other_display_name||item.other_name||"Kullanıcı"),unread_count:Math.max(0,Number(item.unread_count)||0)})) as Consultation[]};
 };
