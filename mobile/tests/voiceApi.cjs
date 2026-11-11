@@ -290,3 +290,19 @@ test('final clinical payload rejects unrecognized fields and malformed appointme
   assert.equal(requests,0);
  }finally{global.fetch=original}
 });
+
+test('voice extraction rejects unknown fields and oversized evidence before rendering',async()=>{
+ const original=global.fetch;
+ try{
+  for(const review of [
+   {fields:{unknown:{value:'test',quote:'test'}}},
+   {fields:{allergies:{value:'yok'}}},
+   {fields:{allergies:{value:'x'.repeat(3001),quote:'yok'}}},
+   {fields:{},teeth:[{tooth:'44',status:'existing',quote:'x'.repeat(1501)}]},
+   {fields:{},teeth:Array.from({length:53},()=>({tooth:'44',status:'existing',quote:'ağrı'}))}
+  ]){
+   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',review}));
+   await assert.rejects(()=>api.extractVoice('token',4,'muayene'),/alanları geçersiz/);
+  }
+ }finally{global.fetch=original}
+});
