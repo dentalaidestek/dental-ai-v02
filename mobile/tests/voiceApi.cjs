@@ -27,3 +27,16 @@ test('voice finalization requires a clinical review payload',async()=>{
  const original=global.fetch;global.fetch=async()=>response(JSON.stringify({ok:true}));
  try{await assert.rejects(()=>api.finalizeVoice('secret',1,{context:{},insights:[],uncertain:[],conversation_text:'text'}),/son değerlendirme yanıtı eksik/)}finally{global.fetch=original}
 });
+
+test('voice finalization submits full transcript, clinician review and consent',async()=>{
+ const original=global.fetch;let call;
+ global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,final:{summary:'Değerlendirme tamamlandı'}}))};
+ try{
+  const payload={context:{fields:{chief_complaint:{value:'Ağrı'}},teeth:[44],literature_topics:['TOPIC_1']},insights:[{finding:'Ağrı'}],uncertain:[],conversation_text:'Tam görüşme metni'};
+  const result=await api.finalizeVoice('token',44,payload);
+  assert.equal(result.final.summary,'Değerlendirme tamamlandı');
+  assert.match(call.url,/\/patients\/44\/voice-exam\/finalize$/);
+  assert.equal(call.init.headers.Authorization,'Bearer token');
+  assert.deepEqual(JSON.parse(call.init.body),{...payload,consent:true});
+ }finally{global.fetch=original}
+});
