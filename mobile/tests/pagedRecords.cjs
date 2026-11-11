@@ -66,7 +66,7 @@ test('invalid initial cursors do not expose endless pagination after refresh',as
  }
 });
 test('valid initial cursor remains available for older pages',async()=>{
- const h=harness(async before=>before?{items:[row(1)],next_before:null}:{items:[row(4),row(5)],next_before:3},true,false);
+ const h=harness(async before=>before?{items:[row(1)],next_before:null}:{items:[row(4),row(5)],next_before:5},true,false);
  h.render();await tick();h.render();assert.equal(h.current.hasMore,true);
  await h.current.loadMore();h.render();assert.equal(h.current.items.map(x=>x.id).join(','),'1');
 });
