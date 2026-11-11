@@ -58,6 +58,11 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
    {review&&<View style={{marginTop:18,borderTopWidth:1,borderTopColor:line,paddingTop:15}}>
     <Text style={{fontSize:17,fontWeight:"800",color:navy}}>Çıkarılan muayene bilgileri</Text>
     <Pressable accessibilityRole="button" disabled={processing} onPress={()=>setEditingFields(v=>!v)} style={{paddingVertical:12}}><Text style={{fontWeight:"800",color:"#1769AA"}}>{editingFields?"Düzenlemeyi bitir":"Çıkarılan bilgileri kontrol et / düzenle"}</Text></Pressable>{Object.entries(review.review.fields||{}).map(([name,item])=><View key={name} style={{paddingVertical:9,borderBottomWidth:1,borderBottomColor:line}}><Text style={{fontWeight:"700",color:navy}}>{fieldLabels[name]||name.replace(/_/g," ")}</Text>{editingFields?<TextInput multiline accessibilityLabel={fieldLabels[name]||name} value={item.value} editable={!processing} onChangeText={value=>{generation.current++;setReview(previous=>previous?{...previous,review:{...previous.review,fields:{...previous.review.fields,[name]:{...previous.review.fields?.[name],value,edited:true}}}}:previous);setFinalResult(null)}} style={{color:navy,borderWidth:1,borderColor:line,borderRadius:9,padding:10,marginTop:6}}/>:<Text style={{color:muted,marginTop:4}}>{item.value}</Text>}</View>)}
+    <ResultSection name="Diş bazlı çıkarımlar" items={review.review.teeth}/>
+    <ResultSection name="Kaynak tarama konuları" items={review.review.literature_topics}/>
+    <ResultSection name="Kaynak terimi adayları" items={review.review.source_requests}/>
+    {!!review.review.appointment&&<ResultSection name="Konuşulan randevu" items={review.review.appointment}/>}
+    {!!review.review.uncertain&&<ResultSection name="Belirsiz / doğrulanmamış beyanlar" items={review.review.uncertain}/>}
     <Text style={{color:muted,marginTop:10}}>Bunlar taslak bilgilerdir; hasta dosyasına kaydedilmedi.</Text>
     <Pressable accessibilityRole="button" disabled={processing} onPress={()=>void finalize()} style={{backgroundColor:navy,padding:15,borderRadius:12,alignItems:"center",marginTop:14}}><Text style={{color:"white",fontWeight:"800"}}>Hekim Kontrolünden Sonra Klinik Değerlendirme</Text></Pressable>
    </View>}
