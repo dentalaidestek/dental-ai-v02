@@ -18,7 +18,7 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
  const refresh=useCallback(async()=>{
   const request=++generation.current;seenCursors.current.clear();setBusy(true);setError('');
   try{const page=await fetchRef.current();if(request!==generation.current)return;
-   if(!Array.isArray(page?.items)||page.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<0))throw Error("Geçersiz sayfa yanıtı.");
+   if(!Array.isArray(page?.items)||page.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||new Set(page.items.map(item=>item.id)).size!==page.items.length)throw Error("Geçersiz sayfa yanıtı.");
    if(replaceOnRefresh){knownIds.current=new Set(page.items.map(item=>item.id));more.current=false;setItems(page.items);setNext(validInitialCursor(page,cursorMode));return;}
    const overlaps=page.items.some(item=>knownIds.current.has(item.id));
    if(!page.items.length){knownIds.current.clear();more.current=false;setItems([]);setNext(null);return;}
@@ -31,11 +31,12 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
  const loadMore=async()=>{
   if(next===null||pending.current===generation.current||busy)return;const request=generation.current;pending.current=request;setBusy(true);setError('');
   try{const page=await fetchRef.current(next);if(request!==generation.current)return;
-   if(!Array.isArray(page?.items)||page.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<0))throw Error("Geçersiz sayfa yanıtı.");
+   if(!Array.isArray(page?.items)||page.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||new Set(page.items.map(item=>item.id)).size!==page.items.length)throw Error("Geçersiz sayfa yanıtı.");
+   const nextCursor=validInitialCursor(page,cursorMode);
+   if(cursorMode==="offset"&&nextCursor!==null&&nextCursor<=next)throw Error("Geçersiz sayfalama ilerlemesi.");
    page.items.forEach(item=>knownIds.current.add(item.id));
    setItems(old=>{if(ascending)return mergeRecords(old,page.items,true);const existingIds=new Set(old.map(item=>item.id));return [...old,...page.items.filter(item=>!existingIds.has(item.id))];});
    // A broken backend cursor must not trigger an endless request for the same page.
-   const nextCursor=validInitialCursor(page,cursorMode);
    seenCursors.current.add(next);
    setNext(nextCursor!==null&&!seenCursors.current.has(nextCursor)?nextCursor:null);more.current=true;
   }catch(e){if(request===generation.current)setError(e instanceof Error?e.message:'Yüklenemedi. Tekrar deneyin.');}
