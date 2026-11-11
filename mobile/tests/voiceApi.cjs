@@ -388,3 +388,13 @@ test('final voice review rejects malformed literature and drug search evidence w
   assert.equal(requests,0);
  }finally{global.fetch=original}
 });
+
+test('clinical context UTF-8 budget works when Hermes TextEncoder is unavailable',async()=>{
+ const originalFetch=global.fetch,originalEncoder=global.TextEncoder;
+ let calls=0;global.TextEncoder=undefined;global.fetch=async()=>{calls++;throw Error('unexpected network')};
+ const fields=Object.fromEntries(['first_name','last_name','age','chief_complaint','medical_history','family_history','materials','dental_history','oral_habits','medications','allergies','clinical_findings','plan'].map(key=>[key,{value:'🦷'.repeat(1000),quote:'🦷'.repeat(1000)}]));
+ try{
+  await assert.rejects(()=>api.finalizeVoice('token',4,{context:{fields},insights:[],uncertain:'',conversation_text:'Muayene'}),/32 KB/);
+  assert.equal(calls,0);
+ }finally{global.fetch=originalFetch;global.TextEncoder=originalEncoder}
+});
