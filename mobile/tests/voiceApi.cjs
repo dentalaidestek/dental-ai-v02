@@ -226,3 +226,16 @@ test('native voice upload rejects missing MIME without throwing a TypeError',asy
   assert.equal(calls,0);
  }finally{global.fetch=original}
 });
+
+test('clinical finalization refuses malformed review payload before network',async()=>{
+ const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw Error('unexpected request')};
+ try{
+  for(const payload of [
+   {context:null,insights:[],uncertain:'',conversation_text:'muayene'},
+   {context:[],insights:[],uncertain:'',conversation_text:'muayene'},
+   {context:{},insights:{},uncertain:'',conversation_text:'muayene'},
+   {context:{},insights:[],uncertain:[],conversation_text:'muayene'}
+  ])await assert.rejects(()=>api.finalizeVoice('token',1,payload),/bilgileri geçersiz/);
+  assert.equal(calls,0);
+ }finally{global.fetch=original}
+});
