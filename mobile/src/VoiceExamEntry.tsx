@@ -41,16 +41,17 @@ function ReviewRemovableSection({name,items,onRemove,disabled}:{name:string;item
 
 export default function VoiceExamEntry({token,initialPatientId}:{token:string;initialPatientId?:number}){
  const [privacyExpanded,setPrivacyExpanded]=useState(false),[processing,setProcessing]=useState(false),[editingFields,setEditingFields]=useState(false),[review,setReview]=useState<VoiceExtraction|null>(null),[finalResult,setFinalResult]=useState<Record<string,unknown>|null>(null),[clinicalError,setClinicalError]=useState(""),[stage,setStage]=useState<"select"|"exam">("select"),[consent,setConsent]=useState(false),[transcript,setTranscript]=useState(""),[query,setQuery]=useState(""),[patients,setPatients]=useState<Patient[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<Patient|null>(null);
+ const [lastRemoved,setLastRemoved]=useState<{key:"teeth"|"literature_topics"|"source_requests"|"communication"|"decision_barriers"|"follow_up_questions";index:number;item:unknown}|null>(null);
  const processingLock=useRef(false),processingOwner=useRef(0),generation=useRef(0),scope=useRef(token+":"+(selected?.id||0));
  scope.current=token+":"+(selected?.id||0);
- useEffect(()=>{generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setFinalResult(null);setClinicalError("");setTranscript("");setConsent(false);setStage("select")},[token,selected?.id]);
+ useEffect(()=>{generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("");setTranscript("");setConsent(false);setStage("select")},[token,selected?.id]);
  const patientSearchGeneration=useRef(0);
  // Invalidate requests issued with the previous account before clearing its patient data.
  useEffect(()=>{patientSearchGeneration.current++;setBusy(false);setSelected(null);setPatients([]);setQuery("");setError("");},[token]);
  const load=useCallback(async()=>{const request=++patientSearchGeneration.current;setBusy(true);setError("");try{const r=await getPatients(token,query,0);if(request===patientSearchGeneration.current)setPatients(r.items)}catch(e){if(request===patientSearchGeneration.current)setError(e instanceof Error?e.message:"Hasta listesi alınamadı.")}finally{if(request===patientSearchGeneration.current)setBusy(false)}},[token,query]);
  useEffect(()=>{const timer=setTimeout(()=>{void load()},300);return()=>{clearTimeout(timer);patientSearchGeneration.current++}},[load]);
  useEffect(()=>{let active=true;if(initialPatientId){void getPatient(token,initialPatientId).then(r=>{if(active)setSelected(r.patient)}).catch(()=>{if(active)setError("Seçili hasta bulunamadı veya erişim izni yok.")})}return()=>{active=false}},[token,initialPatientId]);
- async function processText(){if(!selected||!consent||!transcript.trim()||processingLock.current)return;if(transcript.length>18000){setClinicalError("Metin çözümleme sınırı 18.000 karakterdir. Uzun görüşmelerin bölümlerini ayrı ayrı işleyin; tamamını silmeyin.");return;}processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const result=await extractVoice(token,selected.id,transcript);if(request!==generation.current||currentScope!==scope.current)return;setReview(result);setEditingFields(false);setFinalResult(null)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Muayene değerlendirilemedi.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
+ async function processText(){if(!selected||!consent||!transcript.trim()||processingLock.current)return;if(transcript.length>18000){setClinicalError("Metin çözümleme sınırı 18.000 karakterdir. Uzun görüşmelerin bölümlerini ayrı ayrı işleyin; tamamını silmeyin.");return;}processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const result=await extractVoice(token,selected.id,transcript);if(request!==generation.current||currentScope!==scope.current)return;setReview(result);setLastRemoved(null);setEditingFields(false);setFinalResult(null)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Muayene değerlendirilemedi.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
  function removeExtractedItem(key:"teeth"|"literature_topics"|"source_requests"|"communication"|"decision_barriers"|"follow_up_questions",index:number){
   if(processingLock.current)return;
   generation.current++;
@@ -58,9 +59,23 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
    if(!previous)return previous;
    const current=previous.review[key];
    if(!Array.isArray(current)||index<0||index>=current.length)return previous;
+   setLastRemoved({key,index,item:current[index]});
    return {...previous,review:{...previous.review,[key]:current.filter((_,i)=>i!==index)}};
   });
   setFinalResult(null);
+ }
+ function undoRemovedItem(){
+  if(processingLock.current||!lastRemoved)return;
+  generation.current++;
+  const {key,index,item}=lastRemoved;
+  setReview(previous=>{
+   if(!previous)return previous;
+   const current=previous.review[key];
+   if(!Array.isArray(current))return previous;
+   const restored=[...current];restored.splice(Math.min(index,restored.length),0,item as never);
+   return {...previous,review:{...previous.review,[key]:restored}};
+  });
+  setLastRemoved(null);setFinalResult(null);
  }
  async function finalize(){if(!selected||!consent||!review||processingLock.current)return;processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const data=review.review;const response=await finalizeVoice(token,selected.id,{context:{fields:data.fields||{},teeth:data.teeth||[],literature_topics:data.literature_topics||[],source_requests:data.source_requests||[],...(data.appointment?{appointment:data.appointment}:{})},insights:data.communication||data.insights||[],uncertain:(data.uncertain||'').slice(0,3000),conversation_text:transcript});if(request===generation.current&&currentScope===scope.current)setFinalResult(response.final as Record<string,unknown>)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Son değerlendirme tamamlanamadı.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
  async function open(){const url=selected?`https://dentalai.tr/voice-exams/${selected.id}/session`:"https://dentalai.tr/voice-exams";try{await Linking.openURL(url)}catch{setError("Sesli Muayene sayfası açılamadı.")}}
@@ -93,6 +108,7 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
     <ReviewRemovableSection name="Kaynak terimi adayları" items={review.review.source_requests} disabled={processing} onRemove={index=>removeExtractedItem("source_requests",index)}/>
     {!!review.review.appointment&&<ResultSection name="Konuşulan randevu" items={review.review.appointment}/>}
     {!!review.review.uncertain&&<ResultSection name="Belirsiz / doğrulanmamış beyanlar" items={review.review.uncertain}/>}
+    {!!lastRemoved&&<Pressable accessibilityRole="button" disabled={processing} onPress={undoRemovedItem} style={{paddingVertical:12}}><Text style={{color:"#1769AA",fontWeight:"800"}}>Son kaldırılan bulguyu geri al</Text></Pressable>}
     <Text style={{color:muted,marginTop:10}}>Bunlar taslak bilgilerdir; hasta dosyasına kaydedilmedi.</Text>
     <Pressable accessibilityRole="button" disabled={processing} onPress={()=>void finalize()} style={{backgroundColor:navy,padding:15,borderRadius:12,alignItems:"center",marginTop:14}}><Text style={{color:"white",fontWeight:"800"}}>Hekim Kontrolünden Sonra Klinik Değerlendirme</Text></Pressable>
    </View>}
