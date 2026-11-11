@@ -22,6 +22,8 @@ async function send<T>(token:string,path:string,payload:unknown):Promise<T>{
 export type VoiceField={value:string;quote?:string;edited?:boolean};
 export type VoiceExtraction={ok:boolean;revision:string;review:{fields?:Record<string,VoiceField>;teeth?:unknown[];insights?:Record<string,unknown>[];communication?:{quote:string;observation:string;suggestion:string}[];decision_barriers?:Record<string,unknown>[];follow_up_questions?:Record<string,unknown>[];uncertain?:string;literature_topics?:unknown[];source_requests?:unknown[];appointment?:{quote?:string;acceptance_quote?:string}}};
 export async function extractVoice(token:string,patientId:number,transcript:string):Promise<VoiceExtraction>{
+ if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Klinik değerlendirme için geçerli bir hasta seçin.");
+ if(!transcript.trim()||transcript.length>18000)throw Error("Muayene metni boş olamaz ve 18.000 karakteri aşamaz. Metniniz korunuyor.");
  const result=await send<VoiceExtraction>(token,`/patients/${patientId}/voice-exam/text`,{transcript,consent:true});
  if(!result.review||typeof result.review!=="object"||Array.isArray(result.review))throw Error("Klinik çıkarım yanıtında muayene bilgileri bulunamadı. Metninizi koruyup tekrar deneyin.");
  const review=result.review;
@@ -32,6 +34,8 @@ export async function extractVoice(token:string,patientId:number,transcript:stri
  return result;
 }
 export async function finalizeVoice(token:string,patientId:number,payload:{context:Record<string,unknown>;insights:Record<string,unknown>[];uncertain:string;conversation_text:string}):Promise<Record<string,unknown>>{
+ if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Son değerlendirme için geçerli bir hasta seçin.");
+ if(typeof payload.conversation_text!=="string"||payload.conversation_text.length>72000)throw Error("Görüşme metni 72.000 karakteri aşamaz. Metniniz korunuyor.");
  const result=await send<Record<string,unknown>>(token,`/patients/${patientId}/voice-exam/finalize`,{...payload,consent:true});
  if(!result.final||typeof result.final!=="object"||Array.isArray(result.final))throw Error("Klinik son değerlendirme yanıtı eksik. Metninizi koruyup tekrar deneyin.");
  return result;
