@@ -31,7 +31,17 @@ jobs:
           node-version: 20
       - name: Install mobile dependencies
         id: install
-        run: npm ci
+        run: |
+          set -o pipefail
+          npm ci 2>&1 | tee "$RUNNER_TEMP/mobile-install.log"
+      - name: Preserve dependency installation diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-install-diagnostics
+          path: ${{ runner.temp }}/mobile-install.log
+          if-no-files-found: warn
+          retention-days: 7
       # Keep independent diagnostics running even if an earlier check fails.
       # Skip them only when installation fails or the workflow is cancelled.
       - name: TypeScript typecheck
