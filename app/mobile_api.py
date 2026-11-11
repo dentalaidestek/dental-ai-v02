@@ -1147,6 +1147,8 @@ def mobile_consultation(case_id:int,before:Optional[int]=Query(None,ge=1),limit:
         msgs=list(reversed(page[:limit]))
         next_before=msgs[0].id if len(page)>limit and msgs else None
         return {"next_before":next_before,"case":{"id":c.id,"status":c.status,"specialty":c.specialty,"tooth_region":c.tooth_region,
+            "messages_deleted_at":c.messages_deleted_at,"expert_response_deadline":c.expert_response_deadline,
+            "requester_decision_deadline":c.requester_decision_deadline,"consultation_start_deadline":c.consultation_start_deadline,
             "clinical_summary":c.clinical_summary,"requester_opinion":c.requester_opinion,"question":c.question,
             "requested_at":c.requested_at,"expert_user_id":c.expert_user_id,"requester_user_id":c.requester_user_id},
             "messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,
