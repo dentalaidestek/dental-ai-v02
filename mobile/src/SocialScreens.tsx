@@ -959,6 +959,7 @@ export function DentalFlow({
   expertName?: string;
 }) {
   const followLock = useRef(false);
+  const editLock = useRef(false);
   const profileGeneration = useRef(0);
   const [mode, setMode] = useState<"discover" | "following">("discover"),
     [compose, setCompose] = useState(false),
@@ -1188,16 +1189,20 @@ export function DentalFlow({
               title={saving ? "Kaydediliyor…" : "Kaydet"}
               disabled={saving}
               onPress={async () => {
+                if (editLock.current || !editText.trim()) return;
+                editLock.current = true;
                 setSaving(true);
                 try {
                   const p = await api.patchPost(token, editing, {
-                    text: editText,
+                    text: editText.trim(),
                   });
                   update(p, p.id);
                   setEditing(null);
+                  setError("");
                 } catch (e) {
                   setError(message(e));
                 } finally {
+                  editLock.current = false;
                   setSaving(false);
                 }
               }}
