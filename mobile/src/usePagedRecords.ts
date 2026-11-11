@@ -9,14 +9,14 @@ export function validInitialCursor<T extends {id:number}>(page:Page<T>):number|n
  if(cursor===null||!Number.isSafeInteger(cursor)||cursor<0||!Array.isArray(page.items)||page.items.length===0)return null;
  const ids=page.items.map(item=>item?.id);
  if(ids.some(id=>!Number.isSafeInteger(id)||id<0))return null;
- return cursor<=Math.max(...ids)?cursor:null;
+ return ids.includes(cursor)?cursor:null;
 }
 export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(before?:number)=>Promise<Page<T>>,ascending=false,replaceOnRefresh=false){
  const [items,setItems]=useState<T[]>([]),[next,setNext]=useState<number|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const fetchRef=useRef(fetchPage);fetchRef.current=fetchPage;
- const generation=useRef(0),more=useRef(false),pending=useRef<number|null>(null),knownIds=useRef(new Set<number>());
+ const generation=useRef(0),more=useRef(false),pending=useRef<number|null>(null),knownIds=useRef(new Set<number>()),seenCursors=useRef(new Set<number>());
  const refresh=useCallback(async()=>{
-  const request=++generation.current;setBusy(true);setError('');
+  const request=++generation.current;seenCursors.current.clear();setBusy(true);setError('');
   try{const page=await fetchRef.current();if(request!==generation.current)return;
    if(replaceOnRefresh){knownIds.current=new Set(page.items.map(item=>item.id));more.current=false;setItems(page.items);setNext(validInitialCursor(page));return;}
    const overlaps=page.items.some(item=>knownIds.current.has(item.id));
@@ -33,12 +33,13 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
    page.items.forEach(item=>knownIds.current.add(item.id));
    setItems(old=>{if(ascending)return mergeRecords(old,page.items,true);const existingIds=new Set(old.map(item=>item.id));return [...old,...page.items.filter(item=>!existingIds.has(item.id))];});
    // A broken backend cursor must not trigger an endless request for the same page.
-   const nextCursor=page.next_before;
-   setNext(nextCursor!==null&&Number.isSafeInteger(nextCursor)&&nextCursor>=0&&nextCursor<next?nextCursor:null);more.current=true;
+   const nextCursor=validInitialCursor(page);
+   seenCursors.current.add(next);
+   setNext(nextCursor!==null&&!seenCursors.current.has(nextCursor)?nextCursor:null);more.current=true;
   }catch(e){if(request===generation.current)setError(e instanceof Error?e.message:'Yüklenemedi. Tekrar deneyin.');}
   finally{if(pending.current===request)pending.current=null;if(request===generation.current)setBusy(false);}
  };
- useEffect(()=>{generation.current++;pending.current=null;more.current=false;knownIds.current.clear();setItems([]);setNext(null);refresh();return()=>{generation.current++;};},[refresh]);
+ useEffect(()=>{generation.current++;pending.current=null;more.current=false;knownIds.current.clear();seenCursors.current.clear();setItems([]);setNext(null);refresh();return()=>{generation.current++;};},[refresh]);
  return {items,setItems,refresh,loadMore,hasMore:next!==null,busy,error};
 }
 
