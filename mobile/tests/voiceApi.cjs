@@ -101,3 +101,33 @@ test('voice API handles HTML gateway failures and rate limits before parsing',as
   await assert.rejects(()=>api.extractVoice('token',1,'metin'),/sunucusuna şu anda ulaşılamıyor/);
  }finally{global.fetch=original}
 });
+
+test('native voice audio uses raw bounded bytes, consent and patient scoped route',async()=>{
+ const original=global.fetch;let call;
+ global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'rev1',transcript:'Dişim ağrıyor.'}))};
+ try{
+  const blob=new Blob([new Uint8Array(128)],{type:'audio/mp4'});
+  const result=await api.transcribeVoiceAudio('secret',23,blob,'audio/mp4');
+  assert.equal(result.transcript,'Dişim ağrıyor.');
+  assert.match(call.url,/\/patients\/23\/voice-exam\/audio$/);
+  assert.equal(call.init.headers.Authorization,'Bearer secret');
+  assert.equal(call.init.headers['X-Voice-Consent'],'yes');
+  assert.equal(call.init.headers['Content-Type'],'audio/mp4');
+  assert.equal(call.init.body,blob);
+ }finally{global.fetch=original}
+});
+test('native voice audio rejects unsupported formats and oversized files without network requests',async()=>{
+ const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw Error('should not fetch')};
+ try{
+  const valid=new Blob([new Uint8Array(128)]);
+  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,valid,'application/octet-stream'),/desteklenmiyor/);
+  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(8)]),'audio/mp4'),/8 MB/);
+  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,{size:8*1024*1024+1},'audio/mp4'),/8 MB/);
+  assert.equal(calls,0);
+ }finally{global.fetch=original}
+});
+test('native voice audio rejects missing transcription and retains actionable error',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1'}));
+ try{await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/yanıtı eksik/)}finally{global.fetch=original}
+});
