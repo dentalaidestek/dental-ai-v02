@@ -31,3 +31,13 @@ test('AI status and start use authorized mobile API routes',async()=>{
   assert.equal(calls[1].init.headers.Authorization,'Bearer secret');
  }finally{global.fetch=original}
 });
+
+test('AI refuses malformed created-job response instead of persisting an invalid job ID',async()=>{
+ const originalFetch=global.fetch,originalFormData=global.FormData;
+ class NativeFormStub{append(){}}
+ global.FormData=NativeFormStub;
+ global.fetch=async()=>new Response(JSON.stringify({ok:true,analysis_id:null,status:'UPLOADED'}),{status:200});
+ try{
+  await assert.rejects(()=>api.createAnalysis('secret',{patientId:7,images:[{uri:'file:///image.jpg',name:'image.jpg',type:'image/jpeg'}]}),/geçerli bir iş kimliği/);
+ }finally{global.fetch=originalFetch;global.FormData=originalFormData}
+});
