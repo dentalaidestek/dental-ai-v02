@@ -79,3 +79,20 @@ test('analysis pagination rejects invalid cursor metadata and oversized pages',a
   }
  }finally{global.fetch=original}
 });
+
+test('analysis history rejects non-advancing cursors and repeated boundary rows',async()=>{
+ const modern=require('../src/modernApi.ts'),original=global.fetch;
+ try{
+  for(const body of [
+   {items:[{id:123,patient_id:1,status:'READY'}],total:1,next_before:null},
+   {items:[{id:122,patient_id:1,status:'READY'}],total:1,next_before:123},
+   {items:[{id:124,patient_id:1,status:'READY'}],total:1,next_before:null}
+  ]){
+   global.fetch=async()=>new Response(JSON.stringify(body),{status:200});
+   await assert.rejects(()=>modern.getAnalysisHistory('current',123),/geçersiz liste/);
+  }
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:122,patient_id:1,status:'READY'}],total:1,next_before:122}),{status:200});
+  const page=await modern.getAnalysisHistory('current',123);
+  assert.equal(page.next_before,122);
+ }finally{global.fetch=original}
+});
