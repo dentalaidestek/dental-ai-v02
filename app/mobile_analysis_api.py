@@ -227,15 +227,19 @@ def mobile_analysis_image(
         return FileResponse(path, media_type=media_type, filename=asset.original_filename, headers={"Cache-Control": "private, no-store"})
 
 @router.get("/analyses")
-def mobile_analysis_history(user: User = Depends(_mobile_user), patient_id: Optional[int] = None):
+def mobile_analysis_history(user: User = Depends(_mobile_user), patient_id: Optional[int] = None, before: Optional[int] = Query(None, ge=1), limit: int = Query(50, ge=1, le=100)):
     with Session(engine, expire_on_commit=False) as session:
         q = select(Analysis, Patient).join(Patient, Patient.id == Analysis.patient_id).where(
             Patient.owner_user_id == user.id
         )
         if patient_id:
             q = q.where(Analysis.patient_id == patient_id)
-        rows = session.exec(q.order_by(Analysis.created_at.desc()).limit(100)).all()
-        return {"total": len(rows), "items": [{
+        if before is not None:
+            q = q.where(Analysis.id < before)
+        rows = session.exec(q.order_by(Analysis.id.desc()).limit(limit + 1)).all()
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        return {"total": len(rows), "next_before": rows[-1][0].id if has_more and rows else None, "items": [{
             "id": a.id, "patient_id": a.patient_id, "patient_name": f"{p.first_name or ''} {p.last_name or ''}".strip(),
             "tooth_number": a.tooth_number, "clinical_notes": a.clinical_notes,
             "status": a.status, "created_at": a.created_at
