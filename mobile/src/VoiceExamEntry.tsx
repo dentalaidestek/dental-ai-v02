@@ -115,6 +115,7 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
      </Pressable>
     </View>}
     {!!review.review.uncertain&&<ResultSection name="Belirsiz / doğrulanmamış beyanlar" items={review.review.uncertain}/>}
+    {!!review.review.appointment&&<Text style={{color:"#9A6700",marginTop:10,lineHeight:20}}>Randevu konuşmada geçiyor olabilir; kabul veya kesinleşme hekim tarafından ayrıca doğrulanmalıdır. Bu ekran randevu oluşturmaz.</Text>}
     {!!lastRemoved&&<Pressable accessibilityRole="button" disabled={processing} onPress={undoRemovedItem} style={{paddingVertical:12}}><Text style={{color:"#1769AA",fontWeight:"800"}}>Son kaldırılan bulguyu geri al</Text></Pressable>}
     <Text style={{color:muted,marginTop:10}}>Bunlar taslak bilgilerdir; hasta dosyasına kaydedilmedi.</Text>
     <Pressable accessibilityRole="button" disabled={processing} onPress={()=>void finalize()} style={{backgroundColor:navy,padding:15,borderRadius:12,alignItems:"center",marginTop:14}}><Text style={{color:"white",fontWeight:"800"}}>Hekim Kontrolünden Sonra Klinik Değerlendirme</Text></Pressable>
