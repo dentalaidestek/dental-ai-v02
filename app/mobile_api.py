@@ -461,7 +461,7 @@ def mobile_patients(
         query = (
             select(Patient)
             .where(Patient.owner_user_id == user.id)
-            .order_by(Patient.created_at.desc())
+            .order_by(Patient.created_at.desc(), Patient.id.desc())
         )
         if search:
             pattern = f"%{search}%"
