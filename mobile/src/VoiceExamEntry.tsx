@@ -10,7 +10,7 @@ function readable(value:unknown):string{
  if(typeof value==="string")return value;
  if(typeof value==="number"||typeof value==="boolean")return String(value);
  if(Array.isArray(value))return value.map(readable).filter(Boolean).join(" · ");
- if(value&&typeof value==="object"){const item=value as Record<string,unknown>;const preferred=["text","description","finding","recommendation","reason","quote","status","title","label","url"].filter(k=>item[k]!=null).map(k=>readable(item[k])).filter(Boolean).join(" — ");return preferred||Object.entries(item).slice(0,20).map(([key,val])=>key.replace(/_/g," ")+": "+readable(val)).filter(Boolean).join("\n")||"Ayrıntı belirtilmedi";}
+ if(value&&typeof value==="object"){const item=value as Record<string,unknown>;return Object.entries(item).slice(0,30).map(([key,val])=>key.replace(/_/g," ")+": "+readable(val)).filter(Boolean).join("\n")||"Ayrıntı belirtilmedi";}
  return "";
 }
 function ResultSection({name,items}:{name:string;items:unknown}){
