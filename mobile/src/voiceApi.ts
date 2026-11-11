@@ -15,7 +15,7 @@ async function send<T>(token:string,path:string,payload:unknown):Promise<T>{
  }finally{clearTimeout(timeout)}
 }
 export type VoiceField={value:string;quote?:string;edited?:boolean};
-export type VoiceExtraction={ok:boolean;revision:string;review:{fields?:Record<string,VoiceField>;teeth?:unknown[];insights?:Record<string,unknown>[];uncertain?:unknown[];literature_topics?:unknown[];source_requests?:unknown[]}};
+export type VoiceExtraction={ok:boolean;revision:string;review:{fields?:Record<string,VoiceField>;teeth?:unknown[];insights?:Record<string,unknown>[];uncertain?:unknown[];literature_topics?:unknown[];source_requests?:unknown[];appointment?:{quote?:string;acceptance_quote?:string}}};
 export async function extractVoice(token:string,patientId:number,transcript:string):Promise<VoiceExtraction>{
  const result=await send<VoiceExtraction>(token,`/patients/${patientId}/voice-exam/text`,{transcript,consent:true});
  if(!result.review||typeof result.review!=="object"||Array.isArray(result.review))throw Error("Klinik çıkarım yanıtında muayene bilgileri bulunamadı. Metninizi koruyup tekrar deneyin.");
