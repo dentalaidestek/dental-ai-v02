@@ -10,6 +10,8 @@ async function send<T>(token:string,path:string,payload:unknown):Promise<T>{
  if(!body||typeof body!=="object"||Array.isArray(body))throw Error("Sunucudan geçersiz klinik değerlendirme yanıtı alındı.");
  if(!response.ok||body.ok===false){
   const detail=typeof body.detail==="string"?body.detail:typeof body.error==="string"?body.error:Array.isArray(body.detail)?"Gönderilen muayene bilgileri sunucu tarafından doğrulanamadı. Metninizi koruyup tekrar deneyin.":"Klinik değerlendirme başarısız.";
+  if(response.status===429)throw Error("Klinik değerlendirme hizmeti şu anda yoğun. Metniniz korunuyor; biraz sonra tekrar deneyin.");
+  if(response.status>=500)throw Error("Klinik değerlendirme sunucusuna şu anda ulaşılamıyor. Metniniz korunuyor; daha sonra tekrar deneyin.");
   throw Error(detail);
  }
  if(body.ok!==true)throw Error("Klinik değerlendirme yanıtı beklenen başarı durumunu içermiyor. Metninizi koruyup tekrar deneyin.");
