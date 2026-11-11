@@ -374,10 +374,15 @@ function CommentThread({
   const replyGeneration = useRef(0), replyLock = useRef(false), commentEditLock = useRef(false), commentDeleteLock = useRef(false);
   useEffect(() => {
     replyGeneration.current++;
+    replyLock.current = false;
+    setBusy(false);
     setReplies([]);
     setNext(null);
     setOpen(false);
-    return () => { replyGeneration.current++; };
+    return () => {
+      replyGeneration.current++;
+      replyLock.current = false;
+    };
   }, [token, postId, item.id, item.reply_count]);
   async function more() {
     if (replyLock.current) return;
@@ -404,8 +409,10 @@ function CommentThread({
     } catch (e) {
       if (request === replyGeneration.current) setError(message(e));
     } finally {
-      replyLock.current = false;
-      if (request === replyGeneration.current) setBusy(false);
+      if (request === replyGeneration.current) {
+        replyLock.current = false;
+        setBusy(false);
+      }
     }
   }
   async function like() {
