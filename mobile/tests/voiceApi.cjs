@@ -215,3 +215,14 @@ test('ASR refuses oversized and empty transcription while preserving local audio
   await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/sınır dışında/);
  }finally{global.fetch=original}
 });
+
+test('native voice upload rejects missing MIME without throwing a TypeError',async()=>{
+ const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw Error('unexpected request')};
+ try{
+  const audio=new Blob([new Uint8Array(128)]);
+  for(const mime of [undefined,null,42]){
+   await assert.rejects(()=>api.transcribeVoiceAudio('token',1,audio,mime),/Ses biçimi desteklenmiyor/);
+  }
+  assert.equal(calls,0);
+ }finally{global.fetch=original}
+});
