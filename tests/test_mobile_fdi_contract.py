@@ -68,3 +68,22 @@ def test_web_tooth_chart_validates_fdi_and_note_length():
     assert 'tooth_number[0] in "5678"' in route
     assert "len(note) > 2000" in route
     assert "Geçersiz diş yüzeyi" in route
+
+
+def test_independent_surface_endpoint_never_mutates_whole_tooth():
+    source_text = SOURCE.read_text(encoding="utf-8")
+    tree = ast.parse(source_text)
+    update = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "mobile_update_tooth_surface")
+    source = ast.get_source_segment(source_text, update)
+    assert "_valid_fdi_tooth_number(tooth_number)" in source
+    assert "patient.owner_user_id != user.id" in source
+    assert "ToothSurfaceStatus" in source
+    assert "session.commit()" in source
+    assert not any(isinstance(node, ast.Name) and node.id == "ToothStatus" for node in ast.walk(update))
+    assert not any(isinstance(node, ast.Name) and node.id == "Treatment" for node in ast.walk(update))
+
+
+def test_independent_surface_route_is_put():
+    tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
+    update = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "mobile_update_tooth_surface")
+    assert any(isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute) and dec.func.attr == "put" for dec in update.decorator_list)
