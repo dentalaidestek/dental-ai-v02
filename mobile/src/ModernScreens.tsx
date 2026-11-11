@@ -23,8 +23,10 @@ export function Notifications({token}:{token:string}){
  useEffect(()=>{void load()},[load]);
  useEffect(()=>{if(lastEvent&&["NOTICE_CREATED","NOTICE_RESOLVED","MESSAGE_CREATED","CASE_CREATED"].includes(String(lastEvent.event_type||lastEvent.type)))void load()},[lastEvent,load]);
  async function open(item:any){
-  try{if(!item.read_at){await markNotificationRead(token,item.id);setD((old:any)=>old?{...old,items:old.items.map((n:any)=>n.id===item.id?{...n,read_at:new Date().toISOString()}:n)}:old);}
-  }catch(e){setError(e instanceof Error?e.message:"Bildirim okunmuş olarak işaretlenemedi.");return;}
+  const requestToken=token;
+  try{if(!item.read_at){await markNotificationRead(token,item.id);if(activeToken.current!==requestToken)return;setD((old:any)=>old?{...old,items:old.items.map((n:any)=>n.id===item.id?{...n,read_at:new Date().toISOString()}:n)}:old);}
+  }catch(e){if(activeToken.current===requestToken)setError(e instanceof Error?e.message:"Bildirim okunmuş olarak işaretlenemedi.");return;}
+  if(activeToken.current!==requestToken)return;
   const url=String(item.target_url||"");
   const chat=url.match(/^\/(?:consultations|expert\/consultations|cases)\/(\d+)(?:\/messages)?\/?(?:\?.*)?$/);
   if(chat){nav.navigate("ConsultationChat",{id:Number(chat[1])});return;}
