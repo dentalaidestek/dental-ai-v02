@@ -43,3 +43,12 @@ test('clinical media gallery prevents stale account mutations and pagination ove
  assert.ok(gallery.includes('if(mounted.current&&scope===patientScope.current)'), 'old account must not update gallery after upload');
  assert.ok(gallery.includes('if(mounted.current&&current===generation.current)'), 'old page must not overwrite current patient');
 });
+
+test('patient detail never renders stale clinical data after account or patient change',()=>{
+ const source=fs.readFileSync(require.resolve('../App.tsx'),'utf8');
+ const screen=source.slice(source.indexOf('function PatientDetailScreen('),source.indexOf('function PatientStack('));
+ assert.ok(screen.includes('patientScope.current!==scope'), 'request generation must change synchronously with patient scope');
+ assert.ok(screen.includes('request===patientRequest.current&&patientScope.current===expected'), 'stale requests must not commit patient data');
+ assert.ok(screen.includes('loadedPatientScope!==scope'), 'previous patient data must be hidden before effects run');
+ assert.ok(screen.includes('return()=>{patientRequest.current++}'), 'unmount must invalidate pending patient requests');
+});
