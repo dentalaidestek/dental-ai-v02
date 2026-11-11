@@ -65,7 +65,6 @@ test('expert consultation pages reject malformed records and non-progressing cur
    {items:null,next_before:null},
    {items:[null],next_before:null},
    {items:[{id:8}],next_before:10},
-   {items:[{id:8}],next_before:8},
    {items:[],next_before:4},
   ]){
    global.fetch=async()=>new Response(JSON.stringify(payload),{status:200});
@@ -74,6 +73,8 @@ test('expert consultation pages reject malformed records and non-progressing cur
   global.fetch=async()=>new Response(JSON.stringify({items:[{id:7,other_display_name:'Uzman'}],next_before:6}),{status:200});
   const page=await getConsultations('secret',9);
   assert.equal(page.items[0].other_name,'Uzman');assert.equal(page.next_before,6);
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:8}],next_before:8}),{status:200});
+  assert.equal((await getConsultations('secret',9)).next_before,8);
  }finally{global.fetch=original;}
 });
 
@@ -83,7 +84,6 @@ test('academic pagination rejects invalid records, stalled cursors and malformed
   for(const response of [
    {items:null,next_before:null},
    {items:[{id:12}],next_before:13},
-   {items:[{id:12}],next_before:12},
    {items:[],next_before:5},
   ]){
    global.fetch=async()=>new Response(JSON.stringify(response),{status:200});
@@ -92,6 +92,8 @@ test('academic pagination rejects invalid records, stalled cursors and malformed
   global.fetch=async()=>new Response(JSON.stringify({items:[{id:11,role:'assistant',content:'Yanıt',created_at:'now'}],next_before:10}),{status:200});
   const valid=await getAcademicMessages('secret',2,13);
   assert.equal(valid.items[0].content,'Yanıt');assert.equal(valid.next_before,10);
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:12,title:'Ders'}],next_before:12}),{status:200});
+  assert.equal((await getCourses('secret',13)).next_before,12);
   global.fetch=async()=>new Response(JSON.stringify({items:[{id:11,role:'assistant',content:null}],next_before:null}),{status:200});
   await assert.rejects(()=>getAcademicMessages('secret',2,13),/geçersiz kayıt/);
  }finally{global.fetch=original;}
