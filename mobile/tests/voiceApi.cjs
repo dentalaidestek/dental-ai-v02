@@ -14,7 +14,7 @@ test('voice API surfaces HTTP errors without masking details',async()=>{
 test('voice API rejects malformed and ambiguous success payloads',async()=>{
  const original=global.fetch;
  try{
-  global.fetch=async()=>response('<html>bad gateway</html>',502);await assert.rejects(()=>api.extractVoice('secret',1,'text'),/geçersiz klinik/);
+  global.fetch=async()=>response('<html>bad gateway</html>',502);await assert.rejects(()=>api.extractVoice('secret',1,'text'),/sunucusuna şu anda ulaşılamıyor/);
   global.fetch=async()=>response('{}');await assert.rejects(()=>api.extractVoice('secret',1,'text'),/başarı durumunu/);
  }finally{global.fetch=original}
 });
