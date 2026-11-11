@@ -38,3 +38,22 @@ test('successive writers and immediate readers observe the newest complete secur
  const store=chunkedDraftStore(raw,()=>String(++n));
  const first=store.setItemAsync('key','first'.repeat(100));const second=store.setItemAsync('key','second');const read=store.getItemAsync('key');await Promise.all([first,second]);assert.equal(await read,'second');assert.equal(await store.getItemAsync('key'),'second');
 });
+
+test('social images never send bearer tokens to external or lookalike hosts',()=>{
+ const first=api.socialImageSource('/api/expert-social/experts/7/photo','secret');
+ assert.equal(first.uri,'https://dentalai.tr/api/expert-social/experts/7/photo');
+ assert.equal(first.headers.Authorization,'Bearer secret');
+ const legacy=api.socialImageSource('/profile-photo/7','secret');
+ assert.equal(legacy.uri,'https://dentalai.tr/api/expert-social/experts/7/photo');
+ assert.equal(legacy.headers.Authorization,'Bearer secret');
+ for(const url of [
+  'https://example.org/photo.jpg',
+  'https://dentalai.tr.evil.example/photo.jpg',
+  'http://dentalai.tr/photo.jpg',
+  'https://dentalai.tr@evil.example/photo.jpg',
+ ]){
+  const source=api.socialImageSource(url,'secret');
+  assert.equal(source.uri,url);
+  assert.equal(source.headers,undefined,'unexpected authorization for '+url);
+ }
+});
