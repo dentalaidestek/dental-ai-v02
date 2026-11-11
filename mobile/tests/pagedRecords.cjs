@@ -1,12 +1,12 @@
 const ts=require('typescript'),fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const {test}=require('node:test');const tick=()=>new Promise(resolve=>setImmediate(resolve));
-function harness(fetchPage,replaceOnRefresh=false){
+function harness(fetchPage,replaceOnRefresh=false,ascending=true){
  const states=[],refs=[],previous=[],callbacks=[],effects=[];let si=0,ri=0,ei=0,ci=0,scope='owner:course1',current;
  const same=(a,b)=>a&&a.length===b.length&&b.every((v,i)=>Object.is(v,a[i]));
  const react={useState:value=>{const i=si++;if(!(i in states))states[i]=value;return[states[i],v=>states[i]=typeof v==='function'?v(states[i]):v]},useRef:value=>{const i=ri++;return refs[i]??(refs[i]={current:value})},useCallback:(f,deps)=>{const i=ci++;if(!same(callbacks[i]?.deps,deps))callbacks[i]={f,deps};return callbacks[i].f},useEffect:(f,deps)=>{const i=ei++;if(!same(previous[i]?.deps,deps))effects.push(()=>{previous[i]?.cleanup?.();previous[i]={deps,cleanup:f()}})}};
  const exports={};const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/usePagedRecords.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
  vm.runInNewContext(code,{exports,Error,require:()=>react});
- const render=()=>{si=ri=ei=ci=0;current=exports.usePagedRecords(scope,fetchPage,true,replaceOnRefresh);while(effects.length)effects.shift()();return current};
+ const render=()=>{si=ri=ei=ci=0;current=exports.usePagedRecords(scope,fetchPage,ascending,replaceOnRefresh);while(effects.length)effects.shift()();return current};
  return {render,get current(){return current},changeScope:s=>{scope=s;render()},unmount:()=>previous.forEach(e=>e.cleanup?.())};
 }
 const row=id=>({id,content:'answer-'+id});
@@ -40,3 +40,10 @@ test('large reconnect burst resets cursor so intervening messages remain reachab
  burst=true;await h.current.refresh();h.render();assert.equal(h.current.hasMore,true);assert.equal(h.current.items.map(x=>x.id).join(','),'1,2,3,200,201');
 });
 
+
+test('newest-first pagination appends older rows without replacing fresh records',async()=>{
+ const h=harness(async before=>before?{items:[{id:8,content:'stale-8'},row(7)],next_before:null}:{items:[row(10),{id:8,content:'fresh-8'},row(9)],next_before:8},false,false);
+ h.render();await tick();h.render();await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'10,8,9,7');
+ assert.equal(h.current.items.find(x=>x.id===8).content,'fresh-8');
+});
