@@ -46,3 +46,9 @@ test('voice API gives actionable validation feedback',async()=>{
  global.fetch=async()=>response(JSON.stringify({detail:[{msg:'Invalid input'}]}),422);
  try{await assert.rejects(()=>api.extractVoice('token',1,'text'),/sunucu tarafından doğrulanamadı/)}finally{global.fetch=original}
 });
+
+test('voice API reports aborted clinical requests without discarding transcript',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>{const error=new Error('This operation was aborted');error.name='AbortError';throw error};
+ try{await assert.rejects(()=>api.extractVoice('token',1,'metin'),/zaman aşımına uğradı.*Metniniz bu ekranda korunuyor/)}finally{global.fetch=original}
+});
