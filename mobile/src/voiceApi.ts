@@ -57,7 +57,13 @@ export async function finalizeVoice(token:string,patientId:number,payload:{conte
  const validTeeth=teeth===undefined||(Array.isArray(teeth)&&teeth.length<=52&&teeth.every(item=>isRecord(item)&&/^([1-4][1-8]|[5-8][1-5])$/.test(String(item.tooth))&&allowedToothStates.has(String(item.status))&&typeof item.quote==="string"&&item.quote.length<=1500&&Object.keys(item).every(key=>["tooth","status","quote"].includes(key))));
  const validEvidence=(value:unknown,key:"topic"|"term",limit:number)=>value===undefined||(Array.isArray(value)&&value.length<=limit&&value.every(item=>isRecord(item)&&Object.keys(item).length===2&&Object.keys(item).every(field=>field===key||field==="quote")&&typeof item[key]==="string"&&typeof item.quote==="string"&&item.quote.length<=1000&&(key==="topic"||/^[A-Za-z][A-Za-z -]{2,79}$/.test(item[key] as string))));
  if(!validFields||!validTeeth||!validEvidence(topics,"topic",40)||!validEvidence(requests,"term",6)||(appointment!=null&&(!isRecord(appointment)||Object.keys(appointment).some(key=>!["quote","acceptance_quote"].includes(key))||Object.values(appointment).some(value=>typeof value!=="string"||value.length>1500)))||payload.insights.length>24||payload.uncertain.length>3000)throw Error("Klinik son değerlendirme bağlamı geçersiz veya sınır dışında. Taslağı kontrol edin; metniniz korunuyor.");
- const contextBytes=new TextEncoder().encode(JSON.stringify(payload.context)).length;
+ const jsonContext=JSON.stringify(payload.context);
+ let contextBytes=0;
+ for(const char of jsonContext){
+  const point=char.codePointAt(0)!;
+  contextBytes+=point<=0x7f?1:point<=0x7ff?2:point<=0xffff?3:4;
+ }
+
  if(contextBytes>32000)throw Error("Klinik bağlam 32 KB sınırını aşıyor. Taslağı kısaltın; görüşme metniniz korunuyor.");
  const allowedInsightKeys=new Set(["quote","observation","suggestion","category","question","explanation","response_type"]);
  const allowedResponseTypes=new Set(["CLINICIAN_RESPONSE","PATIENT_RESPONSE","UNATTRIBUTED_RESPONSE"]);
