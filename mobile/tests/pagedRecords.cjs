@@ -1,12 +1,12 @@
 const ts=require('typescript'),fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const {test}=require('node:test');const tick=()=>new Promise(resolve=>setImmediate(resolve));
-function harness(fetchPage,replaceOnRefresh=false,ascending=true){
+function harness(fetchPage,replaceOnRefresh=false,ascending=true,cursorMode="id"){
  const states=[],refs=[],previous=[],callbacks=[],effects=[];let si=0,ri=0,ei=0,ci=0,scope='owner:course1',current;
  const same=(a,b)=>a&&a.length===b.length&&b.every((v,i)=>Object.is(v,a[i]));
  const react={useState:value=>{const i=si++;if(!(i in states))states[i]=value;return[states[i],v=>states[i]=typeof v==='function'?v(states[i]):v]},useRef:value=>{const i=ri++;return refs[i]??(refs[i]={current:value})},useCallback:(f,deps)=>{const i=ci++;if(!same(callbacks[i]?.deps,deps))callbacks[i]={f,deps};return callbacks[i].f},useEffect:(f,deps)=>{const i=ei++;if(!same(previous[i]?.deps,deps))effects.push(()=>{previous[i]?.cleanup?.();previous[i]={deps,cleanup:f()}})}};
  const exports={};const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/usePagedRecords.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
  vm.runInNewContext(code,{exports,Error,require:()=>react});
- const render=()=>{si=ri=ei=ci=0;current=exports.usePagedRecords(scope,fetchPage,ascending,replaceOnRefresh);while(effects.length)effects.shift()();return current};
+ const render=()=>{si=ri=ei=ci=0;current=exports.usePagedRecords(scope,fetchPage,ascending,replaceOnRefresh,cursorMode);while(effects.length)effects.shift()();return current};
  return {render,get current(){return current},changeScope:s=>{scope=s;render()},unmount:()=>previous.forEach(e=>e.cleanup?.())};
 }
 const row=id=>({id,content:'answer-'+id});
@@ -94,4 +94,29 @@ test('repeated cursor cycle stops without unbounded pagination',async()=>{
  assert.equal(h.current.hasMore,true);
  await h.current.loadMore();h.render();
  assert.equal(h.current.hasMore,false);
+});
+
+test('offset pagination loads all patient pages even when offset is not a record ID',async()=>{
+ const calls=[];
+ const h=harness(async offset=>{
+  calls.push(offset);
+  if(offset===undefined)return {items:[row(901),row(902)],next_before:2};
+  if(offset===2)return {items:[row(903),row(904)],next_before:4};
+  return {items:[row(905)],next_before:null};
+ },true,false,'offset');
+ h.render();await tick();h.render();
+ assert.equal(h.current.hasMore,true);
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.hasMore,true);
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.hasMore,false);
+ assert.equal(h.current.items.map(x=>x.id).join(','),'901,902,903,904,905');
+ assert.deepEqual(calls,[undefined,2,4]);
+});
+test('offset cursor cycles are rejected without corrupting patient rows',async()=>{
+ const h=harness(async offset=>offset===undefined?{items:[row(30)],next_before:1}:{items:[row(29)],next_before:1},true,false,'offset');
+ h.render();await tick();h.render();
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.hasMore,false);
+ assert.equal(h.current.items.map(x=>x.id).join(','),'30,29');
 });
