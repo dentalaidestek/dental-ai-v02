@@ -37,7 +37,8 @@ const MAX_AUDIO_BYTES=8*1024*1024;
 export async function transcribeVoiceAudio(token:string,patientId:number,audio:Blob,mime:string):Promise<{ok:true;revision:string;transcript:string}>{
  const contentType=mime.split(";")[0].trim().toLowerCase();
  if(!AUDIO_MIMES.has(contentType))throw Error("Ses biçimi desteklenmiyor. WebM, OGG, MP4, MP3 veya WAV kaydı kullanın.");
- if(!audio||audio.size<100||audio.size>MAX_AUDIO_BYTES)throw Error("Ses kaydı 100 bayttan büyük ve en fazla 8 MB olmalıdır.");
+ if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Ses kaydı için geçerli bir hasta seçin.");
+ if(!audio||!Number.isFinite(audio.size)||audio.size<100||audio.size>MAX_AUDIO_BYTES)throw Error("Ses kaydı 100 bayttan büyük ve en fazla 8 MB olmalıdır.");
  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),150000);
  try{
   const response=await fetch(BASE+`/patients/${patientId}/voice-exam/audio`,{method:"POST",headers:{"Content-Type":contentType,"X-Voice-Consent":"yes",Authorization:"Bearer "+token},body:audio,signal:controller.signal});
