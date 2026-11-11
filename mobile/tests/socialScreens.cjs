@@ -52,3 +52,13 @@ test('patient detail never renders stale clinical data after account or patient 
  assert.ok(screen.includes('loadedPatientScope!==scope'), 'previous patient data must be hidden before effects run');
  assert.ok(screen.includes('return()=>{patientRequest.current++}'), 'unmount must invalidate pending patient requests');
 });
+
+test('clinical gallery hides old patient thumbnails and preview before effects run',()=>{
+ const source=fs.readFileSync(require.resolve('../src/ModernScreens.tsx'),'utf8');
+ const gallery=source.slice(source.indexOf('export function MediaGallery('),source.indexOf('export function ExpertDirectory('));
+ assert.match(gallery,/visibleData=d\?\.accountScope===patientScope\.current\?d:null/);
+ assert.match(gallery,/data=\{visibleData\?\.items\|\|\[\]\}/);
+ assert.match(gallery,/visible=\{preview!==null&&preview\.accountScope===patientScope\.current\}/);
+ assert.match(gallery,/preview\.accountScope!==patientScope\.current/);
+ assert.match(gallery,/setD\(\{\.\.\.page,accountScope:patientScope\.current\}\)/);
+});
