@@ -673,7 +673,7 @@ def mobile_update_tooth(
         raise HTTPException(status_code=422, detail="Geçersiz diş yüzeyi.")
     with Session(engine, expire_on_commit=False) as session:
         patient = session.get(Patient, patient_id)
-        if not patient or (user.role != "ADMIN" and patient.owner_user_id != user.id):
+        if not patient or patient.owner_user_id != user.id:
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
         note = payload.note.strip() if payload.note else None
         tooth = session.exec(select(ToothStatus).where(
