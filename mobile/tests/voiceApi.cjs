@@ -40,3 +40,9 @@ test('voice finalization submits full transcript, clinician review and consent',
   assert.deepEqual(JSON.parse(call.init.body),{...payload,consent:true});
  }finally{global.fetch=original}
 });
+
+test('voice API gives actionable validation feedback',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>response(JSON.stringify({detail:[{msg:'Invalid input'}]}),422);
+ try{await assert.rejects(()=>api.extractVoice('token',1,'text'),/sunucu tarafından doğrulanamadı/)}finally{global.fetch=original}
+});
