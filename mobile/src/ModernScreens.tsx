@@ -55,21 +55,22 @@ export function MediaGallery({token,patientId}:{token:string;patientId:number}){
 
 export function ExpertDirectory({token,navigation}:{token:string;navigation:any}){
  const{lastEvent}=useRealtime();
- const[data,setData]=useState<Expert[]>([]);
+ const[data,setData]=useState<{items:Expert[];accountToken:string}|null>(null);
  const[q,setQ]=useState(""),[busy,setBusy]=useState(true),[error,setError]=useState("");
- const seq=useRef(0);
+ const seq=useRef(0),activeToken=useRef(token);if(activeToken.current!==token){activeToken.current=token;seq.current++;}
  const load=useCallback(async()=>{
   const request=++seq.current;
   setBusy(true);setError("");
   try{
    const result=await getExperts(token,q.trim());
-   if(request===seq.current)setData(result.items);
+   if(request===seq.current&&activeToken.current===token)setData({items:result.items,accountToken:token});
   }catch(e){
-   if(request===seq.current)setError(e instanceof Error?e.message:"Uzmanlar yüklenemedi.");
+   if(request===seq.current&&activeToken.current===token)setError(e instanceof Error?e.message:"Uzmanlar yüklenemedi.");
   }finally{
-   if(request===seq.current)setBusy(false);
+   if(request===seq.current&&activeToken.current===token)setBusy(false);
   }
  },[token,q]);
+ useEffect(()=>{setData(null);setError("");setBusy(true)},[token]);
  useEffect(()=>{
   const timeout=setTimeout(()=>{void load()},q.trim()?300:0);
   return()=>{clearTimeout(timeout);seq.current++};
@@ -85,7 +86,7 @@ export function ExpertDirectory({token,navigation}:{token:string;navigation:any}
    {!!error&&<View><Text style={{color:C.red,marginBottom:8}}>{error}</Text><Btn title="Tekrar dene" onPress={()=>void load()}/></View>}
   </View>
   {busy?<View style={s.center}><ActivityIndicator color={C.navy}/></View>:
-  <FlatList keyboardShouldPersistTaps="handled" contentContainerStyle={s.pad} data={data} keyExtractor={x=>String(x.user_id)}
+  <FlatList keyboardShouldPersistTaps="handled" contentContainerStyle={s.pad} data={data?.accountToken===token?data.items:[]} keyExtractor={x=>String(x.user_id)}
    ListEmptyComponent={<Empty title="Uzman bulunamadı" sub="Arama kelimelerini değiştirebilirsin."/>}
    renderItem={({item})=><Pressable style={card} onPress={()=>navigation.navigate("NewConsultation",{expert:item})}>
     <View style={s.row}><View style={{flex:1}}>
