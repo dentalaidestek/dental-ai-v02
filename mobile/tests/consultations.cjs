@@ -85,3 +85,17 @@ test('academic chat messages reject out-of-order IDs and nonadvancing cursors',a
   await assert.rejects(()=>api.getAcademicMessages('token',1,20),/geçersiz sayfa/);
  });
 });
+
+test('academic course pagination rejects a replayed anchor even when date ordering differs',async()=>{
+ await withFetch(async()=>json({items:[{id:7,title:'Tekrar',material_count:0}],next_before:7}),async()=>{
+  await assert.rejects(()=>api.getCourses('token',7),/geçersiz sayfa/);
+ });
+});
+test('academic pages reject duplicate records',async()=>{
+ await withFetch(async()=>json({items:[
+  {id:9,title:'Ders',material_count:1},
+  {id:9,title:'Ders',material_count:1}
+ ],next_before:9}),async()=>{
+  await assert.rejects(()=>api.getCourses('token'),/geçersiz sayfa/);
+ });
+});
