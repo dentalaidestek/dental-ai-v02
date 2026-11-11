@@ -613,7 +613,15 @@ function Comments({
             ? [...v, ...page.items.filter((x) => !v.some((y) => y.id === x.id))]
             : page.items,
         );
-        setNext(page.next_cursor);
+        // A non-advancing cursor would otherwise keep requesting the same page.
+        setNext(
+          page.next_cursor !== null &&
+          Number.isSafeInteger(page.next_cursor) &&
+          page.next_cursor > 0 &&
+          (!after || page.next_cursor > after)
+            ? page.next_cursor
+            : null,
+        );
         setError("");
       } catch (e) {
         if (request === commentLoadGeneration.current) setError(message(e));
