@@ -18,6 +18,7 @@ export type MobileAnalysis={
 };
 
 export async function createAnalysis(token:string,payload:{patientId:number;toothNumber?:string;clinicalNotes?:string;images:Array<{uri:string;name?:string;type?:string}>}){
+  if(!Number.isSafeInteger(payload?.patientId)||payload.patientId<=0||!Array.isArray(payload.images)||!payload.images.length||payload.images.length>10||payload.images.some(image=>!image||typeof image.uri!=="string"||!image.uri.trim()))throw Error("Analiz için geçerli hasta ve en az bir klinik görüntü seçin.");
   const form=new FormData();
   form.append("patient_id",String(payload.patientId));
   if(payload.toothNumber)form.append("tooth_number",payload.toothNumber);
@@ -28,8 +29,8 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
   return call<{ok:boolean;analysis_id:number;status:string}>("/analyses",token,{method:"POST",body:form});
 }
 
-export function getAnalysis(token:string,id:number){return call<MobileAnalysis>("/analyses/"+id,token);}
-export function startAnalysisAI(token:string,id:number){return call<{ok:boolean;status:string}>("/analyses/"+id+"/ai",token,{method:"POST"});}
+export function getAnalysis(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");return call<MobileAnalysis>("/analyses/"+id,token);}
+export function startAnalysisAI(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");return call<{ok:boolean;status:string}>("/analyses/"+id+"/ai",token,{method:"POST"});}
 
 export type AnalysisHistoryItem={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at:string};
 export function getAnalysisHistory(token:string,patientId?:number){return call<{items:AnalysisHistoryItem[]}>("/analyses"+(patientId?"?patient_id="+patientId:""),token);}
