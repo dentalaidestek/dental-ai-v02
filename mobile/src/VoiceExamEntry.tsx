@@ -23,6 +23,22 @@ function ResultSection({name,items}:{name:string;items:unknown}){
  </View>;
 }
 
+function ReviewRemovableSection({name,items,onRemove,disabled}:{name:string;items:unknown[]|undefined;onRemove:(index:number)=>void;disabled:boolean}){
+ const [expanded,setExpanded]=useState(false);
+ const rows=Array.isArray(items)?items:[];
+ return <View style={{borderWidth:1,borderColor:line,borderRadius:13,marginTop:12,overflow:"hidden"}}>
+  <Pressable accessibilityRole="button" accessibilityState={{expanded}} onPress={()=>setExpanded(v=>!v)} style={{padding:14,backgroundColor:"#F6FAFD",flexDirection:"row",justifyContent:"space-between"}}>
+   <Text style={{fontWeight:"800",color:navy}}>{name} ({rows.length})</Text><Text style={{color:navy}}>{expanded?"−":"+"}</Text>
+  </Pressable>
+  {expanded&&(rows.length?rows.map((item,index)=><View key={index} style={{padding:12,borderTopWidth:1,borderTopColor:line}}>
+   <Text style={{color:navy,lineHeight:20}}>{readable(item)}</Text>
+   <Pressable accessibilityRole="button" accessibilityLabel={name+" kaydını çıkar "+(index+1)} disabled={disabled} onPress={()=>onRemove(index)} style={{paddingVertical:10,alignSelf:"flex-start"}}>
+    <Text style={{color:disabled?muted:"#B42318",fontWeight:"700"}}>Yanlış çıkarımı kaldır</Text>
+   </Pressable>
+  </View>):<Text style={{color:muted,padding:12}}>Bu bölümde kayıt yok.</Text>)}
+ </View>;
+}
+
 export default function VoiceExamEntry({token,initialPatientId}:{token:string;initialPatientId?:number}){
  const [privacyExpanded,setPrivacyExpanded]=useState(false),[processing,setProcessing]=useState(false),[editingFields,setEditingFields]=useState(false),[review,setReview]=useState<VoiceExtraction|null>(null),[finalResult,setFinalResult]=useState<Record<string,unknown>|null>(null),[clinicalError,setClinicalError]=useState(""),[stage,setStage]=useState<"select"|"exam">("select"),[consent,setConsent]=useState(false),[transcript,setTranscript]=useState(""),[query,setQuery]=useState(""),[patients,setPatients]=useState<Patient[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<Patient|null>(null);
  const processingLock=useRef(false),processingOwner=useRef(0),generation=useRef(0),scope=useRef(token+":"+(selected?.id||0));
@@ -35,6 +51,17 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
  useEffect(()=>{const timer=setTimeout(()=>{void load()},300);return()=>{clearTimeout(timer);patientSearchGeneration.current++}},[load]);
  useEffect(()=>{let active=true;if(initialPatientId){void getPatient(token,initialPatientId).then(r=>{if(active)setSelected(r.patient)}).catch(()=>{if(active)setError("Seçili hasta bulunamadı veya erişim izni yok.")})}return()=>{active=false}},[token,initialPatientId]);
  async function processText(){if(!selected||!consent||!transcript.trim()||processingLock.current)return;if(transcript.length>18000){setClinicalError("Metin çözümleme sınırı 18.000 karakterdir. Uzun görüşmelerin bölümlerini ayrı ayrı işleyin; tamamını silmeyin.");return;}processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const result=await extractVoice(token,selected.id,transcript);if(request!==generation.current||currentScope!==scope.current)return;setReview(result);setEditingFields(false);setFinalResult(null)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Muayene değerlendirilemedi.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
+ function removeExtractedItem(key:"teeth"|"literature_topics"|"source_requests",index:number){
+  if(processingLock.current)return;
+  generation.current++;
+  setReview(previous=>{
+   if(!previous)return previous;
+   const current=previous.review[key];
+   if(!Array.isArray(current)||index<0||index>=current.length)return previous;
+   return {...previous,review:{...previous.review,[key]:current.filter((_,i)=>i!==index)}};
+  });
+  setFinalResult(null);
+ }
  async function finalize(){if(!selected||!consent||!review||processingLock.current)return;processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const data=review.review;const response=await finalizeVoice(token,selected.id,{context:{fields:data.fields||{},teeth:data.teeth||[],literature_topics:data.literature_topics||[],source_requests:data.source_requests||[],...(data.appointment?{appointment:data.appointment}:{})},insights:data.communication||data.insights||[],uncertain:(data.uncertain||'').slice(0,3000),conversation_text:transcript});if(request===generation.current&&currentScope===scope.current)setFinalResult(response.final as Record<string,unknown>)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Son değerlendirme tamamlanamadı.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
  async function open(){const url=selected?`https://dentalai.tr/voice-exams/${selected.id}/session`:"https://dentalai.tr/voice-exams";try{await Linking.openURL(url)}catch{setError("Sesli Muayene sayfası açılamadı.")}}
  if(stage==="exam")return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:42}}>
@@ -61,9 +88,9 @@ export default function VoiceExamEntry({token,initialPatientId}:{token:string;in
     <ResultSection name="Hasta iletişimi ve hekim önerileri" items={review.review.communication}/>
     <ResultSection name="Karar verme engelleri" items={review.review.decision_barriers}/>
     <ResultSection name="Netleştirilmesi gereken takip soruları" items={review.review.follow_up_questions}/>
-    <ResultSection name="Diş bazlı çıkarımlar" items={review.review.teeth}/>
-    <ResultSection name="Kaynak tarama konuları" items={review.review.literature_topics}/>
-    <ResultSection name="Kaynak terimi adayları" items={review.review.source_requests}/>
+    <ReviewRemovableSection name="Diş bazlı çıkarımlar" items={review.review.teeth} disabled={processing} onRemove={index=>removeExtractedItem("teeth",index)}/>
+    <ReviewRemovableSection name="Kaynak tarama konuları" items={review.review.literature_topics} disabled={processing} onRemove={index=>removeExtractedItem("literature_topics",index)}/>
+    <ReviewRemovableSection name="Kaynak terimi adayları" items={review.review.source_requests} disabled={processing} onRemove={index=>removeExtractedItem("source_requests",index)}/>
     {!!review.review.appointment&&<ResultSection name="Konuşulan randevu" items={review.review.appointment}/>}
     {!!review.review.uncertain&&<ResultSection name="Belirsiz / doğrulanmamış beyanlar" items={review.review.uncertain}/>}
     <Text style={{color:muted,marginTop:10}}>Bunlar taslak bilgilerdir; hasta dosyasına kaydedilmedi.</Text>
