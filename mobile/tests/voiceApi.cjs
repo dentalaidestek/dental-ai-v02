@@ -306,3 +306,20 @@ test('voice extraction rejects unknown fields and oversized evidence before rend
   }
  }finally{global.fetch=original}
 });
+
+test('voice clinical tooth statuses match server allowlist in both directions',async()=>{
+ const original=global.fetch;let calls=0;
+ try{
+  global.fetch=async()=>{calls++;return response(JSON.stringify({ok:true,revision:'r1',review:{fields:{},teeth:[{tooth:'44',status:'CURRENT',quote:'ağrı'}]}}))};
+  await assert.rejects(()=>api.extractVoice('token',4,'görüşme'),/alanları geçersiz/);
+  assert.equal(calls,1);
+  global.fetch=async()=>{calls++;throw Error('unexpected finalization request')};
+  const base={insights:[],uncertain:'',conversation_text:'görüşme'};
+  for(const tooth of [
+   {tooth:'44',status:'CURRENT',quote:'ağrı'},
+   {tooth:'44',status:'OTHER',quote:'ağrı',unexpected:true},
+   {tooth:'44',status:'OTHER',quote:'x'.repeat(1501)}
+  ])await assert.rejects(()=>api.finalizeVoice('token',4,{...base,context:{fields:{},teeth:[tooth]}}),/bağlamı geçersiz/);
+  assert.equal(calls,1);
+ }finally{global.fetch=original}
+});
