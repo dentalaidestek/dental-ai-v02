@@ -985,11 +985,14 @@ export function DentalFlow({
       p ? v.map((x) => (x.id === id ? p : x)) : v.filter((x) => x.id !== id),
     );
   useEffect(() => {
+    let active = true;
+    setStats(null);
     if (expertId)
       api
         .getSocialStats(token, expertId)
-        .then(setStats)
-        .catch((e) => setError(message(e)));
+        .then((result) => { if (active) setStats(result); })
+        .catch((e) => { if (active) setError(message(e)); });
+    return () => { active = false; };
   }, [token, expertId]);
   const profile = (id: number, name: string) => {
     setComments(null);
@@ -1038,17 +1041,19 @@ export function DentalFlow({
               }}
             />
           )}
-          <Button
-            title="Uzmandan destek al"
-            onPress={() =>
-              navigation.navigate("NewConsultation", {
-                expert: {
-                  user_id: expertId,
-                  display_name: expertName || "Uzman",
-                },
-              })
-            }
-          />
+          {expertId !== user.id && (
+            <Button
+              title="Uzmandan destek al"
+              onPress={() =>
+                navigation.navigate("NewConsultation", {
+                  expert: {
+                    user_id: expertId,
+                    display_name: expertName || "Uzman",
+                  },
+                })
+              }
+            />
+          )}
         </View>
       ) : (
         <View style={s.row}>
