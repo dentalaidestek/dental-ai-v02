@@ -76,3 +76,23 @@ test('expert consultation pages reject malformed records and non-progressing cur
   assert.equal(page.items[0].other_name,'Uzman');assert.equal(page.next_before,6);
  }finally{global.fetch=original;}
 });
+
+test('academic pagination rejects invalid records, stalled cursors and malformed message bodies',async()=>{
+ const {getCourses,getAcademicMessages}=require('../src/modernApi.ts'),original=global.fetch;
+ try{
+  for(const response of [
+   {items:null,next_before:null},
+   {items:[{id:12}],next_before:13},
+   {items:[{id:12}],next_before:12},
+   {items:[],next_before:5},
+  ]){
+   global.fetch=async()=>new Response(JSON.stringify(response),{status:200});
+   await assert.rejects(()=>getCourses('secret',13),/geçersiz sayfa/);
+  }
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:11,role:'assistant',content:'Yanıt',created_at:'now'}],next_before:10}),{status:200});
+  const valid=await getAcademicMessages('secret',2,13);
+  assert.equal(valid.items[0].content,'Yanıt');assert.equal(valid.next_before,10);
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:11,role:'assistant',content:null}],next_before:null}),{status:200});
+  await assert.rejects(()=>getAcademicMessages('secret',2,13),/geçersiz kayıt/);
+ }finally{global.fetch=original;}
+});
