@@ -1,7 +1,7 @@
 import {ApiError} from './api';
 const API_BASE="https://dentalai.tr/api/mobile/v1";
 async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
- const headers:any={"Content-Type":"application/json",Authorization:"Bearer "+token,...(init.headers||{})};
+ const headers:any={Authorization:"Bearer "+token,...(!(init.body instanceof FormData)?{"Content-Type":"application/json"}:{}),...(init.headers||{})};
  const r=await fetch(API_BASE+path,{...init,headers});
  const raw=await r.text(); let b:any={}; try{b=raw?JSON.parse(raw):{}}catch{}
  if(!r.ok){
@@ -60,7 +60,16 @@ export const getMedia=async(t:string,p:number,before?:number)=>{
  return {items:r.items.map(m=>({...m,filename:m.filename||m.original_filename||"",url:`${API_BASE}/patients/${p}/media/${m.id}/file`})),next_before:cursor};
 };
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
-export const createConsultation=(t:string,payload:{expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string})=>req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:JSON.stringify(payload)});
+export const createConsultation=(t:string,payload:{expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string})=>{
+ if(!Number.isSafeInteger(payload.expert_user_id)||payload.expert_user_id<=0||!payload.question?.trim()||
+    (payload.patient_id!==undefined&&(!Number.isSafeInteger(payload.patient_id)||payload.patient_id<=0)))
+  throw Error("Geçersiz uzman, hasta veya boş danışma sorusu.");
+ const form=new FormData();
+ for(const [key,value] of Object.entries(payload)){
+  if(value!==undefined&&value!==null)form.append(key,String(value));
+ }
+ return req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:form});
+};
 export const getConsultations=async(t:string,before?:number)=>{
  if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz görüşme sayfa kimliği.");
  const r=await req<{items:any[];next_before?:number|null}>("/consultations"+(before!==undefined?"?before="+encodeURIComponent(before):""),t);
@@ -79,7 +88,8 @@ export const getConsultation=(t:string,id:number)=>{
 export const sendConsultationMessage=(t:string,id:number,content:string,clientMessageId:string)=>{
  if(!Number.isSafeInteger(id)||id<=0||!content.trim()||!clientMessageId.trim())
   throw Error("Geçersiz görüşme, boş mesaj veya eksik istek kimliği.");
- return req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content,client_message_id:clientMessageId})});
+ const form=new FormData();form.append("content",content);form.append("client_message_id",clientMessageId);
+ return req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:form});
 };
 function validateAcademicPage<T extends {id:number}>(response:{items:T[];next_before?:number|null},before?:number):{items:T[];next_before:number|null}{
  const cursor=response?.next_before??null;
@@ -106,7 +116,8 @@ export const getAcademicMessages=async(t:string,id:number,before?:number)=>{
 };
 export function askAcademic(t:string,courseId:number,message:string){
  if(!Number.isSafeInteger(courseId)||courseId<=0||!message.trim())throw Error("Geçersiz ders veya boş soru.");
- return req<any>(`/academic/courses/${courseId}/ask`,t,{method:"POST",body:JSON.stringify({message})});
+ const form=new FormData();form.append("message",message);
+ return req<any>(`/academic/courses/${courseId}/ask`,t,{method:"POST",body:form});
 }
 export function mediaUploadUrl(patientId:number){return API_BASE+`/patients/${patientId}/media`;}
 
