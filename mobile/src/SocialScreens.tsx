@@ -371,7 +371,7 @@ function CommentThread({
     [next, setNext] = useState<number | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const replyGeneration = useRef(0), replyLock = useRef(false), commentEditLock = useRef(false);
+  const replyGeneration = useRef(0), replyLock = useRef(false), commentEditLock = useRef(false), commentDeleteLock = useRef(false);
   useEffect(() => {
     replyGeneration.current++;
     setReplies([]);
@@ -438,10 +438,27 @@ function CommentThread({
               text: "Sil",
               style: "destructive",
               onPress: () => {
-                api
-                  .deleteComment(token, item.id)
-                  .then(() => onChange(null, item.id))
-                  .catch((e) => setError(message(e)));
+                Alert.alert("Yorum silinsin mi?", "Bu işlem geri alınamaz.", [
+                  { text: "Vazgeç", style: "cancel" },
+                  {
+                    text: "Sil",
+                    style: "destructive",
+                    onPress: async () => {
+                      if (commentDeleteLock.current) return;
+                      commentDeleteLock.current = true;
+                      setBusy(true);
+                      try {
+                        await api.deleteComment(token, item.id);
+                        onChange(null, item.id);
+                      } catch (e) {
+                        setError(message(e));
+                      } finally {
+                        commentDeleteLock.current = false;
+                        setBusy(false);
+                      }
+                    },
+                  },
+                ]);
               },
             },
           ]
