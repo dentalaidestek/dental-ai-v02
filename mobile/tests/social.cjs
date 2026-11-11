@@ -137,3 +137,19 @@ test('clinical media archive rejects malformed records and stale pagination',asy
   assert.equal(page.next_before,8);
  }finally{global.fetch=original;}
 });
+
+test('invalid expert and academic identifiers are rejected before any network request',async()=>{
+ const {getConsultations,getCourses,getAcademicMessages,askAcademic}=require('../src/modernApi.ts');
+ const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw Error('network should not be called')};
+ try{
+  for(const id of [0,-1,1.5,NaN,Infinity]){
+   await assert.rejects(()=>getConsultations('secret',id),/Geçersiz/);
+   await assert.rejects(()=>getCourses('secret',id),/Geçersiz/);
+   await assert.rejects(()=>getAcademicMessages('secret',id),/Geçersiz/);
+   await assert.rejects(()=>getAcademicMessages('secret',1,id),/Geçersiz/);
+   assert.throws(()=>askAcademic('secret',id,'test'),/Geçersiz/);
+  }
+  assert.throws(()=>askAcademic('secret',1,'   '),/boş soru/);
+  assert.equal(calls,0);
+ }finally{global.fetch=original;}
+});
