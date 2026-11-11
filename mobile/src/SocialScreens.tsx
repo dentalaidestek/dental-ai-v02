@@ -391,7 +391,15 @@ function CommentThread({
         ...v,
         ...page.items.filter((x) => !v.some((y) => y.id === x.id)),
       ]);
-      setNext(page.next_cursor);
+      // Reply cursors advance by comment ID; reject repeated or invalid pages.
+      setNext(
+        page.next_cursor !== null &&
+        Number.isSafeInteger(page.next_cursor) &&
+        page.next_cursor > 0 &&
+        (!next || page.next_cursor > next)
+          ? page.next_cursor
+          : null,
+      );
       setOpen(true);
     } catch (e) {
       if (request === replyGeneration.current) setError(message(e));
