@@ -51,6 +51,7 @@ export async function transcribeVoiceAudio(token:string,patientId:number,audio:B
   if(response.status===429||response.status>=500)throw Error("Ses yazıya çevrilemedi; sunucu meşgul. Yerel kaydı silmeden tekrar deneyin.");
   const raw=await response.text();let body:Record<string,unknown>;
   try{body=raw?JSON.parse(raw):{}}catch{throw Error("Ses aktarımından geçersiz yanıt alındı. Yerel kaydı koruyun.");}
+  if(!body||typeof body!=="object"||Array.isArray(body))throw Error("Ses aktarımından geçersiz yanıt alındı. Yerel kaydı koruyun.");
   if(!response.ok||body.ok!==true){
    const detail=typeof body.detail==="string"?body.detail:"Ses aktarımı tamamlanamadı. Yerel kaydı koruyun.";
    throw Error(detail);
