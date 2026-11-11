@@ -200,7 +200,7 @@ test('native voice transcription rejects oversized text before it reaches UI',as
  const original=global.fetch;
  global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',transcript:'a'.repeat(72001)}));
  try{
-  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/72.000 karakter sınırını aştı/);
+  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/sınır dışında/);
  }finally{global.fetch=original}
 });
 
