@@ -51,8 +51,27 @@ export const getConsultations=async(t:string,before?:number)=>{
 };
 export const getConsultation=(t:string,id:number)=>req<{case:any;messages:ChatMessage[]}>(`/consultations/${id}`,t);
 export const sendConsultationMessage=(t:string,id:number,content:string,clientMessageId:string)=>req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content,client_message_id:clientMessageId})});
-export const getCourses=(t:string,before?:number)=>req<{items:Course[];next_before:number|null}>("/academic/courses"+(before?"?before="+before:""),t);
-export const getAcademicMessages=(t:string,id:number,before?:number)=>req<{next_before:number|null;items:Array<{id:number;role:string;content:string;created_at:string}>}>(`/academic/courses/${id}/messages`+(before?"?before="+before:""),t);
+function validateAcademicPage<T extends {id:number}>(response:{items:T[];next_before?:number|null},before?:number):{items:T[];next_before:number|null}{
+ const cursor=response?.next_before??null;
+ if(!Array.isArray(response?.items)||
+    response.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||
+    (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0))||
+    (response.items.length===0&&cursor!==null)||
+    (before!==undefined&&(response.items.some(item=>item.id>=before)||(cursor!==null&&cursor>=before))))
+  throw Error("Akademik kayıt sunucusundan geçersiz sayfa alındı. Tekrar deneyin.");
+ return {items:response.items,next_before:cursor};
+}
+export const getCourses=async(t:string,before?:number)=>{
+ const r=await req<{items:Course[];next_before?:number|null}>("/academic/courses"+(before!==undefined?"?before="+encodeURIComponent(before):""),t);
+ return validateAcademicPage(r,before);
+};
+export const getAcademicMessages=async(t:string,id:number,before?:number)=>{
+ const r=await req<{items:Array<{id:number;role:string;content:string;created_at:string}>;next_before?:number|null}>(`/academic/courses/${id}/messages`+(before!==undefined?"?before="+encodeURIComponent(before):""),t);
+ const page=validateAcademicPage(r,before);
+ if(page.items.some(item=>typeof item.role!=="string"||typeof item.content!=="string"))
+  throw Error("Akademik mesaj sunucusundan geçersiz kayıt alındı. Tekrar deneyin.");
+ return page;
+};
 export function askAcademic(t:string,courseId:number,message:string){
  return req<any>(`/academic/courses/${courseId}/ask`,t,{method:"POST",body:JSON.stringify({message})});
 }
