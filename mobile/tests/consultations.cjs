@@ -113,3 +113,18 @@ test('consultation list rejects replay of requested anchor',async()=>{
   await assert.rejects(()=>api.getConsultations('token',15),/geçersiz liste/);
  });
 });
+
+test('clinical media rejects foreign cursor and duplicate images',async()=>{
+ await withFetch(async()=>json({items:[{id:12,filename:'a.png'}],next_before:99}),async()=>{
+  await assert.rejects(()=>api.getMedia('token',3),/geçersiz liste/);
+ });
+ await withFetch(async()=>json({items:[{id:12,filename:'a.png'},{id:12,filename:'b.png'}],next_before:null}),async()=>{
+  await assert.rejects(()=>api.getMedia('token',3),/geçersiz liste/);
+ });
+});
+test('clinical media preserves patient-scoped authenticated file URL',async()=>{
+ await withFetch(async()=>json({items:[{id:11,filename:'film.png'}],next_before:null}),async()=>{
+  const result=await api.getMedia('token',3);
+  assert.match(result.items[0].url,/\/patients\/3\/media\/11\/file$/);
+ });
+});
