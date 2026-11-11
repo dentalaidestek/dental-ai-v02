@@ -48,3 +48,23 @@ def test_tooth_surface_updates_validate_duplicates_and_ownership():
     assert "patient.owner_user_id != user.id" in source
     assert "for surface_name in requested_surfaces" in source
     assert "session.commit()" in source
+
+
+WEB_SOURCE = Path(__file__).resolve().parents[1] / "app" / "main.py"
+
+
+def test_web_tooth_chart_does_not_invent_treatment_history():
+    tree = ast.parse(WEB_SOURCE.read_text(encoding="utf-8"))
+    update = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "update_tooth_status")
+    assert not any(isinstance(item, ast.Call) and isinstance(item.func, ast.Name) and item.func.id == "Treatment" for item in ast.walk(update))
+
+
+def test_web_tooth_chart_validates_fdi_and_note_length():
+    source = WEB_SOURCE.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    update = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "update_tooth_status")
+    route = ast.get_source_segment(source, update)
+    assert 'tooth_number[0] in "1234"' in route
+    assert 'tooth_number[0] in "5678"' in route
+    assert "len(note) > 2000" in route
+    assert "Geçersiz diş yüzeyi" in route
