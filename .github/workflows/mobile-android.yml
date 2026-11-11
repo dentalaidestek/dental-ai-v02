@@ -29,17 +29,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci
-      # Run checks independently so failures identify the broken subsystem.
+      - name: Install mobile dependencies
+        id: install
+        run: npm ci
+      # Keep independent diagnostics running even if an earlier check fails.
+      # Skip them only when installation fails or the workflow is cancelled.
       - name: TypeScript typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run typecheck
       - name: Session and authentication tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run test:session
       - name: Realtime and pagination tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run test:realtime
       - name: Mobile beta regression tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run test:beta
       - name: Export Android and iOS JavaScript bundles
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npx expo export --platform android --platform ios
   beta-apk:
     needs: typecheck
