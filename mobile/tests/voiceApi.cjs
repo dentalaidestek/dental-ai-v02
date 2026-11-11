@@ -195,3 +195,11 @@ test('clinical text API rejects invalid patient and oversized transcripts before
   assert.equal(calls,0);
  }finally{global.fetch=original}
 });
+
+test('native voice transcription rejects oversized text before it reaches UI',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',transcript:'a'.repeat(72001)}));
+ try{
+  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/72.000 karakter sınırını aştı/);
+ }finally{global.fetch=original}
+});
