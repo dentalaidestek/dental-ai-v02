@@ -47,3 +47,11 @@ test('newest-first pagination appends older rows without replacing fresh records
  assert.equal(h.current.items.map(x=>x.id).join(','),'10,8,9,7');
  assert.equal(h.current.items.find(x=>x.id===8).content,'fresh-8');
 });
+
+test('non-advancing pagination cursor is closed to prevent endless load-more requests',async()=>{
+ let calls=0;
+ const h=harness(async before=>{calls++;return before?{items:[row(2)],next_before:3}:{items:[row(4)],next_before:3}},false,false);
+ h.render();await tick();h.render();assert.equal(h.current.hasMore,true);
+ await h.current.loadMore();h.render();assert.equal(h.current.hasMore,false);
+ await h.current.loadMore();h.render();assert.equal(calls,2);
+});
