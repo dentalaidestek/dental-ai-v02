@@ -18,13 +18,13 @@ export function Notifications({token}:{token:string}){
  const requestGeneration=useRef(0),activeToken=useRef(token);
  // Never allow an earlier account or an older refresh to overwrite this account\u0027s notifications.
  if(activeToken.current!==token){activeToken.current=token;requestGeneration.current++;}
- const load=useCallback(async()=>{const request=++requestGeneration.current;setBusy(true);try{const result=await getNotifications(token);if(request!==requestGeneration.current||activeToken.current!==token)return;setD(result);setError("")}catch(e){if(request===requestGeneration.current&&activeToken.current===token)setError(e instanceof Error?e.message:"Bildirimler alınamadı.")}finally{if(request===requestGeneration.current&&activeToken.current===token)setBusy(false)}},[token]);
+ const load=useCallback(async()=>{const request=++requestGeneration.current;setBusy(true);try{const result=await getNotifications(token);if(request!==requestGeneration.current||activeToken.current!==token)return;setD({...result,accountToken:token});setError("")}catch(e){if(request===requestGeneration.current&&activeToken.current===token)setError(e instanceof Error?e.message:"Bildirimler alınamadı.")}finally{if(request===requestGeneration.current&&activeToken.current===token)setBusy(false)}},[token]);
  useEffect(()=>{setD(undefined);setError("");setBusy(false);return()=>{requestGeneration.current++}},[token]);
  useEffect(()=>{void load()},[load]);
  useEffect(()=>{if(lastEvent&&["NOTICE_CREATED","NOTICE_RESOLVED","MESSAGE_CREATED","CASE_CREATED"].includes(String(lastEvent.event_type||lastEvent.type)))void load()},[lastEvent,load]);
  async function open(item:any){
   const requestToken=token;
-  try{if(!item.read_at){await markNotificationRead(token,item.id);if(activeToken.current!==requestToken)return;setD((old:any)=>old?{...old,items:old.items.map((n:any)=>n.id===item.id?{...n,read_at:new Date().toISOString()}:n)}:old);}
+  try{if(!item.read_at){await markNotificationRead(token,item.id);if(activeToken.current!==requestToken)return;setD((old:any)=>old?.accountToken===requestToken?{...old,items:old.items.map((n:any)=>n.id===item.id?{...n,read_at:new Date().toISOString()}:n)}:old);}
   }catch(e){if(activeToken.current===requestToken)setError(e instanceof Error?e.message:"Bildirim okunmuş olarak işaretlenemedi.");return;}
   if(activeToken.current!==requestToken)return;
   const url=String(item.target_url||"");
@@ -34,7 +34,7 @@ export function Notifications({token}:{token:string}){
   if(/^\/patients\/(\d+)(?:\/.*)?$/.test(url)){const id=Number(url.match(/^\/patients\/(\d+)/)?.[1]);if(id)nav.navigate("Patients",{screen:"PatientDetail",params:{id}});return;}
   // Unsupported web routes stay in the notification center instead of opening an unrelated conversation.
  }
- return <FlatList style={s.page} contentContainerStyle={s.pad} data={d?.items||[]} keyExtractor={x=>String(x.id)}
+ return <FlatList style={s.page} contentContainerStyle={s.pad} data={d?.accountToken===token?d.items:[]} keyExtractor={x=>String(x.id)}
  refreshControl={<RefreshControl refreshing={busy} onRefresh={()=>void load()}/>}
  ListHeaderComponent={<View style={{marginBottom:14}}><Text style={s.big}>Bildirimler</Text><Text style={s.muted}>Yeni mesajlar, danışmanlıklar ve hesap gelişmeleri.</Text>{!!error&&<Text style={{color:C.red,marginTop:10}}>{error}</Text>}</View>}
  renderItem={({item})=><Pressable accessibilityRole="button" style={[card,!item.read_at&&{borderLeftWidth:4,borderLeftColor:C.navy}]} onPress={()=>void open(item)}>
