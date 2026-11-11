@@ -256,3 +256,21 @@ test('voice extraction refuses malformed FDI teeth, communication and evidence',
   }
  }finally{global.fetch=original}
 });
+
+test('voice finalization rejects malformed clinician-edited context without network',async()=>{
+ const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw Error('unexpected clinical request')};
+ const base={insights:[],uncertain:'',conversation_text:'Diş ağrısı görüşmesi'};
+ try{
+  for(const context of [
+   {fields:{medications:{value:17}}},
+   {fields:{allergies:{value:'Yok',edited:'yes'}}},
+   {fields:{},teeth:[{tooth:'99',status:'existing',quote:'ağrı'}]},
+   {fields:{},teeth:[{tooth:'44',status:'existing'}]},
+   {fields:{},literature_topics:[{topic:123,quote:'kanal'}]},
+   {fields:{},source_requests:[{term:'amoxicillin',quote:42}]},
+   {fields:{},appointment:[]}
+  ])await assert.rejects(()=>api.finalizeVoice('token',4,{...base,context}),/bağlamı geçersiz/);
+  await assert.rejects(()=>api.finalizeVoice('token',4,{...base,context:{fields:{}},insights:Array.from({length:25},()=>({quote:'q',observation:'o'}))}),/bağlamı geçersiz/);
+  assert.equal(calls,0);
+ }finally{global.fetch=original}
+});
