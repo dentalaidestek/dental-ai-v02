@@ -1135,14 +1135,18 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=N
         return {"items":items,"next_before":cases[-1].id if len(page)>50 else None}
 
 @router.get("/consultations/{case_id}")
-def mobile_consultation(case_id:int,user:User=Depends(_mobile_user)):
+def mobile_consultation(case_id:int,before:Optional[int]=Query(None,ge=1),limit:int=Query(100,ge=1,le=100),user:User=Depends(_mobile_user)):
     with Session(engine,expire_on_commit=False) as session:
         c=session.get(ConsultationCase,case_id)
         if not c or user.id not in {c.requester_user_id,c.expert_user_id}:
             raise HTTPException(status_code=404,detail="Vaka bulunamadı.")
-        msgs=session.exec(select(ConsultationMessage).where(
-            ConsultationMessage.case_id==c.id).order_by(ConsultationMessage.created_at.asc())).all()
-        return {"case":{"id":c.id,"status":c.status,"specialty":c.specialty,"tooth_region":c.tooth_region,
+        query=select(ConsultationMessage).where(ConsultationMessage.case_id==c.id)
+        if before is not None:
+            query=query.where(ConsultationMessage.id<before)
+        page=session.exec(query.order_by(ConsultationMessage.id.desc()).limit(limit+1)).all()
+        msgs=list(reversed(page[:limit]))
+        next_before=msgs[0].id if len(page)>limit and msgs else None
+        return {"next_before":next_before,"case":{"id":c.id,"status":c.status,"specialty":c.specialty,"tooth_region":c.tooth_region,
             "clinical_summary":c.clinical_summary,"requester_opinion":c.requester_opinion,"question":c.question,
             "requested_at":c.requested_at,"expert_user_id":c.expert_user_id,"requester_user_id":c.requester_user_id},
             "messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,
