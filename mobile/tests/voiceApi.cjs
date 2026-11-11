@@ -32,7 +32,7 @@ test('voice finalization submits full transcript, clinician review and consent',
  const original=global.fetch;let call;
  global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,final:{summary:'Değerlendirme tamamlandı'}}))};
  try{
-  const payload={context:{fields:{chief_complaint:{value:'Ağrı'}},teeth:[44],literature_topics:['TOPIC_1']},insights:[{finding:'Ağrı'}],uncertain:'Belirsiz ilaç dozu',conversation_text:'Tam görüşme metni'};
+  const payload={context:{fields:{chief_complaint:{value:'Ağrı',quote:'Dişim ağrıyor'}},teeth:[{tooth:'44',status:'CURRENT',quote:'44 numara ağrıyor'}],literature_topics:[{topic:'endo.general',quote:'Kanal tedavisi konuşuldu'}]},insights:[{finding:'Ağrı'}],uncertain:'Belirsiz ilaç dozu',conversation_text:'Tam görüşme metni'};
   const result=await api.finalizeVoice('token',44,payload);
   assert.equal(result.final.summary,'Değerlendirme tamamlandı');
   assert.match(call.url,/\/patients\/44\/voice-exam\/finalize$/);
