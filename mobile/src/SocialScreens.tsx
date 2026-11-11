@@ -371,7 +371,7 @@ function CommentThread({
     [next, setNext] = useState<number | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const replyGeneration = useRef(0), replyLock = useRef(false);
+  const replyGeneration = useRef(0), replyLock = useRef(false), commentEditLock = useRef(false);
   useEffect(() => {
     replyGeneration.current++;
     setReplies([]);
@@ -531,7 +531,13 @@ function CommentThread({
         <Sheet
           title="Yorumu düzenle"
           onClose={() => {
-            if (!busy) setEditing(false);
+            if (busy || commentEditLock.current) return;
+            if (editText !== item.text) {
+              Alert.alert("Değişiklikler kaydedilmedi", "Yorumdaki değişiklikleri silmek istiyor musunuz?", [
+                { text: "Düzenlemeye devam et", style: "cancel" },
+                { text: "Değişiklikleri sil", style: "destructive", onPress: () => setEditing(false) },
+              ]);
+            } else setEditing(false);
           }}
         >
           <View style={s.pad}>
@@ -549,14 +555,18 @@ function CommentThread({
               title={busy ? "Kaydediliyor…" : "Kaydet"}
               disabled={busy || !editText.trim()}
               onPress={async () => {
+                if (commentEditLock.current || !editText.trim()) return;
+                commentEditLock.current = true;
                 setBusy(true);
                 try {
-                  const next = await api.patchComment(token, item, editText);
+                  const next = await api.patchComment(token, item, editText.trim());
                   onChange(next, item.id);
                   setEditing(false);
+                  setError("");
                 } catch (e) {
                   setError(message(e));
                 } finally {
+                  commentEditLock.current = false;
                   setBusy(false);
                 }
               }}
