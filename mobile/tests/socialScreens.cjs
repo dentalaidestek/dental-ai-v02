@@ -32,3 +32,14 @@ test('reply threads start collapsed and refresh their exhausted cache when reply
  h.render('CommentThread',{...props,item:{...props.item,reply_count:2}});tree=h.render('CommentThread',{...props,item:{...props.item,reply_count:2}});
  toggle=nodes(tree).find(n=>n.type==='Pressable'&&text(n)==='2 yanıtı aç');assert.ok(toggle);await toggle.props.onPress();await tick();assert.equal(h.requests.length,2);assert.equal(h.requests[1][2],0);
 });
+
+test('clinical media gallery prevents stale account mutations and pagination overlap',()=>{
+ const source=fs.readFileSync(require.resolve('../src/ModernScreens.tsx'),'utf8');
+ const gallery=source.slice(source.indexOf('export function MediaGallery('),source.indexOf('export function ExpertDirectory('));
+ assert.ok(gallery.includes('const mounted=useRef(true)'), 'mounted state must be tracked');
+ assert.ok(gallery.includes('generation.current++'), 'refresh generations invalidate stale requests');
+ assert.ok(gallery.includes('scope!==patientScope.current||!mounted.current'), 'patient switch must cancel pending media picker');
+ assert.ok(gallery.includes('loadingMoreRef.current||refreshing||uploading||deleting'), 'pagination must not overlap refresh or mutations');
+ assert.ok(gallery.includes('if(mounted.current&&scope===patientScope.current)'), 'old account must not update gallery after upload');
+ assert.ok(gallery.includes('if(mounted.current&&current===generation.current)'), 'old page must not overwrite current patient');
+});
