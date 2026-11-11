@@ -59,10 +59,23 @@ export const getAcademicCourses=(token:string)=>request<{items:AcademicCourse[]}
 export const getAcademicMessages=(token:string,id:number)=>request<{items:AcademicMessage[]}>(`/academic/courses/${id}/messages`,token);
 export const askAcademic=(token:string,id:number,message:string)=>request<any>(`/academic/courses/${id}/ask`,token,{method:"POST",body:JSON.stringify({message})});
 export const uploadPatientMedia=async(token:string,patientId:number,file:{uri:string;name:string;type:string},toothNumber?:string,mediaType:"PHOTO"|"RADIOGRAPH"="PHOTO")=>{
- const body=new FormData(); body.append("media_type",mediaType); body.append("file",{uri:file.uri,name:file.name,type:file.type} as any); if(toothNumber) body.append("tooth_number",toothNumber);
+ if(!Number.isSafeInteger(patientId)||patientId<=0)throw new Error("Geçersiz hasta kimliği.");
+ if(!file?.uri||!file.name||!file.type)throw new Error("Geçerli bir klinik görüntü seçin.");
+ if(!["PHOTO","RADIOGRAPH"].includes(mediaType))throw new Error("Geçersiz görüntü türü.");
+ if(toothNumber!==undefined&&!/^[1-8][1-8]$/.test(toothNumber))throw new Error("Geçersiz FDI diş numarası.");
+ const body=new FormData();
+ body.append("media_type",mediaType);
+ body.append("file",{uri:file.uri,name:file.name,type:file.type} as any);
+ if(toothNumber)body.append("tooth_number",toothNumber);
  const response=await fetch(API_BASE+`/patients/${patientId}/media`,{method:"POST",headers:{Authorization:"Bearer "+token},body});
- if(response.status===401)reportSessionExpiry(token);
- const raw=await response.text(); let data:any={}; try{data=raw?JSON.parse(raw):{}}catch{} if(!response.ok)throw new Error(data.detail||"Görüntü yüklenemedi."); return data;
+ const raw=await response.text();let data:any={};try{data=raw?JSON.parse(raw):{}}catch{}
+ if(!response.ok){
+  const detail=typeof data.detail==="string"?data.detail:"Görüntü yüklenemedi.";
+  throw new ApiError(response.status,detail);
+ }
+ if(!data||data.ok!==true||!Number.isSafeInteger(data.media_id)||data.media_id<=0)
+  throw new Error("Görüntü kaydı sunucudan doğrulanamadı. Yeniden yüklemeden önce galeriyi kontrol edin.");
+ return data as {ok:true;media_id:number};
 };
 
 export async function createConsultation(token:string,payload:{expert_user_id:number;clinical_summary:string;requester_opinion?:string;question:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string}){return request<{ok:boolean;case_id:number}>("/consultations",token,{method:"POST",body:JSON.stringify(payload)});}
