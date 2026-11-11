@@ -958,6 +958,7 @@ export function DentalFlow({
   expertId?: number;
   expertName?: string;
 }) {
+  const followLock = useRef(false);
   const [mode, setMode] = useState<"discover" | "following">("discover"),
     [compose, setCompose] = useState(false),
     [comments, setComments] = useState<api.SocialPost | null>(null),
@@ -1020,6 +1021,8 @@ export function DentalFlow({
               title={stats.following_by_viewer ? "Takibi bırak" : "Takip et"}
               disabled={saving}
               onPress={async () => {
+                if (followLock.current) return;
+                followLock.current = true;
                 setSaving(true);
                 try {
                   const r = await api.setFollow(
@@ -1036,6 +1039,7 @@ export function DentalFlow({
                 } catch (e) {
                   setError(message(e));
                 } finally {
+                  followLock.current = false;
                   setSaving(false);
                 }
               }}
