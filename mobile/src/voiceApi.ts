@@ -12,6 +12,7 @@ async function send<T>(token:string,path:string,payload:unknown):Promise<T>{
  }
  if(body.ok!==true)throw Error("Klinik değerlendirme yanıtı beklenen başarı durumunu içermiyor. Metninizi koruyup tekrar deneyin.");
  return body as T;
+ }catch(error){if(error instanceof Error&&error.name==='AbortError')throw Error('Klinik değerlendirme zaman aşımına uğradı. Metniniz bu ekranda korunuyor; tekrar deneyebilirsiniz.');throw error;
  }finally{clearTimeout(timeout)}
 }
 export type VoiceField={value:string;quote?:string;edited?:boolean};
