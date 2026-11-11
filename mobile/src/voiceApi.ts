@@ -24,6 +24,11 @@ export type VoiceExtraction={ok:boolean;revision:string;review:{fields?:Record<s
 export async function extractVoice(token:string,patientId:number,transcript:string):Promise<VoiceExtraction>{
  const result=await send<VoiceExtraction>(token,`/patients/${patientId}/voice-exam/text`,{transcript,consent:true});
  if(!result.review||typeof result.review!=="object"||Array.isArray(result.review))throw Error("Klinik çıkarım yanıtında muayene bilgileri bulunamadı. Metninizi koruyup tekrar deneyin.");
+ const review=result.review;
+ const invalidFields=review.fields!==undefined&&(!review.fields||typeof review.fields!=="object"||Array.isArray(review.fields)||Object.values(review.fields).some(item=>!item||typeof item!=="object"||typeof item.value!=="string"));
+ const invalidArrays=["teeth","communication","insights","decision_barriers","follow_up_questions","literature_topics","source_requests"].some(key=>{const value=(review as Record<string,unknown>)[key];return value!==undefined&&!Array.isArray(value)});
+ const invalidAppointment=review.appointment!=null&&(typeof review.appointment!=="object"||Array.isArray(review.appointment));
+ if(invalidFields||invalidArrays||invalidAppointment||(review.uncertain!==undefined&&typeof review.uncertain!=="string"))throw Error("Klinik çıkarım yanıtının alanları geçersiz. Metniniz korunuyor; tekrar deneyin.");
  return result;
 }
 export async function finalizeVoice(token:string,patientId:number,payload:{context:Record<string,unknown>;insights:Record<string,unknown>[];uncertain:string;conversation_text:string}):Promise<Record<string,unknown>>{
