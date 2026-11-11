@@ -22,8 +22,25 @@ export function verifyEmail(challengeToken:string,code:string){return request<{a
 export function logout(token:string){return request<{ok:boolean}>("/auth/logout",token,{method:"POST"});}
 export function getMe(token:string){return request<{user:User}>("/me",token);}
 export function getDashboard(token:string){return request<Dashboard>("/dashboard",token);}
-export function getPatients(token:string,q="",offset=0){return request<{items:Patient[];total:number}>("/patients?limit=30&offset="+offset+"&q="+encodeURIComponent(q),token);}
-export function getPatient(token:string,id:number){return request<PatientDetail>("/patients/"+id,token);}
+export async function getPatients(token:string,q="",offset=0){
+ if(!Number.isSafeInteger(offset)||offset<0)throw Error("Geçersiz hasta sayfası.");
+ const result=await request<{items:Patient[];total:number}>("/patients?limit=30&offset="+offset+"&q="+encodeURIComponent(q),token);
+ if(!Array.isArray(result?.items)||result.items.length>30||!Number.isSafeInteger(result.total)||result.total<0||
+    result.items.some(p=>!p||!Number.isSafeInteger(p.id)||p.id<=0)||
+    new Set(result.items.map(p=>p.id)).size!==result.items.length||
+    (result.total<offset+result.items.length)||
+    (result.items.length===0&&offset<result.total))
+  throw Error("Hasta sunucusundan geçersiz liste alındı. Yeniden deneyin.");
+ return result;
+}
+export async function getPatient(token:string,id:number){
+ if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz hasta kimliği.");
+ const result=await request<PatientDetail>("/patients/"+id,token);
+ if(!result?.patient||result.patient.id!==id||
+    !Array.isArray(result.teeth)||!Array.isArray(result.surfaces)||!Array.isArray(result.treatments)||!Array.isArray(result.media))
+  throw Error("Hasta sunucusundan beklenmeyen profil alındı. Yeniden deneyin.");
+ return result;
+}
 export function createTreatment(token:string,patientId:number,payload:{treatment_name:string;tooth_number?:string;treatment_date?:string;material?:string;doctor_note?:string;result?:string}){return request<{ok:boolean;treatment_id:number}>(`/patients/${patientId}/treatments`,token,{method:"POST",body:JSON.stringify(payload)});}
 export function updateTreatment(token:string,patientId:number,treatmentId:number,payload:{treatment_name:string;tooth_number?:string;treatment_date?:string;material?:string;doctor_note?:string;result?:string}){return request<{ok:boolean;treatment_id:number}>(`/patients/${patientId}/treatments/${treatmentId}`,token,{method:"PUT",body:JSON.stringify(payload)});}
 export function deletePatient(token:string,id:number){return request<{ok:boolean;patient_id:number}>(`/patients/${id}`,token,{method:"DELETE"});}
