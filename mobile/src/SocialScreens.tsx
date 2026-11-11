@@ -1172,7 +1172,19 @@ export function DentalFlow({
         <Sheet
           title="Gönderiyi düzenle"
           onClose={() => {
-            if (!saving) setEditing(null);
+            if (saving || editLock.current) return;
+            if (editText !== editing.text) {
+              Alert.alert(
+                "Değişiklikler kaydedilmedi",
+                "Gönderi düzenlemesindeki değişiklikleri silmek istiyor musunuz?",
+                [
+                  { text: "Düzenlemeye devam et", style: "cancel" },
+                  { text: "Değişiklikleri sil", style: "destructive", onPress: () => setEditing(null) },
+                ],
+              );
+            } else {
+              setEditing(null);
+            }
           }}
         >
           <View style={s.pad}>
