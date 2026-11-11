@@ -665,6 +665,11 @@ def mobile_update_tooth(
     payload: MobileToothUpdate,
     user: User = Depends(_mobile_user),
 ):
+    valid_fdi = {f"{quadrant}{position}" for quadrant in (1, 2, 3, 4) for position in range(1, 9)} | {f"{quadrant}{position}" for quadrant in (5, 6, 7, 8) for position in range(1, 6)}
+    if tooth_number not in valid_fdi:
+        raise HTTPException(status_code=422, detail="Geçersiz FDI diş numarası.")
+    if payload.note is not None and len(payload.note) > 2000:
+        raise HTTPException(status_code=422, detail="Diş notu 2000 karakteri aşamaz.")
     allowed_statuses = {"HEALTHY","CARIES","FILLING","CROWN","ROOT_CANAL","EXTRACTED","IMPLANT","OTHER"}
     allowed_surfaces = {"OCCLUSAL","INCISAL","MESIAL","DISTAL","BUCCAL","LINGUAL"}
     if payload.status not in allowed_statuses:
