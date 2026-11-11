@@ -30,8 +30,17 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
-      - run: npm test
-      - run: npx expo export --platform android --platform ios
+      # Run checks independently so failures identify the broken subsystem.
+      - name: TypeScript typecheck
+        run: npm run typecheck
+      - name: Session and authentication tests
+        run: npm run test:session
+      - name: Realtime and pagination tests
+        run: npm run test:realtime
+      - name: Mobile beta regression tests
+        run: npm run test:beta
+      - name: Export Android and iOS JavaScript bundles
+        run: npx expo export --platform android --platform ios
   beta-apk:
     needs: typecheck
     runs-on: ubuntu-latest
