@@ -117,8 +117,9 @@ test('offset cursor cycles are rejected without corrupting patient rows',async()
  const h=harness(async offset=>offset===undefined?{items:[row(30)],next_before:1}:{items:[row(29)],next_before:1},true,false,'offset');
  h.render();await tick();h.render();
  await h.current.loadMore();h.render();
- assert.equal(h.current.hasMore,false);
- assert.equal(h.current.items.map(x=>x.id).join(','),'30,29');
+ assert.equal(h.current.hasMore,true);
+ assert.match(h.current.error,/Geçersiz sayfalama ilerlemesi/);
+ assert.equal(h.current.items.map(x=>x.id).join(','),'30');
 });
 
 test('malformed refresh does not expose invalid patient rows',async()=>{
@@ -140,4 +141,20 @@ test('malformed next page preserves prior clinical records and permits retry',as
  await h.current.loadMore();h.render();
  assert.equal(h.current.items.map(x=>x.id).join(','),'10,9');
  assert.equal(h.current.hasMore,false);
+});
+
+test('duplicate patient IDs in a page are rejected before replacing existing clinical rows',async()=>{
+ let invalid=false;
+ const h=harness(async()=>invalid?{items:[row(9),row(9)],next_before:2}:{items:[row(4)],next_before:1},true,false,'offset');
+ h.render();await tick();h.render();invalid=true;
+ await h.current.refresh();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'4');
+ assert.match(h.current.error,/Geçersiz sayfa/);
+});
+test('offset pagination rejects a backward cursor without losing prior patient records',async()=>{
+ const h=harness(async offset=>offset===undefined?{items:[row(101),row(102)],next_before:2}:{items:[row(103)],next_before:1},true,false,'offset');
+ h.render();await tick();h.render();
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'101,102');
+ assert.match(h.current.error,/Geçersiz sayfalama ilerlemesi/);
 });
