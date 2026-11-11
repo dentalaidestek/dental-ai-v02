@@ -694,18 +694,8 @@ def mobile_update_tooth(
                 surface.status, surface.note, surface.updated_at = payload.status, note, datetime.utcnow()
             else:
                 session.add(ToothSurfaceStatus(patient_id=patient_id,tooth_number=tooth_number,surface=payload.surface,status=payload.status,note=note))
-        treatment_names = {"CARIES":"Çürük","FILLING":"Dolgu","CROWN":"Kron","ROOT_CANAL":"Kanal Tedavisi","EXTRACTED":"Diş Çekimi","IMPLANT":"İmplant","OTHER":"Diğer"}
-        if payload.status in treatment_names:
-            treatment_name = treatment_names[payload.status]
-            treatment_date = datetime.utcnow().strftime("%Y-%m-%d")
-            existing_treatment = session.exec(select(Treatment).where(
-                Treatment.patient_id == patient_id,
-                Treatment.tooth_number == tooth_number,
-                Treatment.treatment_name == treatment_name,
-                Treatment.treatment_date == treatment_date,
-            )).first()
-            if not existing_treatment:
-                session.add(Treatment(patient_id=patient_id,tooth_number=tooth_number,treatment_name=treatment_name,treatment_date=treatment_date,doctor_note=note))
+        # Tooth chart status describes an observation, not a completed procedure.
+        # Completed treatment records must be created via the dedicated treatments API.
         realtime=_record_realtime_event(session,user.id,"TOOTH_UPDATED","patient",patient_id,{"patient_id":patient_id,"tooth_number":tooth_number,"status":payload.status,"surface":payload.surface,"note":note})
         session.commit(); on_loop(_publish_realtime_event,realtime)
         return {"ok": True, "tooth_number": tooth_number, "status": payload.status, "surface": payload.surface}
