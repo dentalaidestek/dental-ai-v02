@@ -172,3 +172,19 @@ test('consultation and notification mutations reject invalid IDs and empty messa
   assert.equal(calls,2);
  }finally{global.fetch=original;}
 });
+
+test('analysis history and clinical media deletion reject malformed IDs before requests',async()=>{
+ const {getAnalysisHistory,deleteMedia}=require('../src/modernApi.ts');
+ const original=global.fetch;let calls=0;
+ global.fetch=async()=>{calls++;return new Response(JSON.stringify({ok:true,media_id:4}),{status:200})};
+ try{
+  for(const id of [0,-1,1.5,NaN,Infinity]){
+   await assert.rejects(()=>getAnalysisHistory('secret',id),/Geçersiz analiz/);
+   assert.throws(()=>deleteMedia('secret',id,4),/Geçersiz hasta/);
+   assert.throws(()=>deleteMedia('secret',7,id),/Geçersiz hasta/);
+  }
+  assert.equal(calls,0);
+  const result=await deleteMedia('secret',7,4);
+  assert.equal(result.media_id,4);assert.equal(calls,1);
+ }finally{global.fetch=original;}
+});
