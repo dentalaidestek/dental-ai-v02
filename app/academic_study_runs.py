@@ -89,9 +89,14 @@ def generation(engine,run_id,iterator,*,pdf=False):
         if time.monotonic()-last>=2:
             hidden=pdf or collected.lstrip().startswith(('<!--ACADEMIC_', '### Soru ')) 
             checkpoint(engine,run_id,stage='PDF hazırlanıyor' if hidden else 'Yanıt hazırlanıyor',
-                partial='' if hidden else collected)
+                partial=None if hidden else collected)
             last=time.monotonic()
         yield part
+    # Persist the final streamed chunk even when it arrived within the last
+    # two-second checkpoint interval. Do not expose structured/private payloads.
+    hidden=pdf or collected.lstrip().startswith(('<!--ACADEMIC_', '### Soru '))
+    if collected and not hidden:
+        checkpoint(engine,run_id,stage='Yanıt hazırlanıyor',partial=collected)
 
 
 def _drain(engine):
