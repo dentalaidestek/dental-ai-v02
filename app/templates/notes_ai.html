@@ -88,6 +88,14 @@ body.study-chat-active #studyChat .study-quiz-option>span:first-child{width:35px
 .study-overflow-settings{display:flex;align-items:center;gap:12px;min-height:60px;border:0;padding:12px 6px;font-size:16px}
 .study-academic-overflow-panel .study-progress-body{max-height:38dvh;overflow:auto}
 @media(max-width:400px){.study-academic-overflow-panel{width:min(330px,calc(100vw - 20px));padding:9px}.study-overflow-row-copy strong,.study-overflow-extra strong{font-size:14px}}
+
+/* Academic actions: one row, overflow on the far right, without clipping the menu. */
+.study-quick-prompts.study-quick-prompts-clean{position:relative;display:flex!important;align-items:center;gap:5px!important;flex-wrap:nowrap!important;overflow:visible!important;width:100%;max-width:100%;padding:6px 10px!important;box-sizing:border-box;min-width:0}
+.study-quick-prompts-clean>button{flex:0 1 auto!important;min-width:0!important;white-space:nowrap!important;padding:9px 10px!important;min-height:39px!important;font-size:13px!important;border-radius:12px!important}
+.study-quick-prompts-clean>.study-academic-overflow{margin-left:auto;flex:0 0 38px;position:static}
+.study-quick-prompts-clean>.study-academic-overflow>summary{width:38px;height:38px;background:#f8fafc;box-shadow:0 1px 7px rgba(15,23,42,.08)}
+.study-quick-prompts-clean .study-academic-overflow-panel{position:absolute!important;top:calc(100% + 4px)!important;right:10px!important;left:auto!important;width:min(360px,calc(100vw - 20px))!important;box-sizing:border-box;z-index:500!important}
+@media(max-width:390px){.study-quick-prompts.study-quick-prompts-clean{gap:4px!important;padding-inline:7px!important}.study-quick-prompts-clean>button{font-size:12px!important;padding-inline:8px!important}.study-quick-prompts-clean>.study-academic-overflow{flex-basis:34px}.study-quick-prompts-clean>.study-academic-overflow>summary{width:34px;height:36px}.study-quick-prompts-clean .study-academic-overflow-panel{right:7px!important}}
 </style>
 <div class="study-ai-page study-chat-shell study-chat-clean-shell">
     <header class="study-chat-clean-topbar">
@@ -99,6 +107,12 @@ body.study-chat-active #studyChat .study-quiz-option>span:first-child{width:35px
         <form action="/notes/courses/{{ course.id }}/ai/clear" method="post" onsubmit="return confirm('Bu dersin Akademik AI sohbet geçmişi temizlensin mi?')">
             <button type="submit" class="study-chat-clean-new">Yeni sohbet</button>
         </form>
+    </header>
+
+    <div class="study-quick-prompts study-quick-prompts-clean">
+        <button type="button" data-prompt="Bu ders notlarını sınav odaklı ve yüksek verimli şekilde özetle. Önce ana başlıkları, sonra kritik ayrıntıları ver.">Özetle</button>
+        <button type="button" data-prompt="Bu ders notlarıyla adım adım çalışalım. İlk konudan başla: kısa bir açıklama ve nottan bir örnek ver, sonra anlamamı kontrol eden tek bir soru sor ve yanıtımı bekle. Sonraki anlatımı cevabıma göre ayarla.">Bana Öğret</button>
+        <button type="button" data-prompt="Bu ders notlarından 20 zorlayıcı çoktan seçmeli soru hazırla. Cevap anahtarını şimdilik gösterme; cevaplarımı değerlendirmek için bekle.">Soru Hazırla</button>
         <details class="study-academic-overflow" id="studyAcademicOverflow">
             <summary aria-label="Akademik AI seçenekleri" title="Akademik AI seçenekleri">⋮</summary>
             <div class="study-academic-overflow-panel">
@@ -150,12 +164,6 @@ body.study-chat-active #studyChat .study-quiz-option>span:first-child{width:35px
                 <a class="study-overflow-settings" href="/notes/courses/{{ course.id }}"><span class="study-overflow-icon" aria-hidden="true">⚙</span>Ayarlar</a>
             </div>
         </details>
-    </header>
-
-    <div class="study-quick-prompts study-quick-prompts-clean">
-        <button type="button" data-prompt="Bu ders notlarını sınav odaklı ve yüksek verimli şekilde özetle. Önce ana başlıkları, sonra kritik ayrıntıları ver.">Özetle</button>
-        <button type="button" data-prompt="Bu ders notlarıyla adım adım çalışalım. İlk konudan başla: kısa bir açıklama ve nottan bir örnek ver, sonra anlamamı kontrol eden tek bir soru sor ve yanıtımı bekle. Sonraki anlatımı cevabıma göre ayarla.">Bana Öğret</button>
-        <button type="button" data-prompt="Bu ders notlarından 20 zorlayıcı çoktan seçmeli soru hazırla. Cevap anahtarını şimdilik gösterme; cevaplarımı değerlendirmek için bekle.">Soru Hazırla</button>
     </div>
     {% endif %}
 
