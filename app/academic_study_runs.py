@@ -166,6 +166,19 @@ def recover(engine):
     wake(engine)
 
 
+
+def cancel_run(session, *, run_id, owner, course):
+    """Cancel one owned job without affecting other users or their jobs."""
+    row=session.exec(select(StudyRun).where(StudyRun.id==run_id,
+        StudyRun.owner_user_id==owner,StudyRun.course_id==course).with_for_update()).first()
+    if row is None:return None
+    if row.status in ('QUEUED','RUNNING','INTERRUPTED'):
+        row.status='CANCELLED';row.stage='Kullanıcı tarafından iptal edildi'
+        row.error='Bu çalışma iptal edildi.';row.partial_text='';row.updated_at=now()
+        session.add(row)
+    return row
+
+
 def erase(session,owner,course=None,*,purge=False):
     from sqlalchemy import delete
     query=delete(StudyRun) if purge else update(StudyRun).values(status='CANCELLED',partial_text='',question='',

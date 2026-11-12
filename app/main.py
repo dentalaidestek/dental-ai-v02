@@ -5434,6 +5434,22 @@ def study_run_status(request:Request,course_id:int,run_id:int):
     return JSONResponse({'ok':True,'run':result},headers={'Cache-Control':'no-store'})
 
 
+
+@app.post('/notes/courses/{course_id}/ai/runs/{run_id}/cancel')
+def study_run_cancel(request:Request,course_id:int,run_id:int):
+    from app.academic_study_runs import cancel_run,payload
+    user=get_current_user(request)
+    if not user:return JSONResponse({'ok':False},status_code=401)
+    with Session(engine) as session:
+        if not _owned_study_course(session,user,course_id):
+            return JSONResponse({'ok':False},status_code=404)
+        row=cancel_run(session,run_id=run_id,owner=user.id,course=course_id)
+        if row is None:return JSONResponse({'ok':False},status_code=404)
+        session.commit()
+        result=payload(session,row)
+    return JSONResponse({'ok':True,'run':result},headers={'Cache-Control':'no-store'})
+
+
 @app.get('/notes/courses/{course_id}/ai/learning')
 def study_learning_status(request:Request,course_id:int):
     from app.academic_learning import context
