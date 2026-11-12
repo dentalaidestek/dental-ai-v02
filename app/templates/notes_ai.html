@@ -650,7 +650,30 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
         } catch (_) {learningText('studyProgressState','Bağlantı bekleniyor');learningText('studyLearningUpdated','Kayıtlar güncellenemedi. Güncelle düğmesiyle tekrar deneyebilirsin.');}
         finally{learningBusy=false;if(learningQueued){learningQueued=false;refreshLearning();}}
     }
+    function addRunCancel(id,pending) {
+        if(pending.querySelector('.study-cancel-run'))return;
+        const button=document.createElement('button');
+        button.type='button';button.className='study-cancel-run';
+        button.textContent='Bu işlemi durdur';
+        button.style.cssText='margin-top:10px;padding:7px 12px;border:1px solid currentColor;border-radius:8px;background:transparent;color:inherit;cursor:pointer';
+        button.addEventListener('click',async()=>{
+            if(button.disabled)return;
+            button.disabled=true;button.textContent='Durduruluyor...';
+            try{
+                const response=await fetch('/notes/courses/'+courseId+'/ai/runs/'+id+'/cancel',{method:'POST',credentials:'same-origin'});
+                const data=await response.json();
+                if(!response.ok||!data.ok)throw new Error('İşlem durdurulamadı.');
+                clearTimeout(runTimer);
+                const thinking=pending.querySelector('.study-thinking');
+                if(thinking)thinking.textContent='İşlem iptal edildi.';
+                button.remove();activeRun=null;setWorking(false);
+                status.textContent='Yalnızca bu çalışma iptal edildi.';
+            }catch(error){button.disabled=false;button.textContent='Bu işlemi durdur';status.textContent=error.message;}
+        });
+        pending.appendChild(button);
+    }
     async function followRun(id,pending,userMessage) {
+        addRunCancel(id,pending);
         try {
             const response=await fetch('/notes/courses/'+courseId+'/ai/runs/'+id,{credentials:'same-origin'});
             const data=await response.json();
