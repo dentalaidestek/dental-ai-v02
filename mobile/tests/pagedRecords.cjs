@@ -262,3 +262,19 @@ test('invalid ID cursor on later page retains previous clinical data for retry',
  broken=false;await h.current.loadMore();h.render();
  assert.equal(h.current.items.map(x=>x.id).join(','),'10,9');
 });
+
+
+test('invalid first-page ID cursor preserves verified clinical rows and allows retry',async()=>{
+ let malformed=false;
+ const h=harness(async()=>malformed
+  ?{items:[{id:90,content:'unverified'}],next_before:999}
+  :{items:[{id:91,content:'verified'}],next_before:null},true,false,'id');
+ h.render();await tick();h.render();
+ assert.equal(h.current.items[0].content,'verified');
+ malformed=true;await h.current.refresh();h.render();
+ assert.equal(h.current.items[0].content,'verified');
+ assert.match(h.current.error,/Geçersiz sayfalama imleci/);
+ malformed=false;await h.current.refresh();h.render();
+ assert.equal(h.current.error,'');
+ assert.equal(h.current.items[0].content,'verified');
+});
