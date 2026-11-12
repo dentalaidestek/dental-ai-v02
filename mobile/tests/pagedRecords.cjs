@@ -158,3 +158,21 @@ test('offset pagination rejects a backward cursor without losing prior patient r
  assert.equal(h.current.items.map(x=>x.id).join(','),'101,102');
  assert.match(h.current.error,/Geçersiz sayfalama ilerlemesi/);
 });
+
+test('stalled offset does not poison retry: corrected server page is accepted',async()=>{
+ let stale=true;
+ const h=harness(async offset=>offset===undefined
+  ?{items:[row(101),row(102)],next_before:2}
+  :stale?{items:[row(103)],next_before:2}:{items:[row(103)],next_before:null},
+  true,false,'offset');
+ h.render();await tick();h.render();
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'101,102');
+ assert.equal(h.current.hasMore,true);
+ assert.match(h.current.error,/Geçersiz sayfalama ilerlemesi/);
+ stale=false;
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'101,102,103');
+ assert.equal(h.current.hasMore,false);
+ assert.equal(h.current.error,'');
+});
