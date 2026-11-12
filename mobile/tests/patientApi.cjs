@@ -35,3 +35,23 @@ test('invalid patient identifiers do not trigger network requests',async()=>{
   await assert.rejects(()=>getPatients('token','',-1),/Geçersiz hasta sayfası/);
  }finally{global.fetch=original}
 });
+
+test('patient profile rejects malformed nested clinical collections before tooth chart rendering',async()=>{
+ const original=global.fetch;
+ const valid={patient:{id:8},teeth:[],surfaces:[],treatments:[],media:[]};
+ const malformed=[
+  {...valid,teeth:[null]},
+  {...valid,teeth:[{tooth_number:'11',status:null}]},
+  {...valid,surfaces:[{tooth_number:'11',surface:null,status:'CARIES'}]},
+  {...valid,treatments:[{id:0,treatment_name:'Dolgu'}]},
+  {...valid,media:[{id:2,original_filename:null}]},
+ ];
+ try{
+  for(const body of malformed){
+   global.fetch=async()=>reply(body);
+   await assert.rejects(()=>getPatient('token',8),/beklenmeyen profil/);
+  }
+  global.fetch=async()=>reply({...valid,teeth:[{id:1,tooth_number:'11',status:'HEALTHY'}],surfaces:[{id:2,tooth_number:'11',surface:'MESIAL',status:'CARIES'}],treatments:[{id:3,treatment_name:'Dolgu'}],media:[{id:4,original_filename:'image.jpg'}]});
+  assert.equal((await getPatient('token',8)).surfaces[0].surface,'MESIAL');
+ }finally{global.fetch=original}
+});
