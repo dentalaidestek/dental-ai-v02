@@ -70,6 +70,24 @@ body.study-chat-active #studyChat .study-quiz-stem{font-size:16px;line-height:1.
 body.study-chat-active #studyChat .study-quiz-options button.study-quiz-option{border-radius:15px!important;padding:13px 14px!important;background:#fff!important;border:1px solid #d5dfe9!important;font-size:15px!important;min-height:55px}
 body.study-chat-active #studyChat .study-quiz-option>span:first-child{width:35px;height:35px;flex-basis:35px;border-radius:50%;font-size:14px}
 @media(max-width:600px){.study-academic-overflow>summary{width:38px;height:38px}.study-academic-overflow-panel{right:-4px}.study-quick-prompts-clean button{font-size:13px!important}body.study-chat-active #studyChat .study-quiz-card{padding:14px}body.study-chat-active #studyChat .study-quiz-options button.study-quiz-option{font-size:14px!important}}
+
+/* Flat four-row dropdown matching the approved visual. */
+.study-academic-overflow-panel{padding:12px 16px}
+.study-academic-overflow-panel .study-chat-clean-info{display:none}
+.study-academic-overflow-panel .study-progress{border-bottom:1px solid #e4eaf1;margin:0}
+.study-academic-overflow-panel .study-progress>summary,.study-overflow-extra>summary{display:flex;align-items:center;gap:12px;padding:14px 6px;min-height:65px;cursor:pointer;list-style:none}
+.study-academic-overflow-panel .study-progress>summary:after{display:none}
+.study-overflow-icon{display:inline-grid;place-items:center;flex:0 0 32px;width:32px;font-size:24px;color:#102a43}
+.study-overflow-row-copy{display:grid;gap:4px;min-width:0;flex:1}
+.study-overflow-row-copy strong,.study-overflow-extra strong{font-size:16px;color:#14243b}
+.study-overflow-row-copy small{font-size:12px;color:#53657a}
+.study-academic-overflow-panel .study-progress-indicator{font-size:11px;padding:5px 7px;max-width:96px;overflow:hidden;text-overflow:ellipsis}
+.study-overflow-extra{border-bottom:1px solid #e4eaf1}
+.study-overflow-extra>summary::-webkit-details-marker{display:none}
+.study-overflow-description{margin:0 0 12px 42px;padding:0}
+.study-overflow-settings{display:flex;align-items:center;gap:12px;min-height:60px;border:0;padding:12px 6px;font-size:16px}
+.study-academic-overflow-panel .study-progress-body{max-height:38dvh;overflow:auto}
+@media(max-width:400px){.study-academic-overflow-panel{width:min(330px,calc(100vw - 20px));padding:9px}.study-overflow-row-copy strong,.study-overflow-extra strong{font-size:14px}}
 </style>
 <div class="study-ai-page study-chat-shell study-chat-clean-shell">
     <header class="study-chat-clean-topbar">
@@ -84,7 +102,7 @@ body.study-chat-active #studyChat .study-quiz-option>span:first-child{width:35px
         <details class="study-academic-overflow" id="studyAcademicOverflow">
             <summary aria-label="Akademik AI seçenekleri" title="Akademik AI seçenekleri">⋮</summary>
             <div class="study-academic-overflow-panel">
-                <div class="study-overflow-heading">Kaynak Dosyalar</div>
+
     <div class="study-chat-clean-info">
         {% if material_count > 0 %}
         <span>Bu sohbet bu derse eklediğin notları kaynak olarak kullanır.</span>
@@ -97,7 +115,7 @@ body.study-chat-active #studyChat .study-quiz-option>span:first-child{width:35px
 
     {% if material_count > 0 %}
     <details id="studyIndexFiles" class="study-progress">
-        <summary><strong id="studyIndexSummary">{{ index_state.completed }}/{{ index_state.total }} dosya kullanılabilir</strong></summary>
+        <summary><span class="study-overflow-icon" aria-hidden="true">♧</span><span class="study-overflow-row-copy"><strong>Kaynak Dosyalar</strong><small id="studyIndexSummary">{{ index_state.completed }}/{{ index_state.total }} dosya kullanılabilir</small></span></summary>
         <div class="study-progress-body">
             <p id="studyIndexCoverage">{% if not index_state.complete %}Yanıtlar yalnızca hazır dosyalardan oluşturulur. Hazır olmayan dosyalar kullanılmaz.{% else %}Tüm dosyalar hazır.{% endif %}</p>
             <ul id="studyIndexFileList" style="padding-left:20px;overflow-wrap:anywhere">
@@ -111,9 +129,9 @@ body.study-chat-active #studyChat .study-quiz-option>span:first-child{width:35px
 
     {% if material_count > 0 %}
 
-                <div class="study-overflow-heading">Çalışma Durumu</div>
+
     <details class="study-progress" id="studyProgress">
-        <summary><span><strong>Çalışma durumum</strong><small id="studyProgressHint">Kayıtların yükleniyor</small></span><span class="study-progress-indicator" id="studyProgressState">Hazırlanıyor</span></summary>
+        <summary><span class="study-overflow-icon" aria-hidden="true">◷</span><span class="study-overflow-row-copy"><strong>Çalışma Durumu</strong><small id="studyProgressHint">Kayıtların yükleniyor</small></span><span class="study-progress-indicator" id="studyProgressState">Hazırlanıyor</span></summary>
         <div class="study-progress-body">
             <p id="studyLearningSummary" role="status" aria-live="polite">Çalışma kayıtların yükleniyor...</p>
             <table class="study-progress-overview"><caption>Genel sonuçların</caption><thead><tr><th scope="col">Gösterge</th><th scope="col">Toplam</th></tr></thead><tbody id="studyLearningStats"></tbody></table>
@@ -128,9 +146,8 @@ body.study-chat-active #studyChat .study-quiz-option>span:first-child{width:35px
         </div>
     </details>
 
-                <div class="study-overflow-heading">Sohbet Bilgisi</div>
-                <p class="study-overflow-description">Bu sohbet yalnızca bu derse eklediğin notları kaynak olarak kullanır.</p>
-                <a class="study-overflow-settings" href="/notes/courses/{{ course.id }}">Ders ve dosya ayarları</a>
+                <details class="study-overflow-extra"><summary><span class="study-overflow-icon" aria-hidden="true">◴</span><strong>Sohbet Bilgisi</strong></summary><p class="study-overflow-description">Bu sohbet bu derse eklediğin notları kaynak olarak kullanır.</p></details>
+                <a class="study-overflow-settings" href="/notes/courses/{{ course.id }}"><span class="study-overflow-icon" aria-hidden="true">⚙</span>Ayarlar</a>
             </div>
         </details>
     </header>
