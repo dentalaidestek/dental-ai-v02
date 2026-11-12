@@ -317,3 +317,19 @@ test('offset cursor cannot skip unseen patient records; corrected retry succeeds
  assert.equal(h.current.items.map(x=>x.id).join(','),'101,102,103');
  assert.equal(h.current.error,'');
 });
+
+test('initial offset cannot skip unseen patients; corrected refresh can retry',async()=>{
+ let broken=true;
+ const h=harness(async()=>broken
+  ?{items:[row(101),row(102)],next_before:7}
+  :{items:[row(101),row(102)],next_before:2},true,false,'offset');
+ h.render();await tick();h.render();
+ assert.equal(h.current.items.length,0);
+ assert.equal(h.current.hasMore,false);
+ assert.match(h.current.error,/Geçersiz sayfalama imleci/);
+ broken=false;
+ await h.current.refresh();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'101,102');
+ assert.equal(h.current.hasMore,true);
+ assert.equal(h.current.error,'');
+});
