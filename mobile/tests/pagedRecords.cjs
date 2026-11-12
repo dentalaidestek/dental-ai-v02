@@ -231,3 +231,34 @@ test('malformed next-page cursor retains existing patients and permits corrected
  assert.equal(h.current.items.map(x=>x.id).join(','),'10,11');
  assert.equal(h.current.error,'');
 });
+
+
+test('nonterminal empty offset page preserves patient records and allows retry',async()=>{
+ let broken=true;
+ const h=harness(async offset=>offset===undefined
+  ?{items:[row(101)],next_before:1}
+  :broken?{items:[],next_before:2}:{items:[row(102)],next_before:null},
+  true,false,'offset');
+ h.render();await tick();h.render();
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'101');
+ assert.equal(h.current.hasMore,true);
+ assert.match(h.current.error,/Geçersiz sayfalama imleci/);
+ broken=false;await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'101,102');
+ assert.equal(h.current.error,'');
+});
+test('invalid ID cursor on later page retains previous clinical data for retry',async()=>{
+ let broken=true;
+ const h=harness(async before=>before===undefined
+  ?{items:[row(10)],next_before:10}
+  :broken?{items:[row(9)],next_before:999}:{items:[row(9)],next_before:null},
+  true,false,'id');
+ h.render();await tick();h.render();
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'10');
+ assert.equal(h.current.hasMore,true);
+ assert.match(h.current.error,/Geçersiz sayfalama imleci/);
+ broken=false;await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'10,9');
+});
