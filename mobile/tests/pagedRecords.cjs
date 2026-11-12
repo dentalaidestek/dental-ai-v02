@@ -176,3 +176,19 @@ test('stalled offset does not poison retry: corrected server page is accepted',a
  assert.equal(h.current.hasMore,false);
  assert.equal(h.current.error,'');
 });
+
+test('old patient pagination response cannot overwrite a switched account',async()=>{
+ let resolveOld;
+ const h=harness(before=>before===1
+  ?new Promise(resolve=>{resolveOld=resolve})
+  :Promise.resolve({items:[row(11)],next_before:1}),true,false,'offset');
+ h.render();await tick();h.render();
+ const oldRequest=h.current.loadMore();
+ h.changeScope('another-account');
+ await tick();h.render();
+ resolveOld({items:[row(99)],next_before:null});
+ await oldRequest;h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'11');
+ assert.equal(h.current.hasMore,true);
+ assert.equal(h.current.error,'');
+});
