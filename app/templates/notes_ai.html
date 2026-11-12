@@ -96,6 +96,10 @@ body.study-chat-active #studyChat .study-quiz-option>span:first-child{width:35px
 .study-quick-prompts-clean>.study-academic-overflow>summary{width:38px;height:38px;background:#f8fafc;box-shadow:0 1px 7px rgba(15,23,42,.08)}
 .study-quick-prompts-clean .study-academic-overflow-panel{position:absolute!important;top:calc(100% + 4px)!important;right:10px!important;left:auto!important;width:min(360px,calc(100vw - 20px))!important;box-sizing:border-box;z-index:500!important}
 @media(max-width:390px){.study-quick-prompts.study-quick-prompts-clean{gap:4px!important;padding-inline:7px!important}.study-quick-prompts-clean>button{font-size:12px!important;padding-inline:8px!important}.study-quick-prompts-clean>.study-academic-overflow{flex-basis:34px}.study-quick-prompts-clean>.study-academic-overflow>summary{width:34px;height:36px}.study-quick-prompts-clean .study-academic-overflow-panel{right:7px!important}}
+
+/* Portal avoids clipping by the chat shell and keeps menu above messages. */
+body>.study-academic-overflow-panel.study-overflow-portal{position:fixed!important;z-index:2147483000!important;top:var(--study-menu-top,190px)!important;left:var(--study-menu-left,12px)!important;right:auto!important;width:min(360px,calc(100vw - 20px))!important;max-height:min(70dvh,620px)!important;overflow-y:auto!important;display:block!important}
+body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!important}
 </style>
 <div class="study-ai-page study-chat-shell study-chat-clean-shell">
     <header class="study-chat-clean-topbar">
@@ -262,7 +266,37 @@ body.study-chat-active #studyChat .study-quiz-option>span:first-child{width:35px
         const blocked = materialCount > 0 && !v2Ready;
         input.disabled = !materialCount || blocked || uploading;
         send.disabled = !materialCount || blocked || uploading || !!activeRun;
-        document.querySelectorAll('.study-quick-prompts button').forEach(button => { button.disabled=blocked; });
+    
+    // Render the menu at document level: the chat shell clips absolute descendants.
+    const academicMenu=document.getElementById('studyAcademicOverflow');
+    if(academicMenu){
+        const menuPanel=academicMenu.querySelector('.study-academic-overflow-panel');
+        const menuTrigger=academicMenu.querySelector(':scope > summary');
+        if(menuPanel && menuTrigger){
+            menuPanel.classList.add('study-overflow-portal');
+            menuPanel.hidden=true;
+            document.body.appendChild(menuPanel);
+            const placeMenu=()=>{
+                const rect=menuTrigger.getBoundingClientRect();
+                const width=Math.min(360,window.innerWidth-20);
+                const left=Math.max(10,Math.min(window.innerWidth-width-10,rect.right-width));
+                menuPanel.style.setProperty('--study-menu-top',Math.round(rect.bottom+6)+'px');
+                menuPanel.style.setProperty('--study-menu-left',Math.round(left)+'px');
+            };
+            const closeMenu=()=>{academicMenu.open=false;menuPanel.hidden=true;menuTrigger.setAttribute('aria-expanded','false');};
+            academicMenu.addEventListener('toggle',()=>{
+                if(academicMenu.open){placeMenu();menuPanel.hidden=false;menuTrigger.setAttribute('aria-expanded','true');}
+                else{menuPanel.hidden=true;menuTrigger.setAttribute('aria-expanded','false');}
+            });
+            document.addEventListener('pointerdown',event=>{
+                if(academicMenu.open && !academicMenu.contains(event.target) && !menuPanel.contains(event.target))closeMenu();
+            });
+            document.addEventListener('keydown',event=>{if(event.key==='Escape' && academicMenu.open){closeMenu();menuTrigger.focus();}});
+            window.addEventListener('resize',()=>{if(academicMenu.open)placeMenu();});
+            window.addEventListener('scroll',()=>{if(academicMenu.open)placeMenu();},true);
+        }
+    }
+    document.querySelectorAll('.study-quick-prompts button').forEach(button => { button.disabled=blocked; });
         if (blocked) status.textContent=indexState.state==='failed' ?
             'Henüz kullanılabilir dosya yok. Dosyaların durumunu yukarıdan inceleyebilirsin.' :
             'Ders notları hazırlanıyor. Hazır olan ilk dosyayla çalışmaya başlayabilirsin.';
