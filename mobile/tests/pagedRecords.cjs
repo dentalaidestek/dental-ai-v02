@@ -100,7 +100,7 @@ test('date-ordered cursor may increase in numeric ID across older pages',async()
 });
 test('repeated cursor cycle preserves verified records and permits corrected retry',async()=>{
  let broken=true;
- const h=harness(async before=>before===undefined?{items:[row(4)],next_before:4}:before===4?{items:[row(9)],next_before:9}:broken?{items:[row(3)],next_before:4}:{items:[row(3)],next_before:null},false,false);
+ const h=harness(async before=>before===undefined?{items:[row(4)],next_before:4}:before===4?{items:[row(9)],next_before:9}:broken?{items:[row(4)],next_before:4}:{items:[row(3)],next_before:null},false,false);
  h.render();await tick();h.render();
  await h.current.loadMore();h.render();
  assert.equal(h.current.hasMore,true);
