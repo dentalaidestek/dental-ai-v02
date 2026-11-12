@@ -10,17 +10,17 @@ test('AI rejects invalid patient and missing clinical image without contacting b
   await assert.rejects(()=>api.createAnalysis('token',{patientId:5,images:[{uri:''}]}),/klinik görüntü/);
  }finally{global.fetch=original}
 });
-test('AI rejects invalid analysis IDs before a network request',()=>{
+test('AI rejects invalid analysis IDs before a network request',async()=>{
  const original=global.fetch;global.fetch=()=>{throw Error('unexpected network call')};
  try{
-  assert.throws(()=>api.getAnalysis('token',0),/Geçersiz analiz/);
-  assert.throws(()=>api.getAnalysis('token',NaN),/Geçersiz analiz/);
+  await assert.rejects(()=>api.getAnalysis('token',0),/Geçersiz analiz/);
+  await assert.rejects(()=>api.getAnalysis('token',NaN),/Geçersiz analiz/);
   assert.throws(()=>api.startAnalysisAI('token',-3),/Geçersiz analiz/);
  }finally{global.fetch=original}
 });
 test('AI status and start use authorized mobile API routes',async()=>{
  const original=global.fetch,calls=[];
- global.fetch=async(url,init)=>{calls.push({url,init});return new Response(JSON.stringify({ok:true,status:'VISION_READY'}),{status:200})};
+ global.fetch=async(url,init)=>{calls.push({url,init});return new Response(JSON.stringify(url.endsWith('/ai')?{ok:true,status:'VISION_READY'}:{analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7},assets:[]}),{status:200})};
  try{
   await api.getAnalysis('secret',23);
   await api.startAnalysisAI('secret',23);
@@ -40,4 +40,17 @@ test('AI refuses malformed created-job response instead of persisting an invalid
  try{
   await assert.rejects(()=>api.createAnalysis('secret',{patientId:7,images:[{uri:'file:///image.jpg',name:'image.jpg',type:'image/jpeg'}]}),/geçerli bir iş kimliği/);
  }finally{global.fetch=originalFetch;global.FormData=originalFormData}
+});
+
+test('AI rejects a result linked to a different patient',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>new Response(JSON.stringify({analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:8},assets:[]}),{status:200});
+ try{await assert.rejects(()=>api.getAnalysis('token',23),/hasta veya iş kimliği uyuşmayan/)}
+ finally{global.fetch=original}
+});
+test('AI rejects a result with a mismatched analysis job ID',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>new Response(JSON.stringify({analysis:{id:24,patient_id:7,status:'VISION_READY'},patient:{id:7},assets:[]}),{status:200});
+ try{await assert.rejects(()=>api.getAnalysis('token',23),/hasta veya iş kimliği uyuşmayan/)}
+ finally{global.fetch=original}
 });
