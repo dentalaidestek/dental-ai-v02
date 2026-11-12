@@ -33,6 +33,10 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
   try{const page=await fetchRef.current(next);if(request!==generation.current)return;
    if(!Array.isArray(page?.items)||page.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||new Set(page.items.map(item=>item.id)).size!==page.items.length||!(page.next_before===null||(Number.isSafeInteger(page.next_before)&&page.next_before>=0)))throw Error("Geçersiz sayfa yanıtı.");
    const nextCursor=validInitialCursor(page,cursorMode);
+   // A nonterminal page must supply a usable cursor and at least one record.
+   // Otherwise preserve the current records/cursor and surface a retryable error.
+   if(page.next_before!==null&&nextCursor===null)
+    throw Error("Geçersiz sayfalama imleci. Tekrar deneyin.");
    // An offset that does not advance can silently skip or repeat patient records.
    // Reject the entire page and retain the cursor so the user can retry safely.
    if(cursorMode==="offset"&&nextCursor!==null&&nextCursor<=next)
