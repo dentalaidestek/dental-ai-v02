@@ -210,3 +210,24 @@ test('overlapping offset page cannot replace an existing patient and permits ret
  assert.equal(h.current.items.map(x=>x.id).join(','),'101,102');
  assert.equal(h.current.error,'');
 });
+
+test('malformed initial cursor reports error rather than silently hiding remaining patients',async()=>{
+ const h=harness(async()=>({items:[row(1)],next_before:undefined}),true,false,'offset');
+ h.render();await tick();h.render();
+ assert.equal(h.current.items.length,0);
+ assert.match(h.current.error,/Geçersiz sayfa/);
+});
+test('malformed next-page cursor retains existing patients and permits corrected retry',async()=>{
+ let invalid=true;
+ const h=harness(async offset=>offset===undefined
+  ?{items:[row(10)],next_before:1}
+  :invalid?{items:[row(11)],next_before:undefined}:{items:[row(11)],next_before:null},true,false,'offset');
+ h.render();await tick();h.render();
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'10');
+ assert.match(h.current.error,/Geçersiz sayfa/);
+ assert.equal(h.current.hasMore,true);
+ invalid=false;await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'10,11');
+ assert.equal(h.current.error,'');
+});
