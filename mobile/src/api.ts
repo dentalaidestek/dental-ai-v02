@@ -37,7 +37,11 @@ export async function getPatient(token:string,id:number){
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz hasta kimliği.");
  const result=await request<PatientDetail>("/patients/"+id,token);
  if(!result?.patient||result.patient.id!==id||
-    !Array.isArray(result.teeth)||!Array.isArray(result.surfaces)||!Array.isArray(result.treatments)||!Array.isArray(result.media))
+    !Array.isArray(result.teeth)||!Array.isArray(result.surfaces)||!Array.isArray(result.treatments)||!Array.isArray(result.media)||
+    result.teeth.some(t=>!t||typeof t.tooth_number!=="string"||typeof t.status!=="string")||
+    result.surfaces.some(s=>!s||typeof s.tooth_number!=="string"||typeof s.surface!=="string"||typeof s.status!=="string")||
+    result.treatments.some(t=>!t||!Number.isSafeInteger(t.id)||t.id<=0||typeof t.treatment_name!=="string")||
+    result.media.some(m=>!m||!Number.isSafeInteger(m.id)||m.id<=0||typeof m.original_filename!=="string"))
   throw Error("Hasta sunucusundan beklenmeyen profil alındı. Yeniden deneyin.");
  return result;
 }
