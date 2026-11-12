@@ -278,3 +278,26 @@ test('invalid first-page ID cursor preserves verified clinical rows and allows r
  assert.equal(h.current.error,'');
  assert.equal(h.current.items[0].content,'verified');
 });
+
+
+test('offset initial cursor cannot point inside already returned patient rows',async()=>{
+ const h=harness(async()=>({items:[row(101),row(102),row(103)],next_before:2}),true,false,'offset');
+ h.render();await tick();h.render();
+ assert.equal(h.current.items.length,0);
+ assert.match(h.current.error,/Geçersiz sayfalama imleci/);
+});
+
+test('offset next cursor cannot replay part of a newly received patient page',async()=>{
+ let broken=true;
+ const h=harness(async offset=>offset===undefined
+  ?{items:[row(101),row(102)],next_before:2}
+  :broken?{items:[row(103),row(104)],next_before:3}:{items:[row(103),row(104)],next_before:4},true,false,'offset');
+ h.render();await tick();h.render();
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'101,102');
+ assert.match(h.current.error,/Geçersiz sayfalama ilerlemesi/);
+ assert.equal(h.current.hasMore,true);
+ broken=false;await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'101,102,103,104');
+ assert.equal(h.current.error,'');
+});
