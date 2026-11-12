@@ -37,6 +37,10 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
    // Reject the entire page and retain the cursor so the user can retry safely.
    if(cursorMode==="offset"&&nextCursor!==null&&nextCursor<=next)
     throw Error("Geçersiz sayfalama ilerlemesi. Tekrar deneyin.");
+   // A server page that repeats an existing patient without advancing its offset
+   // must not silently replace the currently displayed clinical record.
+   if(cursorMode==="offset"&&page.items.some(item=>knownIds.current.has(item.id)))
+    throw Error("Tekrarlanan hasta sayfası. Tekrar deneyin.");
    page.items.forEach(item=>knownIds.current.add(item.id));
    setItems(old=>{if(ascending)return mergeRecords(old,page.items,true);const existingIds=new Set(old.map(item=>item.id));return [...old,...page.items.filter(item=>!existingIds.has(item.id))];});
    // A broken backend cursor must not trigger an endless request for the same page.
