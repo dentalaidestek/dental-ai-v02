@@ -43,7 +43,7 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
     throw Error("Geçersiz sayfalama imleci. Tekrar deneyin.");
    // An offset that does not advance can silently skip or repeat patient records.
    // Reject the entire page and retain the cursor so the user can retry safely.
-   if(cursorMode==="offset"&&nextCursor!==null&&nextCursor<next+page.items.length)
+   if(cursorMode==="offset"&&nextCursor!==null&&nextCursor!==next+page.items.length)
     throw Error("Geçersiz sayfalama ilerlemesi. Tekrar deneyin.");
    // A server page that repeats an existing patient without advancing its offset
    // must not silently replace the currently displayed clinical record.
