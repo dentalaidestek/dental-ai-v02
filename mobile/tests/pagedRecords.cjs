@@ -48,12 +48,23 @@ test('newest-first pagination appends older rows without replacing fresh records
  assert.equal(h.current.items.find(x=>x.id===8).content,'fresh-8');
 });
 
-test('non-advancing pagination cursor is closed to prevent endless load-more requests',async()=>{
- let calls=0;
- const h=harness(async before=>{calls++;return before?{items:[row(2)],next_before:4}:{items:[row(4)],next_before:4}},false,false);
+test('invalid ID cursor preserves verified rows and allows a corrected retry',async()=>{
+ let calls=0,broken=true;
+ const h=harness(async before=>{
+  calls++;
+  if(before===undefined)return {items:[row(4)],next_before:4};
+  return broken?{items:[row(2)],next_before:4}:{items:[row(2)],next_before:null};
+ },false,false);
  h.render();await tick();h.render();assert.equal(h.current.hasMore,true);
- await h.current.loadMore();h.render();assert.equal(h.current.hasMore,false);
- await h.current.loadMore();h.render();assert.equal(calls,2);
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.hasMore,true);
+ assert.match(h.current.error,/Geçersiz sayfalama imleci/);
+ assert.equal(h.current.items.map(x=>x.id).join(','),'4');
+ broken=false;await h.current.loadMore();h.render();
+ assert.equal(h.current.hasMore,false);
+ assert.equal(h.current.error,'');
+ assert.equal(h.current.items.map(x=>x.id).join(','),'4,2');
+ assert.equal(calls,3);
 });
 
 test('invalid initial cursors do not expose endless pagination after refresh',async()=>{
