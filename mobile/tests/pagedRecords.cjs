@@ -301,3 +301,19 @@ test('offset next cursor cannot replay part of a newly received patient page',as
  assert.equal(h.current.items.map(x=>x.id).join(','),'101,102,103,104');
  assert.equal(h.current.error,'');
 });
+
+test('offset cursor cannot skip unseen patient records; corrected retry succeeds',async()=>{
+ let gap=true;
+ const h=harness(async offset=>offset===undefined
+  ?{items:[row(101),row(102)],next_before:2}
+  :gap?{items:[row(103)],next_before:8}:{items:[row(103)],next_before:3},
+  true,false,'offset');
+ h.render();await tick();h.render();
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'101,102');
+ assert.equal(h.current.hasMore,true);
+ assert.match(h.current.error,/Geçersiz sayfalama ilerlemesi/);
+ gap=false;await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'101,102,103');
+ assert.equal(h.current.error,'');
+});
