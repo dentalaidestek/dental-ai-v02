@@ -9,7 +9,7 @@ export function validInitialCursor<T extends {id:number}>(page:Page<T>,cursorMod
  if(cursor===null||!Number.isSafeInteger(cursor)||cursor<0||!Array.isArray(page.items)||page.items.length===0)return null;
  const ids=page.items.map(item=>item?.id);
  if(ids.some(id=>!Number.isSafeInteger(id)||id<0))return null;
- return cursorMode==="offset"?(cursor>=page.items.length?cursor:null):(ids.includes(cursor)?cursor:null);
+ return cursorMode==="offset"?(cursor===page.items.length?cursor:null):(ids.includes(cursor)?cursor:null);
 }
 export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(before?:number)=>Promise<Page<T>>,ascending=false,replaceOnRefresh=false,cursorMode:"id"|"offset"="id"){
  const [items,setItems]=useState<T[]>([]),[next,setNext]=useState<number|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
