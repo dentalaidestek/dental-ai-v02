@@ -192,3 +192,21 @@ test('old patient pagination response cannot overwrite a switched account',async
  assert.equal(h.current.hasMore,true);
  assert.equal(h.current.error,'');
 });
+
+test('overlapping offset page cannot replace an existing patient and permits retry',async()=>{
+ let overlapping=true;
+ const h=harness(async offset=>offset===undefined
+  ?{items:[{id:101,content:'verified-clinical-record'}],next_before:1}
+  :overlapping?{items:[{id:101,content:'stale-record'},row(102)],next_before:3}
+   :{items:[row(102)],next_before:null},true,false,'offset');
+ h.render();await tick();h.render();
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.items.length,1);
+ assert.equal(h.current.items[0].content,'verified-clinical-record');
+ assert.match(h.current.error,/Tekrarlanan hasta sayfası/);
+ assert.equal(h.current.hasMore,true);
+ overlapping=false;
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.items.map(x=>x.id).join(','),'101,102');
+ assert.equal(h.current.error,'');
+});
