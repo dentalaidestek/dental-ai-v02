@@ -4,12 +4,12 @@ export function mergeRecords<T extends {id:number}>(existing:T[],incoming:T[],as
  const byId=new Map(existing.map(item=>[item.id,item]));incoming.forEach(item=>byId.set(item.id,item));const incomingIds=new Set(incoming.map(item=>item.id));
  return ascending?Array.from(byId.values()).sort((a,b)=>a.id-b.id):[...incoming,...existing.filter(item=>!incomingIds.has(item.id))];
 }
-export function validInitialCursor<T extends {id:number}>(page:Page<T>,cursorMode:"id"|"offset"="id"):number|null{
+export function validInitialCursor<T extends {id:number}>(page:Page<T>,cursorMode:"id"|"offset"="id",offsetBase=0):number|null{
  const cursor=page.next_before;
  if(cursor===null||!Number.isSafeInteger(cursor)||cursor<0||!Array.isArray(page.items)||page.items.length===0)return null;
  const ids=page.items.map(item=>item?.id);
  if(ids.some(id=>!Number.isSafeInteger(id)||id<0))return null;
- return cursorMode==="offset"?(cursor===page.items.length?cursor:null):(ids.includes(cursor)?cursor:null);
+ return cursorMode==="offset"?(cursor===offsetBase+page.items.length?cursor:null):(ids.includes(cursor)?cursor:null);
 }
 export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(before?:number)=>Promise<Page<T>>,ascending=false,replaceOnRefresh=false,cursorMode:"id"|"offset"="id"){
  const [items,setItems]=useState<T[]>([]),[next,setNext]=useState<number|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -36,7 +36,7 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
   if(next===null||pending.current===generation.current||busy)return;const request=generation.current;pending.current=request;setBusy(true);setError('');
   try{const page=await fetchRef.current(next);if(request!==generation.current)return;
    if(!Array.isArray(page?.items)||page.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||new Set(page.items.map(item=>item.id)).size!==page.items.length||!(page.next_before===null||(Number.isSafeInteger(page.next_before)&&page.next_before>=0)))throw Error("Geçersiz sayfa yanıtı.");
-   const nextCursor=validInitialCursor(page,cursorMode);
+   const nextCursor=validInitialCursor(page,cursorMode,cursorMode==="offset"?next:0);
    // A nonterminal page must supply a usable cursor and at least one record.
    // Otherwise preserve the current records/cursor and surface a retryable error.
    if(page.next_before!==null&&nextCursor===null)
