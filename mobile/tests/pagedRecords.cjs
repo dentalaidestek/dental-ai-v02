@@ -98,13 +98,21 @@ test('date-ordered cursor may increase in numeric ID across older pages',async()
  assert.deepEqual(calls,[undefined,10,24]);
  assert.equal(h.current.items.length,5);
 });
-test('repeated cursor cycle stops without unbounded pagination',async()=>{
- const h=harness(async before=>before===undefined?{items:[row(4)],next_before:4}:before===4?{items:[row(9)],next_before:9}:{items:[row(4)],next_before:4},false,false);
+test('repeated cursor cycle preserves verified records and permits corrected retry',async()=>{
+ let broken=true;
+ const h=harness(async before=>before===undefined?{items:[row(4)],next_before:4}:before===4?{items:[row(9)],next_before:9}:broken?{items:[row(3)],next_before:4}:{items:[row(3)],next_before:null},false,false);
  h.render();await tick();h.render();
  await h.current.loadMore();h.render();
  assert.equal(h.current.hasMore,true);
  await h.current.loadMore();h.render();
+ assert.equal(h.current.hasMore,true);
+ assert.match(h.current.error,/Geçersiz sayfalama döngüsü/);
+ assert.equal(h.current.items.map(x=>x.id).join(','),'4,9');
+ broken=false;
+ await h.current.loadMore();h.render();
  assert.equal(h.current.hasMore,false);
+ assert.equal(h.current.error,'');
+ assert.equal(h.current.items.map(x=>x.id).join(','),'4,9,3');
 });
 
 test('offset pagination loads all patient pages even when offset is not a record ID',async()=>{
