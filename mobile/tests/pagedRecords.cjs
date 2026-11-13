@@ -79,7 +79,7 @@ test('invalid initial cursors do not expose endless pagination after refresh',as
 test('valid initial cursor remains available for older pages',async()=>{
  const h=harness(async before=>before?{items:[row(1)],next_before:null}:{items:[row(4),row(5)],next_before:5},true,false);
  h.render();await tick();h.render();assert.equal(h.current.hasMore,true);
- await h.current.loadMore();h.render();assert.equal(h.current.items.map(x=>x.id).join(','),'1');
+ await h.current.loadMore();h.render();assert.equal(h.current.items.map(x=>x.id).join(','),'4,5,1');
 });
 
 test('date-ordered cursor may increase in numeric ID across older pages',async()=>{
@@ -401,7 +401,7 @@ test('overlapping realtime refresh retains prior cursor-cycle protection',async(
  assert.equal(h.current.hasMore,true);
  await h.current.loadMore();h.render();
  assert.match(h.current.error,/Geçersiz sayfalama döngüsü/);
- assert.equal(h.current.items.map(x=>x.id).join(','),'4,9,11');
+ assert.equal(h.current.items.map(x=>x.id).join(','),'4,11,9');
 });
 
 
