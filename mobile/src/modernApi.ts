@@ -6,7 +6,9 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
  // Keep the caller's cancellation signal while enforcing a finite deadline.
  const controller=new AbortController();
  const abort=()=>controller.abort();
- const timeout=setTimeout(abort,30000);
+ // Academic generation can legitimately take minutes; ordinary reads stay bounded at 30 seconds.
+ const deadlineMs=/^\/academic\/courses\/\d+\/ask$/.test(path)?180000:30000;
+ const timeout=setTimeout(abort,deadlineMs);
  if(init.signal?.aborted)controller.abort();
  else init.signal?.addEventListener("abort",abort,{once:true});
  try{
