@@ -41,6 +41,6 @@ test('token replacement and unmount do not expose unverified analysis results',a
   if(change==='token')h.setToken('replacement-token');else h.unmount();
   await tick();
   // No patient was selected, so a result cannot be verified against a patient.
-  assert.equal(h.states[10],null);
+  assert.equal(h.states[8],null);
  }
 });
