@@ -36,6 +36,9 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
   if(next===null||pending.current===generation.current||busy)return;const request=generation.current;pending.current=request;setBusy(true);setError('');
   try{const page=await fetchRef.current(next);if(request!==generation.current)return;
    if(!Array.isArray(page?.items)||page.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||new Set(page.items.map(item=>item.id)).size!==page.items.length||!(page.next_before===null||(Number.isSafeInteger(page.next_before)&&page.next_before>=0)))throw Error("Geçersiz sayfa yanıtı.");
+   // An empty nonterminal page cannot advance safely, even if its offset looks plausible.
+   if(page.next_before!==null&&page.items.length===0)
+    throw Error("Geçersiz sayfalama imleci. Tekrar deneyin.");
    // Distinguish a non-advancing/skipping offset from a malformed ID cursor.
    // Validate before mutating clinical records so the same page can be retried.
    if(cursorMode==="offset"&&page.next_before!==null&&page.items.length>0&&page.next_before!==next+page.items.length)
