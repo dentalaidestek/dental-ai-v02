@@ -100,7 +100,8 @@ export const uploadPatientMedia=async(token:string,patientId:number,file:{uri:st
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw new Error("Geçersiz hasta kimliği.");
  if(!file?.uri||!file.name||!file.type)throw new Error("Geçerli bir klinik görüntü seçin.");
  if(!["PHOTO","RADIOGRAPH"].includes(mediaType))throw new Error("Geçersiz görüntü türü.");
- if(toothNumber!==undefined&&!/^[1-8][1-8]$/.test(toothNumber))throw new Error("Geçersiz FDI diş numarası.");
+ // Permanent FDI teeth are 11-18, 21-28, 31-38, 41-48; primary teeth are 51-55, 61-65, 71-75, 81-85.
+ if(toothNumber!==undefined&&!/^(?:[1-4][1-8]|[5-8][1-5])$/.test(toothNumber))throw new Error("Geçersiz FDI diş numarası.");
  const body=new FormData();
  body.append("media_type",mediaType);
  body.append("file",{uri:file.uri,name:file.name,type:file.type} as any);
