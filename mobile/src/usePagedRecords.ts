@@ -59,7 +59,11 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
    // after the server fixes its response, rather than silently ending pagination.
    if(nextCursor!==null&&(nextCursor===next||seenCursors.current.has(nextCursor)))
     throw Error("Geçersiz sayfalama döngüsü. Tekrar deneyin.");
-   // A nonterminal ID page containing only previously seen rows cannot make progress.\n   // Keep the verified rows and cursor so the backend can be retried safely.\n   if(cursorMode==="id"&&nextCursor!==null&&page.items.every(item=>knownIds.current.has(item.id)))\n    throw Error("Tekrarlanan kayıt sayfası. Tekrar deneyin.");\n   // A server page that repeats an existing patient without advancing its offset
+   // A nonterminal ID page containing only previously seen rows cannot make progress.
+   // Keep the verified rows and cursor so the backend can be retried safely.
+   if(cursorMode==="id"&&nextCursor!==null&&page.items.every(item=>knownIds.current.has(item.id)))
+    throw Error("Tekrarlanan kayıt sayfası. Tekrar deneyin.");
+   // A server page that repeats an existing patient without advancing its offset
    // must not silently replace the currently displayed clinical record.
    if(cursorMode==="offset"&&page.items.some(item=>knownIds.current.has(item.id)))
     throw Error("Tekrarlanan hasta sayfası. Tekrar deneyin.");
