@@ -41,7 +41,7 @@ test('clinical media gallery prevents stale account mutations and pagination ove
  assert.ok(gallery.includes('scope!==patientScope.current||!mounted.current'), 'patient switch must cancel pending media picker');
  assert.ok(gallery.includes('loadingMoreRef.current||refreshing||uploading||deleting'), 'pagination must not overlap refresh or mutations');
  assert.ok(gallery.includes('if(mounted.current&&scope===patientScope.current)'), 'old account must not update gallery after upload');
- assert.ok(gallery.includes('if(mounted.current&&current===generation.current)'), 'old page must not overwrite current patient');
+ assert.ok(gallery.includes('if(mounted.current&&current===generation.current&&scope===patientScope.current)'), 'old page must not overwrite current patient');
 });
 
 test('patient detail never renders stale clinical data after account or patient change',()=>{
