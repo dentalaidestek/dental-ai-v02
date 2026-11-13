@@ -88,7 +88,7 @@ test('message retries retain the server idempotency identity',async()=>{
   assert.deepEqual(ids,['stable-client-message-id','stable-client-message-id']);
  }finally{global.fetch=original;}
 });
-test('patient photo upload uses image field and lets transport set multipart boundary',async()=>{
+test('patient photo upload uses media_type and file fields and lets transport set multipart boundary',async()=>{
  const originalFetch=global.fetch,originalForm=global.FormData;
  const fields=[];
  try{
@@ -101,6 +101,8 @@ test('patient photo upload uses image field and lets transport set multipart bou
   };
   const {uploadPatientMedia}=require('../src/api.ts');
   await uploadPatientMedia('token',7,{uri:'file:///synthetic.png',name:'scan.png',type:'image/png'});
-  assert.equal(fields[0][0],'image');
+  assert.deepEqual(fields.map(([name])=>name),['media_type','file']);
+  assert.equal(fields[0][1],'PHOTO');
+  assert.deepEqual(fields[1][1],{uri:'file:///synthetic.png',name:'scan.png',type:'image/png'});
  }finally{global.fetch=originalFetch;global.FormData=originalForm;}
 });
