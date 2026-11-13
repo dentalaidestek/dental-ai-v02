@@ -12,10 +12,25 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path:string,token?:string,options:RequestInit={}):Promise<T>{
- const response=await fetch(API_BASE+path,{...options,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{}),...(options.headers||{})}});
- const raw=await response.text(); let body:any={}; try{body=raw?JSON.parse(raw):{}}catch{}
- if(!response.ok){if(response.status===401&&token&&path==="/me")reportSessionExpiry(token);const detail=body.detail;throw new ApiError(response.status,typeof detail==="string"?detail:(detail?.message||"İstek başarısız."));}
- return body as T;
+ // A stalled mobile connection must not leave clinical screens loading forever.
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),30000);
+ const externalSignal=options.signal;
+ const abort=()=>controller.abort();
+ if(externalSignal?.aborted)controller.abort();
+ else externalSignal?.addEventListener("abort",abort,{once:true});
+ try{
+  const response=await fetch(API_BASE+path,{...options,signal:controller.signal,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{}),...(options.headers||{})}});
+  const raw=await response.text();let body:any={};try{body=raw?JSON.parse(raw):{}}catch{}
+  if(!response.ok){if(response.status===401&&token&&path==="/me")reportSessionExpiry(token);const detail=body.detail;throw new ApiError(response.status,typeof detail==="string"?detail:(detail?.message||"İstek başarısız."));}
+  return body as T;
+ }catch(error){
+  if(controller.signal.aborted&&!externalSignal?.aborted)throw new ApiError(408,"Sunucu yanıt vermedi. Bağlantınızı kontrol edip tekrar deneyin.");
+  throw error;
+ }finally{
+  clearTimeout(timeout);
+  externalSignal?.removeEventListener("abort",abort);
+ }
 }
 export function login(loginValue:string,password:string,renewEmailCode=false){return request<{access_token:string|null;token_type:string;expires_at:string;challenge_token?:string}>("/auth/login",undefined,{method:"POST",body:JSON.stringify({login:loginValue,password,renew_email_code:renewEmailCode})});}
 export function verifyEmail(challengeToken:string,code:string){return request<{access_token:string;token_type:string;expires_at:string}>("/auth/verify-email",undefined,{method:"POST",body:JSON.stringify({challenge_token:challengeToken,code})});}
