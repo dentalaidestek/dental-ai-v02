@@ -363,3 +363,24 @@ test('ascending older page cannot overwrite a previously verified clinical row',
  assert.equal(h.current.items.find(item=>item.id===3).content,'verified');
  assert.equal(h.current.items.map(item=>item.id).join(','),'2,3,4');
 });
+
+test('failed refresh retains cursor-cycle protection for clinical pages',async()=>{
+ let refreshBroken=false;
+ const h=harness(async before=>{
+  if(before===undefined)return refreshBroken
+   ?{items:[row(99)],next_before:999}
+   :{items:[row(4)],next_before:4};
+  if(before===4)return {items:[row(9)],next_before:9};
+  return {items:[row(4)],next_before:4};
+ },false,false,'id');
+ h.render();await tick();h.render();
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.hasMore,true);
+ refreshBroken=true;
+ await h.current.refresh();h.render();
+ assert.match(h.current.error,/Geçersiz sayfalama imleci/);
+ assert.equal(h.current.items.map(x=>x.id).join(','),'4,9');
+ await h.current.loadMore();h.render();
+ assert.match(h.current.error,/Geçersiz sayfalama döngüsü/);
+ assert.equal(h.current.items.map(x=>x.id).join(','),'4,9');
+});
