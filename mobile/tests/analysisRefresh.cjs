@@ -15,12 +15,12 @@ function harness(fetchAnalysis){
  const render=()=>{stateIndex=0;effectIndex=0;refIndex=0;exports.default({token});while(effects.length)effects.shift()();};
  return {states,render,setEvent:value=>{event=value;render()},setToken:value=>{token=value;render()},unmount:()=>previous.forEach(x=>x?.cleanup?.())};
 }
-test('one analysis event fetches once; state replacement does not trigger a request loop',async()=>{
+test('analysis event does not fetch without a verified patient selection',async()=>{
  let requests=0;const h=harness(async()=>{requests++;return result()});
- h.render();await tick();assert.equal(requests,1);
- h.render();await tick();h.render();await tick();assert.equal(requests,1);
- h.setEvent({entity_type:'analysis',entity_id:7,event_id:101});await tick();assert.equal(requests,2);
- h.setEvent({entity_type:'analysis',entity_id:8,event_id:102});await tick();assert.equal(requests,2);
+ h.render();await tick();assert.equal(requests,0);
+ h.render();await tick();h.render();await tick();assert.equal(requests,0);
+ h.setEvent({entity_type:'analysis',entity_id:7,event_id:101});await tick();assert.equal(requests,0);
+ h.setEvent({entity_type:'analysis',entity_id:8,event_id:102});await tick();assert.equal(requests,0);
 });
 test('unrelated event does not trigger a new analysis request',async()=>{
  let requests=0;const h=harness(async()=>{requests++;return result()});
