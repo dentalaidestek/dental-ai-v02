@@ -23,7 +23,13 @@ async function request<T>(path:string,token?:string,options:RequestInit={}):Prom
  else externalSignal?.addEventListener("abort",abort,{once:true});
  try{
   const response=await fetch(API_BASE+path,{...options,signal:controller.signal,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{}),...(options.headers||{})}});
-  const raw=await response.text();let body:any={};try{body=raw?JSON.parse(raw):{}}catch{}
+  const raw=await response.text();let body:any={};
+  try{body=raw?JSON.parse(raw):{}}catch{
+   // A reverse proxy or expired web session may return HTML with HTTP 200.
+   // Never treat that as a successful clinical API response.
+   if(response.ok)throw new ApiError(502,"Sunucu beklenen JSON yanıtını göndermedi. Lütfen tekrar deneyin.");
+  }
+  if(response.ok&&raw&&(!body||typeof body!=="object"))throw new ApiError(502,"Sunucudan geçersiz API yanıtı alındı.");
   if(!response.ok){if(response.status===401&&token&&path==="/me")reportSessionExpiry(token);const detail=body.detail;throw new ApiError(response.status,typeof detail==="string"?detail:(detail?.message||"İstek başarısız."));}
   return body as T;
  }catch(error){
