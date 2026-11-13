@@ -16,13 +16,15 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
  const fetchRef=useRef(fetchPage);fetchRef.current=fetchPage;
  const generation=useRef(0),more=useRef(false),pending=useRef<number|null>(null),knownIds=useRef(new Set<number>()),seenCursors=useRef(new Set<number>());
  const refresh=useCallback(async()=>{
-  const request=++generation.current;seenCursors.current.clear();setBusy(true);setError('');
+  const request=++generation.current;setBusy(true);setError('');
   try{const page=await fetchRef.current();if(request!==generation.current)return;
    if(!Array.isArray(page?.items)||page.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||new Set(page.items.map(item=>item.id)).size!==page.items.length||!(page.next_before===null||(Number.isSafeInteger(page.next_before)&&page.next_before>=0)))throw Error("Geçersiz sayfa yanıtı.");
    // Do not silently truncate the first page when the server advertises an unusable cursor.
    // Preserve the last verified clinical rows so a corrected response can be retried.
    const initialCursor=validInitialCursor(page,cursorMode);
    if(page.next_before!==null&&initialCursor===null)throw Error("Geçersiz sayfalama imleci. Tekrar deneyin.");
+   // Reset cycle history only after a verified refresh; malformed responses must not erase it.
+   seenCursors.current.clear();
    if(replaceOnRefresh){knownIds.current=new Set(page.items.map(item=>item.id));more.current=false;setItems(page.items);setNext(initialCursor);return;}
    const overlaps=page.items.some(item=>knownIds.current.has(item.id));
    if(!page.items.length){knownIds.current.clear();more.current=false;setItems([]);setNext(null);return;}
