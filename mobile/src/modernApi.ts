@@ -2,13 +2,29 @@ import {ApiError} from './api';
 const API_BASE="https://dentalai.tr/api/mobile/v1";
 async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
  const headers:any={Authorization:"Bearer "+token,...(!(init.body instanceof FormData)?{"Content-Type":"application/json"}:{}),...(init.headers||{})};
- const r=await fetch(API_BASE+path,{...init,headers});
- const raw=await r.text(); let b:any={}; try{b=raw?JSON.parse(raw):{}}catch{}
- if(!r.ok){
-  // A feature-specific 401 must not invalidate the global login; /me validates sessions.
-  throw new ApiError(r.status,typeof b.detail==="string"?b.detail:(b.detail?.message||"İstek başarısız."));
+ // Bound network waits for notifications, consultations, academic and media screens.
+ // Keep the caller's cancellation signal while enforcing a finite deadline.
+ const controller=new AbortController();
+ const abort=()=>controller.abort();
+ const timeout=setTimeout(abort,30000);
+ if(init.signal?.aborted)controller.abort();
+ else init.signal?.addEventListener("abort",abort,{once:true});
+ try{
+  const r=await fetch(API_BASE+path,{...init,headers,signal:controller.signal});
+  const raw=await r.text(); let b:any={}; try{b=raw?JSON.parse(raw):{}}catch{}
+  if(!r.ok){
+   // A feature-specific 401 must not invalidate the global login; /me validates sessions.
+   throw new ApiError(r.status,typeof b.detail==="string"?b.detail:(b.detail?.message||"İstek başarısız."));
+  }
+  return b as T;
+ }catch(error){
+  if(controller.signal.aborted&&!init.signal?.aborted)
+   throw new ApiError(408,"Sunucu yanıt vermedi. Bağlantınızı kontrol edip tekrar deneyin.");
+  throw error;
+ }finally{
+  clearTimeout(timeout);
+  init.signal?.removeEventListener("abort",abort);
  }
- return b as T;
 }
 export type Notice={id:number;title:string;message:string;notice_type:string;target_url?:string|null;read_at?:string|null;created_at:string};
 export type Expert={user_id:number;display_name:string;specialty:string;academic_title?:string|null;institution?:string|null;bio?:string|null;availability:string;consultation_price:number;rating_avg?:number|null;review_count:number};
