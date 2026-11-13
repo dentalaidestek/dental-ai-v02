@@ -23,12 +23,13 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
    // Preserve the last verified clinical rows so a corrected response can be retried.
    const initialCursor=validInitialCursor(page,cursorMode);
    if(page.next_before!==null&&initialCursor===null)throw Error("Geçersiz sayfalama imleci. Tekrar deneyin.");
-   // Reset cycle history only after a verified refresh; malformed responses must not erase it.
-   seenCursors.current.clear();
+   // A verified replacement starts a new chain; an overlapping realtime refresh
+   // must retain cursor-cycle history while older clinical pages remain attached.
+   if(replaceOnRefresh)seenCursors.current.clear();
    if(replaceOnRefresh){knownIds.current=new Set(page.items.map(item=>item.id));more.current=false;setItems(page.items);setNext(initialCursor);return;}
    const overlaps=page.items.some(item=>knownIds.current.has(item.id));
-   if(!page.items.length){knownIds.current.clear();more.current=false;setItems([]);setNext(null);return;}
-   if(!overlaps)more.current=false;
+   if(!page.items.length){seenCursors.current.clear();knownIds.current.clear();more.current=false;setItems([]);setNext(null);return;}
+   if(!overlaps){more.current=false;seenCursors.current.clear();}
    page.items.forEach(item=>knownIds.current.add(item.id));
    setItems(old=>mergeRecords(old,page.items,ascending));if(!more.current)setNext(validInitialCursor(page,cursorMode));
   }catch(e){if(request===generation.current)setError(e instanceof Error?e.message:'Yüklenemedi. Tekrar deneyin.');}
