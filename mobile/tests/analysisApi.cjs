@@ -54,3 +54,14 @@ test('AI rejects a result with a mismatched analysis job ID',async()=>{
  try{await assert.rejects(()=>api.getAnalysis('token',23),/hasta veya iş kimliği uyuşmayan/)}
  finally{global.fetch=original}
 });
+
+test('modern API rejects HTML and scalar success payloads instead of silently accepting them',async()=>{
+ const {getNotifications}=require('../src/modernApi.ts');
+ const original=global.fetch;
+ try{
+  for(const raw of ['<html>login</html>','null','42']){
+   global.fetch=async()=>new Response(raw,{status:200});
+   await assert.rejects(()=>getNotifications('token'),error=>error.status===502);
+  }
+ }finally{global.fetch=original}
+});
