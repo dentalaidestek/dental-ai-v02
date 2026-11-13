@@ -70,9 +70,9 @@ test('expert consultation pages reject malformed records and non-progressing cur
    global.fetch=async()=>new Response(JSON.stringify(payload),{status:200});
    await assert.rejects(()=>getConsultations('secret',9),/geçersiz liste/);
   }
-  global.fetch=async()=>new Response(JSON.stringify({items:[{id:7,other_display_name:'Uzman'}],next_before:6}),{status:200});
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:7,other_display_name:'Uzman'}],next_before:7}),{status:200});
   const page=await getConsultations('secret',9);
-  assert.equal(page.items[0].other_name,'Uzman');assert.equal(page.next_before,6);
+  assert.equal(page.items[0].other_display_name,'Uzman');assert.equal(page.next_before,7);
   global.fetch=async()=>new Response(JSON.stringify({items:[{id:8}],next_before:8}),{status:200});
   assert.equal((await getConsultations('secret',9)).next_before,8);
  }finally{global.fetch=original;}
@@ -89,9 +89,9 @@ test('academic pagination rejects invalid records, stalled cursors and malformed
    global.fetch=async()=>new Response(JSON.stringify(response),{status:200});
    await assert.rejects(()=>getCourses('secret',13),/geçersiz sayfa/);
   }
-  global.fetch=async()=>new Response(JSON.stringify({items:[{id:11,role:'assistant',content:'Yanıt',created_at:'now'}],next_before:10}),{status:200});
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:11,role:'assistant',content:'Yanıt',created_at:'now'}],next_before:11}),{status:200});
   const valid=await getAcademicMessages('secret',2,13);
-  assert.equal(valid.items[0].content,'Yanıt');assert.equal(valid.next_before,10);
+  assert.equal(valid.items[0].content,'Yanıt');assert.equal(valid.next_before,11);
   global.fetch=async()=>new Response(JSON.stringify({items:[{id:12,title:'Ders'}],next_before:12}),{status:200});
   assert.equal((await getCourses('secret',13)).next_before,12);
   global.fetch=async()=>new Response(JSON.stringify({items:[{id:11,role:'assistant',content:null}],next_before:null}),{status:200});
@@ -160,8 +160,8 @@ test('consultation and notification mutations reject invalid IDs and empty messa
  global.fetch=async()=>{calls++;return new Response(JSON.stringify({ok:true,message:{id:2}}),{status:200})};
  try{
   for(const id of [0,-1,1.5,NaN,Infinity]){
-   assert.throws(()=>markNotificationRead('secret',id),/Geçersiz/);
-   assert.throws(()=>getConsultation('secret',id),/Geçersiz/);
+   await assert.rejects(()=>markNotificationRead('secret',id),/Geçersiz/);
+   await assert.rejects(()=>getConsultation('secret',id),/Geçersiz/);
    assert.throws(()=>sendConsultationMessage('secret',id,'hello','uuid'),/Geçersiz/);
   }
   assert.throws(()=>sendConsultationMessage('secret',7,'  ','uuid'),/boş mesaj/);
