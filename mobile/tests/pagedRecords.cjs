@@ -352,3 +352,14 @@ test('initial offset cannot skip unseen patients; corrected refresh can retry',a
  assert.equal(h.current.hasMore,true);
  assert.equal(h.current.error,'');
 });
+
+
+test('ascending older page cannot overwrite a previously verified clinical row',async()=>{
+ const h=harness(async before=>before===undefined
+  ?{items:[{id:3,content:'verified'},row(4)],next_before:3}
+  :{items:[{id:3,content:'stale'},row(2)],next_before:null},false,true,'id');
+ h.render();await tick();h.render();
+ await h.current.loadMore();h.render();
+ assert.equal(h.current.items.find(item=>item.id===3).content,'verified');
+ assert.equal(h.current.items.map(item=>item.id).join(','),'2,3,4');
+});
