@@ -82,7 +82,7 @@ test('academic chat messages reject out-of-order IDs and nonadvancing cursors',a
   {id:19,role:'assistant',content:'Yanıt',created_at:'2026-11-10'},
   {id:18,role:'user',content:'Soru',created_at:'2026-11-09'}
  ],next_before:18}),async()=>{
-  await assert.rejects(()=>api.getAcademicMessages('token',1,20),/geçersiz sayfa/);
+  await assert.rejects(()=>api.getAcademicMessages('token',1,20),/geçersiz kayıt/);
  });
 });
 
