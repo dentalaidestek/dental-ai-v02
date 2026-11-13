@@ -22,6 +22,7 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
  }catch(error){
   if(controller.signal.aborted&&!init.signal?.aborted)
    throw new ApiError(408,"Sunucu yanıt vermedi. Bağlantınızı kontrol edip tekrar deneyin.");
+  if(error instanceof TypeError)throw new ApiError(503,"Sunucuya bağlanılamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.");
   throw error;
  }finally{
   clearTimeout(timeout);
