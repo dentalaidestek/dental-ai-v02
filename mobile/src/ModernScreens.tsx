@@ -112,7 +112,7 @@ function chatFilterMatch(item:Consultation,filter:ChatFilter){
  if(filter==="history")return ["HISTORY","CLOSED","EXPERT_COMPLETED","COMPLETED","CANCELLED"].includes(status);
  return true;
 }
-function Consultations({token,navigation}:{token:string;navigation:any}){
+export function Consultations({token,navigation}:{token:string;navigation:any}){
  const[search,setSearch]=useState(""),[filter,setFilter]=useState<ChatFilter>("all");
  const{lastEvent}=useRealtime(),isFocused=useIsFocused();
  const pages=usePagedRecords<Consultation>(token,before=>getConsultations(token,before),false,true);
