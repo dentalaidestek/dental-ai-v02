@@ -55,3 +55,27 @@ test('patient profile rejects malformed nested clinical collections before tooth
   assert.equal((await getPatient('token',8)).surfaces[0].surface,'MESIAL');
  }finally{global.fetch=original}
 });
+
+test('clinical media upload rejects invalid FDI tooth numbers before network access',async()=>{
+ const {uploadPatientMedia}=require('../src/api.ts');
+ const original=global.fetch;
+ const file={uri:'file:///image.jpg',name:'image.jpg',type:'image/jpeg'};
+ global.fetch=()=>{throw Error('unexpected network call')};
+ try{
+  for(const tooth of ['19','49','56','66','89','00','99']){
+   await assert.rejects(()=>uploadPatientMedia('token',1,file,tooth),/Geçersiz FDI/);
+  }
+ }finally{global.fetch=original}
+});
+test('clinical media upload accepts primary and permanent FDI tooth numbers',async()=>{
+ const {uploadPatientMedia}=require('../src/api.ts');
+ const original=global.fetch;
+ const file={uri:'file:///image.jpg',name:'image.jpg',type:'image/jpeg'};
+ let calls=0;
+ global.fetch=async()=>{calls++;return reply({media:{id:calls,original_filename:'image.jpg',media_type:'PHOTO'}})};
+ try{
+  for(const tooth of ['11','18','48','51','65','75','85'])
+   assert.ok((await uploadPatientMedia('token',1,file,tooth)).media.id>0);
+  assert.equal(calls,7);
+ }finally{global.fetch=original}
+});
