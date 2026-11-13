@@ -160,7 +160,7 @@ test('consultation and notification mutations reject invalid IDs and empty messa
  global.fetch=async()=>{calls++;return new Response(JSON.stringify({ok:true,message:{id:2}}),{status:200})};
  try{
   for(const id of [0,-1,1.5,NaN,Infinity]){
-   await assert.rejects(()=>markNotificationRead('secret',id),/Geçersiz/);
+   assert.throws(()=>markNotificationRead('secret',id),/Geçersiz/);
    await assert.rejects(()=>getConsultation('secret',id),/Geçersiz/);
    assert.throws(()=>sendConsultationMessage('secret',id,'hello','uuid'),/Geçersiz/);
   }
