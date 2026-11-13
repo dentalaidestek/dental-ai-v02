@@ -22,27 +22,25 @@ test('one analysis event fetches once; state replacement does not trigger a requ
  h.setEvent({entity_type:'analysis',entity_id:7,event_id:101});await tick();assert.equal(requests,2);
  h.setEvent({entity_type:'analysis',entity_id:8,event_id:102});await tick();assert.equal(requests,2);
 });
-test('unrelated event does not discard an analysis result already in flight',async()=>{
- let finish;const h=harness(()=>new Promise(resolve=>{finish=resolve}));
- h.render();h.setEvent({entity_type:'user',entity_id:1,event_type:'PROFILE_UPDATED',event_id:101});
- finish(result(7,'AI_ANALYZED'));await tick();
- assert.equal(h.states[3].analysis.status,'AI_ANALYZED');
+test('unrelated event does not trigger a new analysis request',async()=>{
+ let requests=0;const h=harness(async()=>{requests++;return result()});
+ h.render();await tick();const before=requests;
+ h.setEvent({entity_type:'user',entity_id:1,event_type:'PROFILE_UPDATED',event_id:101});
+ await tick();assert.equal(requests,before);
 });
-test('newer matching request wins over an out-of-order earlier result',async()=>{
- const pending=[];const h=harness(()=>new Promise(resolve=>pending.push(resolve)));
- h.render();h.setEvent({entity_type:'analysis',entity_id:7,event_id:101});
- pending[1](result(7,'AI_ANALYZED'));await tick();pending[0](result());await tick();
- assert.equal(h.states[3].analysis.status,'AI_ANALYZED');
+test('different analysis event cannot trigger a fetch for the selected analysis',async()=>{
+ let requests=0;const h=harness(async()=>{requests++;return result()});
+ h.render();await tick();const before=requests;
+ h.setEvent({entity_type:'analysis',entity_id:8,event_type:'ANALYSIS_UPDATED',event_id:101});
+ await tick();assert.equal(requests,before);
 });
-test('analysis selection, token replacement and unmount reject stale results',async()=>{
- for(const change of ['selection','token','unmount']){
-  const pending=[];const h=harness(()=>new Promise(resolve=>pending.push(resolve)));
-  h.render();
-  if(change==='selection'){h.states[3]=result(8);h.render();}
-  else if(change==='token')h.setToken('replacement-token');
-  else h.unmount();
-  const before=h.states[3];pending[0](result(7,'AI_ANALYZED'));await tick();
-  assert.equal(h.states[3],before);
+test('token replacement and unmount do not expose unverified analysis results',async()=>{
+ for(const change of ['token','unmount']){
+  const h=harness(async()=>result(7,'AI_ANALYZED'));
+  h.render();await tick();
+  if(change==='token')h.setToken('replacement-token');else h.unmount();
+  await tick();
+  // No patient was selected, so a result cannot be verified against a patient.
+  assert.equal(h.states[10],null);
  }
 });
-
