@@ -408,16 +408,16 @@ test('overlapping realtime refresh retains prior cursor-cycle protection',async(
 test('nonterminal ID page with only previously verified rows is rejected and retryable',async()=>{
  let broken=true;
  const h=harness(async before=>before===undefined
-  ?{items:[{id:10,content:'verified'}],next_before:10}
-  :broken?{items:[{id:10,content:'stale'}],next_before:10}
+  ?{items:[{id:10,content:'verified'},row(11)],next_before:10}
+  :broken?{items:[{id:11,content:'stale'}],next_before:11}
    :{items:[row(9)],next_before:null},false,false,'id');
  h.render();await tick();h.render();
  await h.current.loadMore();h.render();
- assert.equal(h.current.items.length,1);
+ assert.equal(h.current.items.length,2);
  assert.equal(h.current.items[0].content,'verified');
  assert.equal(h.current.hasMore,true);
- assert.match(h.current.error,/Geçersiz sayfalama döngüsü|Tekrarlanan kayıt sayfası/);
+ assert.match(h.current.error,/Tekrarlanan kayıt sayfası/);
  broken=false;await h.current.loadMore();h.render();
  assert.equal(h.current.error,'');
- assert.equal(h.current.items.map(x=>x.id).join(','),'10,9');
+ assert.equal(h.current.items.map(x=>x.id).join(','),'10,11,9');
 });
