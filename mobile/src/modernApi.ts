@@ -13,7 +13,13 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
  else init.signal?.addEventListener("abort",abort,{once:true});
  try{
   const r=await fetch(API_BASE+path,{...init,headers,signal:controller.signal});
-  const raw=await r.text(); let b:any={}; try{b=raw?JSON.parse(raw):{}}catch{}
+  const raw=await r.text(); let b:any={};
+  try{b=raw?JSON.parse(raw):{}}catch{
+   // Never interpret an HTML login page or proxy error as successful API data.
+   if(r.ok)throw new ApiError(502,"Sunucu beklenen JSON yanıtını göndermedi. Lütfen tekrar deneyin.");
+  }
+  if(r.ok&&raw&&(!b||typeof b!=="object"))
+   throw new ApiError(502,"Sunucudan geçersiz API yanıtı alındı.");
   if(!r.ok){
    // A feature-specific 401 must not invalidate the global login; /me validates sessions.
    throw new ApiError(r.status,typeof b.detail==="string"?b.detail:(b.detail?.message||"İstek başarısız."));
