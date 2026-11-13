@@ -79,9 +79,9 @@ test('academic course cursor must belong to the returned page',async()=>{
 });
 test('academic chat messages reject out-of-order IDs and nonadvancing cursors',async()=>{
  await withFetch(async()=>json({items:[
-  {id:18,role:'assistant',content:'Yanıt',created_at:'2026-11-10'},
-  {id:19,role:'user',content:'Soru',created_at:'2026-11-09'}
- ],next_before:19}),async()=>{
+  {id:19,role:'assistant',content:'Yanıt',created_at:'2026-11-10'},
+  {id:18,role:'user',content:'Soru',created_at:'2026-11-09'}
+ ],next_before:18}),async()=>{
   await assert.rejects(()=>api.getAcademicMessages('token',1,20),/geçersiz sayfa/);
  });
 });
