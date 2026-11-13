@@ -58,7 +58,7 @@ export function usePagedRecords<T extends {id:number}>(scope:string,fetchPage:(b
    if(cursorMode==="offset"&&page.items.some(item=>knownIds.current.has(item.id)))
     throw Error("Tekrarlanan hasta sayfası. Tekrar deneyin.");
    page.items.forEach(item=>knownIds.current.add(item.id));
-   setItems(old=>{if(ascending)return mergeRecords(old,page.items,true);const existingIds=new Set(old.map(item=>item.id));return [...old,...page.items.filter(item=>!existingIds.has(item.id))];});
+   setItems(old=>{const existingIds=new Set(old.map(item=>item.id));const unseen=page.items.filter(item=>!existingIds.has(item.id));return ascending?mergeRecords(old,unseen,true):[...old,...unseen];});
    // A broken backend cursor must not trigger an endless request for the same page.
    seenCursors.current.add(next);
    setNext(nextCursor!==null&&!seenCursors.current.has(nextCursor)?nextCursor:null);more.current=true;
