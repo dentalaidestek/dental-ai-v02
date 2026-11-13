@@ -60,7 +60,7 @@ test('clinical gallery hides old patient thumbnails and preview before effects r
  assert.match(gallery,/data=\{visibleData\?\.items\|\|\[\]\}/);
  assert.match(gallery,/visible=\{preview!==null&&preview\.accountScope===patientScope\.current\}/);
  assert.match(gallery,/preview\.accountScope!==patientScope\.current/);
- assert.match(gallery,/setD\(\{\.\.\.page,accountScope:patientScope\.current\}\)/);
+ assert.match(gallery,/setD\(\{\.\.\.page,accountScope:scope\}\)/);
 });
 
 test('clinical gallery ignores pending page responses from another account before effects run',()=>{
@@ -90,5 +90,5 @@ test('consultation messages cannot display or overwrite another account or case'
  assert.match(chat,/visibleData=data\?\.accountScope===activeScope\.current\?data:null/);
  assert.match(chat,/request===requestSeq\.current&&scope===activeScope\.current/);
  assert.match(chat,/data=\{visibleData\?\.messages\|\|\[\]\}/);
- assert.match(chat,/return\(\)=>\{requestSeq\.current\+\+\}/);
+ assert.match(chat,/return\(\)=>\{requestSeq\.current\+\+;sending\.current=false\}/);
 });
