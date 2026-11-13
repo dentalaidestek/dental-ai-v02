@@ -103,15 +103,27 @@ export const uploadPatientMedia=async(token:string,patientId:number,file:{uri:st
  body.append("media_type",mediaType);
  body.append("file",{uri:file.uri,name:file.name,type:file.type} as any);
  if(toothNumber)body.append("tooth_number",toothNumber);
- const response=await fetch(API_BASE+`/patients/${patientId}/media`,{method:"POST",headers:{Authorization:"Bearer "+token},body});
- const raw=await response.text();let data:any={};try{data=raw?JSON.parse(raw):{}}catch{}
- if(!response.ok){
-  const detail=typeof data.detail==="string"?data.detail:"Görüntü yüklenemedi.";
-  throw new ApiError(response.status,detail);
+ // Uploads are not safe to retry blindly: the server may have stored the file
+ // before a mobile connection drops. Always check the patient's media list first.
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),120000);
+ try{
+  const response=await fetch(API_BASE+`/patients/${patientId}/media`,{method:"POST",headers:{Authorization:"Bearer "+token},body,signal:controller.signal});
+  const raw=await response.text();let data:any={};try{data=raw?JSON.parse(raw):{}}catch{}
+  if(!response.ok){
+   const detail=typeof data.detail==="string"?data.detail:"Görüntü yüklenemedi.";
+   throw new ApiError(response.status,detail);
+  }
+  if(!data?.media||!Number.isSafeInteger(data.media.id)||data.media.id<=0)
+   throw new Error("Görüntü kaydı sunucudan doğrulanamadı. Yeniden yüklemeden önce galeriyi kontrol edin.");
+  return data as {media:{id:number;original_filename:string;media_type:string}};
+ }catch(error){
+  if(controller.signal.aborted)
+   throw new ApiError(408,"Görüntü yükleme zaman aşımına uğradı. Tekrar göndermeden önce hasta galerisini kontrol edin.");
+  throw error;
+ }finally{
+  clearTimeout(timeout);
  }
- if(!data?.media||!Number.isSafeInteger(data.media.id)||data.media.id<=0)
-  throw new Error("Görüntü kaydı sunucudan doğrulanamadı. Yeniden yüklemeden önce galeriyi kontrol edin.");
- return data as {media:{id:number;original_filename:string;media_type:string}};
 };
 
 export async function createConsultation(token:string,payload:{expert_user_id:number;clinical_summary:string;requester_opinion?:string;question:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string}){return request<{ok:boolean;case_id:number}>("/consultations",token,{method:"POST",body:JSON.stringify(payload)});}
