@@ -384,3 +384,22 @@ test('failed refresh retains cursor-cycle protection for clinical pages',async()
  assert.match(h.current.error,/Geçersiz sayfalama döngüsü/);
  assert.equal(h.current.items.map(x=>x.id).join(','),'4,9');
 });
+
+test('overlapping realtime refresh retains prior cursor-cycle protection',async()=>{
+ let refreshCount=0;
+ const h=harness(async before=>{
+  if(before===undefined){
+   refreshCount++;
+   return refreshCount===1?{items:[row(4)],next_before:4}:{items:[row(4),row(11)],next_before:4};
+  }
+  if(before===4)return {items:[row(9)],next_before:9};
+  return {items:[row(4)],next_before:4};
+ },false,false,'id');
+ h.render();await tick();h.render();
+ await h.current.loadMore();h.render();
+ await h.current.refresh();h.render();
+ assert.equal(h.current.hasMore,true);
+ await h.current.loadMore();h.render();
+ assert.match(h.current.error,/Geçersiz sayfalama döngüsü/);
+ assert.equal(h.current.items.map(x=>x.id).join(','),'4,9,11');
+});
