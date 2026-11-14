@@ -25,6 +25,8 @@ on:
       - 'app/mobile_professional_api.py'
       - 'tests/test_mobile_professional_parity.py'
       - 'tests/test_mobile_expert_profile.py'
+      - 'app/mobile_academic_api.py'
+      - 'tests/test_mobile_academic_workflow.py'
       - 'app/mobile_voice_workflow_api.py'
       - 'tests/test_mobile_voice_workflow.py'
       - 'app/mobile_program_api.py'
@@ -71,7 +73,7 @@ jobs:
       - name: Install web and test dependencies
         run: python -m pip install -r requirements-web.lock pytest httpx numpy==2.5.3 opencv-python-headless==5.0.0.93
       - name: Validate security and identity recovery
-        run: python -m pytest tests/test_mobile_voice_workflow.py tests/test_mobile_expert_profile.py tests/test_mobile_professional_parity.py tests/test_mobile_program_parity.py tests/test_mobile_account_parity.py tests/test_mobile_patient_parity.py tests/test_mobile_consultation_request.py tests/test_mobile_chat_actions.py tests/test_mobile_boot.py tests/test_email_change.py tests/test_logout_history.py tests/test_auth_ui_recovery.py tests/test_security_recovery.py tests/test_security_hardening.py tests/test_account_actions.py tests/test_web_push.py tests/test_auth_rate_shared.py tests/test_mobile_query_efficiency.py -q
+        run: python -m pytest tests/test_mobile_academic_workflow.py tests/test_mobile_voice_workflow.py tests/test_mobile_expert_profile.py tests/test_mobile_professional_parity.py tests/test_mobile_program_parity.py tests/test_mobile_account_parity.py tests/test_mobile_patient_parity.py tests/test_mobile_consultation_request.py tests/test_mobile_chat_actions.py tests/test_mobile_boot.py tests/test_email_change.py tests/test_logout_history.py tests/test_auth_ui_recovery.py tests/test_security_recovery.py tests/test_security_hardening.py tests/test_account_actions.py tests/test_web_push.py tests/test_auth_rate_shared.py tests/test_mobile_query_efficiency.py -q
       - name: Validate PostgreSQL migration and concurrent authentication
         env:
           DENTAL_TEST_DATABASE_URL: postgresql://dental_test:local-ci-only@localhost:5432/dental_test

@@ -1846,3 +1846,6 @@ router.include_router(mobile_program_router)
 
 from app.mobile_voice_workflow_api import router as mobile_voice_workflow_router
 router.include_router(mobile_voice_workflow_router)
+
+from app.mobile_academic_api import router as mobile_academic_router
+router.include_router(mobile_academic_router)
