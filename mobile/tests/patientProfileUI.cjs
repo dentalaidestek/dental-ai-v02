@@ -27,7 +27,7 @@ test('changing account and patient hides previous clinical content before pendin
  await renderer.act(async()=>tree.update(React.createElement(Profile,{token:'two',patientId:9,actions})));
  assert.ok(!text(tree.toJSON()).includes('Synthetic8'));
  await renderer.act(async()=>{resolve(patient(9))});
- assert.ok(text(tree.toJSON()).includes('Synthetic9'));
+ assert.ok(text(tree.toJSON()).includes('Synthetic9'));assert.ok(!text(tree.toJSON()).includes('Old account failed'),'stale failure must not leak into next account');
  await renderer.act(async()=>tree.unmount());
 });
 test('appointment created from a patient profile submits the actual selected id and local date/time',async()=>{
@@ -42,10 +42,10 @@ test('appointment created from a patient profile submits the actual selected id 
 });
 
 test('patient switch releases a pending mutation lock without leaking old account state',async()=>{
- let releaseOld;const calls=[];
+ let rejectOld;const calls=[];
  const Profile=component({
   getPatient:async(_token,id)=>patient(id),
-  editPatient:async(token,id)=>{calls.push([token,id]);if(id===8)await new Promise(resolve=>{releaseOld=resolve})}
+  editPatient:async(token,id)=>{calls.push([token,id]);if(id===8)await new Promise((_resolve,reject)=>{rejectOld=reject})}
  });let tree;
  const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
@@ -57,7 +57,7 @@ test('patient switch releases a pending mutation lock without leaking old accoun
  await press('Hasta Bilgileri');
  await press('Değişiklikleri Kaydet');
  assert.deepEqual(calls,[['one',8],['two',9]],'new patient must not inherit prior pending mutation lock');
- await renderer.act(async()=>{releaseOld();await oldSave});
+ await renderer.act(async()=>{rejectOld(new Error('Old account failed'));await oldSave});
  assert.ok(text(tree.toJSON()).includes('Synthetic9'));
  await renderer.act(async()=>tree.unmount());
 });
