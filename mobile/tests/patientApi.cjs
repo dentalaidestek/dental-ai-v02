@@ -101,3 +101,15 @@ test('clinical media upload handles null HTTP error body as ApiError',async()=>{
   await assert.rejects(()=>uploadPatientMedia('token',1,{uri:'file:///image.jpg',name:'image.jpg',type:'image/jpeg'}),err=>err instanceof ApiError&&err.status===503&&err.message==='Görüntü yüklenemedi.');
  }finally{global.fetch=original}
 });
+
+test('interrupted clinical upload warns to check gallery before retrying',async()=>{
+ const {uploadPatientMedia,ApiError}=require('../src/api.ts');
+ const original=global.fetch;
+ const file={uri:'file:///image.jpg',name:'image.jpg',type:'image/jpeg'};
+ try{
+  for(const fetchFailure of [()=>Promise.reject(new TypeError('Network request failed')),()=>Promise.resolve({ok:true,status:200,text:async()=>{throw new TypeError('stream interrupted')}})]){
+   global.fetch=fetchFailure;
+   await assert.rejects(()=>uploadPatientMedia('token',1,file),err=>err instanceof ApiError&&err.status===503&&/galerisini kontrol edin/.test(err.message));
+  }
+ }finally{global.fetch=original}
+});
