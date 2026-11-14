@@ -8,7 +8,7 @@ import NativePatientHistory from './NativePatientHistory';
 import NativePatientMedia from './NativePatientMedia';
 
 const blankTreatment={treatment_name:'',tooth_number:'',treatment_date:'',material:'',doctor_note:'',result:''};
-const mutationMayHaveReachedServer=(error:unknown)=>{const status=(error as {status?:number})?.status;return !Number.isInteger(status)||status===408||status===429||status>=500};
+const mutationMayHaveReachedServer=(error:unknown)=>{const status=(error as {status?:number})?.status;return typeof status!=='number'||!Number.isInteger(status)||status===408||status===429||status>=500};
 const blankPatient={first_name:'',last_name:'',phone:'',birth_date:'',tc_kimlik_no:'',address:'',chief_complaint:''};
 type Actions={chart:()=>void;analysis:()=>void;appointment:()=>void;expert:()=>void;voice:()=>void;analysisResult:(id:number)=>void;deleted:()=>void};
 export default function NativePatientProfile({token,patientId,actions}:{token:string;patientId:number;actions:Actions}){

@@ -178,3 +178,6 @@ async def mobile_photo(payload:Photo,token:str=Depends(_mobile_access_token),use
     from app import main as web
     await _invoke(web.account_profile_photo,_mobile_request(token),payload.profile_photo_data)
     return {'ok':True}
+
+from app.mobile_professional_api import router as mobile_professional_router
+router.include_router(mobile_professional_router)

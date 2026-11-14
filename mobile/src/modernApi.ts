@@ -239,3 +239,6 @@ export async function deleteAllPatientMedia(token:string,patientId:number){
  if(result.ok!==true)throw Error('Silme işlemi doğrulanamadı. Galeriyi yenileyin.');
  return result;
 }
+
+// Reuse the authenticated multipart transport for native profile documents.
+export {req as modernRequest};
