@@ -12,7 +12,6 @@
       "allowBackup": false,
       "usesCleartextTraffic": false,
       "blockedPermissions": [
-        "android.permission.RECORD_AUDIO",
         "android.permission.READ_MEDIA_AUDIO",
         "android.permission.READ_MEDIA_VIDEO"
       ]
@@ -30,8 +29,8 @@
       [
         "expo-audio",
         {
-          "microphonePermission": false,
-          "recordAudioAndroid": false
+          "microphonePermission": "Dental AI sesli muayenede yalnızca izninizle mikrofonu kullanır.",
+          "recordAudioAndroid": true
         }
       ]
     ],
