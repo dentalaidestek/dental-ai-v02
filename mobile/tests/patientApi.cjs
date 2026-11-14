@@ -113,3 +113,14 @@ test('interrupted clinical upload warns to check gallery before retrying',async(
   }
  }finally{global.fetch=original}
 });
+
+test('successful API responses reject empty and array payloads before patient rendering',async()=>{
+ const {getPatients,ApiError}=require('../src/api.ts');
+ const original=global.fetch;
+ try{
+  for(const raw of ['', '  ', '[]', 'null', '42']){
+   global.fetch=async()=>({ok:true,status:200,text:async()=>raw});
+   await assert.rejects(()=>getPatients('token'),err=>err instanceof ApiError&&err.status===502);
+  }
+ }finally{global.fetch=original}
+});
