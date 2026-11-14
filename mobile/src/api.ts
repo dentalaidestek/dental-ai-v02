@@ -30,7 +30,7 @@ async function request<T>(path:string,token?:string,options:RequestInit={}):Prom
    if(response.ok)throw new ApiError(502,"Sunucu beklenen JSON yanıtını göndermedi. Lütfen tekrar deneyin.");
   }
   if(response.ok&&raw&&(!body||typeof body!=="object"))throw new ApiError(502,"Sunucudan geçersiz API yanıtı alındı.");
-  if(!response.ok){if(response.status===401&&token&&path==="/me")reportSessionExpiry(token);const detail=body.detail;throw new ApiError(response.status,typeof detail==="string"?detail:(detail?.message||"İstek başarısız."));}
+  if(!response.ok){if(response.status===401&&token&&path==="/me")reportSessionExpiry(token);const detail=body?.detail;throw new ApiError(response.status,typeof detail==="string"?detail:(typeof detail?.message==="string"?detail.message:"İstek başarısız."));}
   return body as T;
  }catch(error){
   if(controller.signal.aborted&&!externalSignal?.aborted)throw new ApiError(408,"Sunucu yanıt vermedi. Bağlantınızı kontrol edip tekrar deneyin.");
