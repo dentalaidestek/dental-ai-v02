@@ -23,7 +23,7 @@ async function request<T>(path:string,token?:string,options:RequestInit={}):Prom
  if(externalSignal?.aborted)controller.abort();
  else externalSignal?.addEventListener("abort",abort,{once:true});
  try{
-  const response=await fetch(API_BASE+path,{...options,signal:controller.signal,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{}),...(options.headers||{})}});
+  const response=await fetch(API_BASE+path,{...options,credentials:"omit",signal:controller.signal,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{}),...(options.headers||{})}});
   const raw=await response.text();let body:any={};
   try{body=raw?JSON.parse(raw):{}}catch{
    // A reverse proxy or expired web session may return HTML with HTTP 200.
@@ -134,7 +134,7 @@ export const uploadPatientMedia=async(token:string,patientId:number,file:{uri:st
  const controller=new AbortController();
  const timeout=setTimeout(()=>controller.abort(),120000);
  try{
-  const response=await fetch(API_BASE+`/patients/${patientId}/media`,{method:"POST",headers:{Authorization:"Bearer "+token},body,signal:controller.signal});
+  const response=await fetch(API_BASE+`/patients/${patientId}/media`,{method:"POST",credentials:"omit",headers:{Authorization:"Bearer "+token},body,signal:controller.signal});
   const raw=await response.text();let data:any={};try{data=raw?JSON.parse(raw):{}}catch{}
   if(!response.ok){
    if(response.status===401)await revalidateSession(token);
