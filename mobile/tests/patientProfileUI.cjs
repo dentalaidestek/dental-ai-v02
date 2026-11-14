@@ -86,3 +86,16 @@ test('treatment validation 422 does not trap the clinician in uncertain state',a
  await press('Tedaviyi Kaydet');assert.equal(calls,2);
  await renderer.act(async()=>tree.unmount());
 });
+
+test('uncertain treatment creation requires manual history verification before retry',async()=>{
+ let calls=0;const Profile=component({getPatient:async()=>patient(8),createTreatment:async()=>{calls++;throw Object.assign(new Error('Sunucu yanıtı belirsiz'),{status:503})}});let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ await press('Yeni Tedavi');
+ const input=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Tedavi adı *');
+ await renderer.act(async()=>input.props.onChangeText('Synthetic treatment'));
+ await press('Tedaviyi Kaydet');
+ assert.ok(text(tree.toJSON()).includes('Tekrar göndermeden önce geçmişi kontrol edin.'));
+ await press('Tedaviyi Kaydet');assert.equal(calls,1,'uncertain treatment write must not duplicate');
+ await renderer.act(async()=>tree.unmount());
+});
