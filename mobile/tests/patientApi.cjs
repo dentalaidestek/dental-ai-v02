@@ -207,3 +207,32 @@ test('bearer-auth patient and notification requests never attach ambient web coo
   }
  }finally{global.fetch=original}
 });
+
+test('treatment writes reject invalid patient, treatment and FDI identifiers before network access',()=>{
+ const {createTreatment,updateTreatment}=require('../src/api.ts');
+ const original=global.fetch;
+ global.fetch=()=>{throw Error('unexpected network call')};
+ try{
+  for(const id of [0,-1,1.5,Number.NaN]){
+   assert.throws(()=>createTreatment('token',id,{treatment_name:'Dolgu'}),/Geçersiz hasta/);
+  }
+  for(const id of [0,-2,1.5]){
+   assert.throws(()=>updateTreatment('token',1,id,{treatment_name:'Dolgu'}),/Geçersiz hasta veya tedavi/);
+  }
+  for(const tooth of ['19','49','56','89','../11']){
+   assert.throws(()=>createTreatment('token',1,{treatment_name:'Dolgu',tooth_number:tooth}),/Geçersiz FDI/);
+  }
+  assert.throws(()=>createTreatment('token',1,{treatment_name:'   '}),/Tedavi adı/);
+ }finally{global.fetch=original}
+});
+test('treatment writes preserve valid primary and permanent tooth routes',async()=>{
+ const {createTreatment,updateTreatment}=require('../src/api.ts');
+ const original=global.fetch;const urls=[];
+ global.fetch=async url=>{urls.push(url);return reply({ok:true,treatment_id:7})};
+ try{
+  await createTreatment('token',4,{treatment_name:'Dolgu',tooth_number:'36'});
+  await updateTreatment('token',4,7,{treatment_name:'Kron',tooth_number:'85'});
+  assert.match(urls[0],/\/patients\/4\/treatments$/);
+  assert.match(urls[1],/\/patients\/4\/treatments\/7$/);
+ }finally{global.fetch=original}
+});
