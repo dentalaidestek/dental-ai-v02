@@ -130,6 +130,10 @@ export const uploadPatientMedia=async(token:string,patientId:number,file:{uri:st
  }catch(error){
   if(controller.signal.aborted)
    throw new ApiError(408,"Görüntü yükleme zaman aşımına uğradı. Tekrar göndermeden önce hasta galerisini kontrol edin.");
+  // A dropped connection does not prove the server failed to save the upload.
+  // Never encourage a blind retry that could duplicate patient media.
+  if(error instanceof TypeError)
+   throw new ApiError(503,"Görüntü aktarım bağlantısı kesildi. Tekrar göndermeden önce hasta galerisini kontrol edin.");
   throw error;
  }finally{
   clearTimeout(timeout);
