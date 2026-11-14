@@ -18,7 +18,7 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field as RequestField
 from sqlmodel import Session, func, select
 from PIL import Image, ImageOps
 from starlette.requests import Request
@@ -1305,24 +1305,59 @@ def _mobile_access_token(credentials: Optional[HTTPAuthorizationCredentials] = D
     return credentials.credentials
 
 class MobileConsultationRequest(BaseModel):
-    expert_user_id:int
-    clinical_summary:str
-    requester_opinion:str=""
-    question:str
-    tooth_region:str=""
-    patient_id:Optional[int]=None
-    media_ids:str=""
-    urgency:str="NORMAL"
+    expert_user_id: int = RequestField(gt=0)
+    clinical_summary: str = RequestField(min_length=1)
+    requester_opinion: str = ""
+    question: str = RequestField(min_length=1)
+    tooth_region: str = ""
+    patient_id: Optional[int] = RequestField(default=None, gt=0)
+    media_ids: str = ""
+    urgency: str = "NORMAL"
+    request_key: str = RequestField(default="", max_length=96)
 
 @router.post("/consultations")
-async def mobile_create_consultation(payload:MobileConsultationRequest,token:str=Depends(_mobile_access_token)):
+async def mobile_create_consultation(payload:MobileConsultationRequest,token:str=Depends(_mobile_access_token),user:User=Depends(_mobile_user)):
+    from app import main as web
+    if not payload.clinical_summary.strip() or not payload.question.strip():
+        raise HTTPException(status_code=422,detail="Klinik bilgi ve uzmana sorunuz zorunlu.")
+    # Reject an invalid selection rather than claiming that silently dropped
+    # media was shared. Existing receipts still go through the web hash check.
+    with Session(engine,expire_on_commit=False) as session:
+        receipt=session.exec(select(web.ConsultationRequestReceipt).where(
+            web.ConsultationRequestReceipt.requester_user_id==user.id,
+            web.ConsultationRequestReceipt.expert_user_id==payload.expert_user_id,
+            web.ConsultationRequestReceipt.request_key==payload.request_key)).first() if payload.request_key else None
+        if payload.patient_id and not receipt:
+            patient=session.get(Patient,payload.patient_id)
+            if not patient or patient.owner_user_id!=user.id:
+                raise HTTPException(status_code=403,detail="Hasta kaydına erişim yok.")
+        if payload.media_ids and not receipt:
+            try: ids={int(part.strip()) for part in payload.media_ids.split(",") if part.strip()}
+            except (ValueError,TypeError): raise HTTPException(status_code=422,detail="Görüntü seçimi geçersiz.")
+            if not payload.patient_id or not ids or any(item<=0 for item in ids):
+                raise HTTPException(status_code=422,detail="Görüntüler için geçerli bir hasta seçin.")
+            owned=session.exec(select(PatientMedia.id).where(PatientMedia.id.in_(ids),
+                PatientMedia.patient_id==payload.patient_id,PatientMedia.owner_user_id==user.id)).all()
+            if set(owned)!=ids:
+                raise HTTPException(status_code=403,detail="Seçili görüntülerden biri bu hastaya ait değil veya artık erişilemiyor.")
     response=await expert_support_request_create(_mobile_request(token),payload.expert_user_id,
         payload.clinical_summary,payload.requester_opinion,payload.question,payload.tooth_region,
-        payload.patient_id,payload.media_ids,payload.urgency)
-    if hasattr(response,"status_code") and response.status_code>=400:
-        data=_response_json(response);raise HTTPException(status_code=response.status_code,detail=data.get("error","Danışmanlık oluşturulamadı."))
-    location=getattr(response,"headers",{}).get("location")
-    return {"ok":True,"case_id":int(location.rsplit("/",1)[-1]) if location else None}
+        payload.patient_id,payload.media_ids,payload.urgency,payload.request_key)
+    status=getattr(response,"status_code",200)
+    location=getattr(response,"headers",{}).get("location","")
+    if location.startswith("/login"): raise _unauthorized()
+    if status>=400:
+        data=_response_json(response)
+        detail=(data.get("error") or data.get("detail")) if isinstance(data,dict) else None
+        if not isinstance(detail,str):
+            raw=getattr(response,"body",b"").decode("utf-8",errors="replace")
+            detail=raw[:300] if "<" not in raw else "Danışmanlık talebi oluşturulamadı."
+        raise HTTPException(status_code=status,detail=detail)
+    import re
+    match=re.fullmatch(r"/expert-support/cases/([1-9][0-9]*)",location)
+    if status not in (302,303) or not match:
+        raise HTTPException(status_code=502,detail="Talep kaydı doğrulanamadı. Aynı talep anahtarıyla durumunu kontrol edin.")
+    return {"ok":True,"case_id":int(match.group(1))}
 
 class MobileMessage(BaseModel):
     content:str
@@ -1670,3 +1705,37 @@ async def mobile_chat_upload(case_id: int, file: UploadFile = File(...),
         finally:
             await clean.close()
     return data
+
+@router.get("/consultations/request-context/{expert_id}")
+def mobile_consultation_request_context(expert_id:int,user:User=Depends(_mobile_user)):
+    from app import main as web
+    if expert_id<=0 or expert_id==user.id:
+        raise HTTPException(status_code=400,detail="Geçerli bir uzman seçin; kendinize vaka gönderemezsiniz.")
+    with Session(engine,expire_on_commit=False) as session:
+        web._expire_pending_expert_requests(session,expert_id)
+        expert=session.get(User,expert_id)
+        profile=session.exec(select(ExpertProfile).where(ExpertProfile.user_id==expert_id)).first()
+        if not web.consultation_expert_is_verified(expert,profile) or web._users_blocked(session,user.id,expert_id):
+            raise HTTPException(status_code=409,detail="Uzman şu anda yeni vaka kabul etmiyor.")
+        policy=web._expert_policy_state(session,expert_id)
+        if profile.availability!="AVAILABLE" or web._expert_is_blocked(policy) or web._expert_open_case_count(session,expert_id)>=web.consultation_capacity_limit(profile):
+            raise HTTPException(status_code=409,detail="Uzman şu anda yeni vaka kabul etmiyor.")
+        return {"expert":{"user_id":expert.id,"display_name":expert.display_name,"specialty":profile.specialty,
+            "academic_title":profile.academic_title,"consultation_price":profile.consultation_price,
+            "availability":profile.availability},"response_minutes":10,
+            "urgencies":[{"value":value,"label":label} for value,label in web.CONSULTATION_URGENCIES.items()]}
+
+@router.get("/consultations/request-status/{expert_id}/{request_key}")
+def mobile_consultation_request_status(expert_id:int,request_key:str,user:User=Depends(_mobile_user)):
+    from app import main as web
+    if len(request_key)>96:
+        raise HTTPException(status_code=422,detail="Geçersiz talep anahtarı.")
+    with Session(engine,expire_on_commit=False) as session:
+        receipt=session.exec(select(web.ConsultationRequestReceipt).where(
+            web.ConsultationRequestReceipt.requester_user_id==user.id,
+            web.ConsultationRequestReceipt.expert_user_id==expert_id,
+            web.ConsultationRequestReceipt.request_key==request_key)).first()
+        case=session.get(ConsultationCase,receipt.case_id) if receipt else None
+        if not case or case.requester_user_id!=user.id or case.expert_user_id!=expert_id:
+            return {"found":False}
+        return {"found":True,"case_id":case.id,"status":case.status}

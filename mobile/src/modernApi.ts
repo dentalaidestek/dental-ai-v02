@@ -88,12 +88,33 @@ export const getMedia=async(t:string,p:number,before?:number)=>{
  return {items:r.items.map(m=>({...m,filename:m.filename||m.original_filename||"",url:`${API_BASE}/patients/${p}/media/${m.id}/file`})),next_before:cursor};
 };
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
-export const createConsultation=(t:string,payload:{expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string})=>{
- if(!Number.isSafeInteger(payload.expert_user_id)||payload.expert_user_id<=0||!payload.question?.trim()||
-    (payload.patient_id!==undefined&&(!Number.isSafeInteger(payload.patient_id)||payload.patient_id<=0)))
-  throw Error("Geçersiz uzman, hasta veya boş danışma sorusu.");
- return req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:JSON.stringify(payload)});
-};
+export type ConsultationRequestPayload={expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string;request_key?:string};
+export async function createConsultation(t:string,payload:ConsultationRequestPayload){
+ if(!Number.isSafeInteger(payload.expert_user_id)||payload.expert_user_id<=0||!payload.question?.trim()||!payload.clinical_summary?.trim()||
+    (payload.patient_id!==undefined&&(!Number.isSafeInteger(payload.patient_id)||payload.patient_id<=0))||
+    (payload.media_ids!==undefined&&payload.media_ids!==""&&(!payload.patient_id||!/^\d+(,\d+)*$/.test(payload.media_ids)))||
+    (payload.request_key!==undefined&&!/^[A-Za-z0-9_-]{8,96}$/.test(payload.request_key)))
+  throw Error("Geçersiz uzman, hasta, klinik bilgi veya talep anahtarı.");
+ const result=await req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:JSON.stringify(payload)});
+ if(result.ok!==true||!Number.isSafeInteger(result.case_id)||result.case_id<=0)throw Error("Talep kaydı doğrulanamadı. Yeni talep oluşturmadan önce aynı anahtarla durumunu kontrol edin.");
+ return result;
+}
+export type ConsultationRequestContext={expert:Expert;response_minutes:number;urgencies:Array<{value:string;label:string}>};
+export async function getConsultationRequestContext(t:string,expertId:number){
+ if(!Number.isSafeInteger(expertId)||expertId<=0)throw Error("Geçersiz uzman.");
+ const result=await req<ConsultationRequestContext>(`/consultations/request-context/${expertId}`,t);
+ if(result.expert?.user_id!==expertId||typeof result.expert.display_name!=="string"||
+    !Number.isFinite(result.expert.consultation_price)||result.expert.consultation_price<0||
+    !Array.isArray(result.urgencies)||result.urgencies.some(item=>!item||typeof item.value!=="string"||typeof item.label!=="string")||
+    !Number.isSafeInteger(result.response_minutes)||result.response_minutes<=0)throw Error("Uzman talep bilgileri doğrulanamadı.");
+ return result;
+}
+export async function getConsultationRequestStatus(t:string,expertId:number,key:string){
+ if(!Number.isSafeInteger(expertId)||expertId<=0||!/^[A-Za-z0-9_-]{8,96}$/.test(key))throw Error("Geçersiz talep anahtarı.");
+ const result=await req<{found:boolean;case_id?:number;status?:string}>(`/consultations/request-status/${expertId}/${encodeURIComponent(key)}`,t);
+ if(typeof result.found!=="boolean"||result.found&&(!Number.isSafeInteger(result.case_id)||Number(result.case_id)<=0||typeof result.status!=="string"))throw Error("Talep durumu doğrulanamadı.");
+ return result;
+}
 export const getConsultations=async(t:string,before?:number)=>{
  if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz görüşme sayfa kimliği.");
  const r=await req<{items:any[];next_before?:number|null}>("/consultations"+(before!==undefined?"?before="+encodeURIComponent(before):""),t);
