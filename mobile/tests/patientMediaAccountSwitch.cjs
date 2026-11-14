@@ -86,3 +86,11 @@ test('account switch never exposes old patient thumbnails during pending new req
  await renderer.act(async()=>{resolveNext({items:[],next_before:null})});
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('clinical modal and destructive actions require the current loaded account',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/visible=\{open&&loadedOwner===owner\}/);
+ assert.match(source,/function confirmDelete\(id\?:number\)\{if\(mutation\.current\|\|uncertain\|\|loadedOwner!==owner\)return;/);
+ assert.match(source,/async function analyze\(\)\{if\(mutation\.current\|\|uncertain\|\|loadedOwner!==owner\|\|!selected\.length\)return;/);
+});
