@@ -52,3 +52,14 @@ test('patient switch releases a pending mutation lock without leaking old accoun
  assert.ok(!text(tree.toJSON()).includes('Old account failed'),'stale failure must not leak into the new patient');
  await renderer.act(async()=>tree.unmount());
 });
+
+test('definitive validation errors keep patient editing available for correction',async()=>{
+ let calls=0;const Profile=component({getPatient:async()=>patient(8),editPatient:async()=>{calls++;if(calls===1)throw Object.assign(new Error('Geçersiz alan'),{status:422})}});let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ await press('Hasta Bilgileri');await press('Değişiklikleri Kaydet');
+ assert.ok(text(tree.toJSON()).includes('Bilgileri düzeltip yeniden deneyin.'));
+ const input=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad');assert.ok(input.props.editable,'422 must not freeze the form');
+ await press('Değişiklikleri Kaydet');assert.equal(calls,2,'corrected submission must be allowed');
+ await renderer.act(async()=>tree.unmount());
+});
