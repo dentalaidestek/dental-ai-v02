@@ -165,3 +165,16 @@ test('tooth chart rejects invalid clinical status and surface values without net
   assert.throws(()=>updateToothSurface('token',8,'11','MESIAL',{status:'UNKNOWN'}),/Geçersiz diş durumu/);
  }finally{global.fetch=original}
 });
+
+test('patient search enforces FastAPI 100-character query limit before network access',async()=>{
+ const original=global.fetch;
+ let calls=0;
+ global.fetch=async url=>{calls++;assert.match(url,/q=/);return reply({items:[],total:0})};
+ try{
+  await assert.rejects(()=>getPatients('token','a'.repeat(101)),/100 karakter/);
+  await assert.rejects(()=>getPatients('token',null),/100 karakter/);
+  assert.equal(calls,0);
+  await getPatients('token','a'.repeat(100));
+  assert.equal(calls,1);
+ }finally{global.fetch=original}
+});
