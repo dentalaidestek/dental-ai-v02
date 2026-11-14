@@ -236,3 +236,19 @@ test('treatment writes preserve valid primary and permanent tooth routes',async(
   assert.match(urls[1],/\/patients\/4\/treatments\/7$/);
  }finally{global.fetch=original}
 });
+
+test('treatment date and name validation matches backend clinical contract',async()=>{
+ const {createTreatment}=require('../src/api.ts');
+ const original=global.fetch;const bodies=[];
+ global.fetch=async (_url,init)=>{bodies.push(JSON.parse(init.body));return reply({ok:true,treatment_id:9})};
+ try{
+  for(const date of ['2026-02-30','2025-02-29','2026-13-01','2026-00-10','2026-12-00','2026/11/14','not-a-date']){
+   assert.throws(()=>createTreatment('token',1,{treatment_name:'Dolgu',treatment_date:date}),/Tedavi tarihi/);
+  }
+  assert.throws(()=>createTreatment('token',1,{treatment_name:'x'.repeat(201)}),/200 karakter/);
+  assert.equal(bodies.length,0);
+  await createTreatment('token',1,{treatment_name:'Dolgu',treatment_date:'2024-02-29'});
+  await createTreatment('token',1,{treatment_name:'Kanal tedavisi',treatment_date:''});
+  assert.equal(bodies.length,2);
+ }finally{global.fetch=original}
+});
