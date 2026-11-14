@@ -102,7 +102,16 @@ export function editPatient(token:string,id:number,payload:{first_name:string;la
 
 export type ScheduleEvent={id:number;event_type:string;title:string;start_at:string;end_at?:string|null;patient_id?:number|null;location?:string|null;notes?:string|null;status:string;reminder_minutes?:number|null;notification_enabled?:boolean;recurrence_rule?:string};
 export async function createPatient(token:string,payload:{first_name:string;last_name:string;birth_date?:string;phone?:string;tc_kimlik_no?:string;address?:string;chief_complaint?:string;force_create?:boolean}){return request<{patient:Patient}>("/patients",token,{method:"POST",body:JSON.stringify(payload)});}
-export async function getSchedule(token:string){return request<{items:ScheduleEvent[];event_types:Record<string,string>}>("/schedule",token);}
+export async function getSchedule(token:string){
+ const result=await request<{items:ScheduleEvent[];event_types:Record<string,string>}>("/schedule",token);
+ if(!Array.isArray(result?.items)||!result.event_types||typeof result.event_types!=="object"||Array.isArray(result.event_types)||
+    result.items.some(event=>!event||!Number.isSafeInteger(event.id)||event.id<=0||
+      typeof event.event_type!=="string"||typeof event.title!=="string"||typeof event.start_at!=="string"||
+      (event.patient_id!=null&&(!Number.isSafeInteger(event.patient_id)||event.patient_id<=0)))||
+    new Set(result.items.map(event=>event.id)).size!==result.items.length)
+  throw new Error("Program sunucusundan geçersiz randevu listesi alındı. Yeniden deneyin.");
+ return result;
+}
 export async function completeSchedule(token:string,id:number){return request<{ok:boolean;status:string}>(`/schedule/${id}/complete`,token,{method:"POST"});}
 export async function deleteSchedule(token:string,id:number){return request<{ok:boolean}>(`/schedule/${id}`,token,{method:"DELETE"});}
 
