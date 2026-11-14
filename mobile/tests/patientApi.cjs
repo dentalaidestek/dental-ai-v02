@@ -187,3 +187,23 @@ test('patient search enforces FastAPI 100-character query limit before network a
   assert.equal(calls,1);
  }finally{global.fetch=original}
 });
+
+test('bearer-auth patient and notification requests never attach ambient web cookies',async()=>{
+ const {getNotifications}=require('../src/modernApi.ts');
+ const original=global.fetch;
+ const calls=[];
+ global.fetch=async(url,init)=>{
+  calls.push({url,init});
+  if(String(url).endsWith('/notifications'))return reply({items:[],unread:0});
+  return reply({items:[],total:0});
+ };
+ try{
+  await getPatients('secret');
+  await getNotifications('secret');
+  assert.equal(calls.length,2);
+  for(const {init} of calls){
+   assert.equal(init.credentials,'omit');
+   assert.equal(init.headers.Authorization,'Bearer secret');
+  }
+ }finally{global.fetch=original}
+});
