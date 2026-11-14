@@ -15,3 +15,11 @@ test('patient appointment uses verified patient ID and appointment event type',(
  assert.match(source,/patient_id:linkedPatient\.id/);
  assert.match(source,/patientId!==undefined&&!linkedPatient/);
 });
+
+test('appointment form rejects malformed date and duplicate submit',()=>{
+ assert.match(source,/Date\.parse\(start\)/);
+ assert.match(source,/if\(submitting\)return/);
+ assert.match(source,/setSubmitting\(true\)/);
+ assert.match(source,/finally\{setSubmitting\(false\)\}/);
+ assert.match(source,/disabled=\{submitting\|\|\(patientId!==undefined&&!linkedPatient\)\}/);
+});
