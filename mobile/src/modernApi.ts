@@ -14,7 +14,7 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
  if(init.signal?.aborted)controller.abort();
  else init.signal?.addEventListener("abort",abort,{once:true});
  try{
-  const r=await fetch(API_BASE+path,{...init,headers,signal:controller.signal});
+  const r=await fetch(API_BASE+path,{...init,credentials:"omit",headers,signal:controller.signal});
   const raw=await r.text(); let b:any={};
   try{b=raw?JSON.parse(raw):{}}catch{
    // Never interpret an HTML login page or proxy error as successful API data.
