@@ -58,6 +58,8 @@ test('patient profile rejects malformed nested clinical collections before tooth
   {...valid,surfaces:[{tooth_number:'11',surface:'MESIAL',status:'INVALID'}]},
   {...valid,surfaces:[{tooth_number:'11',surface:null,status:'CARIES'}]},
   {...valid,treatments:[{id:0,treatment_name:'Dolgu'}]},
+  {...valid,treatments:[{id:2,treatment_name:'Dolgu',tooth_number:'19'}]},
+  {...valid,media:[{id:3,original_filename:'x.jpg',tooth_number:'89'}]},
   {...valid,media:[{id:2,original_filename:null}]},
  ];
  try{
