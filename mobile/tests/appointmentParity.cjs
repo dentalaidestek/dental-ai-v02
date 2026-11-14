@@ -11,17 +11,20 @@ test('patient profile appointment action carries selected patient identity',()=>
 test('program route passes patient context to native screen',()=>{
  assert.match(source,/name="Program"[^\n]*<NativePatientAppointment[^\n]*patientId=\{route\.params\.patientId\}/);
 });
+const appointment=fs.readFileSync(path.join(__dirname,'../src/NativePatientAppointment.tsx'),'utf8');
+const editor=fs.readFileSync(path.join(__dirname,'../src/NativeProgramEditor.tsx'),'utf8');
 test('patient appointment uses verified patient ID and appointment event type',()=>{
- assert.match(source,/getPatient\(token,patientId\)/);
- assert.match(source,/event_type:patientId!==undefined\?"APPOINTMENT":"PERSONAL"/);
- assert.match(source,/patient_id:linkedPatient\.id/);
- assert.match(source,/patientId!==undefined&&!linkedPatient/);
+ assert.match(appointment,/initialPatientId=\{patientId\}/);
+ assert.match(editor,/getPatient\(token,initialPatientId\)/);
+ assert.match(editor,/event_type:initialType&&page\.event_types\[initialType\]\?initialType:'APPOINTMENT'/);
+ assert.match(editor,/patient_id:patient\.id/);
+ assert.match(editor,/loadError\|\|uncertain/);
 });
-
-test('appointment form rejects malformed date and duplicate submit',()=>{
- assert.match(source,/Date\.parse\(start\)/);
- assert.match(source,/if\(submitting\)return/);
- assert.match(source,/setSubmitting\(true\)/);
- assert.match(source,/finally\{setSubmitting\(false\)\}/);
- assert.match(source,/disabled=\{submitting\|\|\(patientId!==undefined&&!linkedPatient\)\}/);
+test('appointment form rejects malformed dates and duplicate submission',()=>{
+ assert.match(editor,/programPayload\(/);
+ assert.match(editor,/if\(lock\.current\|\|loading\|\|loadError\|\|uncertain\)return/);
+ assert.match(editor,/lock\.current=true;setBusy\(true\)/);
+ assert.match(editor,/lock\.current=false;setBusy\(false\)/);
+ const model=fs.readFileSync(path.join(__dirname,'../src/programModel.ts'),'utf8');
+ assert.match(model,/validWallTime\(draft.start_at\)/);
 });

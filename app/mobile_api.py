@@ -522,7 +522,7 @@ class MobileScheduleCreate(BaseModel):
     patient_id: Optional[int] = None
     location: str = ""
     notes: str = ""
-    reminder_minutes: int = 30
+    reminder_minutes: Optional[int] = 30
     notification_enabled: bool = True
     recurrence_rule: str = "NONE"
     recurrence_until: str = ""
@@ -604,11 +604,12 @@ def mobile_schedule(user: User = Depends(_mobile_user)):
 
 @router.post("/schedule")
 def mobile_create_schedule(payload: MobileScheduleCreate, user: User = Depends(_mobile_user)):
+    from app import main as web
     with Session(engine, expire_on_commit=False) as session:
         values, error = _validate_schedule_input(
             session, user, payload.event_type, payload.title, payload.start_at, payload.end_at,
             str(payload.patient_id or ""), payload.location, payload.notes,
-            str(payload.reminder_minutes), "1" if payload.notification_enabled else None,
+            "NONE" if not payload.notification_enabled or payload.reminder_minutes is None else str(payload.reminder_minutes), "1" if payload.notification_enabled else None,
             payload.recurrence_rule, payload.recurrence_until,
         )
         if error:
@@ -616,8 +617,12 @@ def mobile_create_schedule(payload: MobileScheduleCreate, user: User = Depends(_
         event = ScheduleEvent(owner_user_id=user.id, **values)
         session.add(event)
         session.flush()
-        realtime=_record_realtime_event(session,user.id,"PROGRAM_CREATED","schedule_event",event.id,{"event_id":event.id,"status":event.status})
-        session.commit(); on_loop(_publish_realtime_event,realtime)
+        web._sync_program_reminder(session,event)
+        realtime_events=web._resolve_notifications(session,user_id=user.id,notice_type="PROGRAM_REMINDER",related_type="schedule_event",related_id=event.id)
+        realtime_events.append(web._record_program_realtime_event(session,user.id,"PROGRAM_CREATED",event.id))
+        session.commit()
+        web._wake_program_reminder_worker()
+        for realtime in realtime_events:on_loop(_publish_realtime_event,realtime)
         return {"event": {"id": event.id, "event_type": event.event_type, "title": event.title,
                           "start_at": event.start_at, "end_at": event.end_at, "patient_id": event.patient_id,
                           "location": event.location, "status": event.status}}
@@ -1835,3 +1840,6 @@ def mobile_consultation_request_status(expert_id:int,request_key:str,user:User=D
 # Import after shared native authentication helpers to avoid a circular router setup.
 from app.mobile_account_api import router as mobile_account_router
 router.include_router(mobile_account_router)
+
+from app.mobile_program_api import router as mobile_program_router
+router.include_router(mobile_program_router)

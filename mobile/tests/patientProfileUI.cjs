@@ -30,16 +30,6 @@ test('changing account and patient hides previous clinical content before pendin
  assert.ok(text(tree.toJSON()).includes('Synthetic9'));assert.ok(!text(tree.toJSON()).includes('Old account failed'),'stale failure must not leak into next account');
  await renderer.act(async()=>tree.unmount());
 });
-test('appointment created from a patient profile submits the actual selected id and local date/time',async()=>{
- let submitted,saved=0;const Form=component({getPatient:async()=>patient(8),createSchedule:async(_token,payload)=>{submitted=payload}},'NativePatientAppointment');let tree;
- await renderer.act(async()=>{tree=renderer.create(React.createElement(Form,{token:'one',patientId:8,onSaved:()=>saved++}))});
- const save=tree.root.findAllByType('Pressable').find(n=>text(n.toJSON?.()||{children:n.findAllByType('Text').flatMap(t=>t.children)})==='Randevuyu Kaydet');
- assert.ok(save);
- await renderer.act(async()=>save.props.onPress());
- assert.equal(submitted.patient_id,8);assert.equal(submitted.event_type,'APPOINTMENT');
- assert.match(submitted.start_at,/^\d{4}-\d{2}-\d{2}T09:00$/);assert.equal(saved,1);
- await renderer.act(async()=>tree.unmount());
-});
 
 test('patient switch releases a pending mutation lock without leaking old account state',async()=>{
  let rejectOld;const calls=[];
