@@ -94,3 +94,10 @@ test('clinical modal and destructive actions require the current loaded account'
  assert.match(source,/function confirmDelete\(id\?:number\)\{if\(mutation\.current\|\|uncertain\|\|loadedOwner!==owner\)return;/);
  assert.match(source,/async function analyze\(\)\{if\(mutation\.current\|\|uncertain\|\|loadedOwner!==owner\|\|!selected\.length\)return;/);
 });
+
+
+test('gallery selection and pagination are restricted to the loaded patient scope',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/function toggle\(id:number\)\{if\(mutation\.current\|\|uncertain\|\|loadedOwner!==owner\|\|!visibleItems\.some\(item=>item\.id===id\)\)return;/);
+ assert.match(source,/if\(loadedOwner===owner&&cursor&&!loading&&!error&&!uncertain&&!mutation\.current\)/);
+});
