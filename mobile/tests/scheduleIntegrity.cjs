@@ -22,3 +22,17 @@ test('native schedule rejects malformed patient-linked events and duplicate iden
   assert.equal((await getSchedule('token')).items[0].patient_id,2);
  }finally{global.fetch=old}
 });
+
+test('appointment creation requires a valid patient identity and matching server receipt',async()=>{
+ const {createSchedule}=require('../src/api.ts');
+ const old=global.fetch;let calls=0;
+ const payload={event_type:'APPOINTMENT',title:'Kontrol',start_at:'2026-11-15T10:00:00',patient_id:8};
+ try{
+  global.fetch=async()=>{calls++;return reply({event:{id:23,patient_id:9}})};
+  await assert.rejects(()=>createSchedule('token',{...payload,patient_id:0}),/Geçersiz randevu/);
+  assert.equal(calls,0);
+  await assert.rejects(()=>createSchedule('token',payload),/Randevu kaydı doğrulanamadı/);
+  global.fetch=async()=>reply({event:{id:23,patient_id:8}});
+  assert.equal((await createSchedule('token',payload)).event.patient_id,8);
+ }finally{global.fetch=old}
+});
