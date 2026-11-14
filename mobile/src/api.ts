@@ -121,7 +121,7 @@ export const uploadPatientMedia=async(token:string,patientId:number,file:{uri:st
   const response=await fetch(API_BASE+`/patients/${patientId}/media`,{method:"POST",headers:{Authorization:"Bearer "+token},body,signal:controller.signal});
   const raw=await response.text();let data:any={};try{data=raw?JSON.parse(raw):{}}catch{}
   if(!response.ok){
-   const detail=typeof data.detail==="string"?data.detail:"Görüntü yüklenemedi.";
+   const detail=typeof data?.detail==="string"?data.detail:"Görüntü yüklenemedi.";
    throw new ApiError(response.status,detail);
   }
   if(!data?.media||!Number.isSafeInteger(data.media.id)||data.media.id<=0)
