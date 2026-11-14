@@ -47,11 +47,11 @@ test('patient switch releases a pending mutation lock without leaking old accoun
   getPatient:async(_token,id)=>patient(id),
   editPatient:async(token,id)=>{calls.push([token,id]);if(id===8)await new Promise(resolve=>{releaseOld=resolve})}
  });let tree;
- const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>text(n.toJSON()).includes(label));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
  await press('Hasta Bilgileri');
  let oldSave;
- await renderer.act(async()=>{const save=tree.root.findAllByType('Pressable').find(n=>text(n.toJSON()).includes('Değişiklikleri Kaydet'));assert.ok(save);oldSave=save.props.onPress()});
+ await renderer.act(async()=>{const save=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Değişiklikleri Kaydet')));assert.ok(save);oldSave=save.props.onPress()});
  assert.deepEqual(calls,[['one',8]]);
  await renderer.act(async()=>{tree.update(React.createElement(Profile,{token:'two',patientId:9,actions}))});
  await press('Hasta Bilgileri');
