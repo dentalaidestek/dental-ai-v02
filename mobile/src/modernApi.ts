@@ -22,7 +22,8 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
    throw new ApiError(502,"Sunucudan geçersiz API yanıtı alındı.");
   if(!r.ok){
    // A feature-specific 401 must not invalidate the global login; /me validates sessions.
-   throw new ApiError(r.status,typeof b.detail==="string"?b.detail:(b.detail?.message||"İstek başarısız."));
+   const detail=b?.detail;
+   throw new ApiError(r.status,typeof detail==="string"?detail:(typeof detail?.message==="string"?detail.message:"İstek başarısız."));
   }
   return b as T;
  }catch(error){
