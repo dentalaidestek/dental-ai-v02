@@ -59,5 +59,6 @@ test('patient switch releases a pending mutation lock without leaking old accoun
  assert.deepEqual(calls,[['one',8],['two',9]],'new patient must not inherit prior pending mutation lock');
  await renderer.act(async()=>{rejectOld(new Error('Old account failed'));await oldSave});
  assert.ok(text(tree.toJSON()).includes('Synthetic9'));
+ assert.ok(!text(tree.toJSON()).includes('Old account failed'),'stale failure must not leak into the new patient');
  await renderer.act(async()=>tree.unmount());
 });
