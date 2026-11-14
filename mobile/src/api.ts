@@ -29,7 +29,7 @@ async function request<T>(path:string,token?:string,options:RequestInit={}):Prom
    // Never treat that as a successful clinical API response.
    if(response.ok)throw new ApiError(502,"Sunucu beklenen JSON yanıtını göndermedi. Lütfen tekrar deneyin.");
   }
-  if(response.ok&&raw&&(!body||typeof body!=="object"))throw new ApiError(502,"Sunucudan geçersiz API yanıtı alındı.");
+  if(response.ok&&(!raw.trim()||!body||typeof body!=="object"||Array.isArray(body)))throw new ApiError(502,"Sunucudan geçersiz API yanıtı alındı.");
   if(!response.ok){if(response.status===401&&token&&path==="/me")reportSessionExpiry(token);const detail=body?.detail;throw new ApiError(response.status,typeof detail==="string"?detail:(typeof detail?.message==="string"?detail.message:"İstek başarısız."));}
   return body as T;
  }catch(error){
