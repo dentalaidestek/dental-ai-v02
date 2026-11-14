@@ -55,3 +55,12 @@ test('uncertain media deletion blocks repeated destructive requests until reconc
  assert.match(source,/confirmDelete\(preview\.id\),busy\|\|uncertain/);
  assert.match(source,/confirmDelete\(\),busy\|\|uncertain/);
 });
+
+test('clinical gallery offers recovery for failed reads and distinguishes empty from error',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/Galeriyi yeniden yükle/);
+ assert.match(source,/Bu hastaya ait klinik görsel bulunmuyor/);
+ assert.match(source,/!loading&&!!error&&button\('Galeriyi yeniden yükle'/);
+ assert.match(source,/!loading&&!error&&items\.length===0/);
+ assert.match(source,/confirmDelete\(\),busy\|\|uncertain\|\|items\.length===0/);
+});
