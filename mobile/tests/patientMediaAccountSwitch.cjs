@@ -64,3 +64,10 @@ test('clinical gallery offers recovery for failed reads and distinguishes empty 
  assert.match(source,/!loading&&!error&&items\.length===0/);
  assert.match(source,/confirmDelete\(\),busy\|\|uncertain\|\|items\.length===0/);
 });
+
+test('uncertain media mutations freeze selection and pagination until reconciliation',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/disabled=\{busy\|\|uncertain\} onPress=\{\(\)=>toggle\(item\.id\)\}/);
+ assert.match(source,/setSelected\(selected\.length\?\[\]:items\.slice\(0,4\)\.map\(x=>x\.id\)\),busy\|\|uncertain/);
+ assert.match(source,/onEndReached=\{\(\)=>\{if\(cursor&&!loading&&!error&&!uncertain\)/);
+});
