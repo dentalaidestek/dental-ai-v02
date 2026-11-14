@@ -1,4 +1,4 @@
-import {reportSessionExpiry} from './sessionExpiry';
+import {reportSessionExpiry,revalidateSession} from './sessionExpiry';
 const API_BASE = "https://dentalai.tr/api/mobile/v1";
 
 export type User={id:number;username:string;email?:string|null;display_name:string;role:string;is_active:boolean;email_verified_at?:string|null;professional_title?:string|null;specialty?:string|null;university?:string|null};
@@ -30,7 +30,7 @@ async function request<T>(path:string,token?:string,options:RequestInit={}):Prom
    if(response.ok)throw new ApiError(502,"Sunucu beklenen JSON yanıtını göndermedi. Lütfen tekrar deneyin.");
   }
   if(response.ok&&(!raw.trim()||!body||typeof body!=="object"||Array.isArray(body)))throw new ApiError(502,"Sunucudan geçersiz API yanıtı alındı.");
-  if(!response.ok){if(response.status===401&&token&&path==="/me")reportSessionExpiry(token);const detail=body?.detail;throw new ApiError(response.status,typeof detail==="string"?detail:(typeof detail?.message==="string"?detail.message:"İstek başarısız."));}
+  if(!response.ok){if(response.status===401&&token){if(path==="/me")reportSessionExpiry(token);else await revalidateSession(token)}const detail=body?.detail;throw new ApiError(response.status,typeof detail==="string"?detail:(typeof detail?.message==="string"?detail.message:"İstek başarısız."));}
   return body as T;
  }catch(error){
   if(controller.signal.aborted&&!externalSignal?.aborted)throw new ApiError(408,"Sunucu yanıt vermedi. Bağlantınızı kontrol edip tekrar deneyin.");
@@ -133,6 +133,7 @@ export const uploadPatientMedia=async(token:string,patientId:number,file:{uri:st
   const response=await fetch(API_BASE+`/patients/${patientId}/media`,{method:"POST",headers:{Authorization:"Bearer "+token},body,signal:controller.signal});
   const raw=await response.text();let data:any={};try{data=raw?JSON.parse(raw):{}}catch{}
   if(!response.ok){
+   if(response.status===401)await revalidateSession(token);
    const detail=typeof data?.detail==="string"?data.detail:"Görüntü yüklenemedi.";
    throw new ApiError(response.status,detail);
   }
@@ -158,6 +159,3 @@ export type E2EEDeviceKey={device_id:string;public_key:string;algorithm:string;k
 export const registerE2EEDevice=(token:string,payload:{device_id:string;public_key:string;algorithm?:string;key_version?:string})=>request<{ok:boolean;device_id:string;public_key:string;algorithm:string;key_version:string}>("/e2ee/device",token,{method:"PUT",body:JSON.stringify(payload)});
 export const getE2EEUserKeys=(token:string,userId:number)=>request<{items:E2EEDeviceKey[]}>(`/e2ee/users/${userId}/keys`,token);
 export const revokeE2EEDevice=(token:string,deviceId:string)=>request<{ok:boolean;device_id:string;revoked:boolean}>(`/e2ee/device/${encodeURIComponent(deviceId)}`,token,{method:"DELETE"});
-
-
-

@@ -1,4 +1,5 @@
 import {ApiError} from './api';
+import {revalidateSession} from './sessionExpiry';
 const API_BASE="https://dentalai.tr/api/mobile/v1";
 async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
  const headers:any={Authorization:"Bearer "+token,...(!(init.body instanceof FormData)?{"Content-Type":"application/json"}:{}),...(init.headers||{})};
@@ -21,7 +22,7 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
   if(r.ok&&(!raw.trim()||!b||typeof b!=="object"||Array.isArray(b)))
    throw new ApiError(502,"Sunucudan geçersiz API yanıtı alındı.");
   if(!r.ok){
-   // A feature-specific 401 must not invalidate the global login; /me validates sessions.
+   if(r.status===401)await revalidateSession(token);
    const detail=b?.detail;
    throw new ApiError(r.status,typeof detail==="string"?detail:(typeof detail?.message==="string"?detail.message:"İstek başarısız."));
   }
@@ -160,4 +161,3 @@ export function askAcademic(t:string,courseId:number,message:string){
  return req<any>(`/academic/courses/${courseId}/ask`,t,{method:"POST",body:JSON.stringify({message})});
 }
 export function mediaUploadUrl(patientId:number){return API_BASE+`/patients/${patientId}/media`;}
-

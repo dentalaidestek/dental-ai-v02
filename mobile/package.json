@@ -8,8 +8,8 @@
     "android": "expo run:android",
     "test": "npm run typecheck && npm run test:session && npm run test:realtime && npm run test:beta",
     "typecheck": "tsc --noEmit",
-    "test:session": "node --test tests/session.cjs",
-    "test:realtime": "node --test tests/realtime.cjs tests/analysisRefresh.cjs tests/pagedRecords.cjs",
+    "test:session": "node --test tests/session.cjs tests/sessionHealth.cjs tests/sessionForeground.cjs",
+    "test:realtime": "node --test tests/realtime.cjs tests/analysisRefresh.cjs tests/analysisRecovery.cjs tests/pagedRecords.cjs",
     "test:beta": "node --test tests/social.cjs tests/findings.cjs tests/socialScreens.cjs tests/sessionExpiry.cjs tests/voiceApi.cjs tests/consultations.cjs tests/analysisApi.cjs tests/patientApi.cjs",
     "ios": "expo run:ios"
   },

@@ -1,9 +1,9 @@
-import {reportSessionExpiry} from './sessionExpiry';
+import {revalidateSession} from './sessionExpiry';
 const BASE="https://dentalai.tr/api/mobile/v1";
 async function send<T>(token:string,path:string,payload:unknown):Promise<T>{
  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),150000);
  try{const response=await fetch(BASE+path,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(payload),signal:controller.signal});
- if(response.status===401)reportSessionExpiry(token);
+ if(response.status===401)await revalidateSession(token);
  if(response.status===429)throw Error("Klinik değerlendirme hizmeti şu anda yoğun. Metniniz korunuyor; biraz sonra tekrar deneyin.");
  if(response.status>=500)throw Error("Klinik değerlendirme sunucusuna şu anda ulaşılamıyor. Metniniz korunuyor; daha sonra tekrar deneyin.");
  const raw=await response.text();
@@ -84,7 +84,7 @@ export async function transcribeVoiceAudio(token:string,patientId:number,audio:B
  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),150000);
  try{
   const response=await fetch(BASE+`/patients/${patientId}/voice-exam/audio`,{method:"POST",headers:{"Content-Type":contentType,"X-Voice-Consent":"yes",Authorization:"Bearer "+token},body:audio,signal:controller.signal});
-  if(response.status===401)reportSessionExpiry(token);
+  if(response.status===401)await revalidateSession(token);
   if(response.status===429||response.status>=500)throw Error("Ses yazıya çevrilemedi; sunucu meşgul. Yerel kaydı silmeden tekrar deneyin.");
   const raw=await response.text();let body:Record<string,unknown>;
   try{body=raw?JSON.parse(raw):{}}catch{throw Error("Ses aktarımından geçersiz yanıt alındı. Yerel kaydı koruyun.");}
