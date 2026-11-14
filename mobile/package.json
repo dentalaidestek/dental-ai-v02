@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test:session": "node --test tests/session.cjs tests/sessionHealth.cjs tests/sessionForeground.cjs",
     "test:realtime": "node --test tests/realtime.cjs tests/analysisRefresh.cjs tests/analysisRecovery.cjs tests/pagedRecords.cjs",
-    "test:beta": "node --test tests/social.cjs tests/findings.cjs tests/socialScreens.cjs tests/sessionExpiry.cjs tests/voiceApi.cjs tests/consultations.cjs tests/analysisApi.cjs tests/patientApi.cjs tests/mobileChat.cjs tests/consultationRequest.cjs tests/chatFiles.cjs tests/voicePermissions.cjs tests/appointmentParity.cjs",
+    "test:beta": "node --test tests/social.cjs tests/findings.cjs tests/socialScreens.cjs tests/sessionExpiry.cjs tests/voiceApi.cjs tests/consultations.cjs tests/analysisApi.cjs tests/patientApi.cjs tests/mobileChat.cjs tests/consultationRequest.cjs tests/chatFiles.cjs tests/voicePermissions.cjs tests/appointmentParity.cjs tests/patientParity.cjs tests/patientProfileUI.cjs",
     "ios": "expo run:ios"
   },
   "dependencies": {
@@ -34,10 +34,12 @@
     "react-native": "0.81.4",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
+    "react-native-svg": "15.12.1",
     "react-native-view-shot": "4.0.3"
   },
   "devDependencies": {
     "@types/react": "~19.1.12",
+    "react-test-renderer": "19.1.0",
     "typescript": "~5.9.2"
   }
 }

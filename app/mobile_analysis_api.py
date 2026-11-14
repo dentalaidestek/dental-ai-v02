@@ -18,6 +18,13 @@ from app.main import (
     _record_realtime_event, _publish_realtime_event, on_loop,
 )
 from app.mobile_api import _mobile_user
+from app.work_jobs import WorkJob
+
+def _voice_review_ids(session, user_id, analysis_ids):
+    if not analysis_ids:
+        return set()
+    return set(session.exec(select(WorkJob.resource_id).where(WorkJob.owner_user_id == user_id, WorkJob.resource_type == "ANALYSIS", WorkJob.resource_id.in_(analysis_ids), WorkJob.kind == "VOICE_REVIEW", WorkJob.status == "DONE")).all())
+
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile-analysis"])
 
@@ -125,7 +132,7 @@ async def create_mobile_analysis(
         session.flush()
         job = _enqueue_work(session, "VISION", "ANALYSIS", analysis.id)
         realtime=_record_realtime_event(session,user.id,"ANALYSIS_CREATED","analysis",analysis.id,{"analysis_id":analysis.id,"patient_id":patient_id,"status":analysis.status,"tooth_number":analysis.tooth_number})
-        session.commit(); on_loop(_publish_realtime_event,realtime)
+        session.commit(); await _publish_realtime_event(realtime)
         return {
             "ok": True,
             "analysis_id": analysis.id,
@@ -161,6 +168,7 @@ def mobile_analysis(analysis_id: int, user: User = Depends(_mobile_user)):
                 "clinical_notes": analysis.clinical_notes,
                 "status": analysis.status,
                 "created_at": analysis.created_at,
+                "is_voice_review": analysis.id in _voice_review_ids(session, patient.owner_user_id, [analysis.id]),
             },
             "patient": _patient_payload(patient),
             "assets": [
@@ -227,20 +235,29 @@ def mobile_analysis_image(
         return FileResponse(path, media_type=media_type, filename=asset.original_filename, headers={"Cache-Control": "private, no-store"})
 
 @router.get("/analyses")
-def mobile_analysis_history(user: User = Depends(_mobile_user), patient_id: Optional[int] = None, before: Optional[int] = Query(None, ge=1), limit: int = Query(50, ge=1, le=100)):
+def mobile_analysis_history(user: User = Depends(_mobile_user), patient_id: Optional[int] = None, before: Optional[int] = Query(None, ge=1), limit: int = Query(50, ge=1, le=100), tooth_number: Optional[str] = None):
     with Session(engine, expire_on_commit=False) as session:
         q = select(Analysis, Patient).join(Patient, Patient.id == Analysis.patient_id).where(
             Patient.owner_user_id == user.id
         )
-        if patient_id:
+        if patient_id is not None:
+            patient = session.get(Patient, patient_id)
+            if not patient or patient.owner_user_id != user.id:
+                raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
             q = q.where(Analysis.patient_id == patient_id)
+        if tooth_number is not None:
+            import re
+            if not re.fullmatch(r"(?:[1-4][1-8]|[5-8][1-5])", tooth_number):
+                raise HTTPException(status_code=422, detail="Geçersiz FDI diş numarası.")
+            q = q.where(Analysis.tooth_number == tooth_number)
         if before is not None:
             q = q.where(Analysis.id < before)
         rows = session.exec(q.order_by(Analysis.id.desc()).limit(limit + 1)).all()
         has_more = len(rows) > limit
         rows = rows[:limit]
+        voice_ids = _voice_review_ids(session, user.id, [a.id for a, _ in rows])
         return {"total": len(rows), "next_before": rows[-1][0].id if has_more and rows else None, "items": [{
             "id": a.id, "patient_id": a.patient_id, "patient_name": f"{p.first_name or ''} {p.last_name or ''}".strip(),
             "tooth_number": a.tooth_number, "clinical_notes": a.clinical_notes,
-            "status": a.status, "created_at": a.created_at
+            "status": a.status, "created_at": a.created_at, "is_voice_review": a.id in voice_ids
         } for a, p in rows]}

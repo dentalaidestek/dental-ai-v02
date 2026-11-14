@@ -47,10 +47,12 @@ test('clinical media gallery prevents stale account mutations and pagination ove
 test('patient detail never renders stale clinical data after account or patient change',()=>{
  const source=fs.readFileSync(require.resolve('../App.tsx'),'utf8');
  const screen=source.slice(source.indexOf('function PatientDetailScreen('),source.indexOf('function PatientStack('));
- assert.ok(screen.includes('patientScope.current!==scope'), 'request generation must change synchronously with patient scope');
- assert.ok(screen.includes('request===patientRequest.current&&patientScope.current===expected'), 'stale requests must not commit patient data');
- assert.ok(screen.includes('loadedPatientScope!==scope'), 'previous patient data must be hidden before effects run');
- assert.ok(screen.includes('return()=>{patientRequest.current++}'), 'unmount must invalidate pending patient requests');
+ const profile=fs.readFileSync(require.resolve('../src/NativePatientProfile.tsx'),'utf8');
+ assert.match(screen,/NativePatientProfile key=\{token\+":"\+id\}/,'navigation must remount the patient boundary');
+ assert.ok(profile.includes('if(owner.current!==scope){owner.current=scope;request.current++;}'),'scope changes synchronously invalidate requests');
+ assert.ok(profile.includes('if(!current()||seq!==request.current)return false'),'stale requests cannot commit');
+ assert.ok(profile.includes('if(!detail||loadedScope!==scope)'),'hide previous patient before effects');
+ assert.ok(profile.includes('mounted.current=false;request.current++'),'unmount invalidates pending requests');
 });
 
 test('clinical gallery hides old patient thumbnails and preview before effects run',()=>{

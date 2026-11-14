@@ -42,7 +42,7 @@ export type Notice={id:number;title:string;message:string;notice_type:string;tar
 export type Expert={user_id:number;display_name:string;specialty:string;academic_title?:string|null;institution?:string|null;bio?:string|null;availability:string;consultation_price:number;rating_avg?:number|null;review_count:number};
 export type Consultation={id:number;other_user_id:number;other_display_name:string;specialty:string;tooth_region?:string|null;status:string;question:string;requested_at:string;last_message?:string|null;last_message_at?:string|null;messages_deleted_at?:string|null;unread_count:number};
 export type ChatMessage={id:number;sender_user_id:number;message_type:string;content:string;reply_to_message_id?:number|null;created_at:string;has_media?:boolean};
-export type AnalysisHistory={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;status:string;clinical_notes?:string|null;created_at:string};
+export type AnalysisHistory={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;status:string;clinical_notes?:string|null;created_at:string;is_voice_review?:boolean};
 export type Course={id:number;title:string;description?:string|null;updated_at:string;material_count:number};
 export const registerPushDevice=(t:string,deviceId:string,expoPushToken:string,platform:"android"|"ios")=>
  req<{ok:boolean}>("/push/devices",t,{method:"POST",body:JSON.stringify({device_id:deviceId,expo_push_token:expoPushToken,platform})});
@@ -53,13 +53,15 @@ export const markNotificationRead=(t:string,id:number)=>{
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz bildirim kimliği.");
  return req<{ok:boolean}>("/notifications/"+id+"/read",t,{method:"POST"});
 };
-export const getAnalysisHistory=async(t:string,before?:number)=>{
+export const getAnalysisHistory=async(t:string,before?:number,patientId?:number,toothNumber?:string)=>{
+ if(patientId!==undefined&&(!Number.isSafeInteger(patientId)||patientId<=0))throw Error("Geçersiz hasta kimliği.");
+ if(toothNumber!==undefined&&!/^(?:[1-4][1-8]|[5-8][1-5])$/.test(toothNumber))throw Error("Geçersiz FDI diş numarası.");
  if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz analiz sayfa kimliği.");
- const r=await req<{items:AnalysisHistory[];total:number;next_before?:number|null}>("/analyses?limit=50"+(before!==undefined?`&before=${encodeURIComponent(before)}`:""),t);
+ const r=await req<{items:AnalysisHistory[];total:number;next_before?:number|null}>("/analyses?limit=50"+(before!==undefined?`&before=${encodeURIComponent(before)}`:"")+(patientId!==undefined?`&patient_id=${patientId}`:"")+(toothNumber?`&tooth_number=${toothNumber}`:""),t);
  // Older deployed servers omit next_before; treat this as the final page.
  const next_before=r?.next_before??null;
  if(!Array.isArray(r?.items)||r.items.length>50||
-    r.items.some(n=>!n||!Number.isSafeInteger(n.id)||n.id<=0||!Number.isSafeInteger(n.patient_id)||typeof n.status!=="string")||
+    r.items.some(n=>!n||!Number.isSafeInteger(n.id)||n.id<=0||!Number.isSafeInteger(n.patient_id)||typeof n.status!=="string"||(patientId!==undefined&&n.patient_id!==patientId)||(toothNumber!==undefined&&n.tooth_number!==toothNumber))||
     (r.items.length===0&&next_before!==null)||
     (before!==undefined&&(r.items.some(n=>n.id>=before)||(next_before!==null&&next_before>=before)))||
     (next_before!==null&&(!Number.isSafeInteger(next_before)||next_before<=0))||
@@ -222,5 +224,18 @@ export async function sendChatFile(token:string,caseId:number,file:ChatFile,repl
 export async function getDeletedChats(token:string){
  const result=await req<{items:Array<{id:number;status:string;specialty:string;recover_until:string}>}>("/messages/deleted",token);
  if(!Array.isArray(result.items)||result.items.some(item=>!Number.isSafeInteger(item?.id)||item.id<=0))throw Error("Silinen görüşmeler alınamadı.");
+ return result;
+}
+
+export async function analyzeSelectedPatientMedia(token:string,patientId:number,mediaIds:number[]){
+ if(!Number.isSafeInteger(patientId)||patientId<=0||!Array.isArray(mediaIds)||mediaIds.length<1||mediaIds.length>4||new Set(mediaIds).size!==mediaIds.length||mediaIds.some(id=>!Number.isSafeInteger(id)||id<=0))throw Error('1 ile 4 arasında farklı klinik görüntü seçin.');
+ const result=await req<{ok:boolean;analysis_id:number}>(`/patients/${patientId}/media/analyze`,token,{method:'POST',body:JSON.stringify({media_ids:mediaIds})});
+ if(!result.ok||!Number.isSafeInteger(result.analysis_id)||result.analysis_id<=0)throw Error('Analiz kaydı doğrulanamadı. Geçmişi kontrol edin.');
+ return result;
+}
+export async function deleteAllPatientMedia(token:string,patientId:number){
+ if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error('Geçersiz hasta kimliği.');
+ const result=await req<{ok:boolean}>(`/patients/${patientId}/media`,token,{method:'DELETE'});
+ if(result.ok!==true)throw Error('Silme işlemi doğrulanamadı. Galeriyi yenileyin.');
  return result;
 }

@@ -4,14 +4,21 @@ import {revalidateSession} from './sessionExpiry';
 const API_BASE="https://dentalai.tr/api/mobile/v1";
 
 async function call<T>(path:string,token:string,options:RequestInit={}):Promise<T>{
-  const response=await fetch(API_BASE+path,{...options,headers:{Authorization:"Bearer "+token,...(options.headers||{})}});
-  const raw=await response.text();let body:any={};try{body=raw?JSON.parse(raw):{}}catch{}
-  if(!response.ok){if(response.status===401)await revalidateSession(token);throw new ApiError(response.status,typeof body?.detail==="string"?body.detail:(body?.detail?.message||"İstek başarısız."));}
-  return body as T;
+  const controller=new AbortController(),external=options.signal,abort=()=>controller.abort();
+  const timeout=setTimeout(abort,options.body instanceof FormData?120000:30000);
+  if(external?.aborted)controller.abort();else external?.addEventListener('abort',abort,{once:true});
+  try{
+    const response=await fetch(API_BASE+path,{...options,credentials:"omit",signal:controller.signal,headers:{Authorization:"Bearer "+token,...(options.headers||{})}});
+    const raw=await response.text();let body:any={};try{body=raw?JSON.parse(raw):{}}catch{if(response.ok)throw new ApiError(502,"Sunucu beklenen JSON yanıtını göndermedi.")}
+    if(!response.ok){if(response.status===401)await revalidateSession(token);throw new ApiError(response.status,typeof body?.detail==="string"?body.detail:(typeof body?.detail?.message==="string"?body.detail.message:"İstek başarısız."));}
+    if(!raw.trim()||!body||typeof body!=="object"||Array.isArray(body))throw new ApiError(502,"Sunucudan geçersiz analiz yanıtı alındı.");
+    return body as T;
+  }catch(error){if(controller.signal.aborted&&!external?.aborted)throw new ApiError(408,"Analiz isteği zaman aşımına uğradı. Yeniden göndermeden önce geçmişi kontrol edin.");throw error}
+  finally{clearTimeout(timeout);external?.removeEventListener('abort',abort)}
 }
 
 export type MobileAnalysis={
-  analysis:{id:number;patient_id:number;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at?:string};
+  analysis:{id:number;patient_id:number;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at?:string;is_voice_review?:boolean};
   patient:Patient;
   assets:Array<{id:number;original_filename:string;image_type:string;has_vision:boolean}>;
   ai_result?:any|null;

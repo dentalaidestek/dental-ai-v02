@@ -873,9 +873,12 @@ def mobile_create_treatment(patient_id: int, payload: MobileTreatmentCreate, use
             result=payload.result.strip()[:1000] if payload.result else None,
         )
         session.add(treatment)
+        session.flush()
+        event=_record_realtime_event(session,user.id,"PATIENT_UPDATED","patient",patient_id,{"patient_id":patient_id,"treatment_id":treatment.id})
         session.commit()
-        session.refresh(treatment)
-        return {"ok": True, "treatment_id": treatment.id}
+        treatment_id=treatment.id
+    on_loop(_publish_realtime_event,event)
+    return {"ok": True, "treatment_id": treatment_id}
 
 
 @router.put("/patients/{patient_id}/treatments/{treatment_id}")
@@ -903,8 +906,10 @@ def mobile_update_treatment(patient_id: int, treatment_id: int, payload: MobileT
         treatment.doctor_note = payload.doctor_note.strip()[:4000] if payload.doctor_note else None
         treatment.result = payload.result.strip()[:1000] if payload.result else None
         session.add(treatment)
+        event=_record_realtime_event(session,user.id,"PATIENT_UPDATED","patient",patient_id,{"patient_id":patient_id,"treatment_id":treatment_id})
         session.commit()
-        return {"ok": True, "treatment_id": treatment_id}
+    on_loop(_publish_realtime_event,event)
+    return {"ok": True, "treatment_id": treatment_id}
 
 
 @router.get("/patients/{patient_id}")
@@ -1294,7 +1299,7 @@ async def mobile_patient_media_upload(
             except OSError:
                 logging.exception("Failed to clean local clinical media upload: %s", destination)
             raise
-        on_loop(_publish_realtime_event,realtime)
+        await _publish_realtime_event(realtime)
         return {"media":{"id":media.id,"original_filename":media.original_filename,
             "media_type":media.media_type,"tooth_number":media.tooth_number,
             "note":media.note,"uploaded_at":media.uploaded_at}}
@@ -1465,6 +1470,54 @@ def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mob
         from fastapi.responses import FileResponse
         mime={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp"}.get(path.suffix.lower().lstrip("."),"application/octet-stream")
         return FileResponse(path,media_type=mime,filename=media.original_filename,headers={"Cache-Control":"private, no-store"})
+
+async def _invoke_patient_web(handler, request, *args):
+    response = await handler(request, *args) if _chat_inspect.iscoroutinefunction(handler) else await _chat_offload(handler, request, *args)
+    if response.status_code >= 400:
+        raw = getattr(response, "body", b"").decode("utf-8", errors="replace")
+        raise HTTPException(status_code=response.status_code, detail=raw[:300] if "<" not in raw else "Hasta işlemi tamamlanamadı.")
+    return response
+
+class MobileSelectedMediaAnalysis(BaseModel):
+    media_ids: list[int]
+
+@router.post("/patients/{patient_id}/media/analyze")
+async def mobile_analyze_patient_media(patient_id:int, payload:MobileSelectedMediaAnalysis, token:str=Depends(_mobile_access_token), user:User=Depends(_mobile_user)):
+    from app import main as web
+    from fastapi import BackgroundTasks
+    import re
+    ids=payload.media_ids
+    if not 1 <= len(ids) <= 4 or any(i <= 0 for i in ids) or len(set(ids)) != len(ids):
+        raise HTTPException(status_code=422,detail="1 ile 4 arasında farklı klinik görüntü seçin.")
+    with Session(engine) as session:
+        patient=session.get(Patient,patient_id)
+        if not patient or patient.owner_user_id != user.id:
+            raise HTTPException(status_code=404,detail="Hasta bulunamadı.")
+        for ident in ids:
+            media=session.get(PatientMedia,ident)
+            if not media or media.patient_id != patient_id or media.owner_user_id != user.id:
+                raise HTTPException(status_code=404,detail="Klinik görüntü bulunamadı.")
+    response=await _invoke_patient_web(web.create_analysis,_mobile_request(token),patient_id,BackgroundTasks(),None,None,None,','.join(map(str,ids)),[])
+    match=re.fullmatch(r"/analysis/([1-9][0-9]*)(?:/viewer)?",str(response.headers.get('location','')))
+    if response.status_code not in (302,303) or not match:
+        raise HTTPException(status_code=502,detail="Analiz kaydı doğrulanamadı. Yeniden göndermeden önce analiz geçmişini kontrol edin.")
+    return {"ok":True,"analysis_id":int(match.group(1))}
+
+@router.delete("/patients/{patient_id}/media")
+async def mobile_delete_all_patient_media(patient_id:int, token:str=Depends(_mobile_access_token), user:User=Depends(_mobile_user)):
+    from app import main as web
+    with Session(engine,expire_on_commit=False) as session:
+        patient=session.get(Patient,patient_id)
+        if not patient or patient.owner_user_id != user.id:
+            raise HTTPException(status_code=404,detail="Hasta bulunamadı.")
+    response=await _invoke_patient_web(web.delete_all_patient_media,_mobile_request(token),patient_id)
+    if response.status_code not in (302,303):
+        raise HTTPException(status_code=502,detail="Silme işlemi doğrulanamadı. Galeriyi yenileyin.")
+    with Session(engine,expire_on_commit=False) as session:
+        event=_record_realtime_event(session,user.id,"PATIENT_MEDIA_DELETED","patient",patient_id,{"patient_id":patient_id,"all":True})
+        session.commit()
+    await _publish_realtime_event(event)
+    return {"ok":True}
 
 
 

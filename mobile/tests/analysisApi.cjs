@@ -2,6 +2,18 @@ const ts=require('typescript'),fs=require('node:fs'),assert=require('node:assert
 const {test}=require('node:test');
 require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,filename);
 const api=require('../src/analysisApi.ts');
+test('analysis detail rejects HTML success and bounds a stalled history request',async t=>{
+ const original=global.fetch;
+ try{
+  global.fetch=async()=>new Response('<html>login</html>',{status:200});
+  await assert.rejects(()=>api.getAnalysis('test',23),e=>e.status===502);
+  t.mock.timers.enable({apis:['setTimeout']});
+  global.fetch=(_url,options)=>new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(new Error('aborted'))));
+  const pending=assert.rejects(()=>api.getAnalysis('test',23),e=>e.status===408);
+  t.mock.timers.tick(30000);
+  await pending;
+ }finally{global.fetch=original;t.mock.timers.reset()}
+});
 test('AI rejects invalid patient and missing clinical image without contacting backend',async()=>{
  const original=global.fetch;global.fetch=()=>{throw Error('unexpected network call')};
  try{
