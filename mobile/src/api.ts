@@ -79,6 +79,13 @@ function validateTreatmentTarget(patientId:number,payload:TreatmentPayload,treat
   throw new Error("Geçersiz hasta veya tedavi kimliği.");
  if(!payload||typeof payload.treatment_name!=="string"||!payload.treatment_name.trim())
   throw new Error("Tedavi adı zorunludur.");
+ if(payload.treatment_name.trim().length>200)throw new Error("Tedavi adı en fazla 200 karakter olabilir.");
+ if(payload.treatment_date){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(payload.treatment_date);
+  const y=m?Number(m[1]):0,month=m?Number(m[2]):0,day=m?Number(m[3]):0;
+  const valid=!!m&&y>=1&&month>=1&&month<=12&&day>=1&&day<=new Date(Date.UTC(y,month,0)).getUTCDate();
+  if(!valid)throw new Error("Tedavi tarihi YYYY-AA-GG biçiminde geçerli bir tarih olmalıdır.");
+ }
  if(payload.tooth_number&&(!validFdiTooth(payload.tooth_number)))
   throw new Error("Geçersiz FDI diş numarası.");
 }
