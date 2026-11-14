@@ -124,3 +124,31 @@ test('successful API responses reject empty and array payloads before patient re
   }
  }finally{global.fetch=original}
 });
+
+test('tooth chart writes reject invalid patient and FDI identifiers before fetch',async()=>{
+ const {updateTooth,updateToothSurface}=require('../src/api.ts');
+ const original=global.fetch;
+ global.fetch=()=>{throw Error('unexpected network call')};
+ try{
+  for(const tooth of ['19','49','56','89','../11','11?x=1','']){
+   assert.throws(()=>updateTooth('token',1,tooth,{status:'CARIES'}),/Geçersiz FDI/);
+   assert.throws(()=>updateToothSurface('token',1,tooth,'MESIAL',{status:'CARIES'}),/Geçersiz FDI/);
+  }
+  for(const patientId of [0,-1,1.5,Number.NaN]){
+   assert.throws(()=>updateTooth('token',patientId,'11',{status:'CARIES'}),/Geçersiz hasta/);
+   assert.throws(()=>updateToothSurface('token',patientId,'11','MESIAL',{status:'CARIES'}),/Geçersiz hasta/);
+  }
+ }finally{global.fetch=original}
+});
+test('tooth chart writes preserve valid primary and permanent FDI routes',async()=>{
+ const {updateTooth,updateToothSurface}=require('../src/api.ts');
+ const original=global.fetch;
+ const urls=[];
+ global.fetch=async url=>{urls.push(url);return reply({ok:true})};
+ try{
+  await updateTooth('token',8,'18',{status:'HEALTHY'});
+  await updateToothSurface('token',8,'85','LINGUAL',{status:'CARIES'});
+  assert.match(urls[0],/\/patients\/8\/teeth\/18$/);
+  assert.match(urls[1],/\/patients\/8\/teeth\/85\/surfaces\/LINGUAL$/);
+ }finally{global.fetch=original}
+});
