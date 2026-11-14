@@ -69,7 +69,7 @@ export async function getPatient(token:string,id:number){
     result.teeth.some(t=>!t||!validFdiTooth(t.tooth_number)||!validToothStatuses.has(t.status as ToothStatusCode))||
     result.surfaces.some(s=>!s||!validFdiTooth(s.tooth_number)||!validToothSurfaces.has(s.surface as ToothSurfaceCode)||!validToothStatuses.has(s.status as ToothStatusCode))||
     result.treatments.some(t=>!t||!Number.isSafeInteger(t.id)||t.id<=0||typeof t.treatment_name!=="string"||(t.tooth_number!=null&&!validFdiTooth(t.tooth_number)))||
-    result.media.some(m=>!m||!Number.isSafeInteger(m.id)||m.id<=0||typeof m.original_filename!=="string"))
+    result.media.some(m=>!m||!Number.isSafeInteger(m.id)||m.id<=0||typeof m.original_filename!=="string"||(m.tooth_number!=null&&!validFdiTooth(m.tooth_number))))
   throw Error("Hasta sunucusundan beklenmeyen profil alındı. Yeniden deneyin.");
  return result;
 }
