@@ -73,3 +73,16 @@ test('ambiguous server failure prevents duplicate patient submission until revie
  await press('Değişiklikleri Kaydet');assert.equal(calls,1,'uncertain server write must not be repeated automatically');
  await renderer.act(async()=>tree.unmount());
 });
+
+test('treatment validation 422 does not trap the clinician in uncertain state',async()=>{
+ let calls=0;const Profile=component({getPatient:async()=>patient(8),createTreatment:async()=>{calls++;if(calls===1)throw Object.assign(new Error('Geçersiz tedavi'),{status:422})}});let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ await press('Yeni Tedavi');
+ const input=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Tedavi adı *');assert.ok(input);
+ await renderer.act(async()=>input.props.onChangeText('Synthetic treatment'));
+ await press('Tedaviyi Kaydet');
+ assert.ok(text(tree.toJSON()).includes('Bilgileri düzeltip yeniden deneyin.'));
+ await press('Tedaviyi Kaydet');assert.equal(calls,2);
+ await renderer.act(async()=>tree.unmount());
+});
