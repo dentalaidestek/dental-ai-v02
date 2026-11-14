@@ -149,6 +149,7 @@ export const createPost = (
   payload: {
     text: string;
     link_url?: string;
+    preview_id?: number;
     media_ids: number[];
     idempotency_key: string;
   },

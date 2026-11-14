@@ -1,6 +1,6 @@
 """Native profile/document adapters. Web handlers own review and permission rules."""
 from typing import Literal, Optional
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Response
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
@@ -121,3 +121,25 @@ async def availability(payload:Availability,token:str=Depends(_mobile_access_tok
     result=json.loads(response.body)
     if response.status_code>=400 or result.get('ok') is not True:raise HTTPException(status_code=response.status_code if response.status_code>=400 else 502,detail=result.get('detail','Müsaitlik güncellenemedi.'))
     return {'ok':True,'professional':await run_in_threadpool(professional,token,user)}
+
+
+@router.get('/experts/{expert_id}')
+def public_expert(expert_id:int,response:Response,token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    response.headers['Cache-Control']='private, no-store'
+    response.headers['Vary']='Authorization'
+    from app import main as web
+    with Session(web.engine,expire_on_commit=False) as s:
+        profile=s.exec(select(web.ExpertProfile).where(web.ExpertProfile.user_id==expert_id)).first()
+        owner=s.get(web.User,expert_id)
+        if not web.consultation_expert_is_verified(owner,profile) or (user.id!=expert_id and web._users_blocked(s,user.id,expert_id)):
+            raise HTTPException(status_code=404,detail='Doğrulanmış uzman profili bulunamadı.')
+        policy=s.exec(select(web.ExpertPolicyState).where(web.ExpertPolicyState.expert_user_id==expert_id)).first()
+        blocked=bool(policy and web._expert_is_blocked(policy))
+        performance=web._expert_performance(s,expert_id)
+        owned=user.id==expert_id
+        return {'user_id':expert_id,'display_name':web.expert_display_name(profile,owner.display_name),'raw_name':owner.display_name,
+                'photo_url':web._profile_photo_url(owner),'specialty':profile.specialty,'institution':profile.institution,'bio':profile.bio,
+                'orcid_url':profile.orcid_url,'publications_text':profile.publications_text,'academic_title_verified':bool(profile.academic_title_verified),
+                'consultation_price':profile.consultation_price,'availability':profile.availability,'performance':performance,'owned':owned,
+                'support_available':bool(not owned and profile.availability=='AVAILABLE' and not blocked and web._expert_open_case_count(s,expert_id)<web.consultation_capacity_limit(profile)),
+                'can_publish':bool(owned and profile.availability!='PASSIVE' and not blocked)}

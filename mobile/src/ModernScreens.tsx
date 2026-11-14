@@ -93,7 +93,7 @@ export function ExpertDirectory({token,navigation,patientId}:{token:string;navig
   {busy?<View style={s.center}><ActivityIndicator color={C.navy}/></View>:
   <FlatList keyboardShouldPersistTaps="handled" contentContainerStyle={s.pad} data={data?.accountToken===token?data.items:[]} keyExtractor={x=>String(x.user_id)}
    ListEmptyComponent={<Empty title="Uzman bulunamadı" sub="Arama kelimelerini değiştirebilirsin."/>}
-   renderItem={({item})=><Pressable style={card} disabled={item.availability!=="AVAILABLE"} onPress={()=>navigation.navigate("NewConsultation",{expert:item,patientId})}>
+   renderItem={({item})=><Pressable accessibilityRole="button" style={card} onPress={()=>navigation.navigate("ExpertProfile",{id:item.user_id,name:item.display_name,patientId})}>
     <View style={s.row}><View style={{flex:1}}>
      <Text style={s.title}>{item.display_name}</Text>
      <Text style={s.body}>{item.academic_title||"Uzman Diş Hekimi"} · {item.specialty}</Text>

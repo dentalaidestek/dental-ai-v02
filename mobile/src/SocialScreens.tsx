@@ -1016,12 +1016,16 @@ export function DentalFlow({
   navigation,
   expertId,
   expertName,
+  expertHeader,
+  canCompose,
 }: {
   token: string;
   user: User;
   navigation: any;
   expertId?: number;
   expertName?: string;
+  expertHeader?: React.ReactNode;
+  canCompose?: boolean;
 }) {
   const followLock = useRef(false);
   const editLock = useRef(false);
@@ -1067,7 +1071,7 @@ export function DentalFlow({
     setComments(null);
     navigation.push("ExpertProfile", { id, name });
   };
-  const header = (
+  const header = expertHeader ? <View>{expertHeader}{expertId===user.id&&canCompose&&<Button title="Gönderi Paylaş" onPress={()=>setCompose(true)}/>}<Text style={s.error}>{error||pages.error}</Text>{pages.error&&<Button title="Tekrar dene" onPress={pages.refresh}/>}</View> : (
     <View>
       <View style={s.header}>
         <Text style={s.title}>{expertName || "Dental Akış"}</Text>
