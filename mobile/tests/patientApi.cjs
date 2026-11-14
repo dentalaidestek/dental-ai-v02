@@ -79,3 +79,16 @@ test('clinical media upload accepts primary and permanent FDI tooth numbers',asy
   assert.equal(calls,7);
  }finally{global.fetch=original}
 });
+
+test('API handles null and malformed error bodies without leaking raw exceptions',async()=>{
+ const {getPatients,ApiError}=require('../src/api.ts');
+ const original=global.fetch;
+ try{
+  for(const body of ['null','[]','{"detail":{"message":42}}','<html>gateway error</html>']){
+   global.fetch=async()=>({ok:false,status:503,text:async()=>body});
+   await assert.rejects(()=>getPatients('token'),err=>err instanceof ApiError&&err.status===503&&err.message==='İstek başarısız.');
+  }
+  global.fetch=async()=>({ok:false,status:403,text:async()=>JSON.stringify({detail:'Erişim reddedildi'})});
+  await assert.rejects(()=>getPatients('token'),err=>err instanceof ApiError&&err.status===403&&err.message==='Erişim reddedildi');
+ }finally{global.fetch=original}
+});
