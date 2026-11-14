@@ -12,7 +12,7 @@ export class ApiError extends Error {
  constructor(status:number,message:string,duplicatePatientId?:number){super(message);this.name="ApiError";this.status=status;this.duplicatePatientId=duplicatePatientId;}
 }
 
-async function request<T>(path:string,token?:string,options:RequestInit={}):Promise<T>{
+export async function request<T>(path:string,token?:string,options:RequestInit={}):Promise<T>{
  // A stalled mobile connection must not leave clinical screens loading forever.
  const controller=new AbortController();
  // Academic answers can take longer than a normal list request.

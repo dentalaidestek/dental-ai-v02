@@ -1831,3 +1831,7 @@ def mobile_consultation_request_status(expert_id:int,request_key:str,user:User=D
         if not case or case.requester_user_id!=user.id or case.expert_user_id!=expert_id:
             return {"found":False}
         return {"found":True,"case_id":case.id,"status":case.status}
+
+# Import after shared native authentication helpers to avoid a circular router setup.
+from app.mobile_account_api import router as mobile_account_router
+router.include_router(mobile_account_router)
