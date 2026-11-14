@@ -115,7 +115,17 @@ export async function getSchedule(token:string){
 export async function completeSchedule(token:string,id:number){return request<{ok:boolean;status:string}>(`/schedule/${id}/complete`,token,{method:"POST"});}
 export async function deleteSchedule(token:string,id:number){return request<{ok:boolean}>(`/schedule/${id}`,token,{method:"DELETE"});}
 
-export async function createSchedule(token:string,payload:{event_type:string;title:string;start_at:string;end_at?:string;patient_id?:number;location?:string;notes?:string;reminder_minutes?:number;notification_enabled?:boolean;recurrence_rule?:string;recurrence_until?:string}){return request<{event:ScheduleEvent}>("/schedule",token,{method:"POST",body:JSON.stringify(payload)});}
+export async function createSchedule(token:string,payload:{event_type:string;title:string;start_at:string;end_at?:string;patient_id?:number;location?:string;notes?:string;reminder_minutes?:number;notification_enabled?:boolean;recurrence_rule?:string;recurrence_until?:string}){
+ if(!payload||typeof payload.event_type!=="string"||!payload.event_type.trim()||
+    typeof payload.title!=="string"||!payload.title.trim()||typeof payload.start_at!=="string"||!payload.start_at.trim()||
+    (payload.patient_id!==undefined&&(!Number.isSafeInteger(payload.patient_id)||payload.patient_id<=0)))
+  throw new Error("Geçersiz randevu bilgisi veya hasta kimliği.");
+ const result=await request<{event:ScheduleEvent}>("/schedule",token,{method:"POST",body:JSON.stringify(payload)});
+ if(!result?.event||!Number.isSafeInteger(result.event.id)||result.event.id<=0||
+    (payload.patient_id!==undefined&&result.event.patient_id!==payload.patient_id))
+  throw new Error("Randevu kaydı doğrulanamadı. Yeniden oluşturmadan önce programı kontrol edin.");
+ return result;
+}
 
 
 export type ToothStatusCode="HEALTHY"|"CARIES"|"FILLING"|"CROWN"|"ROOT_CANAL"|"EXTRACTED"|"IMPLANT"|"OTHER";
