@@ -71,3 +71,18 @@ test('uncertain media mutations freeze selection and pagination until reconcilia
  assert.match(source,/setSelected\(selected\.length\?\[\]:items\.slice\(0,4\)\.map\(x=>x\.id\)\),busy\|\|uncertain/);
  assert.match(source,/onEndReached=\{\(\)=>\{if\(cursor&&!loading&&!error&&!uncertain\)/);
 });
+
+
+test('account switch never exposes old patient thumbnails during pending new request',async()=>{
+ let resolveNext;
+ const Media=mountMedia(async(token)=>token==='old'
+  ?{items:[{id:1,url:'https://example.invalid/old.jpg',media_type:'PHOTO'}],next_before:null}
+  :new Promise(resolve=>{resolveNext=resolve}));
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'old',patientId:1,onAnalysis:()=>{}}))});
+ assert.ok(tree.root.findAllByType('Image').some(x=>x.props.source?.uri?.includes('old.jpg')));
+ await renderer.act(async()=>{tree.update(React.createElement(Media,{token:'new',patientId:2,onAnalysis:()=>{}}))});
+ assert.ok(!tree.root.findAllByType('Image').some(x=>x.props.source?.uri?.includes('old.jpg')));
+ await renderer.act(async()=>{resolveNext({items:[],next_before:null})});
+ await renderer.act(async()=>tree.unmount());
+});
