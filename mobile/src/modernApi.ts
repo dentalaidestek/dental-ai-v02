@@ -18,7 +18,7 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
    // Never interpret an HTML login page or proxy error as successful API data.
    if(r.ok)throw new ApiError(502,"Sunucu beklenen JSON yanıtını göndermedi. Lütfen tekrar deneyin.");
   }
-  if(r.ok&&raw&&(!b||typeof b!=="object"))
+  if(r.ok&&(!raw.trim()||!b||typeof b!=="object"||Array.isArray(b)))
    throw new ApiError(502,"Sunucudan geçersiz API yanıtı alındı.");
   if(!r.ok){
    // A feature-specific 401 must not invalidate the global login; /me validates sessions.
