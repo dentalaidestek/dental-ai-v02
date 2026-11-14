@@ -40,3 +40,24 @@ test('appointment created from a patient profile submits the actual selected id 
  assert.match(submitted.start_at,/^\d{4}-\d{2}-\d{2}T09:00$/);assert.equal(saved,1);
  await renderer.act(async()=>tree.unmount());
 });
+
+test('patient switch releases a pending mutation lock without leaking old account state',async()=>{
+ let releaseOld;const calls=[];
+ const Profile=component({
+  getPatient:async(_token,id)=>patient(id),
+  editPatient:async(token,id)=>{calls.push([token,id]);if(id===8)await new Promise(resolve=>{releaseOld=resolve})}
+ });let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>text(n.toJSON()).includes(label));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ await press('Hasta Bilgileri');
+ let oldSave;
+ await renderer.act(async()=>{const save=tree.root.findAllByType('Pressable').find(n=>text(n.toJSON()).includes('Değişiklikleri Kaydet'));assert.ok(save);oldSave=save.props.onPress()});
+ assert.deepEqual(calls,[['one',8]]);
+ await renderer.act(async()=>{tree.update(React.createElement(Profile,{token:'two',patientId:9,actions}))});
+ await press('Hasta Bilgileri');
+ await press('Değişiklikleri Kaydet');
+ assert.deepEqual(calls,[['one',8],['two',9]],'new patient must not inherit prior pending mutation lock');
+ await renderer.act(async()=>{releaseOld();await oldSave});
+ assert.ok(text(tree.toJSON()).includes('Synthetic9'));
+ await renderer.act(async()=>tree.unmount());
+});
