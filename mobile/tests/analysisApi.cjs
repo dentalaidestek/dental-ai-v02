@@ -59,7 +59,7 @@ test('modern API rejects HTML and scalar success payloads instead of silently ac
  const {getNotifications}=require('../src/modernApi.ts');
  const original=global.fetch;
  try{
-  for(const raw of ['<html>login</html>','null','42']){
+  for(const raw of ['<html>login</html>','null','42','', '   ', '[]']){
    global.fetch=async()=>new Response(raw,{status:200});
    await assert.rejects(()=>getNotifications('token'),error=>error.status===502);
   }
