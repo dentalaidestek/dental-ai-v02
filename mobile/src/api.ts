@@ -48,6 +48,9 @@ export function getMe(token:string){return request<{user:User}>("/me",token);}
 export function getDashboard(token:string){return request<Dashboard>("/dashboard",token);}
 export async function getPatients(token:string,q="",offset=0){
  if(!Number.isSafeInteger(offset)||offset<0)throw Error("Geçersiz hasta sayfası.");
+ // FastAPI mobile_patients limits q to 100 characters. Do not send a 422-producing
+ // query and misrepresent the result as an empty or permanently loading list.
+ if(typeof q!=="string"||q.length>100)throw Error("Hasta araması en fazla 100 karakter olabilir.");
  const result=await request<{items:Patient[];total:number}>("/patients?limit=30&offset="+offset+"&q="+encodeURIComponent(q),token);
  if(!Array.isArray(result?.items)||result.items.length>30||!Number.isSafeInteger(result.total)||result.total<0||
     result.items.some(p=>!p||!Number.isSafeInteger(p.id)||p.id<=0)||
