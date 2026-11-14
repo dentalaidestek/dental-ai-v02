@@ -66,8 +66,8 @@ export async function getPatient(token:string,id:number){
  const result=await request<PatientDetail>("/patients/"+id,token);
  if(!result?.patient||result.patient.id!==id||
     !Array.isArray(result.teeth)||!Array.isArray(result.surfaces)||!Array.isArray(result.treatments)||!Array.isArray(result.media)||
-    result.teeth.some(t=>!t||typeof t.tooth_number!=="string"||typeof t.status!=="string")||
-    result.surfaces.some(s=>!s||typeof s.tooth_number!=="string"||typeof s.surface!=="string"||typeof s.status!=="string")||
+    result.teeth.some(t=>!t||!validFdiTooth(t.tooth_number)||!validToothStatuses.has(t.status as ToothStatusCode))||
+    result.surfaces.some(s=>!s||!validFdiTooth(s.tooth_number)||!validToothSurfaces.has(s.surface as ToothSurfaceCode)||!validToothStatuses.has(s.status as ToothStatusCode))||
     result.treatments.some(t=>!t||!Number.isSafeInteger(t.id)||t.id<=0||typeof t.treatment_name!=="string")||
     result.media.some(m=>!m||!Number.isSafeInteger(m.id)||m.id<=0||typeof m.original_filename!=="string"))
   throw Error("Hasta sunucusundan beklenmeyen profil alındı. Yeniden deneyin.");
