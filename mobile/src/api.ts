@@ -73,8 +73,23 @@ export async function getPatient(token:string,id:number){
   throw Error("Hasta sunucusundan beklenmeyen profil alındı. Yeniden deneyin.");
  return result;
 }
-export function createTreatment(token:string,patientId:number,payload:{treatment_name:string;tooth_number?:string;treatment_date?:string;material?:string;doctor_note?:string;result?:string}){return request<{ok:boolean;treatment_id:number}>(`/patients/${patientId}/treatments`,token,{method:"POST",body:JSON.stringify(payload)});}
-export function updateTreatment(token:string,patientId:number,treatmentId:number,payload:{treatment_name:string;tooth_number?:string;treatment_date?:string;material?:string;doctor_note?:string;result?:string}){return request<{ok:boolean;treatment_id:number}>(`/patients/${patientId}/treatments/${treatmentId}`,token,{method:"PUT",body:JSON.stringify(payload)});}
+type TreatmentPayload={treatment_name:string;tooth_number?:string;treatment_date?:string;material?:string;doctor_note?:string;result?:string};
+function validateTreatmentTarget(patientId:number,payload:TreatmentPayload,treatmentId?:number){
+ if(!Number.isSafeInteger(patientId)||patientId<=0||(treatmentId!==undefined&&(!Number.isSafeInteger(treatmentId)||treatmentId<=0)))
+  throw new Error("Geçersiz hasta veya tedavi kimliği.");
+ if(!payload||typeof payload.treatment_name!=="string"||!payload.treatment_name.trim())
+  throw new Error("Tedavi adı zorunludur.");
+ if(payload.tooth_number&&(!validFdiTooth(payload.tooth_number)))
+  throw new Error("Geçersiz FDI diş numarası.");
+}
+export function createTreatment(token:string,patientId:number,payload:TreatmentPayload){
+ validateTreatmentTarget(patientId,payload);
+ return request<{ok:boolean;treatment_id:number}>(`/patients/${patientId}/treatments`,token,{method:"POST",body:JSON.stringify(payload)});
+}
+export function updateTreatment(token:string,patientId:number,treatmentId:number,payload:TreatmentPayload){
+ validateTreatmentTarget(patientId,payload,treatmentId);
+ return request<{ok:boolean;treatment_id:number}>(`/patients/${patientId}/treatments/${treatmentId}`,token,{method:"PUT",body:JSON.stringify(payload)});
+}
 export function deletePatient(token:string,id:number){return request<{ok:boolean;patient_id:number}>(`/patients/${id}`,token,{method:"DELETE"});}
 export function editPatient(token:string,id:number,payload:{first_name:string;last_name:string;phone?:string;birth_date?:string;tc_kimlik_no?:string;address?:string;chief_complaint?:string}){return request<{ok:boolean;patient:Patient}>(`/patients/${id}`,token,{method:"PUT",body:JSON.stringify(payload)});}
 
