@@ -101,3 +101,11 @@ test('gallery selection and pagination are restricted to the loaded patient scop
  assert.match(source,/function toggle\(id:number\)\{if\(mutation\.current\|\|uncertain\|\|loadedOwner!==owner\|\|!visibleItems\.some\(item=>item\.id===id\)\)return;/);
  assert.match(source,/if\(loadedOwner===owner&&cursor&&!loading&&!error&&!uncertain&&!mutation\.current\)/);
 });
+
+
+test('refresh is blocked during unresolved mutation and paging callback observes current scope',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/if\(loadLock\.current\|\|\(more&&\(mutation\.current\|\|uncertain\|\|loadedOwner!==owner\)\)\)return;/);
+ assert.match(source,/onRefresh=\{\(\)=>\{if\(!mutation\.current&&!uncertain&&loadedOwner===owner\)void loader\.current\(\)\}\}/);
+ assert.match(source,/\[token,patientId,cursor,uncertain,loadedOwner\]/);
+});
