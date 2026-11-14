@@ -45,3 +45,13 @@ test('switching accounts starts a new gallery request while the old request is p
  assert.ok(!images.some(x=>String(x.props.source?.uri).includes('old.jpg')),'stale patient media must never render');
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('uncertain media deletion blocks repeated destructive requests until reconciliation',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/async function remove\(id\?:number\)\{if\(mutation\.current\|\|uncertain\)return;/);
+ assert.match(source,/setUncertain\(true\);setError\(\(e instanceof Error\?e\.message:'Silme durumu doğrulanamadı\.'\)/);
+ assert.match(source,/function confirmDelete\(id\?:number\)\{if\(mutation\.current\|\|uncertain\)return;/);
+ assert.match(source,/confirmDelete\(preview\.id\),busy\|\|uncertain/);
+ assert.match(source,/confirmDelete\(\),busy\|\|uncertain/);
+});
