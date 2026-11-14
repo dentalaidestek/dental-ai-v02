@@ -90,8 +90,15 @@ function validateToothTarget(patientId:number,toothNumber:string){
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw new Error("Geçersiz hasta kimliği.");
  if(typeof toothNumber!=="string"||!validFdiTooth(toothNumber))throw new Error("Geçersiz FDI diş numarası.");
 }
-export function updateToothSurface(token:string,patientId:number,toothNumber:string,surface:ToothSurfaceCode,payload:{status:ToothStatusCode;note?:string}){validateToothTarget(patientId,toothNumber);return request<{ok:boolean;tooth_number:string;surface:string;status:string}>(`/patients/${patientId}/teeth/${toothNumber}/surfaces/${surface}`,token,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
-export function updateTooth(token:string,patientId:number,toothNumber:string,payload:{status:ToothStatusCode;note?:string;surface?:ToothSurfaceCode;surfaces?:ToothSurfaceCode[]}){validateToothTarget(patientId,toothNumber);return request<{ok:boolean;tooth_number:string;status:string;surface?:string}>(`/patients/${patientId}/teeth/${toothNumber}`,token,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
+const validToothStatuses=new Set<ToothStatusCode>(["HEALTHY","CARIES","FILLING","CROWN","ROOT_CANAL","EXTRACTED","IMPLANT","OTHER"]);
+const validToothSurfaces=new Set<ToothSurfaceCode>(["OCCLUSAL","INCISAL","MESIAL","DISTAL","BUCCAL","LINGUAL"]);
+function validateToothPayload(payload:{status:ToothStatusCode;note?:string;surface?:ToothSurfaceCode;surfaces?:ToothSurfaceCode[]}){
+ if(!payload||!validToothStatuses.has(payload.status))throw new Error("Geçersiz diş durumu.");
+ if(payload.surface!==undefined&&!validToothSurfaces.has(payload.surface))throw new Error("Geçersiz diş yüzeyi.");
+ if(payload.surfaces!==undefined&&(!Array.isArray(payload.surfaces)||payload.surfaces.some(s=>!validToothSurfaces.has(s))))throw new Error("Geçersiz diş yüzeyi.");
+}
+export function updateToothSurface(token:string,patientId:number,toothNumber:string,surface:ToothSurfaceCode,payload:{status:ToothStatusCode;note?:string}){validateToothTarget(patientId,toothNumber);if(!validToothSurfaces.has(surface))throw new Error("Geçersiz diş yüzeyi.");validateToothPayload(payload);return request<{ok:boolean;tooth_number:string;surface:string;status:string}>(`/patients/${patientId}/teeth/${toothNumber}/surfaces/${surface}`,token,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
+export function updateTooth(token:string,patientId:number,toothNumber:string,payload:{status:ToothStatusCode;note?:string;surface?:ToothSurfaceCode;surfaces?:ToothSurfaceCode[]}){validateToothTarget(patientId,toothNumber);validateToothPayload(payload);return request<{ok:boolean;tooth_number:string;status:string;surface?:string}>(`/patients/${patientId}/teeth/${toothNumber}`,token,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
 
 export type NotificationItem={id:number;title:string;message:string;notice_type?:string;target_url?:string|null;is_read:boolean;created_at:string};
 export type Expert={id:number;display_name:string;specialty?:string|null;academic_title?:string|null;institution?:string|null;availability:string;consultation_price?:number|null};
