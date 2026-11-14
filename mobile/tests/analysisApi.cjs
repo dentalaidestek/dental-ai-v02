@@ -65,3 +65,16 @@ test('modern API rejects HTML and scalar success payloads instead of silently ac
   }
  }finally{global.fetch=original}
 });
+
+test('modern API preserves HTTP errors with null or malformed response bodies',async()=>{
+ const {getNotifications}=require('../src/modernApi.ts');
+ const original=global.fetch;
+ try{
+  for(const raw of ['null','<html>service unavailable</html>','{"detail":null}']){
+   global.fetch=async()=>new Response(raw,{status:503});
+   await assert.rejects(()=>getNotifications('token'),error=>error.status===503&&error.name==='ApiError');
+  }
+  global.fetch=async()=>new Response(JSON.stringify({detail:{message:'Bakım sürüyor'}}),{status:503});
+  await assert.rejects(()=>getNotifications('token'),error=>error.status===503&&error.message==='Bakım sürüyor');
+ }finally{global.fetch=original}
+});
