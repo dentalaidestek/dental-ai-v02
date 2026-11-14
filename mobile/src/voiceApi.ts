@@ -98,3 +98,14 @@ export async function transcribeVoiceAudio(token:string,patientId:number,audio:B
  }catch(error){if(error instanceof Error&&error.name==="AbortError")throw Error("Ses aktarımı zaman aşımına uğradı. Yerel kaydı koruyup tekrar deneyin.");throw error;
  }finally{clearTimeout(timeout)}
 }
+
+export type VoiceApply={request_key:string;revision:string;confirmed:boolean;fields:Record<string,string>;teeth:Array<{tooth:string;status:string;note:string}>;appointment?:{title:string;start_at:string;end_at:string}};
+export function validateVoiceApply(value:VoiceApply):VoiceApply{
+ const names=new Set(['first_name','last_name','age','chief_complaint','medical_history','family_history','materials','dental_history','oral_habits','medications','allergies','clinical_findings','plan']);
+ if(!value||!value.confirmed||!/^[a-f0-9]{32}$/.test(value.request_key)||!/^[a-f0-9]{64}$/.test(value.revision)||!value.fields||typeof value.fields!=='object'||Array.isArray(value.fields)||Object.entries(value.fields).some(([name,text])=>!names.has(name)||typeof text!=='string'||text.length>3000)||!Array.isArray(value.teeth)||value.teeth.length>52||new Set(value.teeth.map(t=>t.tooth)).size!==value.teeth.length||value.teeth.some(t=>!/^([1-4][1-8]|[5-8][1-5])$/.test(t.tooth)||!['CARIES','FILLING','CROWN','ROOT_CANAL','EXTRACTED','IMPLANT','OTHER'].includes(t.status)||typeof t.note!=='string'||t.note.length>2000))throw Error('Onaylı muayene kaydı bilgileri geçersiz.');return value;
+}
+export async function applyVoiceReview(token:string,patientId:number,payload:VoiceApply){
+ if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error('Hasta kimliği geçersiz.');validateVoiceApply(payload);
+ const {request}=await import('./api');const result=await request<{ok:boolean;analysis_id:number;already_saved?:boolean}>(`/patients/${patientId}/voice-exam/apply`,token,{method:'POST',body:JSON.stringify(payload)});
+ if(result.ok!==true||!Number.isSafeInteger(result.analysis_id)||result.analysis_id<=0)throw Error('Muayene kayıt sonucu doğrulanamadı. Aynı işlem anahtarı korunuyor.');return result;
+}

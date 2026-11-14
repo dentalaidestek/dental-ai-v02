@@ -19,7 +19,9 @@ export type DraftStore = {
 export function chunkedDraftStore(
   raw: DraftStore,
   unique: () => string,
+  maxChunks = 100,
 ): DraftStore {
+  if(!Number.isInteger(maxChunks)||maxChunks<1||maxChunks>512)throw Error("Geçersiz güvenli taslak sınırı.");
   const pending = new Map<string, Promise<unknown>>();
   function serial<T>(key: string, work: () => Promise<T>): Promise<T> {
     const run = (pending.get(key) || Promise.resolve())
@@ -40,7 +42,7 @@ export function chunkedDraftStore(
       const v = JSON.parse(value);
       return Number.isInteger(v.chunks) &&
         v.chunks > 0 &&
-        v.chunks <= 100 &&
+        v.chunks <= maxChunks &&
         typeof v.revision === "string"
         ? v
         : null;
@@ -83,6 +85,7 @@ export function chunkedDraftStore(
         for (let i = 0; i < chars.length; i += 300)
           parts.push(chars.slice(i, i + 300).join(""));
         if (!parts.length) parts.push("");
+        if(parts.length>maxChunks)throw Error("Taslak güvenli depolama sınırını aşıyor.");
         const next = { revision: unique(), chunks: parts.length };
         try {
           for (let i = 0; i < parts.length; i++)

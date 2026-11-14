@@ -1843,3 +1843,6 @@ router.include_router(mobile_account_router)
 
 from app.mobile_program_api import router as mobile_program_router
 router.include_router(mobile_program_router)
+
+from app.mobile_voice_workflow_api import router as mobile_voice_workflow_router
+router.include_router(mobile_voice_workflow_router)
