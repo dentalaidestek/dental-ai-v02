@@ -8,7 +8,7 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
  const controller=new AbortController();
  const abort=()=>controller.abort();
  // Academic generation can legitimately take minutes; ordinary reads stay bounded at 30 seconds.
- const deadlineMs=/^\/academic\/courses\/\d+\/ask$/.test(path)?180000:30000;
+ const deadlineMs=/^\/academic\/courses\/\d+\/ask$/.test(path)?180000:/^\/consultations\/\d+\/attachments$/.test(path)?120000:30000;
  const timeout=setTimeout(abort,deadlineMs);
  if(init.signal?.aborted)controller.abort();
  else init.signal?.addEventListener("abort",abort,{once:true});
@@ -40,7 +40,7 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
 export type Notice={id:number;title:string;message:string;notice_type:string;target_url?:string|null;read_at?:string|null;created_at:string};
 export type Expert={user_id:number;display_name:string;specialty:string;academic_title?:string|null;institution?:string|null;bio?:string|null;availability:string;consultation_price:number;rating_avg?:number|null;review_count:number};
 export type Consultation={id:number;other_user_id:number;other_display_name:string;specialty:string;tooth_region?:string|null;status:string;question:string;requested_at:string;last_message?:string|null;last_message_at?:string|null;messages_deleted_at?:string|null;unread_count:number};
-export type ChatMessage={id:number;sender_user_id:number;message_type:string;content:string;reply_to_message_id?:number|null;created_at:string};
+export type ChatMessage={id:number;sender_user_id:number;message_type:string;content:string;reply_to_message_id?:number|null;created_at:string;has_media?:boolean};
 export type AnalysisHistory={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;status:string;clinical_notes?:string|null;created_at:string};
 export type Course={id:number;title:string;description?:string|null;updated_at:string;material_count:number};
 export const registerPushDevice=(t:string,deviceId:string,expoPushToken:string,platform:"android"|"ios")=>
@@ -161,3 +161,36 @@ export function askAcademic(t:string,courseId:number,message:string){
  return req<any>(`/academic/courses/${courseId}/ask`,t,{method:"POST",body:JSON.stringify({message})});
 }
 export function mediaUploadUrl(patientId:number){return API_BASE+`/patients/${patientId}/media`;}
+
+
+export type ChatAction={
+ action:"expert-response"|"proposal"|"complete"|"block"|"unblock"|"report"|"delete"|"restore"|"review";
+ decision?:"ACCEPT"|"REJECT";start_option?:"NOW"|"30M"|"1H"|"3H"|"TODAY";proposal_note?:string;
+ completion_action?:"COMPLETE"|"CONTINUE"|"DISPUTE";
+ reason?:"HARASSMENT"|"PROFANITY"|"SPAM"|"INAPPROPRIATE"|"OTHER";detail?:string;rating?:number;comment?:string;
+};
+export async function performChatAction(token:string,id:number,payload:ChatAction){
+ if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz görüşme.");
+ const response=await req<{ok:boolean}>(`/consultations/${id}/actions`,token,{method:"POST",body:JSON.stringify(payload)});
+ if(response.ok!==true)throw Error("İşlem doğrulanamadı; görüşmeyi yenileyin.");
+ return response;
+}
+export function chatImageSource(token:string,caseId:number,messageId:number){
+ if(!Number.isSafeInteger(caseId)||caseId<=0||!Number.isSafeInteger(messageId)||messageId<=0)throw Error("Geçersiz ek kimliği.");
+ return {uri:API_BASE+`/consultations/${caseId}/attachments/${messageId}`,headers:{Authorization:"Bearer "+token}};
+}
+export async function sendChatImage(token:string,caseId:number,file:{uri:string;name:string;type:string;size?:number},replyTo?:number){
+ if(!Number.isSafeInteger(caseId)||caseId<=0||!file.uri||!file.name||!/^image\/(jpeg|png|webp)$/.test(file.type)||
+    (file.size!==undefined&&(!Number.isFinite(file.size)||file.size<=0||file.size>15*1024*1024))||
+    (replyTo!==undefined&&(!Number.isSafeInteger(replyTo)||replyTo<=0)))throw Error("Geçerli bir hasta görüntüsü seçin (en fazla 15 MB).");
+ const body=new FormData();body.append("file",{uri:file.uri,name:file.name,type:file.type} as any);
+ if(replyTo)body.append("reply_to_message_id",String(replyTo));
+ const result=await req<{ok:boolean;message:ChatMessage}>(`/consultations/${caseId}/attachments`,token,{method:"POST",body});
+ if(result.ok!==true||!Number.isSafeInteger(result.message?.id)||result.message.id<=0)throw Error("Görselin kaydı doğrulanamadı. Tekrar göndermeden önce görüşmeyi kontrol edin.");
+ return result;
+}
+export async function getDeletedChats(token:string){
+ const result=await req<{items:Array<{id:number;status:string;specialty:string;recover_until:string}>}>("/messages/deleted",token);
+ if(!Array.isArray(result.items)||result.items.some(item=>!Number.isSafeInteger(item?.id)||item.id<=0))throw Error("Silinen görüşmeler alınamadı.");
+ return result;
+}

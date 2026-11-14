@@ -1108,6 +1108,9 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Q
     with Session(engine,expire_on_commit=False) as session:
         scope=(ConsultationCase.requester_user_id==user.id)|(ConsultationCase.expert_user_id==user.id)
         query=select(ConsultationCase).where(scope)
+        hidden = select(ConsultationInboxState.case_id).where(
+            ConsultationInboxState.user_id == user.id, ConsultationInboxState.deleted_at != None)
+        query = query.where(~ConsultationCase.id.in_(hidden))
         if before is not None:
             anchor=select(ConsultationCase.requested_at).where(ConsultationCase.id==before,scope).scalar_subquery()
             query=query.where((ConsultationCase.requested_at<anchor)|((ConsultationCase.requested_at==anchor)&(ConsultationCase.id<before)))
@@ -1188,9 +1191,9 @@ def mobile_consultation(case_id:int,before:Optional[int]=Query(None,ge=1),limit:
             "messages_deleted_at":c.messages_deleted_at,"expert_response_deadline":c.expert_response_deadline,
             "requester_decision_deadline":c.requester_decision_deadline,"consultation_start_deadline":c.consultation_start_deadline,
             "clinical_summary":c.clinical_summary,"requester_opinion":c.requester_opinion,"question":c.question,
-            "requested_at":c.requested_at,"expert_user_id":c.expert_user_id,"requester_user_id":c.requester_user_id},
+            "requested_at":c.requested_at,"expert_user_id":c.expert_user_id,"requester_user_id":c.requester_user_id,**_mobile_chat_context(session,c,user)},
             "messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,
-            "content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at} for m in msgs]}
+            "content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at,"has_media":bool(m.media_path)} for m in msgs]}
 
 class MobileConsultationReadRequest(BaseModel):
     through_id: int
@@ -1513,3 +1516,157 @@ async def mobile_voice_audio(request: Request, patient_id: int, user: User = Dep
         return {"ok": True, "revision": revision, "transcript": result["transcript"]}
     except core.VoiceError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+# Native adapters reuse the existing web consultation rules; no second case lifecycle.
+from typing import Literal as _ChatLiteral
+from pydantic import Field as _ChatField
+from fastapi.responses import FileResponse as _ChatFileResponse
+from starlette.concurrency import run_in_threadpool as _chat_offload
+import inspect as _chat_inspect
+
+class MobileChatAction(BaseModel):
+    action: _ChatLiteral["expert-response", "proposal", "complete", "block", "unblock", "report", "delete", "restore", "review"]
+    decision: _ChatLiteral["ACCEPT", "REJECT"] = "ACCEPT"
+    start_option: _ChatLiteral["NOW", "30M", "1H", "3H", "TODAY"] = "NOW"
+    proposal_note: str = _ChatField(default="", max_length=500)
+    completion_action: _ChatLiteral["COMPLETE", "CONTINUE", "DISPUTE"] = "COMPLETE"
+    reason: _ChatLiteral["HARASSMENT", "PROFANITY", "SPAM", "INAPPROPRIATE", "OTHER"] = "OTHER"
+    detail: str = _ChatField(default="", max_length=1000)
+    rating: int = _ChatField(default=5, ge=1, le=5)
+    comment: str = _ChatField(default="", max_length=2000)
+
+async def _mobile_chat_dispatch(handler, request, *args):
+    response = await handler(request, *args) if _chat_inspect.iscoroutinefunction(handler) else await _chat_offload(handler, request, *args)
+    status = getattr(response, "status_code", 200)
+    location = getattr(response, "headers", {}).get("location", "")
+    if location.startswith("/login"):
+        raise _unauthorized()
+    data = _response_json(response)
+    if status >= 400:
+        message = data.get("error") or data.get("detail") if isinstance(data, dict) else None
+        if not isinstance(message, str):
+            raw = getattr(response, "body", b"").decode("utf-8", errors="replace")
+            message = raw[:300] if "<" not in raw else "Görüşme işlemi tamamlanamadı."
+        raise HTTPException(status_code=status, detail=message)
+    if isinstance(data, dict):
+        if data.get("ok") is False:
+            raise HTTPException(status_code=409, detail=data.get("error") or "İşlem doğrulanamadı.")
+        return data
+    if 300 <= status < 400:
+        return {"ok": True}
+    raise HTTPException(status_code=502, detail="İşlem sonucu doğrulanamadı; görüşmeyi yenileyin.")
+
+@router.post("/consultations/{case_id}/actions")
+async def mobile_chat_action(case_id: int, payload: MobileChatAction,
+                             token: str = Depends(_mobile_access_token),
+                             user: User = Depends(_mobile_user)):
+    if case_id <= 0:
+        raise HTTPException(status_code=422, detail="Geçersiz görüşme.")
+    from app import main as web
+    request = _mobile_request(token, path=f"/expert-support/cases/{case_id}")
+    handlers = {
+        "expert-response": (web.expert_support_expert_response, (payload.decision, payload.start_option, payload.proposal_note)),
+        "proposal": (web.expert_support_proposal_decision, (payload.decision,)),
+        "complete": (web.expert_support_complete, (payload.completion_action,)),
+        "block": (web.consultation_block_user, ()),
+        "unblock": (web.consultation_unblock_user, ()),
+        "report": (web.consultation_report_user, (payload.reason, payload.detail)),
+        "delete": (web.consultation_message_delete_for_user, ()),
+        "restore": (web.consultation_message_restore_for_user, ()),
+        "review": (web.expert_support_review, (payload.rating, payload.comment)),
+    }
+    handler, args = handlers[payload.action]
+    return await _mobile_chat_dispatch(handler, request, case_id, *args)
+
+def _mobile_chat_context(session, case, user):
+    from app import main as web
+    other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+    peer = session.get(User, other_id)
+    own = session.exec(select(ConsultationInboxState).where(
+        ConsultationInboxState.case_id == case.id, ConsultationInboxState.user_id == user.id)).first()
+    other = session.exec(select(ConsultationInboxState).where(
+        ConsultationInboxState.case_id == case.id, ConsultationInboxState.user_id == other_id)).first()
+    blocked = session.exec(select(web.UserBlock).where(
+        web.UserBlock.blocker_user_id == user.id, web.UserBlock.blocked_user_id == other_id)).first()
+    review = session.exec(select(web.ExpertReview).where(web.ExpertReview.case_id == case.id)).first()
+    now = web._utcnow_naive()
+    return {
+        "other_display_name": peer.display_name if peer else "Kullanıcı",
+        "blocked_by_me": blocked is not None, "blocked_either": web._users_blocked(session, user.id, other_id),
+        "other_read_at": other.last_read_at if other else None,
+        "inbox_deleted": bool(own and own.deleted_at), "recover_until": own.recover_until if own else None,
+        "completed_at": case.completed_at, "expert_completed_at": case.expert_completed_at,
+        "proposed_start_label": case.proposed_start_label, "expert_proposal_note": case.expert_proposal_note,
+        "review_submitted": review is not None,
+        "can_report": web._support_case_is_selectable(session, case, user.id, now) and not case.messages_deleted_at and
+            (case.status != "COMPLETED" or (user.id == case.requester_user_id and case.completed_at is not None and
+             now <= web._consultation_retention_start(case) + timedelta(days=web.CONSULTATION_REPORT_DAYS))),
+        "can_dispute": user.id == case.requester_user_id and not case.messages_deleted_at and
+            (case.status == "EXPERT_COMPLETED" or (case.status == "COMPLETED" and case.completed_at is not None and
+             now <= web._consultation_retention_start(case) + timedelta(days=web.CONSULTATION_REPORT_DAYS))),
+    }
+
+@router.get("/messages/deleted")
+def mobile_deleted_chats(user: User = Depends(_mobile_user)):
+    from app import main as web
+    with Session(engine, expire_on_commit=False) as session:
+        rows = session.exec(select(ConsultationCase, ConsultationInboxState).join(
+            ConsultationInboxState, ConsultationInboxState.case_id == ConsultationCase.id).where(
+            ConsultationInboxState.user_id == user.id, ConsultationInboxState.deleted_at != None,
+            ConsultationInboxState.recover_until > web._utcnow_naive(),
+            ConsultationCase.messages_deleted_at == None,
+            (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
+        ).order_by(ConsultationInboxState.deleted_at.desc()).limit(50)).all()
+        return {"items": [{"id":c.id, "status":c.status, "specialty":c.specialty,
+            "recover_until":state.recover_until, "requested_at":c.requested_at} for c,state in rows]}
+
+@router.get("/consultations/{case_id}/attachments/{message_id}")
+def mobile_chat_attachment(case_id: int, message_id: int, user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        case = session.get(ConsultationCase, case_id)
+        message = session.get(ConsultationMessage, message_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at or not message or message.case_id != case_id or not message.media_path:
+            raise HTTPException(status_code=404, detail="Ek bulunamadı.")
+        state = session.exec(select(ConsultationInboxState).where(
+            ConsultationInboxState.case_id == case_id, ConsultationInboxState.user_id == user.id)).first()
+        if state and state.deleted_at:
+            raise HTTPException(status_code=404, detail="Önce görüşmeyi geri yükleyin.")
+        reference = message.media_path
+    try:
+        path = storage_ensure_local(reference)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Ek bulunamadı.")
+    return _ChatFileResponse(path, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+
+@router.post("/consultations/{case_id}/attachments")
+async def mobile_chat_upload(case_id: int, file: UploadFile = File(...),
+                             reply_to_message_id: Optional[int] = Form(None),
+                             token: str = Depends(_mobile_access_token),
+                             user: User = Depends(_mobile_user)):
+    from app import main as web
+    # Authorize before touching the payload, then let the existing web handler
+    # recheck state/participant permissions under its normal case lock.
+    with Session(engine, expire_on_commit=False) as session:
+        case = session.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at:
+            raise HTTPException(status_code=404, detail="Görüşme bulunamadı.")
+        if web._users_blocked(session, user.id, case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id):
+            raise HTTPException(status_code=403, detail="Engellenen görüşmeye ek gönderilemez.")
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
+        raise HTTPException(status_code=415, detail="Bu native yükleme şu anda JPG, PNG ve WEBP destekler.")
+    import tempfile
+    from io import BytesIO
+    with tempfile.TemporaryDirectory(prefix="dai-chat-") as directory:
+        destination = Path(directory) / ("image" + suffix)
+        await _chat_offload(_copy_validated_image, file, destination, min(MOBILE_MAX_IMAGE_BYTES, web.CONSULTATION_UPLOAD_MAX_BYTES))
+        raw = await _chat_offload(destination.read_bytes)
+        clean = UploadFile(filename=Path(file.filename or "image.jpg").name, file=BytesIO(raw),
+                           headers=file.headers)
+        try:
+            data = await _mobile_chat_dispatch(web.expert_support_media_message,
+                _mobile_request(token), case_id, clean, reply_to_message_id, "")
+        finally:
+            await clean.close()
+    return data
