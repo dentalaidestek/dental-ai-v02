@@ -110,12 +110,45 @@ jobs:
           # supported SDK packages so setup can reach the actual APK build.
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
-      - run: npm ci
-      - run: npx expo prebuild --platform android --no-install
+      - name: Install APK build dependencies
+        run: |
+          set -o pipefail
+          npm ci 2>&1 | tee "$RUNNER_TEMP/mobile-apk-install.log"
+      - name: Generate Android project
+        run: |
+          set -o pipefail
+          npx expo prebuild --platform android --no-install 2>&1 | tee "$RUNNER_TEMP/mobile-apk-prebuild.log"
       # Standalone JS bundle, signed with the generated development key only.
       # This is an internal test APK, never a store signing credential.
-      - run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --max-workers=2
+      - name: Assemble internal Android release
+        run: |
+          set -o pipefail
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --max-workers=2 2>&1 | tee "$RUNNER_TEMP/mobile-apk-gradle.log"
         working-directory: mobile/android
+      - name: Preserve APK build diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-apk-diagnostics
+          path: |
+            ${{ runner.temp }}/mobile-apk-install.log
+            ${{ runner.temp }}/mobile-apk-prebuild.log
+            ${{ runner.temp }}/mobile-apk-gradle.log
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Summarize APK build failure
+        if: ${{ failure() }}
+        run: |
+          echo "## Android APK diagnostics" >> "$GITHUB_STEP_SUMMARY"
+          for phase in install prebuild gradle; do
+            file="$RUNNER_TEMP/mobile-apk-$phase.log"
+            if [ -f "$file" ]; then
+              echo "### $phase (last 80 lines)" >> "$GITHUB_STEP_SUMMARY"
+              echo '~~~text' >> "$GITHUB_STEP_SUMMARY"
+              tail -n 80 "$file" >> "$GITHUB_STEP_SUMMARY"
+              echo '~~~' >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: dental-ai-beta-arm64
