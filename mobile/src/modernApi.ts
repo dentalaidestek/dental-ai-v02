@@ -1,3 +1,4 @@
+import {ChatFile,validateChatFile} from "./chatFiles";
 import {ApiError} from './api';
 import {revalidateSession} from './sessionExpiry';
 const API_BASE="https://dentalai.tr/api/mobile/v1";
@@ -89,15 +90,16 @@ export const getMedia=async(t:string,p:number,before?:number)=>{
 };
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
 export type ConsultationRequestPayload={expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string;request_key?:string};
-export async function createConsultation(t:string,payload:ConsultationRequestPayload){
+export function createConsultation(t:string,payload:ConsultationRequestPayload){
  if(!Number.isSafeInteger(payload.expert_user_id)||payload.expert_user_id<=0||!payload.question?.trim()||!payload.clinical_summary?.trim()||
     (payload.patient_id!==undefined&&(!Number.isSafeInteger(payload.patient_id)||payload.patient_id<=0))||
     (payload.media_ids!==undefined&&payload.media_ids!==""&&(!payload.patient_id||!/^\d+(,\d+)*$/.test(payload.media_ids)))||
     (payload.request_key!==undefined&&!/^[A-Za-z0-9_-]{8,96}$/.test(payload.request_key)))
   throw Error("Geçersiz uzman, hasta, klinik bilgi veya talep anahtarı.");
- const result=await req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:JSON.stringify(payload)});
+ return req<{ok:boolean;case_id:number}>("/consultations",t,{method:"POST",body:JSON.stringify(payload)}).then(result=>{
  if(result.ok!==true||!Number.isSafeInteger(result.case_id)||result.case_id<=0)throw Error("Talep kaydı doğrulanamadı. Yeni talep oluşturmadan önce aynı anahtarla durumunu kontrol edin.");
  return result;
+ });
 }
 export type ConsultationRequestContext={expert:Expert;response_minutes:number;urgencies:Array<{value:string;label:string}>};
 export async function getConsultationRequestContext(t:string,expertId:number){
@@ -200,14 +202,21 @@ export function chatImageSource(token:string,caseId:number,messageId:number){
  if(!Number.isSafeInteger(caseId)||caseId<=0||!Number.isSafeInteger(messageId)||messageId<=0)throw Error("Geçersiz ek kimliği.");
  return {uri:API_BASE+`/consultations/${caseId}/attachments/${messageId}`,headers:{Authorization:"Bearer "+token}};
 }
-export async function sendChatImage(token:string,caseId:number,file:{uri:string;name:string;type:string;size?:number},replyTo?:number){
- if(!Number.isSafeInteger(caseId)||caseId<=0||!file.uri||!file.name||!/^image\/(jpeg|png|webp)$/.test(file.type)||
-    (file.size!==undefined&&(!Number.isFinite(file.size)||file.size<=0||file.size>15*1024*1024))||
-    (replyTo!==undefined&&(!Number.isSafeInteger(replyTo)||replyTo<=0)))throw Error("Geçerli bir hasta görüntüsü seçin (en fazla 15 MB).");
- const body=new FormData();body.append("file",{uri:file.uri,name:file.name,type:file.type} as any);
+export function sharedCaseImageSource(token:string,caseId:number,linkId:number){
+ if(!Number.isSafeInteger(caseId)||caseId<=0||!Number.isSafeInteger(linkId)||linkId<=0)throw Error("Geçersiz vaka görseli kimliği.");
+ return {uri:API_BASE+`/consultations/${caseId}/shared-media/${linkId}`,headers:{Authorization:"Bearer "+token}};
+}
+export function sendChatImage(token:string,caseId:number,file:ChatFile,replyTo?:number){
+ if(!/^image\/(jpeg|png|webp)$/.test(file.type))return Promise.reject(Error("Geçerli bir hasta görüntüsü seçin."));
+ return sendChatFile(token,caseId,file,replyTo);
+}
+export async function sendChatFile(token:string,caseId:number,file:ChatFile,replyTo?:number){
+ if(!Number.isSafeInteger(caseId)||caseId<=0||(replyTo!==undefined&&(!Number.isSafeInteger(replyTo)||replyTo<=0)))throw Error("Geçersiz görüşme veya yanıt kimliği.");
+ const checked=validateChatFile(file),body=new FormData();
+ body.append("file",{uri:checked.uri,name:checked.name,type:checked.type} as any);
  if(replyTo)body.append("reply_to_message_id",String(replyTo));
  const result=await req<{ok:boolean;message:ChatMessage}>(`/consultations/${caseId}/attachments`,token,{method:"POST",body});
- if(result.ok!==true||!Number.isSafeInteger(result.message?.id)||result.message.id<=0)throw Error("Görselin kaydı doğrulanamadı. Tekrar göndermeden önce görüşmeyi kontrol edin.");
+ if(result.ok!==true||!Number.isSafeInteger(result.message?.id)||result.message.id<=0)throw Error("Ek kaydı doğrulanamadı. Tekrar göndermeden önce görüşmeyi kontrol edin.");
  return result;
 }
 export async function getDeletedChats(token:string){

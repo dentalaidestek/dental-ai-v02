@@ -3,6 +3,15 @@ const {test}=require('node:test');
 require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,filename);
 const {getPatients,getPatient}=require('../src/api.ts');
 const reply=body=>({ok:true,status:200,text:async()=>JSON.stringify(body)});
+test('duplicate patient conflicts preserve only a valid existing record id',async()=>{
+ const {createPatient,ApiError}=require('../src/api.ts');const original=global.fetch;
+ try{
+  for(const id of [12,0,-1,'12',null]){
+   global.fetch=async()=>({ok:false,status:409,text:async()=>JSON.stringify({detail:{message:'Benzer hasta',patient_id:id}})});
+   await assert.rejects(()=>createPatient('token',{first_name:'Test',last_name:'Hasta'}),e=>e instanceof ApiError&&e.duplicatePatientId===(id===12?12:undefined));
+  }
+ }finally{global.fetch=original}
+});
 test('patient list rejects malformed or duplicated clinical records',async()=>{
  const original=global.fetch;
  try{

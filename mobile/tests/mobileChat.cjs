@@ -1,6 +1,12 @@
 const ts=require("typescript"),fs=require("node:fs"),assert=require("node:assert/strict"),{test}=require("node:test");
 require.extensions[".ts"]=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
 const api=require("../src/modernApi.ts");
+test('case media URLs accept selected link ids and never patient paths',()=>{
+ const source=api.sharedCaseImageSource('synthetic',12,5);
+ assert.equal(source.uri,'https://dentalai.tr/api/mobile/v1/consultations/12/shared-media/5');
+ assert.equal(source.headers.Authorization,'Bearer synthetic');
+ for(const id of [0,-1,'5',NaN])assert.throws(()=>api.sharedCaseImageSource('synthetic',12,id));
+});
 test("chat images use only the authenticated case/message endpoint",()=>{
  const source=api.chatImageSource("synthetic",12,44);
  assert.equal(source.uri,"https://dentalai.tr/api/mobile/v1/consultations/12/attachments/44");

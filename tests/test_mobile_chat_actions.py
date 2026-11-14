@@ -94,3 +94,44 @@ def test_action_validation_rejects_unknown_lifecycle_operation(chat):
     c,engine=chat
     assert c.post("/api/mobile/v1/consultations/1/actions",json={"action":"grant-admin"}).status_code==422
     assert c.post("/api/mobile/v1/consultations/1/actions",json={"action":"review","rating":8}).status_code==422
+
+def test_pdf_and_audio_share_the_existing_web_attachment_workflow(chat):
+    from pypdf import PdfWriter
+    import wave
+    c,engine=chat
+    pdf=io.BytesIO();writer=PdfWriter();writer.add_blank_page(width=72,height=72);writer.write(pdf)
+    audio=io.BytesIO()
+    with wave.open(audio,"wb") as output:
+        output.setnchannels(1);output.setsampwidth(2);output.setframerate(8000);output.writeframes(b"\x00\x00"*80)
+    for name,raw,mime,kind in [("case.pdf",pdf.getvalue(),"application/pdf","FILE"),("voice.wav",audio.getvalue(),"audio/wav","VOICE")]:
+        r=c.post("/api/mobile/v1/consultations/1/attachments",files={"file":(name,raw,mime)})
+        assert r.status_code==200,r.text
+        assert r.json()["message"]["message_type"]==kind
+        ident=r.json()["message"]["id"]
+        media=c.get(f"/api/mobile/v1/consultations/1/attachments/{ident}")
+        assert media.status_code==200
+        assert media.content==raw
+
+def test_spoofed_document_and_audio_content_never_reach_web_storage(chat):
+    c,engine=chat
+    for name,mime in [("case.pdf","application/pdf"),("voice.mp3","audio/mpeg"),("voice.m4a","audio/mp4"),("voice.wav","audio/wav"),("voice.ogg","audio/ogg")]:
+        assert c.post("/api/mobile/v1/consultations/1/attachments",files={"file":(name,b"not a supported document",mime)}).status_code==422
+    assert c.get("/api/mobile/v1/consultations/1").json()["messages"]==[]
+
+def test_case_shared_media_is_selected_link_scoped_and_private(chat, tmp_path):
+    c,engine=chat
+    path=tmp_path/'shared.png';Image.new('RGB',(4,4),'white').save(path)
+    with Session(engine) as s:
+        p=main.Patient(anonymous_id='SYNTHETIC',owner_user_id=1);s.add(p);s.flush()
+        media=main.PatientMedia(patient_id=p.id,owner_user_id=1,file_path=str(path),original_filename='synthetic.png',stored_filename='shared.png',media_type='PHOTO');s.add(media);s.flush()
+        s.add(main.ConsultationCaseMedia(id=5,case_id=1,patient_media_id=media.id,added_by_user_id=1));s.commit()
+    for token in ('token1','token2'):
+        c.headers['Authorization']='Bearer '+token
+        shared=c.get('/api/mobile/v1/consultations/1').json()['case']['shared_media']
+        assert shared==[{'id':5,'media_type':'PHOTO'}]
+        response=c.get('/api/mobile/v1/consultations/1/shared-media/5')
+        assert response.status_code==200
+        assert response.headers['cache-control']=='private, no-store'
+        assert c.get('/api/mobile/v1/consultations/1/shared-media/6').status_code==404
+    c.headers['Authorization']='Bearer token3'
+    assert c.get('/api/mobile/v1/consultations/1/shared-media/5').status_code==404

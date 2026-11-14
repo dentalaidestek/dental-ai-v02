@@ -12,7 +12,7 @@ test("native request forwards every web field and preserves the stable key",asyn
 test("invalid patient/media selection and empty clinical summary never send",async()=>{
  const original=global.fetch;let count=0;
  try{global.fetch=async()=>{count++;throw Error("unexpected")};
- for(const invalid of [{...request,clinical_summary:" "},{...request,patient_id:0},{...request,media_ids:"17,bad"},{...request,request_key:"bad"}])await assert.rejects(()=>api.createConsultation("synthetic",invalid));
+ for(const invalid of [{...request,clinical_summary:" "},{...request,patient_id:0},{...request,media_ids:"17,bad"},{...request,request_key:"bad"}])assert.throws(()=>api.createConsultation("synthetic",invalid));
  assert.equal(count,0);
  }finally{global.fetch=original}
 });

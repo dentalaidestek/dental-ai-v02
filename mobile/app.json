@@ -26,6 +26,13 @@
           "cameraPermission": "Hasta görüntüsünü çekmek için kamera erişimi kullanılır.",
           "microphonePermission": false
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
       ]
     ],
     "ios": {

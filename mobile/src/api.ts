@@ -8,7 +8,8 @@ export type PatientDetail={patient:Patient;teeth:Array<{id:number;tooth_number:s
 
 export class ApiError extends Error {
  readonly status:number;
- constructor(status:number,message:string){super(message);this.name="ApiError";this.status=status;}
+ readonly duplicatePatientId?:number;
+ constructor(status:number,message:string,duplicatePatientId?:number){super(message);this.name="ApiError";this.status=status;this.duplicatePatientId=duplicatePatientId;}
 }
 
 async function request<T>(path:string,token?:string,options:RequestInit={}):Promise<T>{
@@ -30,7 +31,7 @@ async function request<T>(path:string,token?:string,options:RequestInit={}):Prom
    if(response.ok)throw new ApiError(502,"Sunucu beklenen JSON yanıtını göndermedi. Lütfen tekrar deneyin.");
   }
   if(response.ok&&(!raw.trim()||!body||typeof body!=="object"||Array.isArray(body)))throw new ApiError(502,"Sunucudan geçersiz API yanıtı alındı.");
-  if(!response.ok){if(response.status===401&&token){if(path==="/me")reportSessionExpiry(token);else await revalidateSession(token)}const detail=body?.detail;throw new ApiError(response.status,typeof detail==="string"?detail:(typeof detail?.message==="string"?detail.message:"İstek başarısız."));}
+  if(!response.ok){if(response.status===401&&token){if(path==="/me")reportSessionExpiry(token);else await revalidateSession(token)}const detail=body?.detail;const duplicateId=path==="/patients"&&response.status===409&&Number.isSafeInteger(detail?.patient_id)&&detail.patient_id>0?detail.patient_id:undefined;throw new ApiError(response.status,typeof detail==="string"?detail:(typeof detail?.message==="string"?detail.message:"İstek başarısız."),duplicateId);}
   return body as T;
  }catch(error){
   if(controller.signal.aborted&&!externalSignal?.aborted)throw new ApiError(408,"Sunucu yanıt vermedi. Bağlantınızı kontrol edip tekrar deneyin.");
