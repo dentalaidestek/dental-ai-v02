@@ -152,3 +152,16 @@ test('tooth chart writes preserve valid primary and permanent FDI routes',async(
   assert.match(urls[1],/\/patients\/8\/teeth\/85\/surfaces\/LINGUAL$/);
  }finally{global.fetch=original}
 });
+
+test('tooth chart rejects invalid clinical status and surface values without network writes',async()=>{
+ const {updateTooth,updateToothSurface}=require('../src/api.ts');
+ const original=global.fetch;
+ global.fetch=()=>{throw Error('unexpected clinical network write')};
+ try{
+  assert.throws(()=>updateTooth('token',8,'11',{status:'UNKNOWN'}),/Geçersiz diş durumu/);
+  assert.throws(()=>updateTooth('token',8,'11',{status:'CARIES',surface:'../11'}),/Geçersiz diş yüzeyi/);
+  assert.throws(()=>updateTooth('token',8,'11',{status:'CARIES',surfaces:['MESIAL','../11']}),/Geçersiz diş yüzeyi/);
+  assert.throws(()=>updateToothSurface('token',8,'11','../11',{status:'CARIES'}),/Geçersiz diş yüzeyi/);
+  assert.throws(()=>updateToothSurface('token',8,'11','MESIAL',{status:'UNKNOWN'}),/Geçersiz diş durumu/);
+ }finally{global.fetch=original}
+});
