@@ -102,3 +102,12 @@ test('Dental Flow picker does not mislabel unnamed PNG and WebP uploads as JPEG'
  assert.match(upload,/a\.mimeType === "image\/webp" \? "webp"/);
  assert.match(upload,/name: a\.fileName \|\|/);
 });
+
+test('Dental Flow composer previews each selected photo and clears local thumbnails with draft',()=>{
+ const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
+ const composer=source.slice(source.indexOf('function Composer('),source.indexOf('function Sheet('));
+ assert.match(composer,/setLocalPhotos\(previous => \[\.\.\.previous, a\.uri\]\.slice\(-4\)\)/);
+ assert.match(composer,/localPhotos\.map\(\(uri,index\)=>/);
+ assert.match(composer,/setLocalPhotos\(\[\]\)/);
+ assert.doesNotMatch(composer,/Yüklenen son fotoğrafın önizlemesi/);
+});
