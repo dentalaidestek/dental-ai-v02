@@ -182,3 +182,22 @@ test('clinical image upload rejects unsafe filenames and unknown unnamed URI for
   assert.equal(requests,0);
  }finally{global.fetch=oldFetch}
 });
+
+test('patient-scoped analysis history refuses cross-patient entries',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>new Response(JSON.stringify({items:[{id:10,patient_id:9,status:'VISION_READY'}]}),{status:200});
+ try{await assert.rejects(()=>api.getAnalysisHistory('token',7),error=>error.status===502&&/hasta veya kayıt/.test(error.message))}
+ finally{global.fetch=original}
+});
+
+test('analysis history refuses malformed item identifiers and non-array items',async()=>{
+ const original=global.fetch;
+ try{
+  for(const items of [null,{},[{id:0,patient_id:7}],[{id:3,patient_id:0}],[null]]){
+   global.fetch=async()=>new Response(JSON.stringify({items}),{status:200});
+   await assert.rejects(()=>api.getAnalysisHistory('token',7),error=>error.status===502);
+  }
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:3,patient_id:7,status:'VISION_READY'}]}),{status:200});
+  assert.equal((await api.getAnalysisHistory('token',7)).items[0].id,3);
+ }finally{global.fetch=original}
+});
