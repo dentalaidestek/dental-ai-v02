@@ -33,8 +33,15 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
   // Never label PNG/WebP bytes as JPEG when the picker omits MIME metadata.
   const mimeForExtension:Record<string,string>={jpg:"image/jpeg",jpeg:"image/jpeg",png:"image/png",webp:"image/webp"};
   const normalizedImages=payload.images.map((image,i)=>{
-    // A missing picker filename must not silently turn PNG/WebP into a JPEG.\n    const uriPath=image.uri.split(/[?#]/,1)[0];\n    const uriExtension=uriPath.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();\n    const inferredName=uriExtension&&Object.prototype.hasOwnProperty.call(mimeForExtension,uriExtension)\n      ? "dental-image-"+i+"."+uriExtension : "";\n    const name=image.name?.trim()||inferredName;
-    if(/[\\/\\\\\\x00-\\x1f\\x7f]/.test(name)||name.length>255)\n      throw Error("Klinik görüntü dosya adı geçersiz.");\n    const extension=name.match(/\.([^.]+)$/)?.[1]?.toLowerCase()||"";
+    // A missing picker filename must not silently turn PNG/WebP into a JPEG.
+    const uriPath=image.uri.split(/[?#]/,1)[0];
+    const uriExtension=uriPath.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();
+    const inferredName=uriExtension&&Object.prototype.hasOwnProperty.call(mimeForExtension,uriExtension)
+      ? "dental-image-"+i+"."+uriExtension : "";
+    const name=image.name?.trim()||inferredName;
+    if(/[\\/\\\\\\x00-\\x1f\\x7f]/.test(name)||name.length>255)
+      throw Error("Klinik görüntü dosya adı geçersiz.");
+    const extension=name.match(/\.([^.]+)$/)?.[1]?.toLowerCase()||"";
     const expected=mimeForExtension[extension];
     const declared=typeof image.type==="string"&&image.type.trim()?image.type.trim().toLowerCase():expected;
     if(!allowedExtensions.test(name)||!expected||!allowedTypes.has(declared||"")||declared!==expected)
@@ -46,7 +53,7 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
   if(payload.toothNumber)form.append("tooth_number",payload.toothNumber);
   if(payload.clinicalNotes)form.append("clinical_notes",payload.clinicalNotes);
   normalizedImages.forEach((image,i)=>{
-    form.append("images",{uri:image.uri,name:image.name||("dental-image-"+i+".jpg"),type:image.type||"image/jpeg"} as any);
+    form.append("images",{uri:image.uri,name:image.name,type:image.type} as any);
   });
   const result=await call<{ok:boolean;analysis_id:number;status:string}>("/analyses",token,{method:"POST",body:form});
   if(!result?.ok||!Number.isSafeInteger(result.analysis_id)||result.analysis_id<=0)throw Error("Analiz oluşturuldu ancak sunucu geçerli bir iş kimliği döndürmedi.");
