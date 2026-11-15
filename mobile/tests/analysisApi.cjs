@@ -103,3 +103,17 @@ test('native image AI rejects more than four images and unsupported file types b
   assert.equal(requests,0);
  }finally{global.fetch=original}
 });
+
+test('valid JPEG PNG and WebP clinical filenames pass preflight and invalid suffixes fail',async()=>{
+ const original=global.fetch,calls=[];
+ global.fetch=async(url,init)=>{calls.push({url,init});return new Response(JSON.stringify({ok:true,analysis_id:73,status:'ANALYZING'}),{status:200})};
+ try{
+  for(const [name,type] of [['photo.jpg','image/jpeg'],['scan.PNG','image/png'],['image.webp','image/webp']]){
+   const result=await api.createAnalysis('token',{patientId:7,images:[{uri:'file:///scan',name,type}]});
+   assert.equal(result.analysis_id,73);
+  }
+  assert.equal(calls.length,3);
+  await assert.rejects(()=>api.createAnalysis('token',{patientId:7,images:[{uri:'file:///scan',name:'malware.exe',type:'image/jpeg'}]}),/JPEG, PNG veya WebP/);
+  assert.equal(calls.length,3,'invalid filename must not reach network');
+ }finally{global.fetch=original}
+});
