@@ -2,8 +2,11 @@
 from pathlib import Path
 from PIL import Image
 import json
+import hashlib
+import re
 import os
 import shutil
+import tempfile
 import uuid
 from typing import Optional
 
@@ -19,6 +22,8 @@ from app.main import (
 )
 from app.mobile_api import _mobile_user
 from app.work_jobs import WorkJob
+from sqlalchemy import text
+from starlette.concurrency import run_in_threadpool
 
 def _voice_review_ids(session, user_id, analysis_ids):
     if not analysis_ids:
@@ -76,6 +81,41 @@ def _access(session: Session, user: User, analysis_id: int):
     return analysis, patient
 
 
+def _upload_key(user_id,key):return hashlib.sha256(f'mobile-analysis-upload:{user_id}:{key}'.encode()).hexdigest()
+
+
+def _upload_digest(patient_id,tooth,notes,images):
+    hashes=[]
+    for image in images:
+        digest=hashlib.sha256();size=0
+        try:
+            while True:
+                chunk=image.file.read(1024*1024)
+                if not chunk:break
+                size+=len(chunk)
+                if size>MOBILE_MAX_ANALYSIS_BYTES:raise HTTPException(413,'Görüntü dosyası çok büyük.')
+                digest.update(chunk)
+        finally:image.file.seek(0)
+        hashes.append([image.filename,size,digest.hexdigest()])
+    return hashlib.sha256(json.dumps([patient_id,(tooth or '').strip(),(notes or '').strip(),hashes],ensure_ascii=False).encode()).hexdigest()
+
+
+def _upload_receipt(session,user,receipt,patient_id):
+    analysis,_=_access(session,user,receipt.resource_id)
+    if analysis.patient_id!=patient_id:raise HTTPException(404,'Hasta yükleme kaydı bulunamadı.')
+    return {'ok':True,'analysis_id':analysis.id,'patient_id':patient_id,'status':analysis.status,'job_id':json.loads(receipt.payload_json)['job_id']}
+
+
+@router.get('/analyses/uploads/receipt')
+def upload_receipt(patient_id:int=Query(...,ge=1),request_key:str=Query(...,pattern=r'^[A-Za-z0-9_-]{16,80}$'),user:User=Depends(_mobile_user)):
+    from fastapi.responses import JSONResponse
+    with Session(engine) as session:
+        patient=session.get(Patient,patient_id)
+        if not patient or user.role!='ADMIN' and patient.owner_user_id!=user.id:raise HTTPException(404,'Hasta bulunamadı.')
+        row=session.exec(select(WorkJob).where(WorkJob.owner_user_id==user.id,WorkJob.kind=='UPLOAD_RECEIPT',WorkJob.dedupe_key==_upload_key(user.id,request_key))).first()
+        return JSONResponse({'receipt':_upload_receipt(session,user,row,patient_id) if row else None},headers={'Cache-Control':'private, no-store','Vary':'Authorization'})
+
+
 @router.post("/analyses")
 async def create_mobile_analysis(
     user: User = Depends(_mobile_user),
@@ -83,7 +123,14 @@ async def create_mobile_analysis(
     tooth_number: Optional[str] = Form(None),
     clinical_notes: Optional[str] = Form(None),
     images: list[UploadFile] = File(default=[]),
+    request_key: Optional[str] = Form(None),
 ):
+    if request_key is not None and not re.fullmatch(r'[A-Za-z0-9_-]{16,80}',request_key):
+        raise HTTPException(422,'Geçersiz yükleme anahtarı.')
+    teeth=[x.strip() for x in (tooth_number or '').split(',') if x.strip()]
+    if len(teeth)>32 or len(set(teeth))!=len(teeth) or any(not re.fullmatch(r'(?:[1-4][1-8]|[5-8][1-5])',x) for x in teeth):
+        raise HTTPException(422,'Geçersiz FDI diş numarası.')
+    if len(clinical_notes or '')>4000:raise HTTPException(422,'Klinik not en fazla 4000 karakter olabilir.')
     valid = [x for x in images if x and x.filename]
     if not valid or len(valid) > 4:
         raise HTTPException(status_code=422, detail="1 ile 4 arasında görüntü yükleyin.")
@@ -91,11 +138,23 @@ async def create_mobile_analysis(
     if any(Path(Path(image.filename).name).suffix.lower() not in allowed for image in valid):
         raise HTTPException(status_code=422, detail="Yalnızca JPEG, PNG veya WebP görüntüler yüklenebilir.")
 
+    digest=await run_in_threadpool(_upload_digest,patient_id,tooth_number,clinical_notes,valid) if request_key else None
+    receipt_key=_upload_key(user.id,request_key) if request_key else None
     with Session(engine, expire_on_commit=False) as session:
+        if receipt_key and session.get_bind().dialect.name=='postgresql':
+            # Per-request admission lock; do not acquire the owner lock before
+            # the canonical queue's global admission lock.
+            slot=int.from_bytes(hashlib.sha256(receipt_key.encode()).digest()[:8],byteorder='big',signed=True)
+            session.execute(text('SELECT pg_advisory_xact_lock(:slot)'),{'slot':slot})
         patient = session.get(Patient, patient_id)
         if not patient or (user.role != "ADMIN" and patient.owner_user_id != user.id):
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
 
+        if receipt_key:
+            receipt=session.exec(select(WorkJob).where(WorkJob.dedupe_key==receipt_key,WorkJob.owner_user_id==user.id,WorkJob.kind=='UPLOAD_RECEIPT')).first()
+            if receipt:
+                if receipt.source_hash!=digest:raise HTTPException(409,'Bu yükleme anahtarı farklı dosya veya klinik bilgiler için kullanılmış.')
+                return _upload_receipt(session,user,receipt,patient_id)
         analysis = Analysis(
             patient_id=patient_id,
             tooth_number=(tooth_number or "").strip() or None,
@@ -109,34 +168,35 @@ async def create_mobile_analysis(
         session.refresh(analysis)
 
         assets = []
-        for image in valid:
-            name = Path(image.filename).name
-            ext = Path(name).suffix.lower()
-            stored = f"analysis_{analysis.id}_{uuid.uuid4().hex}{ext}"
-            destination = Path("uploads") / stored
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            _copy_validated_analysis_image(image, destination)
-            storage_persist_file(destination)
-            assets.append(ImageAsset(
-                analysis_id=analysis.id,
-                original_filename=name,
-                stored_filename=stored,
-                file_path=str(destination),
-                image_type=classify_dental_image(str(destination)),
-            ))
-
-        if not assets:
-            session.rollback()
-            raise HTTPException(status_code=422, detail="Desteklenen görüntü formatı bulunamadı.")
-
-        session.add_all(assets)
-        session.flush()
-        job = _enqueue_work(session, "VISION", "ANALYSIS", analysis.id)
+        Path('uploads').mkdir(parents=True,exist_ok=True)
+        # Validate the entire batch before publishing any clinical file.
+        # A rejected second image must not strand the first image in storage.
+        with tempfile.TemporaryDirectory(prefix='.analysis-stage-',dir='uploads') as staging:
+            staged=[]
+            for image in valid:
+                name=Path(image.filename).name
+                ext=Path(name).suffix.lower()
+                stored=f'analysis_{analysis.id}_{uuid.uuid4().hex}{ext}'
+                temporary=Path(staging)/stored
+                destination=Path('uploads')/stored
+                _copy_validated_analysis_image(image,temporary)
+                staged.append((temporary,destination))
+                assets.append(ImageAsset(analysis_id=analysis.id,original_filename=name,stored_filename=stored,file_path=str(destination),image_type=classify_dental_image(str(temporary))))
+            session.add_all(assets)
+            session.flush()
+            # Reserve canonical queue capacity before any storage publication.
+            job=_enqueue_work(session,'VISION','ANALYSIS',analysis.id)
+            for temporary,destination in staged:
+                shutil.move(str(temporary),str(destination))
+                storage_persist_file(destination)
+        if receipt_key:
+            session.add(WorkJob(owner_user_id=user.id,resource_id=analysis.id,resource_type='ANALYSIS',kind='UPLOAD_RECEIPT',source_hash=digest,dedupe_key=receipt_key,status='DONE',payload_json=json.dumps({'job_id':job.id})))
         realtime=_record_realtime_event(session,user.id,"ANALYSIS_CREATED","analysis",analysis.id,{"analysis_id":analysis.id,"patient_id":patient_id,"status":analysis.status,"tooth_number":analysis.tooth_number})
         session.commit(); await _publish_realtime_event(realtime)
         return {
             "ok": True,
             "analysis_id": analysis.id,
+            "patient_id": patient_id,
             "status": analysis.status,
             "job_id": job.id,
         }

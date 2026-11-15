@@ -291,10 +291,14 @@ def collect_garbage(engine):
 
 def prune_history(engine):
     from sqlalchemy import delete
+    from app.main import Analysis
+    # Upload receipts remain authoritative for the lifetime of their analysis;
+    # pruning them would permit a delayed mobile retry to duplicate the record.
+    live_upload_receipt=and_(WorkJob.kind=='UPLOAD_RECEIPT',WorkJob.resource_type=='ANALYSIS',select(Analysis.id).where(Analysis.id==WorkJob.resource_id).exists())
     with Session(engine) as session:
         ids = session.exec(select(WorkJob.id).where(
             WorkJob.status.in_(["DONE", "CANCELLED", "FAILED"]),
-            WorkJob.updated_at < now() - timedelta(days=30)).order_by(WorkJob.id).limit(100)).all()
+            WorkJob.updated_at < now() - timedelta(days=30),~live_upload_receipt).order_by(WorkJob.id).limit(100)).all()
         if ids:
             session.exec(delete(WorkJob).where(WorkJob.id.in_(ids)))
         session.commit()

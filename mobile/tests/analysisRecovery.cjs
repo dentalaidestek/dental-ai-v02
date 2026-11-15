@@ -15,13 +15,13 @@ function harness({props={},fetchAnalysis=async()=>result,fetchPatient=async()=>(
 }
 test('history result restores its authorized patient without manual patient selection',async()=>{
  const h=harness({props:{initialAnalysisId:7}});h.render();await h.flush();
- assert.equal(h.states[6],42);assert.equal(h.states[8]?.analysis.id,7);assert.match(JSON.stringify(h.render()),/Test.*Patient/);assert.equal(h.states[0].length,1);
+ assert.equal(h.states[6],42);assert.equal(h.states[7]?.analysis.id,7);assert.match(JSON.stringify(h.render()),/Test.*Patient/);assert.equal(h.states[0].length,1);
 });
 test('persisted analysis reopens after app restart even when patient is outside first page',async()=>{
  const h=harness({saved:'7'});h.render();await h.flush();
- assert.equal(h.states[6],42);assert.equal(h.states[8]?.analysis.id,7);
+ assert.equal(h.states[6],42);assert.equal(h.states[7]?.analysis.id,7);
  h.event({event_type:'PATIENT_UPDATED',entity_id:1});await h.flush();
- assert.equal(h.states[6],42);assert.equal(h.states[8]?.analysis.patient_id,42);
+ assert.equal(h.states[6],42);assert.equal(h.states[7]?.analysis.patient_id,42);
 });
 test('patient-profile analysis action selects the requested server-verified patient',async()=>{
  const ids=[];const h=harness({props:{initialPatientId:42},fetchPatient:async(_token,id)=>{ids.push(id);return {patient}}});h.render();await h.flush();
@@ -30,11 +30,11 @@ test('patient-profile analysis action selects the requested server-verified pati
 test('late analysis result cannot cross accounts after a token switch',async()=>{
  let resolve;const h=harness({props:{initialAnalysisId:7},fetchAnalysis:()=>new Promise(r=>resolve=r)});h.render();
  h.change({token:'other',initialAnalysisId:undefined});resolve(result);await h.flush();
- assert.equal(h.states[6],null);assert.equal(h.states[8],null);
+ assert.equal(h.states[6],null);assert.equal(h.states[7],null);
 });
 test('explicit patient selection cannot restore a different saved analysis',async()=>{
  const h=harness({props:{initialPatientId:99},saved:'7',fetchPatient:async()=>({patient:{...patient,id:99}})});h.render();await h.flush();
- assert.equal(h.states[6],99);assert.equal(h.states[8],null);
+ assert.equal(h.states[6],99);assert.equal(h.states[7],null);
 });
 test('changing the patient after opening history clears the old job without restoring it again',async()=>{
  let calls=0;const h=harness({props:{initialAnalysisId:7},fetchAnalysis:async()=>{calls++;return result}});h.render();await h.flush();
@@ -42,10 +42,10 @@ test('changing the patient after opening history clears the old job without rest
  // The first-page row remains selectable alongside the recovered patient.
  const row=walk(h.render()).find(node=>node.props?.onPress&&JSON.stringify(node.children).includes('Other Patient'));
  assert.ok(row);row.props.onPress();h.render();await h.flush();
- assert.equal(h.states[6],1);assert.equal(h.states[8],null);assert.equal(calls,1);
+ assert.equal(h.states[6],1);assert.equal(h.states[7],null);assert.equal(calls,1);
 });
 test('deleted selected patient clears clinical selection while unrelated deletions preserve it',async()=>{
  const h=harness({props:{initialAnalysisId:7}});h.render();await h.flush();
  h.event({event_type:'PATIENT_DELETED',entity_id:1});await h.flush();assert.equal(h.states[6],42);
- h.event({event_type:'PATIENT_DELETED',entity_id:42});await h.flush();assert.equal(h.states[6],null);assert.equal(h.states[8],null);
+ h.event({event_type:'PATIENT_DELETED',entity_id:42});await h.flush();assert.equal(h.states[6],null);assert.equal(h.states[7],null);
 });

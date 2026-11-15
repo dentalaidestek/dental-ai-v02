@@ -121,3 +121,10 @@ async def job_action(analysis_id:int,job_id:int,action:str,token:str=Depends(_mo
             if not j or j.resource_type!='ANALYSIS' or j.resource_id!=analysis_id or j.kind not in {'VISION','PRELIMINARY','FINAL'}:raise HTTPException(404,'Analiz işi bulunamadı.')
     await run_in_threadpool(owned)
     await _web(web.retry_work if action=='retry' else web.cancel_work,token,job_id);return {'ok':True}
+
+@router.get('/analyses/{analysis_id}/assets/{asset_id}/vision')
+async def asset_vision(analysis_id:int,asset_id:int,token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    from app import main as web
+    response=await run_in_threadpool(web.analysis_asset_vision,_mobile_request(token,'GET'),analysis_id,asset_id)
+    response.headers.update(HEADERS)
+    return response

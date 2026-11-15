@@ -24,15 +24,13 @@ export type MobileAnalysis={
   ai_result?:any|null;
 };
 
-export async function createAnalysis(token:string,payload:{patientId:number;toothNumber?:string;clinicalNotes?:string;images:Array<{uri:string;name?:string;type?:string}>}){
-  if(!Number.isSafeInteger(payload?.patientId)||payload.patientId<=0||!Array.isArray(payload.images)||!payload.images.length||payload.images.some(image=>!image||typeof image.uri!=="string"||!image.uri.trim()))throw Error("Analiz için geçerli hasta ve en az bir klinik görüntü seçin.");
-  // Match the canonical mobile API's 1–4-image contract before any upload.
-  if(payload.images.length>4)throw Error("Bir analiz için en fazla 4 klinik görüntü yüklenebilir.");
+export function normalizeAnalysisImages(images:Array<{uri:string;name?:string;type?:string}>){
+  if(!Array.isArray(images)||!images.length||images.length>4||images.some(i=>!i||typeof i.uri!=="string"||!i.uri))throw Error("1–4 geçerli klinik görüntü seçin.");
   const allowedTypes=new Set(["image/jpeg","image/png","image/webp"]);
   const allowedExtensions=/\.(?:jpe?g|png|webp)$/i;
   // Never label PNG/WebP bytes as JPEG when the picker omits MIME metadata.
   const mimeForExtension:Record<string,string>={jpg:"image/jpeg",jpeg:"image/jpeg",png:"image/png",webp:"image/webp"};
-  const normalizedImages=payload.images.map((image,i)=>{
+  const normalizedImages=images.map((image,i)=>{
     // A missing picker filename must not silently turn PNG/WebP into a JPEG.
     const uriPath=image.uri.split(/[?#]/,1)[0];
     const uriExtension=uriPath.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();
@@ -48,6 +46,14 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
       throw Error("Yalnızca JPEG, PNG veya WebP klinik görüntüleri yüklenebilir; dosya türü ve uzantısı eşleşmelidir.");
     return {...image,name,type:declared};
   });
+  return normalizedImages;
+}
+
+export async function createAnalysis(token:string,payload:{patientId:number;toothNumber?:string;clinicalNotes?:string;images:Array<{uri:string;name?:string;type?:string}>}){
+  if(!Number.isSafeInteger(payload?.patientId)||payload.patientId<=0||!Array.isArray(payload.images)||!payload.images.length||payload.images.some(image=>!image||typeof image.uri!=="string"||!image.uri.trim()))throw Error("Analiz için geçerli hasta ve en az bir klinik görüntü seçin.");
+  // Match the canonical mobile API's 1–4-image contract before any upload.
+  if(payload.images.length>4)throw Error("Bir analiz için en fazla 4 klinik görüntü yüklenebilir.");
+  const normalizedImages=normalizeAnalysisImages(payload.images);
   const form=new FormData();
   form.append("patient_id",String(payload.patientId));
   if(payload.toothNumber)form.append("tooth_number",payload.toothNumber);
@@ -64,13 +70,14 @@ export async function getAnalysis(token:string,id:number){if(!Number.isSafeInteg
 export function startAnalysisAI(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");return call<{ok:boolean;status:string}>("/analyses/"+id+"/ai",token,{method:"POST"});}
 
 export type AnalysisHistoryItem={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at:string};
-export async function getAnalysisHistory(token:string,patientId?:number){
+export function getAnalysisHistory(token:string,patientId?:number){
   if(patientId!==undefined&&(!Number.isSafeInteger(patientId)||patientId<=0))throw Error("Geçersiz hasta kimliği.");
-  const result=await call<{items:AnalysisHistoryItem[]}>("/analyses"+(patientId!==undefined?"?patient_id="+patientId:""),token);
+  return call<{items:AnalysisHistoryItem[]}>("/analyses"+(patientId!==undefined?"?patient_id="+patientId:""),token).then(result=>{
   if(!Array.isArray(result?.items)||result.items.some(item=>
     !item||!Number.isSafeInteger(item.id)||item.id<=0||
     !Number.isSafeInteger(item.patient_id)||item.patient_id<=0||
     (patientId!==undefined&&item.patient_id!==patientId)
   ))throw new ApiError(502,"Analiz geçmişinde hasta veya kayıt kimliği uyuşmayan yanıt alındı.");
   return result;
+});
 }
