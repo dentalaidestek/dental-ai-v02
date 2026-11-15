@@ -83,6 +83,8 @@ export async function socialRequest<T>(
       ...init.headers,
     },
   });
+  // Session invalidation must run even when a gateway returns HTML for 401.
+  if(response.status===401)await revalidateSession(token);
   const raw = await response.text();
   let body: any;
   try {
@@ -94,7 +96,6 @@ export async function socialRequest<T>(
     );
   }
   if(response.ok&&(!raw.trim()||!body||typeof body!=="object"||Array.isArray(body)))throw new ApiError(502,"Dental Akış sunucusu geçersiz yanıt gönderdi. Tekrar deneyin.");
-  if(response.status===401)await revalidateSession(token);
   if (!response.ok)
     throw new ApiError(
       response.status,
