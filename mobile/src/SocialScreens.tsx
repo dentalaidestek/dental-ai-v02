@@ -152,7 +152,7 @@ function Composer({
   const d = useDraft(userId, "post"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [localPhoto, setLocalPhoto] = useState<string | null>(null),
+    [localPhotos, setLocalPhotos] = useState<string[]>([]),
     lock = useRef(false);
   async function image() {
     if (lock.current) return;
@@ -175,7 +175,7 @@ function Composer({
         type: a.mimeType || "image/jpeg",
       });
       d.update({ media_ids: [...d.draft.media_ids, uploaded.id] });
-      setLocalPhoto(a.uri);
+      setLocalPhotos(previous => [...previous, a.uri].slice(-4));
     } catch (e) {
       setError(message(e));
     } finally {
@@ -229,7 +229,7 @@ function Composer({
               <Button
                 title="Bozuk taslağı temizle"
                 onPress={() => {
-                  void d.clear().catch((e) => setError(message(e)));
+                  void d.clear().then(() => setLocalPhotos([])).catch((e) => setError(message(e)));
                 }}
               />
             )}
@@ -257,7 +257,7 @@ function Composer({
               style={s.input}
             />
             <Text style={s.meta}>{d.draft.media_ids.length}/4 fotoğraf</Text>
-            {localPhoto && <Image accessibilityLabel="Yüklenen son fotoğrafın önizlemesi" source={{uri:localPhoto}} resizeMode="contain" style={{width:"100%",height:220,borderRadius:12,backgroundColor:C.bg,marginVertical:8}}/>}
+            {localPhotos.length > 0 && <View style={{flexDirection:"row",flexWrap:"wrap",gap:8,marginVertical:8}}>{localPhotos.map((uri,index)=><Image key={uri+index} accessibilityLabel={`Yüklenen fotoğraf ${index+1}`} source={{uri}} resizeMode="cover" style={{width:"47%",height:140,borderRadius:12,backgroundColor:C.bg}}/>)}</View>}
             {!!d.draft.media_ids.length && <Text style={s.meta}>Fotoğraf taslağa eklendi. Paylaşmadan önce metni ve fotoğrafları kontrol edin.</Text>}
             <Button
               title="Fotoğraf ekle"
