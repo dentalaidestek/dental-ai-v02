@@ -100,7 +100,9 @@ async def create_mobile_analysis(
             status="ANALYZING",
         )
         session.add(analysis)
-        session.commit()
+        # Reserve the analysis ID without committing an unusable clinical record.
+        # Image validation and work enqueue must succeed before the transaction commits.
+        session.flush()
         session.refresh(analysis)
 
         allowed = {".jpg", ".jpeg", ".png", ".webp"}
@@ -124,8 +126,7 @@ async def create_mobile_analysis(
             ))
 
         if not assets:
-            session.delete(analysis)
-            session.commit()
+            session.rollback()
             raise HTTPException(status_code=422, detail="Desteklenen görüntü formatı bulunamadı.")
 
         session.add_all(assets)
