@@ -3,7 +3,8 @@ import {ActivityIndicator,AppState,Pressable,Text,View} from 'react-native';
 import {useIsFocused} from '@react-navigation/native';
 import {RecordingPresets,requestRecordingPermissionsAsync,setAudioModeAsync,useAudioRecorder,useAudioRecorderState} from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
-import {evaluateVoiceDeviceCheck,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS,VoiceDeviceCheckOutcome} from './voiceDeviceCheck';
+import {evaluateVoiceDeviceCheck,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS} from './voiceDeviceCheck';
+import type {VoiceDeviceCheckOutcome} from './voiceDeviceCheck';
 
 type Phase='idle'|'requesting'|'testing'|'finishing'|'complete';
 const navy='#071B35',muted='#63748A',line='#E1E7EF',blue='#1769AA';
