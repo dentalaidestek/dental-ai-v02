@@ -83,3 +83,23 @@ def test_native_analysis_upload_failure_does_not_commit_orphan_record(chat, monk
         with Session(engine) as session:
             assert session.exec(select(main.Analysis).where(main.Analysis.patient_id == 8)).all() == []
             assert session.exec(select(main.ImageAsset)).all() == []
+
+
+def test_native_analysis_rejects_mixed_supported_and_unsupported_uploads(chat, monkeypatch, tmp_path):
+    from sqlmodel import select
+    client, engine = chat
+    monkeypatch.setattr(mobile_analysis_api, 'engine', engine)
+    monkeypatch.chdir(tmp_path)
+    with Session(engine) as session:
+        session.add(main.Patient(id=8, anonymous_id='SYNTHETIC-MIXED', owner_user_id=1))
+        session.commit()
+    raw = io.BytesIO()
+    Image.new('RGB', (8, 8), 'white').save(raw, format='PNG')
+    response = client.post('/api/mobile/v1/analyses', data={'patient_id': '8'}, files=[
+        ('images', ('valid.png', raw.getvalue(), 'image/png')),
+        ('images', ('unsupported.txt', b'invalid', 'text/plain')),
+    ])
+    assert response.status_code == 422, response.text
+    with Session(engine) as session:
+        assert session.exec(select(main.Analysis).where(main.Analysis.patient_id == 8)).all() == []
+        assert session.exec(select(main.ImageAsset)).all() == []
