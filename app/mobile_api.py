@@ -1849,3 +1849,6 @@ router.include_router(mobile_voice_workflow_router)
 
 from app.mobile_academic_api import router as mobile_academic_router
 router.include_router(mobile_academic_router)
+
+from app.mobile_clinical_api import router as mobile_clinical_router
+router.include_router(mobile_clinical_router)

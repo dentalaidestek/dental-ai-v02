@@ -13,10 +13,10 @@ function mountMedia(getMedia, options={}){
  const native=Object.fromEntries(['ActivityIndicator','FlatList','Image','Modal','Pressable','ScrollView','Text','View'].map(x=>[x,x]));
  native.Alert={alert(...args){options.onAlert?.(...args)}};
  const exports={};
- vm.runInNewContext(code,{exports,require:name=>{
+ vm.runInNewContext(code,{exports,Error,require:name=>{
   if(name==='react')return {...React,default:React};
   if(name==='react-native')return native;
-  if(name==='expo-image-picker')return {};
+  if(name==='expo-image-picker')return options.picker||{};
   if(name==='./api')return {uploadPatientMedia:async()=>{}};
   if(name==='./modernApi')return {getMedia,analyzeSelectedPatientMedia:async()=>({analysis_id:1}),deleteMedia:async(...args)=>{options.onDelete?.(...args)},deleteAllPatientMedia:async(...args)=>{options.onDelete?.(...args)}};
   if(name==='./realtime')return {useRealtime:()=>({lastEvent:null})};
@@ -147,11 +147,15 @@ test('clinical gallery preview and selection handlers require the current patien
  assert.match(source,/onPress=\{\(\)=>\{if\(!current\(\)\|\|loadedOwner!==owner\|\|mutation\.current\|\|uncertain\)return;setOpen\(true\)/);
 });
 
-test('picker continuation and delayed acknowledgement cannot bypass scope or mutation locks',()=>{
- const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
- assert.match(source,/if\(!current\(\)\|\|mutation\.current\|\|uncertain\)return;if\(!permission\.granted\)/);
- assert.match(source,/if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|result\.canceled\)return/);
- assert.match(source,/onPress:\(\)=>\{if\(!current\(\)\|\|mutation\.current\|\|!uncertain\)return;setUncertain\(false\)/);
+test('picker permission resolving after an account switch cannot open the previous patient picker',async()=>{
+ let grant,picks=0;const permission=new Promise(resolve=>{grant=resolve});
+ const Media=mountMedia(async()=>({items:[],next_before:null}),{picker:{requestMediaLibraryPermissionsAsync:()=>permission,launchImageLibraryAsync:async()=>{picks++;return{canceled:true}}}});
+ let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(Media,{token:'old',patientId:1,onAnalysis(){}})));
+ const pick=tree.root.findAllByType('Pressable').find(n=>visible(n).includes('Fotoğraf Ekle'));
+ await renderer.act(async()=>{pick.props.onPress();await new Promise(resolve=>setImmediate(resolve))});
+ await renderer.act(async()=>tree.update(React.createElement(Media,{token:'new',patientId:2,onAnalysis(){}})));
+ await renderer.act(async()=>{grant({granted:true});await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(picks,0,'stale permission must never open an image picker');await renderer.act(async()=>tree.unmount());
 });
 
 test('pending image thumbnails and uploads are scoped to the active patient account',()=>{
@@ -182,12 +186,16 @@ test('failed full refresh clears stale patient images and selection rather than 
 });
 
 
-test('failed gallery refresh resets selection and cursor but preserves paging failures for retry',()=>{
- const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
- assert.match(source,/catch\(e\)\{if\(current\(\)&&sequence===request\.current\)\{if\(!more\)\{setItems\(\[\]\);setCursor\(null\);setSelected\(\[\]\)\}/);
- assert.match(source,/setError\(e instanceof Error\?e\.message:'Görseller alınamadı\.'\)/);
+test('failed older gallery page retains verified images and cursor for an explicit retry',async()=>{
+ let fail=true;const cursors=[];
+ const Media=mountMedia(async(_token,_patient,before)=>{cursors.push(before);if(before){if(fail)throw Error('offline');return{items:[{id:4,url:'https://example.invalid/older.jpg',media_type:'PHOTO'}],next_before:null}}return{items:[{id:9,url:'https://example.invalid/recent.jpg',media_type:'PHOTO'}],next_before:5}});
+ let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(Media,{token:'account',patientId:1,onAnalysis(){}})));
+ await renderer.act(async()=>tree.root.findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='Klinik görselleri aç').props.onPress());
+ await renderer.act(async()=>tree.root.findByType('FlatList').props.onEndReached());
+ assert.equal(tree.root.findByType('FlatList').props.data[0].id,9);assert.equal(cursors.at(-1),5);assert.match(visible(tree.root),/offline/);
+ fail=false;await renderer.act(async()=>tree.root.findByType('FlatList').props.ListFooterComponent.props.onPress());
+ assert.deepEqual(Array.from(tree.root.findByType('FlatList').props.data,x=>x.id),[9,4]);assert.equal(cursors.at(-1),5);await renderer.act(async()=>tree.unmount());
 });
-
 
 test('bulk analysis selection is limited to four and rejects stale patient actions',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
