@@ -5,7 +5,9 @@ import {usePreventRemove} from '@react-navigation/native';
 import React,{useCallback,useEffect,useRef,useState} from "react";
 import {ActivityIndicator,Alert,Linking,Pressable,ScrollView,Text,TextInput,View} from "react-native";
 import {getPatient,getPatients,Patient} from "./api";
-import {extractVoice,finalizeVoice,VoiceExtraction} from "./voiceApi";
+import {createAnonymousVoicePatient,extractVoice,finalizeVoice,VoiceExtraction} from "./voiceApi";
+import * as SecureStore from "expo-secure-store";
+import * as Crypto from "expo-crypto";
 
 const navy="#071B35",muted="#63748A",line="#E1E7EF";
 const fieldLabels:Record<string,string>={first_name:"Ad",last_name:"Soyad",age:"Yaş",chief_complaint:"Başvuru şikâyeti",medical_history:"Sağlık geçmişi",family_history:"Aile sağlık öyküsü",materials:"Konuşulan materyaller",dental_history:"Önceki diş tedavileri",oral_habits:"Ağız bakımı ve alışkanlıklar",medications:"İlaç bilgileri",allergies:"Alerji bilgileri",clinical_findings:"Muayene bulguları",plan:"Konuşulan tedavi planı"};
@@ -45,14 +47,28 @@ function ReviewRemovableSection({name,items,onRemove,disabled}:{name:string;item
 
 export default function VoiceExamEntry({token,userId,initialPatientId}:{token:string;userId?:number;initialPatientId?:number}){
  const [audioBusy,setAudioBusy]=useState(false),[applyBusy,setApplyBusy]=useState(false),[audioSession,setAudioSession]=useState({started:false,finished:false});
- const [privacyExpanded,setPrivacyExpanded]=useState(false),[processing,setProcessing]=useState(false),[editingFields,setEditingFields]=useState(false),[review,setReview]=useState<VoiceExtraction|null>(null),[finalResult,setFinalResult]=useState<Record<string,unknown>|null>(null),[clinicalError,setClinicalError]=useState(""),[stage,setStage]=useState<"select"|"exam">("select"),[consent,setConsent]=useState(false),[transcript,setTranscript]=useState(""),[query,setQuery]=useState(""),[patients,setPatients]=useState<Patient[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<Patient|null>(null);
+ const [privacyExpanded,setPrivacyExpanded]=useState(false),[processing,setProcessing]=useState(false),[editingFields,setEditingFields]=useState(false),[review,setReview]=useState<VoiceExtraction|null>(null),[finalResult,setFinalResult]=useState<Record<string,unknown>|null>(null),[clinicalError,setClinicalError]=useState(""),[stage,setStage]=useState<"select"|"exam">("select"),[consent,setConsent]=useState(false),[transcript,setTranscript]=useState(""),[creatingAnonymous,setCreatingAnonymous]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<Patient|null>(null);
  usePreventRemove(processing||audioBusy||applyBusy,()=>Alert.alert("İşlem sürüyor","Muayene veya kayıt tamamlanana kadar bekleyin."));
  const [lastRemoved,setLastRemoved]=useState<{key:"teeth"|"literature_topics"|"source_requests"|"communication"|"decision_barriers"|"follow_up_questions";index:number;item:unknown}|null>(null);
- const processingLock=useRef(false),processingOwner=useRef(0),generation=useRef(0),scope=useRef(token+":"+(selected?.id||0));
- scope.current=token+":"+(selected?.id||0);
- useEffect(()=>{generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("");setTranscript("");setConsent(false);setStage("select")},[token,selected?.id]);
- useEffect(()=>{setSelected(null);setAudioBusy(false);setApplyBusy(false)},[token]);
+ const processingLock=useRef(false),processingOwner=useRef(0),generation=useRef(0),scope=useRef(token+":"+(selected?.id||0)),anonymousLock=useRef(false),startAfterSelection=useRef(false),accountScope=useRef(token+":"+(userId||0));
+ scope.current=token+":"+(selected?.id||0);accountScope.current=token+":"+(userId||0);
+ useEffect(()=>{const enterExam=startAfterSelection.current;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("");setTranscript("");setConsent(false);setStage(enterExam?"exam":"select")},[token,selected?.id]);
+ useEffect(()=>{anonymousLock.current=false;setCreatingAnonymous(false);setSelected(null);setAudioBusy(false);setApplyBusy(false)},[token]);
  useEffect(()=>{let active=true;if(initialPatientId){void getPatient(token,initialPatientId).then(r=>{if(active)setSelected(r.patient)}).catch(()=>{if(active)setError("Seçili hasta bulunamadı veya erişim izni yok.")})}return()=>{active=false}},[token,initialPatientId]);
+ async function createAnonymousPatient(){
+  if(anonymousLock.current||!userId)return;
+  anonymousLock.current=true;setCreatingAnonymous(true);setError("");
+  const requestScope=token+":"+userId,storageKey="dai.voice.patient.create."+userId;
+  try{
+   let requestKey=await SecureStore.getItemAsync(storageKey);
+   if(!requestKey){requestKey=Crypto.randomUUID().replace(/-/g,"");await SecureStore.setItemAsync(storageKey,requestKey);}
+   const result=await createAnonymousVoicePatient(token,requestKey);
+   if(accountScope.current!==requestScope)return;
+   await SecureStore.deleteItemAsync(storageKey);
+   startAfterSelection.current=true;setSelected(result.patient);
+  }catch(e){if(accountScope.current===requestScope)setError(e instanceof Error?e.message:"Yeni hasta oluşturulamadı. Aynı istek güvenle tekrar denenebilir.");}
+  finally{anonymousLock.current=false;if(accountScope.current===requestScope)setCreatingAnonymous(false);}
+ }
  async function processText(completeText?:string){const text=completeText??transcript;if(!selected||!consent||!text.trim()||processingLock.current||(audioBusy||audioSession.started&&!audioSession.finished)&&!completeText)return;if(text.length>18000){setClinicalError("Metin çözümleme sınırı 18.000 karakterdir. Uzun görüşmelerin bölümlerini ayrı ayrı işleyin; tamamını silmeyin.");return;}processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const result=await extractVoice(token,selected.id,text);if(request!==generation.current||currentScope!==scope.current)return;setReview(result);setLastRemoved(null);setEditingFields(false);setFinalResult(null)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Muayene değerlendirilemedi.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
  function removeExtractedItem(key:"teeth"|"literature_topics"|"source_requests"|"communication"|"decision_barriers"|"follow_up_questions",index:number){
   if(processingLock.current)return;
@@ -135,9 +151,14 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   <Text style={{color:muted,marginTop:7,lineHeight:21}}>Hastayı seçin, kaydı başlatın ve canlı konuşma metnini izleyin. Klinik çıkarım muayene bitince, kayıt ise hekim onayıyla yapılır.</Text>
   <View style={{backgroundColor:"white",borderRadius:18,padding:16,borderWidth:1,borderColor:line,marginTop:18}}>
    <Text style={{fontWeight:"800",color:navy,marginBottom:9}}>Hasta seçimi</Text>
-   <NativePatientSelect key={token} token={token} value={selected} onChange={setSelected}/>
-   <Pressable onPress={()=>{if(selected)setStage("exam");else setError("Önce bir hasta seçin.")}} style={{marginTop:18,backgroundColor:navy,padding:15,borderRadius:13,alignItems:"center"}}><Text style={{color:"white",fontWeight:"800"}}>{selected?"Muayeneye Devam Et":"Hasta Seçerek Devam Et"}</Text></Pressable>
-   <Text style={{fontSize:12,color:muted,marginTop:10,lineHeight:18}}>Muayene bilgileri yalnızca hekim onayıyla hasta dosyasına kaydedilir.</Text>
+   <Pressable accessibilityRole="button" accessibilityState={{busy:creatingAnonymous,disabled:creatingAnonymous||!userId}} disabled={creatingAnonymous||!userId} onPress={()=>void createAnonymousPatient()} style={{backgroundColor:"#1769AA",padding:15,borderRadius:13,alignItems:"center",opacity:creatingAnonymous||!userId?.5:1}}>
+    {creatingAnonymous?<ActivityIndicator color="white"/>:<Text style={{color:"white",fontWeight:"800"}}>Yeni hastayla başla →</Text>}
+   </Pressable>
+   <Text style={{color:muted,textAlign:"center",marginVertical:12}}>veya mevcut hastayı seç</Text>
+   <NativePatientSelect key={token} token={token} value={selected} onChange={setSelected} disabled={creatingAnonymous}/>
+   {!!error&&<Text accessibilityRole="alert" style={{color:"#B42318",marginTop:10,lineHeight:20}}>{error}</Text>}
+   <Pressable accessibilityRole="button" disabled={creatingAnonymous} onPress={()=>{if(selected)setStage("exam");else setError("Önce bir hasta seçin.")}} style={{marginTop:18,backgroundColor:navy,padding:15,borderRadius:13,alignItems:"center",opacity:creatingAnonymous?.5:1}}><Text style={{color:"white",fontWeight:"800"}}>{selected?"Muayeneye Devam Et":"Hasta Seçerek Devam Et"}</Text></Pressable>
+   <Text style={{fontSize:12,color:muted,marginTop:10,lineHeight:18}}>Muayene bilgileri yalnızca hekim onayıyla hasta dosyasına kaydedilir. Yeni hasta kaydı boş bir klinik dosya açar; bilgileri yalnızca hekim onayıyla eklersiniz.</Text>
   </View>
  </ScrollView>
 }
