@@ -175,7 +175,7 @@ test('clinical image upload rejects unsafe filenames and unknown unnamed URI for
  const oldFetch=global.fetch;let requests=0;
  global.fetch=()=>{requests++;throw Error('unexpected upload')};
  try{
-  for(const name of ['../scan.jpg','folder/scan.jpg','folder\\\\scan.jpg','bad\\u0000scan.png','bad\\nscan.webp','x'.repeat(256)+'.jpg']){
+  for(const name of ['../scan.jpg','folder/scan.jpg','folder\\scan.jpg','bad\u0000scan.png','bad\nscan.webp','x'.repeat(256)+'.jpg']){
    await assert.rejects(()=>api.createAnalysis('token',{patientId:7,images:[{uri:'file:///scan.jpg',name,type:'image/jpeg'}]}));
   }
   await assert.rejects(()=>api.createAnalysis('token',{patientId:7,images:[{uri:'content://provider/opaque'}]}),/JPEG, PNG veya WebP/);
