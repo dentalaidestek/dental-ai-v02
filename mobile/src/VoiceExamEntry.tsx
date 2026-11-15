@@ -1,4 +1,5 @@
 import NativeVoiceRecorder from './NativeVoiceRecorder';
+import NativeVoiceDeviceCheck from './NativeVoiceDeviceCheck';
 import NativeVoiceApproval from './NativeVoiceApproval';
 import NativePatientSelect from './NativePatientSelect';
 import {usePreventRemove} from '@react-navigation/native';
@@ -48,11 +49,11 @@ function ReviewRemovableSection({name,items,onRemove,disabled}:{name:string;item
 }
 
 export default function VoiceExamEntry({token,userId,initialPatientId}:{token:string;userId?:number;initialPatientId?:number}){
- const [audioBusy,setAudioBusy]=useState(false),[applyBusy,setApplyBusy]=useState(false),[audioSession,setAudioSession]=useState({started:false,finished:false});
+ const [audioBusy,setAudioBusy]=useState(false),[deviceCheckBusy,setDeviceCheckBusy]=useState(false),[applyBusy,setApplyBusy]=useState(false),[audioSession,setAudioSession]=useState({started:false,finished:false});
  const [privacyExpanded,setPrivacyExpanded]=useState(false),[processing,setProcessing]=useState(false),[editingFields,setEditingFields]=useState(false),[review,setReview]=useState<VoiceExtraction|null>(null),[finalResult,setFinalResult]=useState<Record<string,unknown>|null>(null),[clinicalError,setClinicalError]=useState(""),[stage,setStage]=useState<"select"|"exam">("select"),[consent,setConsent]=useState(false),[transcript,setTranscript]=useState(""),[creatingAnonymous,setCreatingAnonymous]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<Patient|null>(null);
  const [extractionProgress,setExtractionProgress]=useState("");
  const extractionStore=useMemo(()=>chunkedDraftStore(SecureStore,Crypto.randomUUID,512),[]);
- usePreventRemove(processing||audioBusy||applyBusy,()=>Alert.alert("İşlem sürüyor","Muayene veya kayıt tamamlanana kadar bekleyin."));
+ usePreventRemove(processing||audioBusy||deviceCheckBusy||applyBusy,()=>Alert.alert("İşlem sürüyor","Muayene veya kayıt tamamlanana kadar bekleyin."));
  const [lastRemoved,setLastRemoved]=useState<{key:"teeth"|"literature_topics"|"source_requests"|"communication"|"decision_barriers"|"follow_up_questions";index:number;item:unknown}|null>(null);
  const processingLock=useRef(false),processingOwner=useRef(0),generation=useRef(0),scope=useRef(token+":"+(selected?.id||0)),anonymousLock=useRef<string|null>(null),startAfterSelection=useRef(false),accountScope=useRef(token+":"+(userId||0));
  const forceFreshExtraction=useRef(false);
@@ -78,7 +79,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  }
  async function processText(completeText?:string){
   const text=completeText??transcript;
-  if(!selected||!consent||!text.trim()||processingLock.current||(audioBusy||audioSession.started&&!audioSession.finished)&&!completeText)return;
+  if(!selected||!consent||!text.trim()||processingLock.current||(audioBusy||deviceCheckBusy||audioSession.started&&!audioSession.finished)&&!completeText)return;
   if(text.length>72000){setClinicalError("Muayene metni 72.000 karakter sınırını aşıyor. Yerel taslak korunuyor.");return;}
   processingLock.current=true;
   const request=++generation.current,currentScope=scope.current,patientId=selected.id;
@@ -153,7 +154,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   forceFreshExtraction.current=true;
   await processText();
  }
- async function finalize(){if(!selected||!consent||!review||processingLock.current||audioSession.started&&!audioSession.finished)return;processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const data=review.review;const response=await finalizeVoice(token,selected.id,{context:{fields:data.fields||{},teeth:data.teeth||[],literature_topics:data.literature_topics||[],source_requests:data.source_requests||[],...(data.appointment?{appointment:data.appointment}:{})},insights:data.communication||data.insights||[],uncertain:(data.uncertain||'').slice(0,3000),conversation_text:transcript});if(request===generation.current&&currentScope===scope.current)setFinalResult(response.final as Record<string,unknown>)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Son değerlendirme tamamlanamadı.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
+ async function finalize(){if(!selected||!consent||!review||processingLock.current||audioBusy||deviceCheckBusy||audioSession.started&&!audioSession.finished)return;processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const data=review.review;const response=await finalizeVoice(token,selected.id,{context:{fields:data.fields||{},teeth:data.teeth||[],literature_topics:data.literature_topics||[],source_requests:data.source_requests||[],...(data.appointment?{appointment:data.appointment}:{})},insights:data.communication||data.insights||[],uncertain:(data.uncertain||'').slice(0,3000),conversation_text:transcript});if(request===generation.current&&currentScope===scope.current)setFinalResult(response.final as Record<string,unknown>)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Son değerlendirme tamamlanamadı.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
  
  if(stage==="exam")return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:42}}>
   <Pressable accessibilityRole="button" disabled={processing||audioBusy||applyBusy} onPress={()=>{const back=()=>{generation.current++;processingLock.current=false;setProcessing(false);setStage("select")};if(transcript.trim())Alert.alert("Muayeneden ayrıl","Muayene metni bu hesaba ve hastaya bağlı cihaz taslağında korunur. Hasta dosyasına yalnız onaylanan alanlar kaydedilir.",[{text:"Vazgeç",style:"cancel"},{text:"Geri dön",style:"destructive",onPress:back}]);else back()}}><Text style={{color:navy,fontWeight:"700"}}>‹ Hasta seçimine dön</Text></Pressable>
@@ -162,12 +163,13 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   <View style={{backgroundColor:"white",borderRadius:18,padding:16,borderWidth:1,borderColor:line,marginTop:20}}>
    <Text style={{fontSize:17,fontWeight:"800",color:navy}}>Muayene hazırlığı</Text>
    <Text style={{color:muted,marginTop:8}}>Hazırlık · Metin · Klinik değerlendirme · Hekim onayı</Text>
-   <Pressable accessibilityRole="checkbox" accessibilityState={{checked:consent,disabled:processing}} disabled={processing||audioBusy||applyBusy} onPress={()=>{if(consent){generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("")}setConsent(v=>!v)}} style={{flexDirection:"row",alignItems:"flex-start",gap:10,marginTop:18}}>
+   <NativeVoiceDeviceCheck disabled={processing||audioBusy||applyBusy} onBusyChange={setDeviceCheckBusy}/>
+   <Pressable accessibilityRole="checkbox" accessibilityState={{checked:consent,disabled:processing}} disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>{if(consent){generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("")}setConsent(v=>!v)}} style={{flexDirection:"row",alignItems:"flex-start",gap:10,marginTop:18}}>
     <Text style={{fontSize:21,color:navy}}>{consent?"☑":"☐"}</Text><Text style={{flex:1,color:navy,lineHeight:21}}>Hastayı bilgilendirdim. Sesimin yazıya çevrilmesine ve muayene bittiğinde metnin klinik yapay zekâ hizmetiyle değerlendirilmesine onay veriyorum.</Text>
    </Pressable>
    <Pressable accessibilityRole="button" accessibilityState={{expanded:privacyExpanded}} onPress={()=>setPrivacyExpanded(v=>!v)} style={{marginTop:14,paddingVertical:10}}><Text style={{fontWeight:"700",color:navy}}>Veriler ve taslak hakkında {privacyExpanded?"−":"+"}</Text></Pressable>
    {privacyExpanded&&<Text style={{color:muted,lineHeight:20}}>Kayıt sırasında ses parçaları konuşma metni için işlenir. Klinik çıkarım yalnız muayeneyi bitirdiğinizde veya metni değerlendirdiğinizde yapılır. Metin cihazın güvenli deposunda, bekleyen sesler özel uygulama alanında tutulur. Ham ses ve tam konuşma metni hasta dosyasına otomatik yazılmaz. Gereksiz kimlik bilgilerini konuşmayın. Taslağı bu ekrandan temizleyebilirsiniz.</Text>}
-   {!!userId&&<NativeVoiceRecorder key={token+":"+selected?.id} token={token} userId={userId} patientId={selected!.id} consent={consent} value={transcript} disabled={processing||applyBusy} onBusyChanged={setAudioBusy} onSessionState={setAudioSession} onTranscript={v=>{generation.current++;setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} onFinished={v=>{setTranscript(v);void processText(v)}}/>}
+   {!!userId&&<NativeVoiceRecorder key={token+":"+selected?.id} token={token} disabled={processing||applyBusy||deviceCheckBusy} userId={userId} patientId={selected!.id} consent={consent} value={transcript} disabled={processing||applyBusy} onBusyChanged={setAudioBusy} onSessionState={setAudioSession} onTranscript={v=>{generation.current++;setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} onFinished={v=>{setTranscript(v);void processText(v)}}/>}
    <Text style={{fontWeight:"800",color:navy,marginTop:20}}>Muayene metni</Text>
    <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} editable={!processing&&!audioBusy&&!applyBusy} onChangeText={v=>{generation.current++;setClinicalError("");setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
    <Text style={{color:muted,fontSize:12,marginTop:8}}>{transcript.length}/72000 karakter · Uzun görüşmeler 12.000 karakterlik güvenli bölümlere ayrılır; tamamlanan bölümler cihazın şifreli taslağında korunur.</Text>
