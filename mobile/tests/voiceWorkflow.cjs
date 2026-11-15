@@ -83,3 +83,23 @@ test('unreadable approval intent blocks a new clinical write',async()=>{
 test('leaving the focused screen stops microphone and retains the pending clip',async()=>{
  const calls=[],h=recorderUI({transcribe:async()=>{calls.push('ASR');return{transcript:'Synthetic',revision:'r'}}});const props={token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished(){}};let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,props)));await renderer.act(async()=>button(tree,'Muayeneyi Başlat').props.onPress());await renderer.act(async()=>{h.focus(false);tree.update(React.createElement(h.Component,props));await new Promise(r=>setImmediate(r))});assert.equal(h.calls.filter(x=>x==='stop').length,1);assert.equal(calls.length,0);assert.equal(JSON.parse(h.store.get('draft')).segments.length,1);await renderer.act(async()=>tree.unmount());
 });
+
+
+test('voice entry mirrors the web new-patient path and reuses its key after an uncertain response',async()=>{
+ const exports={},calls=[],secure=new Map();
+ const native={StyleSheet:{create:x=>x},Alert:{alert(){}},Linking:{openURL:async()=>{}},...Object.fromEntries(['ActivityIndicator','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
+ const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/VoiceExamEntry.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
+ vm.runInNewContext(code,{exports,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{usePreventRemove(){}}:n==='expo-secure-store'?{getItemAsync:async key=>secure.get(key)||null,setItemAsync:async(key,value)=>secure.set(key,value),deleteItemAsync:async key=>secure.delete(key)}:n==='expo-crypto'?{randomUUID:()=> '00000000-0000-4000-8000-000000000000'}:n==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'Synthetic patient'}})}:n==='./voiceApi'?{createAnonymousVoicePatient:async(token,key)=>{calls.push({token,key});if(calls.length===1)throw Error('Synthetic lost response');return{patient:{id:42,anonymous_id:'SES-0123456789ABCDEF',first_name:null,last_name:null}}},extractVoice:async()=>review,finalizeVoice:async()=>({final:{}})}:{default:n.slice(2)}});
+ let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(exports.default,{token:'A',userId:1})));
+ assert.ok(button(tree,'Yeni hastayla başla →'));
+ await renderer.act(async()=>{button(tree,'Yeni hastayla başla →').props.onPress();await new Promise(resolve=>setImmediate(resolve))});
+ const storedKey=secure.get('dai.voice.patient.create.1');
+ assert.equal(storedKey,'0'.repeat(32));assert.equal(calls.length,1);
+ await renderer.act(async()=>{button(tree,'Yeni hastayla başla →').props.onPress();await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(calls.length,2);assert.equal(calls[0].key,calls[1].key);
+ assert.equal(secure.has('dai.voice.patient.create.1'),false);
+ assert.equal(tree.root.findAllByType('NativeVoiceRecorder').length,1);
+ assert.ok(text(tree.toJSON()).includes('SES-0123456789ABCDEF'));
+ await renderer.act(async()=>tree.unmount());
+});
