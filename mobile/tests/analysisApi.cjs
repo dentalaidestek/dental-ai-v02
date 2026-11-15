@@ -248,3 +248,19 @@ test('analysis detail rejects duplicate and malformed clinical asset identifiers
   assert.equal((await api.getAnalysis('token',23)).assets.length,2);
  }finally{global.fetch=oldFetch}
 });
+
+test('analysis history rejects duplicate record IDs even when patient matches',async()=>{
+ const original=global.fetch;
+ try{
+  global.fetch=async()=>new Response(JSON.stringify({items:[
+   {id:17,patient_id:7,status:'VISION_READY'},
+   {id:17,patient_id:7,status:'ANALYZING'}
+  ]}),{status:200});
+  await assert.rejects(()=>api.getAnalysisHistory('token',7),error=>error.status===502);
+  global.fetch=async()=>new Response(JSON.stringify({items:[
+   {id:17,patient_id:7,status:'VISION_READY'},
+   {id:18,patient_id:7,status:'ANALYZING'}
+  ]}),{status:200});
+  assert.deepEqual((await api.getAnalysisHistory('token',7)).items.map(item=>item.id),[17,18]);
+ }finally{global.fetch=original}
+});
