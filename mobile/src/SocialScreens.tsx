@@ -71,6 +71,7 @@ function useDraft(userId: number, scope: string) {
   const key = draftKey(userId, scope),
     [draft, setDraft] = useState<Draft>(fresh),
     [ready, setReady] = useState(false),
+    [retry, setRetry] = useState(0),
     [error, setError] = useState("");
   const queue = useRef(Promise.resolve()),
     current = useRef(draft);
@@ -90,7 +91,7 @@ function useDraft(userId: number, scope: string) {
     return () => {
       active = false;
     };
-  }, [key]);
+  }, [key, retry]);
   const update = (patch: Partial<Draft>) => {
     const next = { ...current.current, ...patch };
     current.current = next;
@@ -135,7 +136,7 @@ function useDraft(userId: number, scope: string) {
     setDraft(next);
     return result;
   };
-  return { draft, ready, error, update, clear, send };
+  return { draft, ready, error, retryRead: () => { setError(""); setRetry(v => v + 1); }, update, clear, send };
 }
 
 function Composer({
@@ -225,6 +226,9 @@ function Composer({
           <View>
             <ActivityIndicator />
             <Text style={s.error}>{d.error}</Text>
+            {!!d.error && (
+              <Button title="Tekrar oku" onPress={d.retryRead} />
+            )}
             {!!d.error && (
               <Button
                 title="Bozuk taslağı temizle"
