@@ -30,13 +30,22 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
   if(payload.images.length>4)throw Error("Bir analiz için en fazla 4 klinik görüntü yüklenebilir.");
   const allowedTypes=new Set(["image/jpeg","image/png","image/webp"]);
   const allowedExtensions=/\.(?:jpe?g|png|webp)$/i;
-  if(payload.images.some(image=>!allowedTypes.has(String(image.type||"image/jpeg").toLowerCase())||!allowedExtensions.test(image.name||"dental-image.jpg")))
-    throw Error("Yalnızca JPEG, PNG veya WebP klinik görüntüleri yüklenebilir.");
+  // Never label PNG/WebP bytes as JPEG when the picker omits MIME metadata.
+  const mimeForExtension:Record<string,string>={jpg:"image/jpeg",jpeg:"image/jpeg",png:"image/png",webp:"image/webp"};
+  const normalizedImages=payload.images.map((image,i)=>{
+    const name=image.name||("dental-image-"+i+".jpg");
+    const extension=name.match(/\.([^.]+)$/)?.[1]?.toLowerCase()||"";
+    const expected=mimeForExtension[extension];
+    const declared=typeof image.type==="string"&&image.type.trim()?image.type.trim().toLowerCase():expected;
+    if(!allowedExtensions.test(name)||!expected||!allowedTypes.has(declared||"")||declared!==expected)
+      throw Error("Yalnızca JPEG, PNG veya WebP klinik görüntüleri yüklenebilir; dosya türü ve uzantısı eşleşmelidir.");
+    return {...image,name,type:declared};
+  });
   const form=new FormData();
   form.append("patient_id",String(payload.patientId));
   if(payload.toothNumber)form.append("tooth_number",payload.toothNumber);
   if(payload.clinicalNotes)form.append("clinical_notes",payload.clinicalNotes);
-  payload.images.forEach((image,i)=>{
+  normalizedImages.forEach((image,i)=>{
     form.append("images",{uri:image.uri,name:image.name||("dental-image-"+i+".jpg"),type:image.type||"image/jpeg"} as any);
   });
   const result=await call<{ok:boolean;analysis_id:number;status:string}>("/analyses",token,{method:"POST",body:form});
