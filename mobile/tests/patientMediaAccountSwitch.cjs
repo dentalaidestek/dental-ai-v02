@@ -194,3 +194,13 @@ test('bulk analysis selection is limited to four and rejects stale patient actio
  assert.match(source,/İlk 4 Görseli Seç/);
  assert.match(source,/if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|loadedOwner!==owner\)return;setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,4\)\.map\(x=>x\.id\)\)/);
 });
+
+
+test('photo picker results are invalidated when patient scope changes even if the user returns',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/pickerGeneration=useRef\(0\)/);
+ assert.match(source,/const picker=\+\+pickerGeneration\.current/);
+ assert.match(source,/mounted\.current=true;request\.current\+\+;pickerGeneration\.current\+\+/);
+ assert.match(source,/mounted\.current=false;request\.current\+\+;pickerGeneration\.current\+\+/);
+ assert.match(source,/picker!==pickerGeneration\.current\|\|mutation\.current\|\|uncertain\|\|result\.canceled/);
+});
