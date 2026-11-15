@@ -122,3 +122,8 @@ test('failed encrypted Dental Flow draft reads offer non-destructive retry',()=>
  assert.match(composer,/title="Tekrar oku" onPress=\{d\.retryRead\}/);
  assert.match(composer,/title="Bozuk taslağı temizle"/);
 });
+
+test('Dental Flow composer remounts when authenticated account or session changes',()=>{
+ const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
+ assert.match(source,/<Composer\s+key=\{\x60\$\{user\.id\}:\$\{token\}\x60\}\s+token=\{token\}\s+userId=\{user\.id\}/);
+});
