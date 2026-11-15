@@ -50,15 +50,17 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  const [privacyExpanded,setPrivacyExpanded]=useState(false),[processing,setProcessing]=useState(false),[editingFields,setEditingFields]=useState(false),[review,setReview]=useState<VoiceExtraction|null>(null),[finalResult,setFinalResult]=useState<Record<string,unknown>|null>(null),[clinicalError,setClinicalError]=useState(""),[stage,setStage]=useState<"select"|"exam">("select"),[consent,setConsent]=useState(false),[transcript,setTranscript]=useState(""),[creatingAnonymous,setCreatingAnonymous]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<Patient|null>(null);
  usePreventRemove(processing||audioBusy||applyBusy,()=>Alert.alert("İşlem sürüyor","Muayene veya kayıt tamamlanana kadar bekleyin."));
  const [lastRemoved,setLastRemoved]=useState<{key:"teeth"|"literature_topics"|"source_requests"|"communication"|"decision_barriers"|"follow_up_questions";index:number;item:unknown}|null>(null);
- const processingLock=useRef(false),processingOwner=useRef(0),generation=useRef(0),scope=useRef(token+":"+(selected?.id||0)),anonymousLock=useRef(false),startAfterSelection=useRef(false),accountScope=useRef(token+":"+(userId||0));
+ const processingLock=useRef(false),processingOwner=useRef(0),generation=useRef(0),scope=useRef(token+":"+(selected?.id||0)),anonymousLock=useRef<string|null>(null),startAfterSelection=useRef(false),accountScope=useRef(token+":"+(userId||0));
  scope.current=token+":"+(selected?.id||0);accountScope.current=token+":"+(userId||0);
  useEffect(()=>{const enterExam=startAfterSelection.current;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("");setTranscript("");setConsent(false);setStage(enterExam?"exam":"select")},[token,selected?.id]);
- useEffect(()=>{anonymousLock.current=false;setCreatingAnonymous(false);setSelected(null);setAudioBusy(false);setApplyBusy(false)},[token]);
+ useEffect(()=>{setCreatingAnonymous(false);setSelected(null);setAudioBusy(false);setApplyBusy(false)},[token]);
  useEffect(()=>{let active=true;if(initialPatientId){void getPatient(token,initialPatientId).then(r=>{if(active)setSelected(r.patient)}).catch(()=>{if(active)setError("Seçili hasta bulunamadı veya erişim izni yok.")})}return()=>{active=false}},[token,initialPatientId]);
  async function createAnonymousPatient(){
-  if(anonymousLock.current||!userId)return;
-  anonymousLock.current=true;setCreatingAnonymous(true);setError("");
-  const requestScope=token+":"+userId,storageKey="dai.voice.patient.create."+userId;
+  if(!userId)return;
+  const requestScope=token+":"+userId;
+  if(anonymousLock.current===requestScope)return;
+  anonymousLock.current=requestScope;setCreatingAnonymous(true);setError("");
+  const storageKey="dai.voice.patient.create."+userId;
   try{
    let requestKey=await SecureStore.getItemAsync(storageKey);
    if(!requestKey){requestKey=Crypto.randomUUID().replace(/-/g,"");await SecureStore.setItemAsync(storageKey,requestKey);}
@@ -67,7 +69,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    await SecureStore.deleteItemAsync(storageKey);
    startAfterSelection.current=true;setSelected(result.patient);
   }catch(e){if(accountScope.current===requestScope)setError(e instanceof Error?e.message:"Yeni hasta oluşturulamadı. Aynı istek güvenle tekrar denenebilir.");}
-  finally{anonymousLock.current=false;if(accountScope.current===requestScope)setCreatingAnonymous(false);}
+  finally{if(anonymousLock.current===requestScope)anonymousLock.current=null;if(accountScope.current===requestScope)setCreatingAnonymous(false);}
  }
  async function processText(completeText?:string){const text=completeText??transcript;if(!selected||!consent||!text.trim()||processingLock.current||(audioBusy||audioSession.started&&!audioSession.finished)&&!completeText)return;if(text.length>18000){setClinicalError("Metin çözümleme sınırı 18.000 karakterdir. Uzun görüşmelerin bölümlerini ayrı ayrı işleyin; tamamını silmeyin.");return;}processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const result=await extractVoice(token,selected.id,text);if(request!==generation.current||currentScope!==scope.current)return;setReview(result);setLastRemoved(null);setEditingFields(false);setFinalResult(null)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Muayene değerlendirilemedi.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
  function removeExtractedItem(key:"teeth"|"literature_topics"|"source_requests"|"communication"|"decision_barriers"|"follow_up_questions",index:number){
