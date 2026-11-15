@@ -53,7 +53,29 @@ export default function NativeDentalAI({token,userId,initialAnalysisId,initialPa
  useEffect(()=>()=>{refreshGeneration.current++},[token,analysis?.analysis.id]);
  useEffect(()=>{if(!analysis||!lastEvent)return;const e=lastEvent as any;const id=Number(e.entity_id||e.analysis_id||e.payload?.analysis_id||0);if((e.entity_type==="analysis"||["ANALYSIS_CREATED","ANALYSIS_UPDATED","ANALYSIS_COMPLETED","VISION_READY"].includes(String(e.event_type||e.type)))&&id===analysis.analysis.id){const generation=++refreshGeneration.current,scope=sessionScope.current,selectedPatient=patientId,analysisId=analysis.analysis.id;getAnalysis(token,analysisId).then(result=>{if(generation===refreshGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&activeId.current===analysisId&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient)setAnalysis(result)}).catch(()=>{})}},[lastEvent,analysis?.analysis.id,token,patientId]);
  useEffect(()=>{const current=analysis?.analysis;if(!current||["AI_ANALYZED","COMPLETED","FAILED","ERROR","CANCELLED"].includes(String(current.status).toUpperCase()))return;let disposed=false,inFlight=false;const scope=sessionScope.current,analysisId=current.id;const timer=setInterval(()=>{if(disposed||inFlight||AppState.currentState!=="active"||scope!==sessionScope.current)return;inFlight=true;const request=++refreshGeneration.current;void getAnalysis(token,analysisId).then(result=>{if(!disposed&&scope===sessionScope.current&&request===refreshGeneration.current&&activeId.current===analysisId&&patientId!==null&&current.patient_id===patientId&&result.analysis.id===analysisId&&result.analysis.patient_id===patientId)setAnalysis(result)}).catch(()=>{}).finally(()=>{inFlight=false})},15000);return()=>{disposed=true;clearInterval(timer)}},[token,analysis?.analysis.id,analysis?.analysis.status,userId,patientId]);
- async function openUploaded(id:number){const scope=sessionScope.current,selectedPatient=patientId,selection=selectionGeneration.current;if(!selectedPatient)return;activeId.current=id;refreshGeneration.current++;if(userId)await SecureStore.setItemAsync('dai.analysis.'+userId,String(id));const result=await getAnalysis(token,id);if(scope!==sessionScope.current||selection!==selectionGeneration.current)return;if(result.analysis.id!==id||result.analysis.patient_id!==selectedPatient)throw Error('Analiz seçili hasta ile eşleşmiyor.');setAnalysis(result);setErr('')}
+ async function openUploaded(id:number){
+  const scope=sessionScope.current,selectedPatient=patientId,selection=selectionGeneration.current;
+  if(!selectedPatient||!Number.isSafeInteger(id)||id<=0)return;
+  // Do not persist an unverified analysis ID: a delayed upload callback may
+  // belong to a patient/account that is no longer selected.
+  const result=await getAnalysis(token,id);
+  if(scope!==sessionScope.current||selection!==selectionGeneration.current||
+     selectedRecord.current?.id!==selectedPatient)return;
+  if(result.analysis.id!==id||result.analysis.patient_id!==selectedPatient)
+    throw Error('Analiz seçili hasta ile eşleşmiyor.');
+  activeId.current=id;
+  refreshGeneration.current++;
+  setAnalysis(result);setErr('');
+  if(userId){
+    // A scope change during the secure-store write must not resurrect this ID.
+    const key='dai.analysis.'+userId;
+    try{
+      await SecureStore.setItemAsync(key,String(id));
+      if(scope!==sessionScope.current||selection!==selectionGeneration.current)
+        await SecureStore.deleteItemAsync(key);
+    }catch{ /* Secure-store failure must not invalidate an authorized on-screen result. */ }
+  }
+ }
  async function refresh(){if(!analysis||actionLock.current)return;actionLock.current=true;const generation=++actionGeneration.current,scope=sessionScope.current,analysisId=analysis.analysis.id,selectedPatient=patientId;setBusy(true);try{const result=await getAnalysis(token,analysisId);if(generation===actionGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient)setAnalysis(result)}catch(e:any){if(generation===actionGeneration.current&&scope===sessionScope.current)setErr(e?.message||"Durum alınamadı.")}finally{if(generation===actionGeneration.current&&scope===sessionScope.current){actionLock.current=false;setBusy(false)}}}
  async function start(){if(!analysis||actionLock.current)return;actionLock.current=true;const generation=++actionGeneration.current,scope=sessionScope.current,analysisId=analysis.analysis.id,selectedPatient=patientId;setBusy(true);setErr("");try{if(selectedPatient===null||analysis.analysis.patient_id!==selectedPatient)throw Error("Analiz kimliği seçili hastayla eşleşmiyor.");await startAnalysisAI(token,analysisId);if(generation!==actionGeneration.current||scope!==sessionScope.current)return;const result=await getAnalysis(token,analysisId);if(generation===actionGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient)setAnalysis(result)}catch(e:any){if(generation===actionGeneration.current&&scope===sessionScope.current)setErr(e?.message||"Analiz başlatılamadı.")}finally{if(generation===actionGeneration.current&&scope===sessionScope.current){actionLock.current=false;setBusy(false)}}}
  return <View style={{paddingBottom:30}}>
