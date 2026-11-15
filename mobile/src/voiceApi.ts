@@ -35,7 +35,7 @@ export type VoiceExtraction={ok:boolean;revision:string;review:{
  fields?:Record<string,VoiceField>;teeth?:unknown[];insights?:Record<string,unknown>[];
  communication?:{quote:string;observation:string;suggestion:string}[];
  decision_barriers?:Record<string,unknown>[];follow_up_questions?:Record<string,unknown>[];
- uncertain?:string;literature_topics?:{topic:string;quote:string}[];
+ uncertain?:string;uncertainties?:string[];literature_topics?:{topic:string;quote:string}[];
  source_requests?:{term:string;quote:string}[];
  appointment?:{quote?:string;acceptance_quote?:string}
 }};
@@ -63,6 +63,34 @@ function validateVoiceReview(value:unknown):VoiceExtraction["review"]{
  if(invalidFields||invalidArrays||invalidTeeth||invalidCommunication||invalidSources||invalidListItems||invalidAppointment||(review.uncertain!==undefined&&typeof review.uncertain!=="string"))
   throw Error("Klinik çıkarım yanıtının alanları geçersiz. Metniniz korunuyor; tekrar deneyin.");
  return review as VoiceExtraction["review"];
+}
+
+function mergeVoiceChunkReview(previous:VoiceExtraction["review"]|undefined,incoming:VoiceExtraction["review"]):VoiceExtraction["review"]{
+ const oldInsights=previous?.insights||[...(previous?.communication||[]),...(previous?.decision_barriers||[])];
+ const newInsights=[...(incoming.communication||[]),...(incoming.decision_barriers||[])];
+ const unique=new Map<string,Record<string,unknown>>();
+ for(const item of [...oldInsights,...newInsights]){
+  const category=typeof item.category==="string"?item.category:"communication";
+  const quote=typeof item.quote==="string"?item.quote:"";
+  unique.set(category+":"+quote,item);
+ }
+ if(unique.size>24&&Array.from(unique.values()).some(item=>item.category==="CLINICAL_STATEMENT"))
+  throw Error("Hekim ifadeleri sınırı aşıldı; görüşme taslağı korunuyor. Metni gözden geçirip yeniden değerlendirin.");
+ const all=Array.from(unique.values()).slice(-24);
+ const communicationCategories=new Set(["CLINICIAN_RESPONSE","PATIENT_RESPONSE","UNATTRIBUTED_RESPONSE","CLINICAL_STATEMENT"]);
+ const communication=all.filter(item=>typeof item.category!=="string"||communicationCategories.has(item.category));
+ const decisionBarriers=all.filter(item=>typeof item.category==="string"&&!communicationCategories.has(item.category));
+ const questions=new Map<string,Record<string,unknown>>();
+ for(const item of previous?.follow_up_questions||[]){
+  const key=String(item.quote||"")+":"+String(item.question||"");questions.set(key,item);
+ }
+ for(const item of incoming.follow_up_questions||[]){
+  const key=String(item.quote||"")+":"+String(item.question||"");
+  questions.set(key,{...item,resolved:questions.get(key)?.resolved===true});
+ }
+ const uncertainValues=[...(previous?.uncertainties||String(previous?.uncertain||"").split(" · ")),...String(incoming.uncertain||"").split(" · ")].map(value=>value.trim()).filter(Boolean);
+ const uncertainties=Array.from(new Set(uncertainValues)).slice(-8);
+ return {...incoming,insights:all,communication:communication as VoiceExtraction["review"]["communication"],decision_barriers:decisionBarriers,follow_up_questions:Array.from(questions.values()).slice(-24),uncertainties,uncertain:uncertainties.join(" · ")};
 }
 
 function contextFromVoiceReview(review:VoiceExtraction["review"]):Record<string,unknown>{
@@ -94,7 +122,7 @@ export async function extractVoice(token:string,patientId:number,transcript:stri
   if(!result.review||typeof result.revision!=="string"||!/^[a-f0-9]{64}$/.test(result.revision))
    throw Error("Klinik çıkarım yanıtı eksik. Metninizi koruyup tekrar deneyin.");
   if(revision&&revision!==result.revision)throw Error("Hasta dosyası görüşme sırasında değişti. Taslak korunuyor; güncel hasta bilgilerini yeniden kontrol edin.");
-  revision=result.revision;review=validateVoiceReview(result.review);
+  revision=result.revision;review=mergeVoiceChunkReview(review,validateVoiceReview(result.review));
   await options.onCheckpoint?.({cursor:index+1,revision,review});
  }
  if(!review||!revision)throw Error("Klinik çıkarım tamamlanamadı. Metniniz korunuyor.");
