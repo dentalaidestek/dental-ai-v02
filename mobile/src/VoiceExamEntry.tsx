@@ -55,6 +55,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  usePreventRemove(processing||audioBusy||applyBusy,()=>Alert.alert("İşlem sürüyor","Muayene veya kayıt tamamlanana kadar bekleyin."));
  const [lastRemoved,setLastRemoved]=useState<{key:"teeth"|"literature_topics"|"source_requests"|"communication"|"decision_barriers"|"follow_up_questions";index:number;item:unknown}|null>(null);
  const processingLock=useRef(false),processingOwner=useRef(0),generation=useRef(0),scope=useRef(token+":"+(selected?.id||0)),anonymousLock=useRef<string|null>(null),startAfterSelection=useRef(false),accountScope=useRef(token+":"+(userId||0));
+ const forceFreshExtraction=useRef(false);
  scope.current=token+":"+(selected?.id||0);accountScope.current=token+":"+(userId||0);
  useEffect(()=>{const enterExam=startAfterSelection.current;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("");setTranscript("");setConsent(false);setStage(enterExam?"exam":"select")},[token,selected?.id]);
  useEffect(()=>{setCreatingAnonymous(false);setSelected(null);setAudioBusy(false);setApplyBusy(false)},[token]);
@@ -88,10 +89,13 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    const checkpointKey=userId?`dai.voice.extraction.${userId}.${patientId}`:"";
    let resume: {cursor:number;revision:string;review:VoiceExtraction["review"]}|undefined;
    if(userId){
-    const raw=await extractionStore.getItemAsync(checkpointKey);
-    const saved=parseVoiceExtractionCheckpoint(raw,userId,patientId,transcriptHash,chunks.length);
-    if(saved)resume={cursor:saved.cursor,revision:saved.revision,review:saved.review as VoiceExtraction["review"]};
-    else if(raw)await extractionStore.deleteItemAsync(checkpointKey);
+    if(forceFreshExtraction.current){await extractionStore.deleteItemAsync(checkpointKey);forceFreshExtraction.current=false;}
+    else{
+     const raw=await extractionStore.getItemAsync(checkpointKey);
+     const saved=parseVoiceExtractionCheckpoint(raw,userId,patientId,transcriptHash,chunks.length);
+     if(saved)resume={cursor:saved.cursor,revision:saved.revision,review:saved.review as VoiceExtraction["review"]};
+     else if(raw)await extractionStore.deleteItemAsync(checkpointKey);
+    }
    }
    const result=await extractVoice(token,patientId,text,{
     resume,
@@ -105,7 +109,14 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    setReview(result);setLastRemoved(null);setEditingFields(false);setFinalResult(null);
    setExtractionProgress(`\u2713 ${chunks.length} bölüm tamamlandı. Tüm görüşme tek klinik değerlendirme için hazır.`);
   }catch(e){
-   if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Muayene değerlendirilemedi.");
+   if(request===generation.current&&currentScope===scope.current){
+    const message=e instanceof Error?e.message:"Muayene değerlendirilemedi.";
+    if(message.includes("Hasta dosyası görüşme sırasında değişti")){
+     forceFreshExtraction.current=true;
+     setExtractionProgress("Hasta kaydı değişti; yeniden denemede eski bölümler atılıp tüm görüşme baştan işlenecek.");
+    }
+    setClinicalError(message);
+   }
   }finally{
    if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false);}
   }
@@ -139,10 +150,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  }
  async function recheckVoice(){
   if(!selected)return;
-  if(userId){
-   try{await extractionStore.deleteItemAsync(`dai.voice.extraction.${userId}.${selected.id}`);}
-   catch{setClinicalError("Önceki güvenli çıkarım taslağı temizlenemedi. Aynı eski sonucu kullanmamak için yeniden kontrol başlatılmadı.");return;}
-  }
+  forceFreshExtraction.current=true;
   await processText();
  }
  async function finalize(){if(!selected||!consent||!review||processingLock.current||audioSession.started&&!audioSession.finished)return;processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const data=review.review;const response=await finalizeVoice(token,selected.id,{context:{fields:data.fields||{},teeth:data.teeth||[],literature_topics:data.literature_topics||[],source_requests:data.source_requests||[],...(data.appointment?{appointment:data.appointment}:{})},insights:data.communication||data.insights||[],uncertain:(data.uncertain||'').slice(0,3000),conversation_text:transcript});if(request===generation.current&&currentScope===scope.current)setFinalResult(response.final as Record<string,unknown>)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Son değerlendirme tamamlanamadı.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
