@@ -105,7 +105,9 @@ test('native image AI rejects more than four images and unsupported file types b
 });
 
 test('valid JPEG PNG and WebP clinical filenames pass preflight and invalid suffixes fail',async()=>{
- const original=global.fetch,calls=[];
+ const original=global.fetch,originalFormData=global.FormData,calls=[];
+ class NativeFormStub{append(){}}
+ global.FormData=NativeFormStub;
  global.fetch=async(url,init)=>{calls.push({url,init});return new Response(JSON.stringify({ok:true,analysis_id:73,status:'ANALYZING'}),{status:200})};
  try{
   for(const [name,type] of [['photo.jpg','image/jpeg'],['scan.PNG','image/png'],['image.webp','image/webp']]){
@@ -115,7 +117,7 @@ test('valid JPEG PNG and WebP clinical filenames pass preflight and invalid suff
   assert.equal(calls.length,3);
   await assert.rejects(()=>api.createAnalysis('token',{patientId:7,images:[{uri:'file:///scan',name:'malware.exe',type:'image/jpeg'}]}),/JPEG, PNG veya WebP/);
   assert.equal(calls.length,3,'invalid filename must not reach network');
- }finally{global.fetch=original}
+ }finally{global.fetch=original;global.FormData=originalFormData}
 });
 
 test('analysis history rejects malformed patient filters without a request',async()=>{
