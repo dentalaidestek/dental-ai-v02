@@ -398,3 +398,25 @@ test('clinical context UTF-8 budget works when Hermes TextEncoder is unavailable
   assert.equal(calls,0);
  }finally{global.fetch=originalFetch;global.TextEncoder=originalEncoder}
 });
+
+test('anonymous voice patient creation sends a stable key and validates the owned patient receipt',async()=>{
+ const original=global.fetch;let call;
+ global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,already_created:true,patient:{id:81,anonymous_id:'SES-0123456789ABCDEF',first_name:null,last_name:null,phone:null,birth_date:null,age:null,chief_complaint:null,created_at:'2026-11-15T18:00:00'}}))};
+ try{
+  const result=await api.createAnonymousVoicePatient('token','a'.repeat(32));
+  assert.equal(result.patient.id,81);assert.equal(result.already_created,true);
+  assert.match(call.url,/\/voice-exam\/anonymous$/);assert.equal(call.init.method,'POST');
+  assert.equal(call.init.headers.Authorization,'Bearer token');
+  assert.deepEqual(JSON.parse(call.init.body),{request_key:'a'.repeat(32)});
+ }finally{global.fetch=original}
+});
+
+test('anonymous voice patient creation rejects invalid keys and ambiguous receipts',async()=>{
+ const original=global.fetch;let calls=0;
+ try{
+  global.fetch=async()=>{calls++;return response(JSON.stringify({ok:true,already_created:false,patient:{id:0,anonymous_id:'SES-INVALID',first_name:null,last_name:null}}))};
+  await assert.rejects(()=>api.createAnonymousVoicePatient('token','bad-key'),/anahtarı/);
+  await assert.rejects(()=>api.createAnonymousVoicePatient('token','b'.repeat(32)),/doğrulanamadı/);
+  assert.equal(calls,1);
+ }finally{global.fetch=original}
+});
