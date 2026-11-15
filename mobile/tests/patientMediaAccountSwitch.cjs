@@ -10,7 +10,7 @@ global.IS_REACT_ACT_ENVIRONMENT=true;
 function mountMedia(getMedia, options={}){
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
- const native=Object.fromEntries(['ActivityIndicator','FlatList','Image','Modal','Pressable','ScrollView','Text','View'].map(x=>[x,x]));
+ const native=Object.fromEntries(['ActivityIndicator','FlatList','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]));
  native.Alert={alert(...args){options.onAlert?.(...args)}};
  const exports={};
  vm.runInNewContext(code,{exports,Error,require:name=>{
@@ -20,6 +20,7 @@ function mountMedia(getMedia, options={}){
   if(name==='./api')return {uploadPatientMedia:async()=>{}};
   if(name==='./modernApi')return {getMedia,analyzeSelectedPatientMedia:async()=>({analysis_id:1}),deleteMedia:async(...args)=>{options.onDelete?.(...args)},deleteAllPatientMedia:async(...args)=>{options.onDelete?.(...args)}};
   if(name==='./realtime')return {useRealtime:()=>({lastEvent:null})};
+  if(name==='./NativeAnalysisUpload')return {default:props=>React.createElement('NativeAnalysisUpload',props)};
   throw Error('Unexpected import '+name);
  }});
  return exports.default;
@@ -255,4 +256,42 @@ test('selected-media analysis rejects oversized clinical context before network 
  await assert.rejects(()=>api.analyzeSelectedPatientMedia('token',8,[21],'12345678901',''));
  await assert.rejects(()=>api.analyzeSelectedPatientMedia('token',8,[21],'36','x'.repeat(4001)));
  assert.equal(calls,0,'invalid clinical context must be rejected before sending patient data');
+});
+
+test('saved gallery selection opens the same durable composer used for new analysis images',async()=>{
+ const Media=mountMedia(async()=>({items:[{id:21,url:'https://example.invalid/saved-21.png',media_type:'RADIOGRAPH'},{id:22,url:'https://example.invalid/saved-22.png',media_type:'PHOTO'}],next_before:null}));
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'account-token',userId:77,patientId:8,onAnalysis:()=>{}}))});
+ const open=tree.root.findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='Klinik görselleri aç');
+ await renderer.act(async()=>open.props.onPress());
+ const checks=tree.root.findAllByType('Pressable').filter(n=>n.props.accessibilityRole==='checkbox'&&visible(n).includes('Analiz için seç'));
+ assert.equal(checks.length,2);
+ await renderer.act(async()=>checks[0].props.onPress());
+ const checksAgain=tree.root.findAllByType('Pressable').filter(n=>n.props.accessibilityRole==='checkbox'&&visible(n).includes('Analiz için seç'));
+ await renderer.act(async()=>checksAgain[1].props.onPress());
+ const analyze=tree.root.findAllByType('Pressable').find(n=>visible(n).includes('Seçilenleri AI ile Analiz Et'));
+ assert.ok(analyze);
+ await renderer.act(async()=>analyze.props.onPress());
+ const composer=tree.root.findByType('NativeAnalysisUpload');
+ assert.equal(composer.props.token,'account-token');
+ assert.equal(composer.props.userId,77);
+ assert.equal(composer.props.patientId,8);
+ assert.deepEqual(Array.from(composer.props.existingMediaIds),[21,22]);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('account switch closes a mixed analysis composer and clears prior saved-media selection',async()=>{
+ const Media=mountMedia(async(_token,id)=>({items:[{id:id===8?21:31,url:'https://example.invalid/'+id+'.png',media_type:'PHOTO'}],next_before:null}));
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'old',userId:1,patientId:8,onAnalysis:()=>{}}))});
+ await renderer.act(async()=>tree.root.findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='Klinik görselleri aç').props.onPress());
+ const check=tree.root.findAllByType('Pressable').find(n=>n.props.accessibilityRole==='checkbox'&&visible(n).includes('Analiz için seç'));
+ await renderer.act(async()=>check.props.onPress());
+ const analyze=tree.root.findAllByType('Pressable').find(n=>visible(n).includes('Seçilenleri AI ile Analiz Et'));
+ await renderer.act(async()=>analyze.props.onPress());
+ assert.equal(tree.root.findAllByType('NativeAnalysisUpload').length,1);
+ await renderer.act(async()=>tree.update(React.createElement(Media,{token:'new',userId:2,patientId:9,onAnalysis:()=>{}})));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(tree.root.findAllByType('NativeAnalysisUpload').length,0);
+ await renderer.act(async()=>tree.unmount());
 });
