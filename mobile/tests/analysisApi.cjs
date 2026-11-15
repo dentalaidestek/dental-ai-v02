@@ -138,3 +138,19 @@ test('mixed valid and invalid clinical image batch is rejected atomically before
   assert.equal(count,0,'no partial batch must be sent');
  }finally{global.fetch=original}
 });
+
+
+test('image picker missing MIME uses extension and mismatched MIME is rejected before upload',async()=>{
+ const oldFetch=global.fetch,oldForm=global.FormData,parts=[];
+ class NativeFormStub{append(key,value){parts.push({key,value})}}
+ global.FormData=NativeFormStub;
+ let calls=0;
+ global.fetch=async()=>{calls++;return new Response(JSON.stringify({ok:true,analysis_id:90,status:'ANALYZING'}),{status:200})};
+ try{
+  await api.createAnalysis('token',{patientId:7,images:[{uri:'file:///scan.png',name:'scan.png'},{uri:'file:///scan.webp',name:'scan.webp'}]});
+  assert.deepEqual(parts.filter(x=>x.key==='images').map(x=>x.value.type),['image/png','image/webp']);
+  await assert.rejects(()=>api.createAnalysis('token',{patientId:7,images:[{uri:'file:///scan.png',name:'scan.png',type:'image/jpeg'}]}),/eşleşmelidir/);
+  await assert.rejects(()=>api.createAnalysis('token',{patientId:7,images:[{uri:'file:///scan.jpg',name:'scan.jpg',type:'image/webp'}]}),/eşleşmelidir/);
+  assert.equal(calls,1);
+ }finally{global.fetch=oldFetch;global.FormData=oldForm}
+});
