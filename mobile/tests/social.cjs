@@ -247,3 +247,17 @@ test('clinical media upload uses authorized multipart and validates committed re
   await assert.rejects(()=>uploadPatientMedia('token',5,file),e=>e instanceof ApiError&&e.status===403);
  }finally{global.fetch=original;}
 });
+
+test('Dental Flow requests combine caller cancellation with an internal timeout',async()=>{
+ const original=global.fetch;
+ const caller=new AbortController();
+ let captured;
+ try{
+  global.fetch=async(url,init)=>{captured=init.signal;return new Promise((resolve,reject)=>{if(init.signal.aborted)return reject(Object.assign(new Error('aborted'),{name:'AbortError'}));init.signal.addEventListener('abort',()=>reject(Object.assign(new Error('aborted'),{name:'AbortError'})),{once:true})})};
+  const pending=api.socialRequest('token','/feed/discover',{signal:caller.signal});
+  assert.ok(captured&&captured!==caller.signal,'internal timeout signal must not be replaced');
+  caller.abort();
+  await assert.rejects(pending,/aborted/);
+  assert.equal(captured.aborted,true);
+ }finally{global.fetch=original}
+});
