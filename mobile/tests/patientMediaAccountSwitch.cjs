@@ -61,7 +61,7 @@ test('clinical gallery offers recovery for failed reads and distinguishes empty 
  assert.match(source,/Galeriyi yeniden yükle/);
  assert.match(source,/Bu hastaya ait klinik görsel bulunmuyor/);
  assert.match(source,/!loading&&!!error&&button\('Galeriyi yeniden yükle'/);
- assert.match(source,/!loading&&!error&&visibleItems\.length===0/);
+ assert.match(source,/!loading&&!error&&items\.length===0/);
  assert.match(source,/confirmDelete\(\),busy\|\|uncertain\|\|visibleItems\.length===0/);
 });
 
