@@ -87,6 +87,9 @@ async def create_mobile_analysis(
     valid = [x for x in images if x and x.filename]
     if not valid or len(valid) > 4:
         raise HTTPException(status_code=422, detail="1 ile 4 arasında görüntü yükleyin.")
+    allowed = {".jpg", ".jpeg", ".png", ".webp"}
+    if any(Path(Path(image.filename).name).suffix.lower() not in allowed for image in valid):
+        raise HTTPException(status_code=422, detail="Yalnızca JPEG, PNG veya WebP görüntüler yüklenebilir.")
 
     with Session(engine, expire_on_commit=False) as session:
         patient = session.get(Patient, patient_id)
@@ -105,13 +108,10 @@ async def create_mobile_analysis(
         session.flush()
         session.refresh(analysis)
 
-        allowed = {".jpg", ".jpeg", ".png", ".webp"}
         assets = []
         for image in valid:
             name = Path(image.filename).name
             ext = Path(name).suffix.lower()
-            if ext not in allowed:
-                continue
             stored = f"analysis_{analysis.id}_{uuid.uuid4().hex}{ext}"
             destination = Path("uploads") / stored
             destination.parent.mkdir(parents=True, exist_ok=True)
