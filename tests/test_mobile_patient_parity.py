@@ -35,11 +35,16 @@ def test_selected_media_analysis_uses_web_creation_and_rejects_other_owner(chat,
     assert client.post('/api/mobile/v1/patients/8/media/analyze',json={'media_ids':[9]}).status_code==404
     assert client.post('/api/mobile/v1/patients/9/media/analyze',json={'media_ids':[9]}).status_code==404
     assert client.post('/api/mobile/v1/patients/8/media/analyze',json={'media_ids':[8,8]}).status_code==422
-    response=client.post('/api/mobile/v1/patients/8/media/analyze',json={'media_ids':[8]})
+    assert client.post('/api/mobile/v1/patients/8/media/analyze',json={'media_ids':[8],'clinical_notes':'x'*4001}).status_code==422
+    response=client.post('/api/mobile/v1/patients/8/media/analyze',json={
+        'media_ids':[8], 'tooth_number':'36', 'clinical_notes':'Soğukta kısa süreli ağrı.'
+    })
     assert response.status_code==200,response.text
     with Session(engine) as s:
         analysis=s.get(main.Analysis,response.json()['analysis_id'])
         assert analysis.patient_id==8
+        assert analysis.tooth_number=='36'
+        assert analysis.clinical_notes=='Soğukta kısa süreli ağrı.'
         from sqlmodel import select
         assert len(s.exec(select(main.ImageAsset).where(main.ImageAsset.analysis_id==analysis.id)).all())==1
     assert client.delete('/api/mobile/v1/patients/9/media').status_code==404
