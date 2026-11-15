@@ -27,7 +27,6 @@ on:
       - 'tests/test_mobile_expert_performance.py'
       - 'tests/test_mobile_expert_profile.py'
       - 'app/mobile_clinical_api.py'
-      - 'app/mobile_analysis_api.py'
       - 'tests/test_mobile_clinical_workflow.py'
       - 'tests/test_mobile_analysis_upload_receipt.py'
       - 'tests/test_mobile_vision_viewer.py'
