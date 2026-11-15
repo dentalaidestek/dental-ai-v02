@@ -1485,6 +1485,8 @@ async def _invoke_patient_web(handler, request, *args):
 
 class MobileSelectedMediaAnalysis(BaseModel):
     media_ids: list[int]
+    tooth_number: Optional[str] = RequestField(default=None, max_length=10)
+    clinical_notes: Optional[str] = RequestField(default=None, max_length=4000)
 
 @router.post("/patients/{patient_id}/media/analyze")
 async def mobile_analyze_patient_media(patient_id:int, payload:MobileSelectedMediaAnalysis, token:str=Depends(_mobile_access_token), user:User=Depends(_mobile_user)):
@@ -1502,7 +1504,9 @@ async def mobile_analyze_patient_media(patient_id:int, payload:MobileSelectedMed
             media=session.get(PatientMedia,ident)
             if not media or media.patient_id != patient_id or media.owner_user_id != user.id:
                 raise HTTPException(status_code=404,detail="Klinik görüntü bulunamadı.")
-    response=await _invoke_patient_web(web.create_analysis,_mobile_request(token),patient_id,BackgroundTasks(),None,None,None,','.join(map(str,ids)),[])
+    tooth_number=(payload.tooth_number or "").strip() or None
+    clinical_notes=(payload.clinical_notes or "").strip() or None
+    response=await _invoke_patient_web(web.create_analysis,_mobile_request(token),patient_id,BackgroundTasks(),tooth_number,clinical_notes,None,','.join(map(str,ids)),[])
     match=re.fullmatch(r"/analysis/([1-9][0-9]*)(?:/viewer)?",str(response.headers.get('location','')))
     if response.status_code not in (302,303) or not match:
         raise HTTPException(status_code=502,detail="Analiz kaydı doğrulanamadı. Yeniden göndermeden önce analiz geçmişini kontrol edin.")
