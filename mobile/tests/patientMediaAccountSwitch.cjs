@@ -7,18 +7,18 @@ const React=require('react');
 const renderer=require('react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
 
-function mountMedia(getMedia){
+function mountMedia(getMedia, options={}){
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const native=Object.fromEntries(['ActivityIndicator','FlatList','Image','Modal','Pressable','ScrollView','Text','View'].map(x=>[x,x]));
- native.Alert={alert(){}};
+ native.Alert={alert(...args){options.onAlert?.(...args)}};
  const exports={};
  vm.runInNewContext(code,{exports,require:name=>{
   if(name==='react')return {...React,default:React};
   if(name==='react-native')return native;
   if(name==='expo-image-picker')return {};
   if(name==='./api')return {uploadPatientMedia:async()=>{}};
-  if(name==='./modernApi')return {getMedia,analyzeSelectedPatientMedia:async()=>({analysis_id:1}),deleteMedia:async()=>{},deleteAllPatientMedia:async()=>{}};
+  if(name==='./modernApi')return {getMedia,analyzeSelectedPatientMedia:async()=>({analysis_id:1}),deleteMedia:async(...args)=>{options.onDelete?.(...args)},deleteAllPatientMedia:async(...args)=>{options.onDelete?.(...args)}};
   if(name==='./realtime')return {useRealtime:()=>({lastEvent:null})};
   throw Error('Unexpected import '+name);
  }});
@@ -108,4 +108,24 @@ test('refresh is blocked during unresolved mutation and paging callback observes
  assert.match(source,/if\(loadLock\.current\|\|\(more&&\(mutation\.current\|\|uncertain\|\|loadedOwner!==owner\)\)\)return;/);
  assert.match(source,/onRefresh=\{\(\)=>\{if\(!mutation\.current&&!uncertain&&loadedOwner===owner\)void loader\.current\(\)\}\}/);
  assert.match(source,/\[token,patientId,cursor,uncertain,loadedOwner\]/);
+});
+
+
+test('delayed delete confirmation from previous account cannot delete old patient media',async()=>{
+ let confirmation;
+ const deletes=[];
+ const Media=mountMedia(async()=>({items:[{id:5,url:'https://example.invalid/file',media_type:'PHOTO'}],next_before:null}),{
+  onAlert:(_title,_message,buttons)=>{confirmation=buttons.find(button=>button.text==='Sil')},
+  onDelete:(...args)=>deletes.push(args)
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'old',patientId:1,onAnalysis:()=>{}}))});
+ const deleteButton=tree.root.findAllByType('Pressable').find(node=>visible(node).includes('Tüm Görselleri Sil'));
+ assert.ok(deleteButton,'destructive action should be available for the loaded patient');
+ await renderer.act(async()=>deleteButton.props.onPress());
+ assert.ok(confirmation,'delete confirmation should be displayed');
+ await renderer.act(async()=>tree.update(React.createElement(Media,{token:'new',patientId:2,onAnalysis:()=>{}})));
+ await renderer.act(async()=>{await confirmation.onPress()});
+ assert.deepEqual(deletes,[],'stale confirmation must not send a delete request');
+ await renderer.act(async()=>tree.unmount());
 });
