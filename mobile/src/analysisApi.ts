@@ -29,7 +29,7 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
   // Match the canonical mobile API's 1–4-image contract before any upload.
   if(payload.images.length>4)throw Error("Bir analiz için en fazla 4 klinik görüntü yüklenebilir.");
   const allowedTypes=new Set(["image/jpeg","image/png","image/webp"]);
-  const allowedExtensions=/\\.(?:jpe?g|png|webp)$/i;
+  const allowedExtensions=/\.(?:jpe?g|png|webp)$/i;
   if(payload.images.some(image=>!allowedTypes.has(String(image.type||"image/jpeg").toLowerCase())||!allowedExtensions.test(image.name||"dental-image.jpg")))
     throw Error("Yalnızca JPEG, PNG veya WebP klinik görüntüleri yüklenebilir.");
   const form=new FormData();
