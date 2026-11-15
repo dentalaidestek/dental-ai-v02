@@ -129,3 +129,13 @@ test('delayed delete confirmation from previous account cannot delete old patien
  assert.deepEqual(deletes,[],'stale confirmation must not send a delete request');
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('every delayed clinical media action verifies the current patient before network mutations',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/async function remove\(id\?:number\)\{if\(!current\(\)\|\|mutation\.current/);
+ assert.match(source,/function confirmDelete\(id\?:number\)\{if\(!current\(\)\|\|mutation\.current/);
+ assert.match(source,/async function upload\(\)\{if\(!current\(\)\|\|mutation\.current/);
+ assert.match(source,/async function analyze\(\)\{if\(!current\(\)\|\|mutation\.current/);
+ assert.match(source,/async function pick\(type:'PHOTO'\|'RADIOGRAPH'\)\{\s*if\(!current\(\)\|\|mutation\.current/);
+});
