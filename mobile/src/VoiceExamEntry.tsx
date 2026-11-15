@@ -137,6 +137,14 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   });
   setLastRemoved(null);setFinalResult(null);
  }
+ async function recheckVoice(){
+  if(!selected)return;
+  if(userId){
+   try{await extractionStore.deleteItemAsync(`dai.voice.extraction.${userId}.${selected.id}`);}
+   catch{setClinicalError("Önceki güvenli çıkarım taslağı temizlenemedi. Aynı eski sonucu kullanmamak için yeniden kontrol başlatılmadı.");return;}
+  }
+  await processText();
+ }
  async function finalize(){if(!selected||!consent||!review||processingLock.current||audioSession.started&&!audioSession.finished)return;processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const data=review.review;const response=await finalizeVoice(token,selected.id,{context:{fields:data.fields||{},teeth:data.teeth||[],literature_topics:data.literature_topics||[],source_requests:data.source_requests||[],...(data.appointment?{appointment:data.appointment}:{})},insights:data.communication||data.insights||[],uncertain:(data.uncertain||'').slice(0,3000),conversation_text:transcript});if(request===generation.current&&currentScope===scope.current)setFinalResult(response.final as Record<string,unknown>)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Son değerlendirme tamamlanamadı.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
  
  if(stage==="exam")return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:42}}>
@@ -184,7 +192,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
     {reviewSections.map(([key,label])=><ResultSection key={key} name={label} items={finalResult[key]}/>)}
     <Text style={{color:"#B42318",marginTop:12}}>Hekim kontrolü gereklidir. Sonuç otomatik olarak hasta dosyasına yazılmaz.</Text>
    </View>}
-   {finalResult&&review&&selected&&userId&&(!audioSession.started||audioSession.finished)&&<NativeVoiceApproval key={token+":"+selected.id+":"+review.revision} token={token} userId={userId} patientId={selected.id} review={review} labels={fieldLabels} onBusyChanged={setApplyBusy} onRecheck={()=>void processText()}/>}
+   {finalResult&&review&&selected&&userId&&(!audioSession.started||audioSession.finished)&&<NativeVoiceApproval key={token+":"+selected.id+":"+review.revision} token={token} userId={userId} patientId={selected.id} review={review} labels={fieldLabels} onBusyChanged={setApplyBusy} onRecheck={()=>void recheckVoice()}/>}
   </View>
  </ScrollView>;
  return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:40}}>
