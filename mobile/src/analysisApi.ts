@@ -39,7 +39,7 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
     const inferredName=uriExtension&&Object.prototype.hasOwnProperty.call(mimeForExtension,uriExtension)
       ? "dental-image-"+i+"."+uriExtension : "";
     const name=image.name?.trim()||inferredName;
-    if(/[\\/\\\\\\x00-\\x1f\\x7f]/.test(name)||name.length>255)
+    if(/[/\\\x00-\x1f\x7f]/.test(name)||name.length>255)
       throw Error("Klinik görüntü dosya adı geçersiz.");
     const extension=name.match(/\.([^.]+)$/)?.[1]?.toLowerCase()||"";
     const expected=mimeForExtension[extension];
