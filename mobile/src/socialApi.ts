@@ -93,6 +93,7 @@ export async function socialRequest<T>(
       "Sunucu yanıtı okunamadı. Taslağınız korundu.",
     );
   }
+  if(response.ok&&(!raw.trim()||!body||typeof body!=="object"||Array.isArray(body)))throw new ApiError(502,"Dental Akış sunucusu geçersiz yanıt gönderdi. Tekrar deneyin.");
   if(response.status===401)await revalidateSession(token);
   if (!response.ok)
     throw new ApiError(
