@@ -64,6 +64,9 @@ def _copy_validated_analysis_image(upload: UploadFile, destination: Path) -> Non
             width, height = image.size
             if width <= 0 or height <= 0 or width * height > MOBILE_MAX_ANALYSIS_PIXELS:
                 raise HTTPException(status_code=422, detail="Görüntü çözünürlüğü çok büyük.")
+            expected_format = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP"}.get(destination.suffix.lower())
+            if image.format != expected_format:
+                raise HTTPException(status_code=422, detail="Görüntü içeriği dosya türüyle eşleşmiyor.")
             image.verify()
     except HTTPException:
         destination.unlink(missing_ok=True)
