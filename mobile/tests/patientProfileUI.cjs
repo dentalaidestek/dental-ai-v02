@@ -14,6 +14,11 @@ test('profile follows web section order, expands patient info, and preserves com
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
  const content=text(tree.toJSON());
  assert.ok(content.includes('Synthetic8'));assert.ok(content.includes('Hasta Bilgileri'));assert.ok(content.includes('Tedavi Geçmişi'));
+ const children=tree.root.findAllByType('Child');
+ const mediaIndex=children.findIndex(node=>node.props.patientId===8&&typeof node.props.onAnalysis==='function');
+ const historyIndex=children.findIndex(node=>node.props.patientId===8&&typeof node.props.onOpenAnalysis==='function');
+ assert.ok(mediaIndex>=0,'web patient profile clinical-media section must be mounted natively');
+ assert.ok(historyIndex>mediaIndex,'native profile must keep clinical media before analysis history like web');
  for(const value of ['Synthetic material','Synthetic result','Synthetic note'])assert.ok(content.includes(value));
  assert.equal(tree.root.findAllByType('TextInput').length,0,'patient information starts collapsed like web');
  const toggle=tree.root.findAllByType('Pressable').find(n=>n.props.accessibilityState?.expanded===false);
