@@ -187,3 +187,10 @@ test('failed gallery refresh resets selection and cursor but preserves paging fa
  assert.match(source,/catch\(e\)\{if\(current\(\)&&sequence===request\.current\)\{if\(!more\)\{setItems\(\[\]\);setCursor\(null\);setSelected\(\[\]\)\}/);
  assert.match(source,/setError\(e instanceof Error\?e\.message:'Görseller alınamadı\.'\)/);
 });
+
+
+test('bulk analysis selection is limited to four and rejects stale patient actions',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/İlk 4 Görseli Seç/);
+ assert.match(source,/if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|loadedOwner!==owner\)return;setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,4\)\.map\(x=>x\.id\)\)/);
+});
