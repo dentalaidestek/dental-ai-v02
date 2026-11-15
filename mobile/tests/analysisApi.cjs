@@ -117,3 +117,14 @@ test('valid JPEG PNG and WebP clinical filenames pass preflight and invalid suff
   assert.equal(calls.length,3,'invalid filename must not reach network');
  }finally{global.fetch=original}
 });
+
+test('analysis history rejects malformed patient filters without a request',async()=>{
+ const original=global.fetch;let count=0;
+ global.fetch=async()=>{count++;return new Response(JSON.stringify({items:[]}),{status:200})};
+ try{
+  for(const id of [0,-1,NaN,1.5,Number.MAX_SAFE_INTEGER+1])assert.throws(()=>api.getAnalysisHistory('token',id),/Geçersiz hasta/);
+  assert.equal(count,0);
+  await api.getAnalysisHistory('token',7);
+  assert.equal(count,1);
+ }finally{global.fetch=original}
+});
