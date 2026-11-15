@@ -66,3 +66,20 @@ def test_native_uploads_return_confirmed_success_after_persistence(chat,monkeypa
     response=client.post('/api/mobile/v1/analyses',data={'patient_id':'8'},files={'images':('synthetic.png',raw.getvalue(),'image/png')})
     assert response.status_code==200,response.text
     assert response.json()['analysis_id']>0 and response.json()['job_id']>0
+
+
+def test_native_analysis_upload_failure_does_not_commit_orphan_record(chat, monkeypatch, tmp_path):
+    from sqlmodel import select
+    client, engine = chat
+    monkeypatch.setattr(mobile_analysis_api, 'engine', engine)
+    monkeypatch.chdir(tmp_path)
+    with Session(engine) as session:
+        session.add(main.Patient(id=8, anonymous_id='SYNTHETIC-INVALID', owner_user_id=1))
+        session.commit()
+    for filename, payload in [('invalid.png', b'not-a-real-image'), ('unsupported.txt', b'not-an-image')]:
+        response = client.post('/api/mobile/v1/analyses', data={'patient_id': '8'},
+                               files={'images': (filename, payload, 'application/octet-stream')})
+        assert response.status_code == 422, response.text
+        with Session(engine) as session:
+            assert session.exec(select(main.Analysis).where(main.Analysis.patient_id == 8)).all() == []
+            assert session.exec(select(main.ImageAsset)).all() == []
