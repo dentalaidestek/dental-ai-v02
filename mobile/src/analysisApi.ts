@@ -71,7 +71,7 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
   return result;
 }
 
-export async function getAnalysis(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");const result=await call<MobileAnalysis>("/analyses/"+id,token);if(!result?.analysis||result.analysis.id!==id||!Number.isSafeInteger(result.analysis.patient_id)||result.analysis.patient_id<=0||!result.patient||result.patient.id!==result.analysis.patient_id||!Array.isArray(result.assets))throw Error("Analiz sunucusundan hasta veya iş kimliği uyuşmayan yanıt alındı.");return result;}
+export async function getAnalysis(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");const result=await call<MobileAnalysis>("/analyses/"+id,token);if(!result?.analysis||result.analysis.id!==id||!Number.isSafeInteger(result.analysis.patient_id)||result.analysis.patient_id<=0||!result.patient||result.patient.id!==result.analysis.patient_id||!Array.isArray(result.assets)||result.assets.some(asset=>!asset||!Number.isSafeInteger(asset.id)||asset.id<=0)||new Set(result.assets.map(asset=>asset.id)).size!==result.assets.length)throw Error("Analiz sunucusundan hasta veya iş kimliği uyuşmayan yanıt alındı.");return result;}
 export function startAnalysisAI(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");return call<{ok:boolean;status:string}>("/analyses/"+id+"/ai",token,{method:"POST"});}
 
 export type AnalysisHistoryItem={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at:string};
