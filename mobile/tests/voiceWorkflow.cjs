@@ -66,7 +66,7 @@ test('ASR failure during live chunk rotation stops the next microphone chunk',as
 
 test('exam entry never performs clinical extraction during live transcription',async()=>{
  const exports={},calls=[],native={StyleSheet:{create:x=>x},Alert:{alert(){}},...Object.fromEntries(['ActivityIndicator','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/VoiceExamEntry.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
- vm.runInNewContext(code,{exports,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{usePreventRemove(){}}:n==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'Synthetic patient'}})}:n==='./voiceApi'?{extractVoice:async(...args)=>{calls.push(args);return review}}:{default:n.slice(2)}});let tree;
+ const secure=new Map();vm.runInNewContext(code,{exports,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{usePreventRemove(){}}:n==='expo-secure-store'?{getItemAsync:async key=>secure.get(key)||null,setItemAsync:async(key,value)=>secure.set(key,value),deleteItemAsync:async key=>secure.delete(key)}:n==='expo-crypto'?{randomUUID:()=> 'voice-checkpoint',CryptoDigestAlgorithm:{SHA256:'SHA-256'},digestStringAsync:async(_algorithm,value)=>'a'.repeat(64)}:n==='./socialDraft'?require('../src/socialDraft.ts'):n==='./voiceSession'?require('../src/voiceSession.ts'):n==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'Synthetic patient'}})}:n==='./voiceApi'?{extractVoice:async(...args)=>{calls.push(args);return review}}:{default:n.slice(2)}});let tree;
  await renderer.act(async()=>tree=renderer.create(React.createElement(exports.default,{token:'A',userId:1,initialPatientId:8})));await renderer.act(async()=>button(tree,'Muayeneye Devam Et').props.onPress());await renderer.act(async()=>tree.root.findAllByType('Pressable').find(x=>x.props.accessibilityRole==='checkbox').props.onPress());
  await renderer.act(async()=>{tree.root.findByType('NativeVoiceRecorder').props.onSessionState({started:true,finished:false});tree.root.findByType('NativeVoiceRecorder').props.onTranscript('Synthetic speech')});assert.equal(calls.length,0);assert.equal(button(tree,'Muayeneyi Bitir ve Metni Çözümle').props.disabled,true);
  await renderer.act(async()=>tree.root.findByType('NativeVoiceRecorder').props.onFinished('Synthetic speech'));assert.equal(calls.length,1);assert.equal(calls[0][2],'Synthetic speech');await renderer.act(async()=>tree.unmount());
@@ -102,4 +102,44 @@ test('voice entry mirrors the web new-patient path and reuses its key after an u
  assert.equal(tree.root.findAllByType('NativeVoiceRecorder').length,1);
  assert.ok(text(tree.toJSON()).includes('SES-0123456789ABCDEF'));
  await renderer.act(async()=>tree.unmount());
+});
+
+test('native voice transcript matches the web 72k/216KB chunk contract without splitting Unicode',()=>{
+ const api=require('../src/voiceSession.ts'),source=('Çürük 36 yüzeyinde ağrı 🦷. Hasta bugün geldi.\\n').repeat(1800);
+ const chunks=api.splitVoiceTranscript(source);
+ assert.ok(chunks.length>1);assert.equal(chunks.join(''),source);
+ for(const chunk of chunks){assert.ok(chunk.length<=12000);assert.ok(api.voiceUtf8Bytes(chunk)<=36000);assert.ok(!/[\\uD800-\\uDBFF]$/.test(chunk));}
+ assert.equal(api.voiceUtf8Bytes('🦷'),4);
+ const draft={...api.newVoiceDraft(1,8),segments:[{id:'long',uri:'file:///cache/long.m4a',ready:true}]};
+ const appended=api.appendVoiceSegment(draft,'long','a'.repeat(19000));assert.equal(appended.transcript.length,19000);
+ const full={...draft,transcript:'a'.repeat(72000)};
+ assert.throws(()=>api.appendVoiceSegment(full,'long','b'),/72.000/);
+ assert.throws(()=>api.splitVoiceTranscript('ç'.repeat(108001)),/216 KB/);
+});
+
+test('voice extraction checkpoint is scoped to account, patient, transcript and expiry',()=>{
+ const api=require('../src/voiceSession.ts'),hash='a'.repeat(64),checkpoint={version:1,userId:1,patientId:8,transcriptHash:hash,cursor:2,revision:'b'.repeat(64),review:{fields:{}},updatedAt:100000},raw=JSON.stringify(checkpoint);
+ assert.deepEqual(api.parseVoiceExtractionCheckpoint(raw,1,8,hash,3,100001),checkpoint);
+ assert.equal(api.parseVoiceExtractionCheckpoint(raw,2,8,hash,3,100001),null);
+ assert.equal(api.parseVoiceExtractionCheckpoint(raw,1,9,hash,3,100001),null);
+ assert.equal(api.parseVoiceExtractionCheckpoint(raw,1,8,'c'.repeat(64),3,100001),null);
+ assert.equal(api.parseVoiceExtractionCheckpoint(raw,1,8,hash,3,100000+86400001),null);
+});
+
+test('native extraction processes web-sized chunks sequentially and resumes after the last saved chunk',async()=>{
+ const exports={},calls=[],revision='a'.repeat(64),code=ts.transpileModule(fs.readFileSync(require.resolve('../src/voiceApi.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+ const fakeFetch=async(url,init)=>{
+  const body=JSON.parse(init.body);calls.push({url,body});
+  const prior=body.context?.fields?.chief_complaint?.value||'';
+  const value=prior?(prior+' | part'+calls.length):'part'+calls.length;
+  const payload={ok:true,revision,review:{fields:{chief_complaint:{value,quote:'evidence '+calls.length}},teeth:[],communication:[],decision_barriers:[],follow_up_questions:[],literature_topics:[],source_requests:[]}};
+  return{status:200,ok:true,text:async()=>JSON.stringify(payload)};
+ };
+ vm.runInNewContext(code,{exports,fetch:fakeFetch,setTimeout,clearTimeout,AbortController,Error,require:n=>n==='./sessionExpiry'?{revalidateSession:async()=>{}}:n==='./voiceSession'?require('../src/voiceSession.ts'):{}});
+ const transcript='a'.repeat(25000);let saved;
+ await assert.rejects(exports.extractVoice('token',8,transcript,{onCheckpoint:async value=>{saved=value;if(value.cursor===1)throw Error('Synthetic interruption')}}),/Synthetic interruption/);
+ assert.equal(calls.length,1);assert.equal(saved.cursor,1);
+ const result=await exports.extractVoice('token',8,transcript,{resume:saved,onCheckpoint:async value=>{saved=value}});
+ assert.equal(calls.length,3);assert.equal(calls[1].body.context.fields.chief_complaint.value,'part1');
+ assert.equal(result.review.fields.chief_complaint.value,'part1 | part2 | part3');assert.equal(saved.cursor,3);
 });
