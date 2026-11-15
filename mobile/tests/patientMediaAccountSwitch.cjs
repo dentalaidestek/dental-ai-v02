@@ -139,3 +139,10 @@ test('every delayed clinical media action verifies the current patient before ne
  assert.match(source,/async function analyze\(\)\{if\(!current\(\)\|\|mutation\.current/);
  assert.match(source,/async function pick\(type:'PHOTO'\|'RADIOGRAPH'\)\{\s*if\(!current\(\)\|\|mutation\.current/);
 });
+
+test('clinical gallery preview and selection handlers require the current patient scope',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/function toggle\(id:number\)\{if\(!current\(\)\|\|mutation\.current/);
+ assert.match(source,/onPress=\{\(\)=>\{if\(!current\(\)\|\|loadedOwner!==owner\|\|mutation\.current\|\|uncertain\)return;setPreview\(item\)/);
+ assert.match(source,/onPress=\{\(\)=>\{if\(!current\(\)\|\|loadedOwner!==owner\|\|mutation\.current\|\|uncertain\)return;setOpen\(true\)/);
+});
