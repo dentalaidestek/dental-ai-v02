@@ -34,8 +34,13 @@ export function normalizeAnalysisImages(images:Array<{uri:string;name?:string;ty
     // A missing picker filename must not silently turn PNG/WebP into a JPEG.
     const uriPath=image.uri.split(/[?#]/,1)[0];
     const uriExtension=uriPath.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();
-    const inferredName=uriExtension&&Object.prototype.hasOwnProperty.call(mimeForExtension,uriExtension)
-      ? "dental-image-"+i+"."+uriExtension : "";
+    const declaredMime=typeof image.type==="string"?image.type.trim().toLowerCase():"";
+    // Android content:// providers frequently return opaque URIs with no filename.
+    // Use a recognized picker MIME only when neither filename nor URI identifies the format.
+    const extensionForMime:Record<string,string>={"image/jpeg":"jpg","image/png":"png","image/webp":"webp"};
+    const inferredExtension=uriExtension&&Object.prototype.hasOwnProperty.call(mimeForExtension,uriExtension)
+      ? uriExtension : (!image.name?.trim()?extensionForMime[declaredMime]:"");
+    const inferredName=inferredExtension?"dental-image-"+i+"."+inferredExtension:"";
     const name=image.name?.trim()||inferredName;
     if(/[/\\\x00-\x1f\x7f]/.test(name)||name.length>255)
       throw Error("Klinik görüntü dosya adı geçersiz.");
