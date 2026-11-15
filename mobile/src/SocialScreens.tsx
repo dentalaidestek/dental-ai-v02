@@ -1207,6 +1207,7 @@ export function DentalFlow({
       />
       {compose && (
         <Composer
+          key={`${user.id}:${token}`}
           token={token}
           userId={user.id}
           onClose={() => setCompose(false)}
