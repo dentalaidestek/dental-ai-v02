@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
 from app.main import (
-    Analysis, ImageAsset, Patient, User, engine,
+    Analysis, ImageAsset, Patient, PatientMedia, User, engine,
     _enqueue_work, _latest_work,
     classify_dental_image, storage_ensure_local, storage_persist_file,
     _record_realtime_event, _publish_realtime_event, on_loop,
@@ -76,6 +76,49 @@ def _copy_validated_analysis_image(upload: UploadFile, destination: Path) -> Non
         raise HTTPException(status_code=422, detail="Geçersiz veya bozuk görüntü dosyası.") from exc
 
 
+def _parse_existing_media_ids(raw):
+    if raw is None or not raw.strip():
+        return []
+    parts=[part.strip() for part in raw.split(",")]
+    if len(parts)>4 or any(not re.fullmatch(r"[1-9][0-9]*",part) for part in parts):
+        raise HTTPException(422,"Geçerli ve en fazla dört kayıtlı klinik görüntü seçin.")
+    ids=[int(part) for part in parts]
+    if len(set(ids))!=len(ids):
+        raise HTTPException(422,"Aynı klinik görüntü birden fazla seçilemez.")
+    return ids
+
+
+def _copy_validated_existing_analysis_image(source: Path, destination: Path) -> None:
+    allowed={".jpg":"JPEG",".jpeg":"JPEG",".png":"PNG",".webp":"WEBP"}
+    extension=source.suffix.lower()
+    if extension not in allowed or not source.is_file():
+        raise HTTPException(404,"Seçilen klinik görüntü dosyası bulunamadı.")
+    try:
+        total=0
+        with source.open("rb") as incoming, destination.open("wb") as outgoing:
+            while True:
+                chunk=incoming.read(1024*1024)
+                if not chunk:
+                    break
+                total+=len(chunk)
+                if total>MOBILE_MAX_ANALYSIS_BYTES:
+                    raise HTTPException(413,"Kayıtlı klinik görüntü çok büyük.")
+                outgoing.write(chunk)
+        with Image.open(destination) as image:
+            width,height=image.size
+            if width<=0 or height<=0 or width*height>MOBILE_MAX_ANALYSIS_PIXELS:
+                raise HTTPException(422,"Kayıtlı klinik görüntünün çözünürlüğü çok büyük.")
+            if image.format!=allowed[extension]:
+                raise HTTPException(422,"Kayıtlı klinik görüntünün içeriği dosya türüyle eşleşmiyor.")
+            image.verify()
+    except HTTPException:
+        destination.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(422,"Kayıtlı klinik görüntü okunamadı veya bozuk.") from exc
+
+
 def _access(session: Session, user: User, analysis_id: int):
     analysis = session.get(Analysis, analysis_id)
     patient = session.get(Patient, analysis.patient_id) if analysis else None
@@ -87,7 +130,7 @@ def _access(session: Session, user: User, analysis_id: int):
 def _upload_key(user_id,key):return hashlib.sha256(f'mobile-analysis-upload:{user_id}:{key}'.encode()).hexdigest()
 
 
-def _upload_digest(patient_id,tooth,notes,images):
+def _upload_digest(patient_id,tooth,notes,images,existing_media_ids=()):
     hashes=[]
     for image in images:
         digest=hashlib.sha256();size=0
@@ -100,7 +143,12 @@ def _upload_digest(patient_id,tooth,notes,images):
                 digest.update(chunk)
         finally:image.file.seek(0)
         hashes.append([image.filename,size,digest.hexdigest()])
-    return hashlib.sha256(json.dumps([patient_id,(tooth or '').strip(),(notes or '').strip(),hashes],ensure_ascii=False).encode()).hexdigest()
+    payload=[patient_id,(tooth or '').strip(),(notes or '').strip(),hashes]
+    # Keep the historical new-file-only digest byte-for-byte compatible so
+    # already pending uploads from older app versions remain recoverable.
+    if existing_media_ids:
+        payload=[patient_id,(tooth or '').strip(),(notes or '').strip(),list(existing_media_ids),hashes]
+    return hashlib.sha256(json.dumps(payload,ensure_ascii=False).encode()).hexdigest()
 
 
 def _upload_receipt(session,user,receipt,patient_id):
@@ -127,6 +175,7 @@ async def create_mobile_analysis(
     clinical_notes: Optional[str] = Form(None),
     images: list[UploadFile] = File(default=[]),
     request_key: Optional[str] = Form(None),
+    existing_media_ids: Optional[str] = Form(None),
 ):
     if request_key is not None and not re.fullmatch(r'[A-Za-z0-9_-]{16,80}',request_key):
         raise HTTPException(422,'Geçersiz yükleme anahtarı.')
@@ -134,18 +183,19 @@ async def create_mobile_analysis(
     if len(teeth)>32 or len(set(teeth))!=len(teeth) or any(not re.fullmatch(r'(?:[1-4][1-8]|[5-8][1-5])',x) for x in teeth):
         raise HTTPException(422,'Geçersiz FDI diş numarası.')
     if len(clinical_notes or '')>4000:raise HTTPException(422,'Klinik not en fazla 4000 karakter olabilir.')
+    selected_media_ids=_parse_existing_media_ids(existing_media_ids)
     # Never silently discard an unnamed or malformed part of a clinical batch.
     # A partial success could associate the wrong images with a patient analysis.
     if any(not image or not image.filename for image in images):
         raise HTTPException(status_code=422, detail="Her klinik görüntünün dosya adı bulunmalıdır.")
     valid = images
-    if not valid or len(valid) > 4:
-        raise HTTPException(status_code=422, detail="1 ile 4 arasında görüntü yükleyin.")
+    if not 1 <= len(selected_media_ids)+len(valid) <= 4:
+        raise HTTPException(status_code=422, detail="Kayıtlı ve yeni görüntülerin toplamı 1 ile 4 arasında olmalıdır.")
     allowed = {".jpg", ".jpeg", ".png", ".webp"}
     if any(Path(Path(image.filename).name).suffix.lower() not in allowed for image in valid):
         raise HTTPException(status_code=422, detail="Yalnızca JPEG, PNG veya WebP görüntüler yüklenebilir.")
 
-    digest=await run_in_threadpool(_upload_digest,patient_id,tooth_number,clinical_notes,valid) if request_key else None
+    digest=await run_in_threadpool(_upload_digest,patient_id,tooth_number,clinical_notes,valid,selected_media_ids) if request_key else None
     receipt_key=_upload_key(user.id,request_key) if request_key else None
     with Session(engine, expire_on_commit=False) as session:
         if receipt_key and session.get_bind().dialect.name=='postgresql':
@@ -162,6 +212,22 @@ async def create_mobile_analysis(
             if receipt:
                 if receipt.source_hash!=digest:raise HTTPException(409,'Bu yükleme anahtarı farklı dosya veya klinik bilgiler için kullanılmış.')
                 return _upload_receipt(session,user,receipt,patient_id)
+
+        selected_media=[]
+        if selected_media_ids:
+            rows=session.exec(select(PatientMedia).where(
+                PatientMedia.id.in_(selected_media_ids),
+                PatientMedia.patient_id==patient_id,
+            )).all()
+            by_id={row.id:row for row in rows}
+            if len(by_id)!=len(selected_media_ids):
+                raise HTTPException(404,"Seçilen klinik görüntü bulunamadı.")
+            for media_id in selected_media_ids:
+                media=by_id.get(media_id)
+                if not media or (user.role!="ADMIN" and media.owner_user_id!=user.id):
+                    raise HTTPException(404,"Seçilen klinik görüntü bulunamadı.")
+                selected_media.append(media)
+
         analysis = Analysis(
             patient_id=patient_id,
             tooth_number=(tooth_number or "").strip() or None,
@@ -176,10 +242,28 @@ async def create_mobile_analysis(
 
         assets = []
         Path('uploads').mkdir(parents=True,exist_ok=True)
-        # Validate the entire batch before publishing any clinical file.
-        # A rejected second image must not strand the first image in storage.
+        # Validate every saved and newly picked image before publishing any
+        # clinical file or allocating a durable VISION job.
         with tempfile.TemporaryDirectory(prefix='.analysis-stage-',dir='uploads') as staging:
             staged=[]
+            for media in selected_media:
+                try:
+                    source=Path(storage_ensure_local(media.file_path))
+                except FileNotFoundError as exc:
+                    raise HTTPException(404,"Seçilen klinik görüntü dosyası bulunamadı.") from exc
+                ext=source.suffix.lower()
+                stored=f'analysis_{analysis.id}_{uuid.uuid4().hex}{ext}'
+                temporary=Path(staging)/stored
+                destination=Path('uploads')/stored
+                _copy_validated_existing_analysis_image(source,temporary)
+                staged.append((temporary,destination))
+                assets.append(ImageAsset(
+                    analysis_id=analysis.id,
+                    original_filename=Path(media.original_filename).name,
+                    stored_filename=stored,
+                    file_path=str(destination),
+                    image_type=classify_dental_image(str(temporary)),
+                ))
             for image in valid:
                 name=Path(image.filename).name
                 ext=Path(name).suffix.lower()
