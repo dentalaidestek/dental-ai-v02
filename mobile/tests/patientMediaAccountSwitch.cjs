@@ -153,3 +153,12 @@ test('picker continuation and delayed acknowledgement cannot bypass scope or mut
  assert.match(source,/if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|result\.canceled\)return/);
  assert.match(source,/onPress:\(\)=>\{if\(!current\(\)\|\|mutation\.current\|\|!uncertain\)return;setUncertain\(false\)/);
 });
+
+test('pending image thumbnails and uploads are scoped to the active patient account',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/const \[pendingOwner,setPendingOwner\]=useState\(''\)/);
+ assert.match(source,/setMediaType\(type\);setPendingOwner\(owner\);setPending\(files\)/);
+ assert.match(source,/pendingOwner===owner&&pending\.length>0&&<View>/);
+ assert.match(source,/pendingOwner!==owner\|\|!pending\.length\)return/);
+ assert.match(source,/setPending\(\[\]\);setPendingOwner\(''\);setUncertain\(false\)/);
+});
