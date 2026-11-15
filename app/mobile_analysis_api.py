@@ -134,7 +134,11 @@ async def create_mobile_analysis(
     if len(teeth)>32 or len(set(teeth))!=len(teeth) or any(not re.fullmatch(r'(?:[1-4][1-8]|[5-8][1-5])',x) for x in teeth):
         raise HTTPException(422,'Geçersiz FDI diş numarası.')
     if len(clinical_notes or '')>4000:raise HTTPException(422,'Klinik not en fazla 4000 karakter olabilir.')
-    valid = [x for x in images if x and x.filename]
+    # Never silently discard an unnamed or malformed part of a clinical batch.
+    # A partial success could associate the wrong images with a patient analysis.
+    if any(not image or not image.filename for image in images):
+        raise HTTPException(status_code=422, detail="Her klinik görüntünün dosya adı bulunmalıdır.")
+    valid = images
     if not valid or len(valid) > 4:
         raise HTTPException(status_code=422, detail="1 ile 4 arasında görüntü yükleyin.")
     allowed = {".jpg", ".jpeg", ".png", ".webp"}
