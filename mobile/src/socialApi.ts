@@ -103,6 +103,10 @@ export async function socialRequest<T>(
         : "İşlem tamamlanamadı. Tekrar deneyin.",
     );
   return body as T;
+  }catch(error){
+    if(controller.signal.aborted&&!externalSignal?.aborted)throw new ApiError(408,"Dental Akış yanıt vermedi. Bağlantınızı kontrol edip tekrar deneyin.");
+    if(error instanceof TypeError)throw new ApiError(503,"Dental Akış sunucusuna bağlanılamadı. İnternet bağlantınızı kontrol edin.");
+    throw error;
   }finally{clearTimeout(timeout);externalSignal?.removeEventListener("abort",abort)}
 }
 export const getFeed = (
