@@ -12,6 +12,7 @@ function mountMedia(getMedia, options={}){
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const native=Object.fromEntries(['ActivityIndicator','FlatList','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]));
  native.Alert={alert(...args){options.onAlert?.(...args)}};
+ native.FlatList=props=>React.createElement('FlatList',props,...(props.data||[]).map((item,index)=>props.renderItem?.({item,index})),props.ListFooterComponent||null);
  const exports={};
  vm.runInNewContext(code,{exports,Error,require:name=>{
   if(name==='react')return {...React,default:React};
