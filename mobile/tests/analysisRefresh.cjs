@@ -44,3 +44,18 @@ test('token replacement and unmount do not expose unverified analysis results',a
   assert.equal(h.states[7],null);
  }
 });
+
+
+test('new analysis callback validates patient and account before remembering a job',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativeDentalAI.tsx'),'utf8');
+ const start=source.indexOf('async function openUploaded(');
+ const end=source.indexOf('async function refresh()',start);
+ assert.ok(start>=0&&end>start);
+ const callback=source.slice(start,end);
+ assert.ok(callback.indexOf('await getAnalysis(token,id)')<callback.indexOf('SecureStore.setItemAsync('),
+   'a server-verified patient/analysis pair must precede persistence');
+ assert.match(callback,/result\.analysis\.patient_id!==selectedPatient/);
+ assert.match(callback,/scope!==sessionScope\.current/);
+ assert.match(callback,/selection!==selectionGeneration\.current/);
+ assert.match(callback,/selectedRecord\.current\?\.id!==selectedPatient/);
+});
