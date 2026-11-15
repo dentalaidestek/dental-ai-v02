@@ -152,3 +152,19 @@ test('native extraction refuses to merge chunks across a patient revision change
  let checkpoint;await assert.rejects(exports.extractVoice('token',8,'a'.repeat(25000),{onCheckpoint:async value=>{checkpoint=value}}),/Hasta dosyası görüşme sırasında değişti/);
  assert.equal(calls.length,2);assert.equal(checkpoint.cursor,1);assert.equal(checkpoint.revision,first);
 });
+
+test('voice entry deletes a stale secure extraction checkpoint before retry after patient revision conflict',async()=>{
+ const exports={},secure=new Map(),calls=[],native={StyleSheet:{create:x=>x},Alert:{alert(){}},Linking:{openURL:async()=>{}},...Object.fromEntries(['ActivityIndicator','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
+ const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/VoiceExamEntry.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
+ vm.runInNewContext(code,{exports,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{usePreventRemove(){}}:n==='expo-secure-store'?{getItemAsync:async key=>secure.get(key)||null,setItemAsync:async(key,value)=>secure.set(key,value),deleteItemAsync:async key=>secure.delete(key)}:n==='expo-crypto'?{randomUUID:()=> 'checkpoint-id',CryptoDigestAlgorithm:{SHA256:'SHA-256'},digestStringAsync:async()=> 'a'.repeat(64)}:n==='./socialDraft'?require('../src/socialDraft.ts'):n==='./voiceSession'?require('../src/voiceSession.ts'):n==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'Synthetic patient'}})}:n==='./voiceApi'?{extractVoice:async(...args)=>{calls.push(args);if(calls.length===1){await args[3].onCheckpoint({cursor:1,revision:'b'.repeat(64),review:{fields:{}}});throw Error('Hasta dosyası görüşme sırasında değişti.')}assert.equal(args[3].resume,undefined);return review}}:{default:n.slice(2)}});
+ let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(exports.default,{token:'A',userId:1,initialPatientId:8})));
+ await renderer.act(async()=>{await new Promise(resolve=>setImmediate(resolve))});
+ await renderer.act(async()=>button(tree,'Muayeneye Devam Et').props.onPress());
+ await renderer.act(async()=>tree.root.findAllByType('Pressable').find(x=>x.props.accessibilityRole==='checkbox').props.onPress());
+ const recorder=tree.root.findByType('NativeVoiceRecorder');
+ await renderer.act(async()=>{recorder.props.onTranscript('Synthetic speech');recorder.props.onFinished('Synthetic speech');await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(calls.length,1);assert.ok(secure.has('dai.voice.extraction.1.8'));
+ await renderer.act(async()=>button(tree,'Muayeneyi Bitir ve Metni Çözümle').props.onPress());
+ assert.equal(calls.length,2);assert.equal(calls[1][3].resume,undefined);assert.equal(secure.has('dai.voice.extraction.1.8'),false);
+ await renderer.act(async()=>tree.unmount());
+});
