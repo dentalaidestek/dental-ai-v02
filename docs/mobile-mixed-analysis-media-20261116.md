@@ -19,7 +19,7 @@ The existing `POST /api/mobile/v1/analyses` endpoint now accepts optional `exist
 - records one analysis with one receipt and one realtime event;
 - includes selected IDs in the idempotency digest, while keeping the historical new-file-only digest unchanged for pending uploads from older app versions.
 
-The patient-gallery composer uses a separate SecureStore intent namespace from the Dental AI tab, preventing two mounted screens from competing over one pending upload. Existing new-only drafts keep their old key and digest.
+The patient-gallery composer uses a separate SecureStore intent namespace from the Dental AI tab, preventing two mounted screens from competing over one pending upload. If a pending draft is reopened after the gallery selection changes, the composer reports its original saved-media IDs back to the gallery preview so the displayed saved images cannot disagree with the actual upload. A definitive 404 for a deleted/missing saved item releases that stale local intent; uncertain network failures keep the receipt key and bytes. Existing new-only drafts keep their old key and digest. Remote materialization, saved/new file validation/copy, classification and object-storage persistence are delegated to the worker pool instead of blocking the async route.
 
 ## Regression coverage added
 
@@ -28,11 +28,12 @@ The patient-gallery composer uses a separate SecureStore intent namespace from t
 - Reusing the same request key with changed saved-media IDs returns conflict.
 - Foreign, missing, duplicate, malformed and over-limit saved IDs are rejected.
 - A corrupt saved image rejects the whole batch before any file is published.
+- Worker-pool delegation covers remote materialization, file validation/copy, classification and persistence.
 - Native intent parsing accepts legacy new-only drafts and rejects duplicate/invalid saved IDs or a combined count above four.
 - Native multipart includes saved IDs and new files together.
 - Gallery selection opens the unified composer and carries the signed-in user and selected patient; switching account/patient closes it.
 
-Tests are committed but **not executed** in this runtime. No result is marked green.
+Tests are committed but **not executed** in this runtime. The latest worker-pool regression is also committed but awaits a provisioned CI runner. No result is marked green.
 
 ## CI diagnosis
 
