@@ -154,3 +154,19 @@ test('image picker missing MIME uses extension and mismatched MIME is rejected b
   assert.equal(calls,1);
  }finally{global.fetch=oldFetch;global.FormData=oldForm}
 });
+
+test('unnamed PNG and WebP picker assets retain their URI-derived MIME type',async()=>{
+ const oldFetch=global.fetch,oldForm=global.FormData,parts=[];
+ class FormStub{append(key,value){parts.push({key,value})}}
+ global.FormData=FormStub;
+ global.fetch=async()=>new Response(JSON.stringify({ok:true,analysis_id:91,status:'ANALYZING'}),{status:200});
+ try{
+  await api.createAnalysis('token',{patientId:7,images:[
+   {uri:'file:///private/scan.PNG?cache=1'},
+   {uri:'content://provider/scan.webp#preview'}
+  ]});
+  assert.deepEqual(parts.filter(p=>p.key==='images').map(p=>[p.value.name,p.value.type]),[
+   ['dental-image-0.png','image/png'],['dental-image-1.webp','image/webp']
+  ]);
+ }finally{global.fetch=oldFetch;global.FormData=oldForm}
+});
