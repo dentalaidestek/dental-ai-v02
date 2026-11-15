@@ -34,7 +34,7 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
   const mimeForExtension:Record<string,string>={jpg:"image/jpeg",jpeg:"image/jpeg",png:"image/png",webp:"image/webp"};
   const normalizedImages=payload.images.map((image,i)=>{
     // A missing picker filename must not silently turn PNG/WebP into a JPEG.\n    const uriPath=image.uri.split(/[?#]/,1)[0];\n    const uriExtension=uriPath.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();\n    const inferredName=uriExtension&&Object.prototype.hasOwnProperty.call(mimeForExtension,uriExtension)\n      ? "dental-image-"+i+"."+uriExtension : "";\n    const name=image.name?.trim()||inferredName;
-    const extension=name.match(/\.([^.]+)$/)?.[1]?.toLowerCase()||"";
+    if(/[\\/\\\\\\x00-\\x1f\\x7f]/.test(name)||name.length>255)\n      throw Error("Klinik görüntü dosya adı geçersiz.");\n    const extension=name.match(/\.([^.]+)$/)?.[1]?.toLowerCase()||"";
     const expected=mimeForExtension[extension];
     const declared=typeof image.type==="string"&&image.type.trim()?image.type.trim().toLowerCase():expected;
     if(!allowedExtensions.test(name)||!expected||!allowedTypes.has(declared||"")||declared!==expected)
