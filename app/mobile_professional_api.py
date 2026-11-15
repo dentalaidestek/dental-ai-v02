@@ -143,3 +143,19 @@ def public_expert(expert_id:int,response:Response,token:str=Depends(_mobile_acce
                 'consultation_price':profile.consultation_price,'availability':profile.availability,'performance':performance,'owned':owned,
                 'support_available':bool(not owned and profile.availability=='AVAILABLE' and not blocked and web._expert_open_case_count(s,expert_id)<web.consultation_capacity_limit(profile)),
                 'can_publish':bool(owned and profile.availability!='PASSIVE' and not blocked)}
+
+@router.get('/account/expert-performance')
+def expert_performance(response:Response,user=Depends(_account_user)):
+    from app import main as web
+    response.headers.update({'Cache-Control':'private, no-store','Vary':'Authorization'})
+    with Session(web.engine,expire_on_commit=False) as s:
+        profile=s.exec(select(web.ExpertProfile).where(web.ExpertProfile.user_id==user.id)).first()
+        if not profile:raise HTTPException(404,'Uzman profili bulunamadı.')
+        # Same expiration, aggregate and policy helpers as the owned web page.
+        web._expire_pending_expert_requests(s,user.id)
+        performance=web._expert_performance(s,user.id)
+        policy=web._expert_policy_state(s,user.id)
+        events=s.exec(select(web.ConsultationEvent).where(web.ConsultationEvent.actor_user_id==user.id,web.ConsultationEvent.event_type.in_(['EXPERT_TIMEOUT','MISSED_REQUEST_COUNTED','NEW_CASE_BLOCKED_24H','START_DEADLINE_MISSED'])).order_by(web.ConsultationEvent.created_at.desc(),web.ConsultationEvent.id.desc()).limit(30)).all()
+        result={'owner_id':user.id,'availability':profile.availability,'capacity':web.consultation_capacity_limit(profile),'open_cases':web._expert_open_case_count(s,user.id),'performance':performance,'policy':{'blocked':web._expert_is_blocked(policy),'blocked_until':policy.new_case_blocked_until,'reason':policy.block_reason,'rules_accepted':bool(policy.rules_version==web.EXPERT_RULES_VERSION and policy.rules_accepted_at)},'events':[{'id':e.id,'event_type':e.event_type,'created_at':e.created_at} for e in events]}
+        s.commit()
+        return result

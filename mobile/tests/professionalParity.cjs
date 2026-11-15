@@ -7,7 +7,7 @@ const button=(t,label)=>t.root.findAllByType('Pressable').find(n=>n.findAllByTyp
 function mountModule(api,alerts,picker={getDocumentAsync:async()=>({canceled:true})},fileSystem={}){
  const exports={},native={StyleSheet:{create:x=>x},Alert:{alert:(...v)=>alerts.push(v)},AppState:{addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeProfessional.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
- vm.runInNewContext(code,{exports,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{usePreventRemove(){}}:n==='expo-document-picker'?picker:n==='expo-file-system/legacy'?fileSystem:n==='./realtime'?{useRealtime:()=>({lastEvent:null})}:api});return exports.default;
+ vm.runInNewContext(code,{exports,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{usePreventRemove(){}}:n==='expo-document-picker'?picker:n==='expo-file-system/legacy'?fileSystem:n==='./NativeExpertPerformance'?{default:()=>React.createElement('NativeExpertPerformance')}:n==='./realtime'?{useRealtime:()=>({lastEvent:null})}:api});return exports.default;
 }
 test('professional title uses explicit native confirmation and refreshes account identity',async()=>{
  const calls=[],alerts=[],changed=[];const api={getProfessional:async()=>fixture(),changeProfessionalTitle:async(token,title)=>{calls.push([token,title]);return{...fixture(),current_title:title}}};const Component=mountModule(api,alerts);let tree;

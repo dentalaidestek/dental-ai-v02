@@ -1,0 +1,11 @@
+# Native owned expert performance — 2026-11-15
+
+Web source: expert_support_performance in app/main.py. Native management previously showed public summary metrics but lacked the owned performance/policy/event page. NativeExpertPerformance now opens from expert management and displays actual completed/review/response/missed-request aggregates, active cases/capacity, current-rule acceptance, temporary new-case restriction and bounded policy event history. Unknown rating/response measurements stay unknown rather than becoming zero. There is no action to bypass restrictions.
+
+The additive owned mobile adapter uses the same expiration, aggregate, capacity and policy helpers as the web page. It returns only the signed-in account, without accepting a target user ID. It omits case clinical content and raw event payload JSON. The event query is bounded at30 in SQL. Success responses are private/no-store. A user without an expert profile gets404; unauthenticated access401; administrator MFA continues through the shared account guard. No provider or policy mutation is invented; existing expiry behavior follows the canonical web helper.
+
+The native panel loads on demand, supports explicit and foreground refresh, errors/retry and account-scoped remount/cancellation guards. Tests verify actual canonical aggregates, private policies and owner isolation; native tests verify on-demand/unknown values, error recovery and delayed previous-account results. Existing professional tests retain their original assertions with the new performance child mocked separately.
+
+Remaining acceptance: real devices/production deadline effects, larger histories and PostgreSQL timing, cross-device event delivery and all original release gates. This adds a source-backed management section; it does not certify that every expert/web feature or the application is release-ready. No main merge, backend deployment or store publication.
+
+Final verification: TypeScript clean; **324/324 Node tests** (18session+46realtime+260beta), **242/242 selected Python tests**, zero failures;461Python deprecation warnings. Performance-specific cases:2server/4native. Android and iOS Hermes export succeeded. Real device, production/CI and complete browser/PostgreSQL/load gates remain open.
