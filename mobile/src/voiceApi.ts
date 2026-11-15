@@ -1,4 +1,5 @@
 import {revalidateSession} from './sessionExpiry';
+import {splitVoiceTranscript,VOICE_TEXT_LIMIT} from './voiceSession';
 const BASE="https://dentalai.tr/api/mobile/v1";
 async function send<T>(token:string,path:string,payload:unknown):Promise<T>{
  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),150000);
@@ -30,26 +31,74 @@ export async function createAnonymousVoicePatient(token:string,requestKey:string
 }
 
 export type VoiceField={value:string;quote?:string;edited?:boolean};
-export type VoiceExtraction={ok:boolean;revision:string;review:{fields?:Record<string,VoiceField>;teeth?:unknown[];insights?:Record<string,unknown>[];communication?:{quote:string;observation:string;suggestion:string}[];decision_barriers?:Record<string,unknown>[];follow_up_questions?:Record<string,unknown>[];uncertain?:string;literature_topics?:unknown[];source_requests?:unknown[];appointment?:{quote?:string;acceptance_quote?:string}}};
-export async function extractVoice(token:string,patientId:number,transcript:string):Promise<VoiceExtraction>{
- if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Klinik değerlendirme için geçerli bir hasta seçin.");
- if(!transcript.trim()||transcript.length>18000)throw Error("Muayene metni boş olamaz ve 18.000 karakteri aşamaz. Metniniz korunuyor.");
- const result=await send<VoiceExtraction>(token,`/patients/${patientId}/voice-exam/text`,{transcript,consent:true});
- if(!result.review||typeof result.review!=="object"||Array.isArray(result.review))throw Error("Klinik çıkarım yanıtında muayene bilgileri bulunamadı. Metninizi koruyup tekrar deneyin.");
- const review=result.review;
+export type VoiceExtraction={ok:boolean;revision:string;review:{
+ fields?:Record<string,VoiceField>;teeth?:unknown[];insights?:Record<string,unknown>[];
+ communication?:{quote:string;observation:string;suggestion:string}[];
+ decision_barriers?:Record<string,unknown>[];follow_up_questions?:Record<string,unknown>[];
+ uncertain?:string;literature_topics?:{topic:string;quote:string}[];
+ source_requests?:{term:string;quote:string}[];
+ appointment?:{quote?:string;acceptance_quote?:string}
+}};
+export type VoiceExtractionCheckpointData={cursor:number;revision:string;review:VoiceExtraction["review"]};
+export type ExtractVoiceOptions={
+ resume?:VoiceExtractionCheckpointData;
+ onProgress?:(completed:number,total:number)=>void;
+ onCheckpoint?:(checkpoint:VoiceExtractionCheckpointData)=>Promise<void>|void;
+};
+
+function validateVoiceReview(value:unknown):VoiceExtraction["review"]{
+ const isObject=(item:unknown):item is Record<string,unknown>=>!!item&&typeof item==="object"&&!Array.isArray(item);
+ if(!isObject(value))throw Error("Klinik çıkarım yanıtında muayene bilgileri bulunamadı.");
+ const review=value as Record<string,unknown>;
  const allowedFields=new Set(["first_name","last_name","age","chief_complaint","medical_history","family_history","materials","dental_history","oral_habits","medications","allergies","clinical_findings","plan"]);
- const invalidFields=review.fields!==undefined&&(!review.fields||typeof review.fields!=="object"||Array.isArray(review.fields)||Object.entries(review.fields).some(([key,item])=>!allowedFields.has(key)||!item||typeof item!=="object"||Array.isArray(item)||typeof item.value!=="string"||item.value.length>3000||typeof item.quote!=="string"||item.quote.length>3000));
+ const invalidFields=review.fields!==undefined&&(!isObject(review.fields)||Object.entries(review.fields).some(([key,item])=>!allowedFields.has(key)||!isObject(item)||typeof item.value!=="string"||item.value.length>3000||typeof item.quote!=="string"||item.quote.length>3000));
  const maxListSizes:Record<string,number>={teeth:52,communication:24,insights:24,decision_barriers:24,follow_up_questions:24,literature_topics:40,source_requests:6};
- const invalidArrays=Object.entries(maxListSizes).some(([key,limit])=>{const value=(review as Record<string,unknown>)[key];return value!==undefined&&(!Array.isArray(value)||value.length>limit)});
- const isObject=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==="object"&&!Array.isArray(value);
+ const invalidArrays=Object.entries(maxListSizes).some(([key,limit])=>{const item=review[key];return item!==undefined&&(!Array.isArray(item)||item.length>limit)});
  const allowedToothStates=new Set(["CARIES","FILLING","CROWN","ROOT_CANAL","EXTRACTED","IMPLANT","OTHER"]);
  const invalidTeeth=Array.isArray(review.teeth)&&(review.teeth.length>52||review.teeth.some(tooth=>!isObject(tooth)||!/^([1-4][1-8]|[5-8][1-5])$/.test(String(tooth.tooth))||!allowedToothStates.has(String(tooth.status))||typeof tooth.quote!=="string"||tooth.quote.length>1500));
  const invalidCommunication=Array.isArray(review.communication)&&review.communication.some(item=>!isObject(item)||typeof item.quote!=="string"||typeof item.observation!=="string"||typeof item.suggestion!=="string");
  const invalidSources=(["literature_topics","source_requests"] as const).some(key=>Array.isArray(review[key])&&review[key]!.some(item=>!isObject(item)||typeof item.quote!=="string"||typeof item[key==="literature_topics"?"topic":"term"]!=="string"));
  const invalidListItems=(["decision_barriers","follow_up_questions"] as const).some(key=>Array.isArray(review[key])&&review[key]!.some(item=>!isObject(item)));
- const invalidAppointment=review.appointment!=null&&(!isObject(review.appointment)||Object.keys(review.appointment).some(key=>!["quote","acceptance_quote"].includes(key))||Object.values(review.appointment).some(value=>typeof value!=="string"||value.length>1500));
- if(invalidFields||invalidArrays||invalidTeeth||invalidCommunication||invalidSources||invalidListItems||invalidAppointment||(review.uncertain!==undefined&&typeof review.uncertain!=="string"))throw Error("Klinik çıkarım yanıtının alanları geçersiz. Metniniz korunuyor; tekrar deneyin.");
- return result;
+ const invalidAppointment=review.appointment!=null&&(!isObject(review.appointment)||Object.keys(review.appointment).some(key=>!["quote","acceptance_quote"].includes(key))||Object.values(review.appointment).some(item=>typeof item!=="string"||item.length>1500));
+ if(invalidFields||invalidArrays||invalidTeeth||invalidCommunication||invalidSources||invalidListItems||invalidAppointment||(review.uncertain!==undefined&&typeof review.uncertain!=="string"))
+  throw Error("Klinik çıkarım yanıtının alanları geçersiz. Metniniz korunuyor; tekrar deneyin.");
+ return review as VoiceExtraction["review"];
+}
+
+function contextFromVoiceReview(review:VoiceExtraction["review"]):Record<string,unknown>{
+ return {
+  fields:review.fields||{},
+  teeth:Array.isArray(review.teeth)?review.teeth:[],
+  literature_topics:Array.isArray(review.literature_topics)?review.literature_topics:[],
+  source_requests:Array.isArray(review.source_requests)?review.source_requests:[],
+  ...(review.appointment?{appointment:{quote:review.appointment.quote||"",acceptance_quote:review.appointment.acceptance_quote||""}}:{})
+ };
+}
+
+export async function extractVoice(token:string,patientId:number,transcript:string,options:ExtractVoiceOptions={}):Promise<VoiceExtraction>{
+ if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Klinik değerlendirme için geçerli bir hasta seçin.");
+ if(typeof transcript!=="string"||!transcript.trim())throw Error("Muayene metni boş olamaz. Metniniz korunuyor.");
+ const chunks=splitVoiceTranscript(transcript);
+ if(!chunks.length)throw Error("Muayene metni boş olamaz. Metniniz korunuyor.");
+ let cursor=0,revision="",review:VoiceExtraction["review"]|undefined;
+ if(options.resume){
+  const saved=options.resume;
+  if(!Number.isInteger(saved.cursor)||saved.cursor<1||saved.cursor>chunks.length||!/^[a-f0-9]{64}$/.test(saved.revision))
+   throw Error("Bekleyen muayene bölümü doğrulanamadı. Metniniz korunuyor.");
+  review=validateVoiceReview(saved.review);cursor=saved.cursor;revision=saved.revision;
+ }
+ for(let index=cursor;index<chunks.length;index++){
+  options.onProgress?.(index+1,chunks.length);
+  const context=review?contextFromVoiceReview(review):undefined;
+  const result=await send<VoiceExtraction>(token,`/patients/${patientId}/voice-exam/text`,{transcript:chunks[index],consent:true,...(context?{context}:{})});
+  if(!result.review||typeof result.revision!=="string"||!/^[a-f0-9]{64}$/.test(result.revision))
+   throw Error("Klinik çıkarım yanıtı eksik. Metninizi koruyup tekrar deneyin.");
+  if(revision&&revision!==result.revision)throw Error("Hasta dosyası görüşme sırasında değişti. Taslak korunuyor; güncel hasta bilgilerini yeniden kontrol edin.");
+  revision=result.revision;review=validateVoiceReview(result.review);
+  await options.onCheckpoint?.({cursor:index+1,revision,review});
+ }
+ if(!review||!revision)throw Error("Klinik çıkarım tamamlanamadı. Metniniz korunuyor.");
+ return {ok:true,revision,review};
 }
 export async function finalizeVoice(token:string,patientId:number,payload:{context:Record<string,unknown>;insights:Record<string,unknown>[];uncertain:string;conversation_text:string}):Promise<Record<string,unknown>>{
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Son değerlendirme için geçerli bir hasta seçin.");
