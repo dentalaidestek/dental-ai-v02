@@ -19,9 +19,9 @@ export default function NativePatientMedia({token,patientId,onAnalysis}:{token:s
  const button=(label:string,action:()=>void,disabled=false)=><Pressable accessibilityRole="button" disabled={disabled} onPress={action} style={{padding:12,minHeight:44,opacity:disabled?.5:1}}><Text style={{color:'#1769AA',fontWeight:'700'}}>{label}</Text></Pressable>;
  async function pick(type:'PHOTO'|'RADIOGRAPH'){
   if(!current()||mutation.current||uncertain)return;
-  try{const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();if(!current())return;if(!permission.granted){setError('Klinik görüntü seçmek için fotoğraf izni gerekli.');return}
+  try{const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();if(!current()||mutation.current||uncertain)return;if(!permission.granted){setError('Klinik görüntü seçmek için fotoğraf izni gerekli.');return}
    const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsMultipleSelection:true,quality:.9,selectionLimit:12});
-   if(!current()||result.canceled)return;
+   if(!current()||mutation.current||uncertain||result.canceled)return;
    const files=result.assets.map((asset,i)=>({uri:asset.uri,name:asset.fileName||`klinik-${i}.jpg`,type:asset.mimeType||'image/jpeg'}));
    if(result.assets.some(asset=>(asset.fileSize||0)>15*1024*1024)||files.some(file=>!['image/jpeg','image/png','image/webp'].includes(file.type)))throw Error('JPG, PNG veya WEBP seçin; her görüntü en fazla 15 MB olabilir.');
    setMediaType(type);setPending(files);setError('');setProgress('');
