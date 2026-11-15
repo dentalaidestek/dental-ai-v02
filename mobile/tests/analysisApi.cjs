@@ -128,3 +128,11 @@ test('analysis history rejects malformed patient filters without a request',asyn
   assert.equal(count,1);
  }finally{global.fetch=original}
 });
+
+test('mixed valid and invalid clinical image batch is rejected atomically before upload',async()=>{
+ const original=global.fetch;let count=0;global.fetch=async()=>{count++;throw Error('unexpected upload')};
+ try{
+  await assert.rejects(()=>api.createAnalysis('token',{patientId:7,images:[{uri:'file:///a',name:'a.jpg',type:'image/jpeg'},{uri:'file:///b',name:'b.pdf',type:'application/pdf'}]}),/JPEG, PNG veya WebP/);
+  assert.equal(count,0,'no partial batch must be sent');
+ }finally{global.fetch=original}
+});
