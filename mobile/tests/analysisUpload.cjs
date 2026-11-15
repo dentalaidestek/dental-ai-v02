@@ -6,7 +6,7 @@ const text=n=>typeof n==='string'?n:!n?'':(n.children||[]).map(text).join(''),bu
 const image={uri:'file:///cache/dai-analysis-synthetic.png',name:'synthetic.png',type:'image/png'},intent={userId:1,patientId:8,requestKey:'synthetic-upload-key-001',toothNumber:'36',clinicalNotes:'Synthetic clinical note',images:[image]},receipt={analysis_id:41,patient_id:8,job_id:5,status:'VISION_PENDING'};
 function ui(overrides={},raw=null){const exports={},storage=new Map(),calls=[],model=require('../src/analysisUpload.ts');if(raw)storage.set('dai.analysis.upload.1.8',raw);const secure={getItemAsync:async k=>storage.get(k)||null,setItemAsync:async(k,v)=>storage.set(k,v),deleteItemAsync:async k=>storage.delete(k)},native={StyleSheet:{create:x=>x},...Object.fromEntries(['ActivityIndicator','Image','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))},api={...model,analysisUploadReceipt:async()=>null,uploadAnalysis:async(_t,v,progress)=>{calls.push(v);progress(100);return receipt},...overrides};
  vm.runInNewContext(compile('../src/NativeAnalysisUpload.tsx'),{exports,Error,AbortController,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=> '00000000-0000-4000-8000-000000000001'}:n==='./socialDraft'?{chunkedDraftStore:()=>secure}:n==='./analysisUpload'?api:n==='./nativeAnalysisFiles'?{cacheAnalysisImages:async items=>items.map((_,i)=>({...image,uri:image.uri+i,name:'synthetic-'+i+'.png'})),clearAnalysisImages:async()=>{},validateCachedAnalysisImages:async()=>{}}:n==='expo-image-picker'?{requestMediaLibraryPermissionsAsync:async()=>({granted:true}),launchImageLibraryAsync:async()=>({canceled:false,assets:[{uri:image.uri,fileName:image.name,mimeType:image.type},{uri:image.uri+'2',fileName:'second.png',mimeType:image.type}]})}:{} });return{Component:exports.default,calls,storage,api};}
-async function mount(h,onCreated=async()=>{}){let t;await renderer.act(async()=>t=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,onCreated})));return t}
+async function mount(h,onCreated=async()=>{},existingMediaIds=[]){let t;await renderer.act(async()=>t=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,onCreated,existingMediaIds})));return t}
 test('native analysis composer sends multiple images, FDI and clinical notes with one stable key',async()=>{const h=ui(),opened=[],t=await mount(h,async id=>opened.push(id));await renderer.act(async()=>button(t,'Galeriden Ekle').props.onPress());await renderer.act(async()=>{t.root.findByProps({accessibilityLabel:'Analiz FDI diş numaraları'}).props.onChangeText('36,46');t.root.findByProps({accessibilityLabel:'Analiz klinik bilgileri'}).props.onChangeText('Synthetic history')});await renderer.act(async()=>{const b=button(t,'Görüntüleri Gönder');b.props.onPress();b.props.onPress();await new Promise(r=>setImmediate(r))});assert.equal(h.calls.length,1);assert.equal(h.calls[0].images.length,2);assert.equal(h.calls[0].toothNumber,'36,46');assert.equal(h.calls[0].clinicalNotes,'Synthetic history');assert.deepEqual(opened,[41]);assert.equal(h.storage.size,0);await renderer.act(async()=>t.unmount())});
 test('saved uncertain upload checks server receipt before sending any bytes on reopen',async()=>{const h=ui({analysisUploadReceipt:async()=>receipt},JSON.stringify(intent)),opened=[],t=await mount(h,async id=>opened.push(id));assert.equal(h.calls.length,0);assert.deepEqual(opened,[41]);assert.equal(h.storage.size,0);await renderer.act(async()=>t.unmount())});
 test('explicit retry keeps the same stored upload intent after a lost response',async()=>{const sent=[],h=ui({uploadAnalysis:async(_t,v)=>{sent.push(v);throw Error('Synthetic connection loss')}},JSON.stringify(intent)),t=await mount(h);await renderer.act(async()=>button(t,'Aynı Yüklemeyi Sürdür').props.onPress());assert.equal(sent.length,1);assert.equal(sent[0].requestKey,intent.requestKey);assert.equal(sent[0].clinicalNotes,intent.clinicalNotes);assert.ok(h.storage.has('dai.analysis.upload.1.8'));assert.equal(button(t,'Galeriden Ekle').props.disabled,true);await renderer.act(async()=>t.unmount())});
@@ -17,3 +17,40 @@ test('native XHR uploads actual multipart files, reports bytes and aborts withou
 test('leaving during the read-only receipt lookup never starts a later upload',async()=>{let release;const pending=new Promise(r=>release=r),h=ui({analysisUploadReceipt:async()=>pending}),t=await mount(h);await renderer.act(async()=>button(t,'Galeriden Ekle').props.onPress());await renderer.act(async()=>{button(t,'Görüntüleri Gönder').props.onPress();await new Promise(r=>setImmediate(r))});await renderer.act(async()=>t.unmount());release(null);await new Promise(r=>setImmediate(r));assert.equal(h.calls.length,0);assert.ok(h.storage.has('dai.analysis.upload.1.8'))});
 test('clinical cache cleanup never deletes the original selected file',async()=>{const exports={},deleted=[];const fsapi={cacheDirectory:'file:///cache/',getInfoAsync:async()=>({exists:true,size:1024}),copyAsync:async()=>{},deleteAsync:async uri=>deleted.push(uri)};vm.runInNewContext(compile('../src/nativeAnalysisFiles.ts'),{exports,Error,require:n=>n==='expo-file-system/legacy'?fsapi:n==='expo-crypto'?{randomUUID:()=> 'synthetic-cache-key'}:require('../src/analysisApi.ts')});const cached=await exports.cacheAnalysisImages([image]);assert.ok(cached[0].uri.startsWith('file:///cache/dai-analysis-'));await exports.clearAnalysisImages([{...image,uri:'file:///photos/original.png'},...cached]);assert.equal(deleted.length,1);assert.equal(deleted[0],cached[0].uri)});
 test('persisted clinical upload cannot fetch an external URI as a local attachment',()=>{const api=require('../src/analysisUpload.ts');for(const uri of ['https://external.invalid/private.png','file:///cache/../private.png'])assert.throws(()=>api.parseUploadIntent(JSON.stringify({...intent,images:[{...image,uri}]}),1,8),/yerel uygulama/)});
+
+test('mixed analysis intent accepts saved media plus new files and keeps old new-only drafts compatible',()=>{
+ const api=require('../src/analysisUpload.ts');
+ const mixed={...intent,existingMediaIds:[31,32]};
+ assert.deepEqual(Array.from(api.parseUploadIntent(JSON.stringify(mixed),1,8).existingMediaIds),[31,32]);
+ assert.deepEqual(Array.from(api.parseUploadIntent(JSON.stringify(intent),1,8).existingMediaIds),[]);
+ for(const ids of [[31,31],[0],['31'],[31,32,33,34,35]])assert.throws(()=>api.parseUploadIntent(JSON.stringify({...mixed,existingMediaIds:ids}),1,8));
+ assert.throws(()=>api.parseUploadIntent(JSON.stringify({...mixed,existingMediaIds:[31,32,33],images:[image,image]}),1,8),/toplamı 1 ile 4/);
+ assert.doesNotThrow(()=>api.parseUploadIntent(JSON.stringify({...mixed,existingMediaIds:[31],images:[]}),1,8));
+});
+test('native composer can analyze saved gallery media without requiring a new file',async()=>{
+ const h=ui(),opened=[],t=await mount(h,async id=>opened.push(id),[31,32]);
+ const send=button(t,'Analizi Başlat');assert.ok(send&&!send.props.disabled);
+ await renderer.act(async()=>{send.props.onPress();await new Promise(r=>setImmediate(r))});
+ assert.equal(h.calls.length,1);assert.deepEqual(Array.from(h.calls[0].existingMediaIds),[31,32]);assert.equal(h.calls[0].images.length,0);assert.deepEqual(opened,[41]);
+ await renderer.act(async()=>t.unmount());
+});
+test('mixed composer limits new picker slots by already selected saved media',async()=>{
+ const h=ui(),t=await mount(h,async()=>{},[31,32]);
+ await renderer.act(async()=>button(t,'Galeriden Ekle').props.onPress());
+ assert.equal(h.calls.length,0);
+ assert.ok(text(t.toJSON()).includes('2 kayıtlı klinik görüntü seçildi'));
+ await renderer.act(async()=>{button(t,'Görüntüleri Gönder').props.onPress();await new Promise(r=>setImmediate(r))});
+ assert.equal(h.calls.length,1);assert.equal(h.calls[0].existingMediaIds.length,2);assert.equal(h.calls[0].images.length,2);
+ await renderer.act(async()=>t.unmount());
+});
+test('native multipart upload sends saved media IDs in the same request as new image bytes',async()=>{
+ const exports={},parts=[];let xhr;
+ class Form{append(key,value){parts.push([key,value])}}
+ class XHR{constructor(){xhr=this;this.upload={}}open(){}setRequestHeader(){}send(){this.status=200;this.responseText=JSON.stringify(receipt);this.onload()}abort(){this.onabort?.()}}
+ const {ApiError}=require('../src/api.ts');
+ vm.runInNewContext(compile('../src/analysisUpload.ts'),{exports,Error,FormData:Form,XMLHttpRequest:XHR,setTimeout:()=>1,clearTimeout(){},require:n=>n==='./api'?{ApiError}:n==='./analysisApi'?require('../src/analysisApi.ts'):{revalidateSession:async()=>{}}});
+ await exports.uploadAnalysis('token',{...intent,existingMediaIds:[31,32]},()=>{});
+ assert.equal(parts.find(x=>x[0]==='existing_media_ids')[1],'31,32');
+ assert.equal(parts.filter(x=>x[0]==='images').length,1);
+ assert.equal(xhr.withCredentials,false);
+});
