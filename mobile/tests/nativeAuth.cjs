@@ -55,3 +55,52 @@ test('account API refuses remote image URLs and registration cannot bypass conse
   await assert.rejects(()=>api.registerAccount({...values,accept_terms:true}),/doğrulanamadı/);
  }finally{global.fetch=original}
 });
+
+test('native account erasure requires the exact username, password and a second destructive confirmation',async()=>{
+ const alerts=[],calls=[],expired=[],exports={};
+ const identity={id:8,username:'synthetic-user',display_name:'Synthetic',role:'DOCTOR',is_active:true};
+ const native={StyleSheet:{create:s=>s},AppState:{addEventListener:()=>({remove(){}})},Alert:{alert:(...args)=>alerts.push(args)},...Object.fromEntries(['ActivityIndicator','Image','Pressable','RefreshControl','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
+ const account={getAccount:async()=>({user:identity,photo_url:null,next_username_change_at:null,email_change_allowed:true}),accountAction:async(_token,action,values)=>{calls.push({action,values});return{ok:true,requires_login:true}}};
+ const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeAccount.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
+ vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true}:name==='./authApi'?account:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='./sessionExpiry'?{reportSessionExpiry:token=>expired.push(token)}:{}});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(exports.default,{token:'delete-token',user:identity,onChanged(){},signOut(){},onMessages(){},onNotifications(){},onExperts(){},onAcademic(){},onHistory(){}}))});
+ await renderer.act(async()=>button(tree,'Hesap İşlemleri').props.onPress());
+ await renderer.act(async()=>{
+  tree.root.findByProps({accessibilityLabel:'Kullanıcı adını onayla'}).props.onChangeText('synthetic-user');
+  tree.root.findByProps({accessibilityLabel:'Mevcut şifre'}).props.onChangeText('correct-password');
+ });
+ await renderer.act(async()=>button(tree,'Hesabı Kalıcı Olarak Sil').props.onPress());
+ assert.equal(calls.length,0,'the first destructive tap must only open confirmation');
+ assert.equal(alerts.length,1);
+ const destructive=alerts[0][2].find(action=>action.style==='destructive');
+ assert.ok(destructive);
+ await renderer.act(async()=>destructive.onPress());
+ assert.deepEqual(calls,[{action:'delete',values:{confirm_username:'synthetic-user',password:'correct-password'}}]);
+ assert.deepEqual(expired,['delete-token']);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('native administrators do not receive the self-erasure control',async()=>{
+ const exports={},identity={id:9,username:'admin-user',display_name:'Admin',role:'ADMIN',is_active:true};
+ const native={StyleSheet:{create:s=>s},AppState:{addEventListener:()=>({remove(){}})},Alert:{alert(){}},...Object.fromEntries(['ActivityIndicator','Image','Pressable','RefreshControl','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
+ const account={getAccount:async()=>({user:identity,photo_url:null,next_username_change_at:null,email_change_allowed:false}),accountAction:async()=>{throw Error('must not be called')}};
+ const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeAccount.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
+ vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true}:name==='./authApi'?account:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='./sessionExpiry'?{reportSessionExpiry(){}}:{}});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(exports.default,{token:'admin-token',user:identity,onChanged(){},signOut(){},onMessages(){},onNotifications(){},onExperts(){},onAcademic(){},onHistory(){}}))});
+ assert.equal(tree.root.findAllByType('Text').some(node=>text(node)==='Hesap İşlemleri'),false);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('native account deletion API sends only the explicit confirmation fields',async()=>{
+ const original=global.fetch;let captured;
+ try{
+  global.fetch=async(url,init)=>{captured={url,body:JSON.parse(init.body)};return new Response(JSON.stringify({ok:true,requires_login:true}),{status:200})};
+  const result=await require('../src/authApi.ts').accountAction('synthetic-token','delete',{confirm_username:'synthetic-user',password:'correct-password'});
+  assert.deepEqual(captured,{url:'https://dentalai.tr/api/mobile/v1/account/delete',body:{confirm_username:'synthetic-user',password:'correct-password'}});
+  assert.deepEqual(result,{ok:true,requires_login:true});
+  global.fetch=async()=>new Response(JSON.stringify({ok:false}),{status:200});
+  await assert.rejects(()=>require('../src/authApi.ts').accountAction('synthetic-token','delete',{confirm_username:'synthetic-user',password:'correct-password'}),/doğrulanamadı/);
+ }finally{global.fetch=original}
+});
