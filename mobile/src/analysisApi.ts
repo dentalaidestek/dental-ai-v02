@@ -64,4 +64,13 @@ export async function getAnalysis(token:string,id:number){if(!Number.isSafeInteg
 export function startAnalysisAI(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");return call<{ok:boolean;status:string}>("/analyses/"+id+"/ai",token,{method:"POST"});}
 
 export type AnalysisHistoryItem={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at:string};
-export function getAnalysisHistory(token:string,patientId?:number){if(patientId!==undefined&&(!Number.isSafeInteger(patientId)||patientId<=0))throw Error("Geçersiz hasta kimliği.");return call<{items:AnalysisHistoryItem[]}>("/analyses"+(patientId!==undefined?"?patient_id="+patientId:""),token);}
+export async function getAnalysisHistory(token:string,patientId?:number){
+  if(patientId!==undefined&&(!Number.isSafeInteger(patientId)||patientId<=0))throw Error("Geçersiz hasta kimliği.");
+  const result=await call<{items:AnalysisHistoryItem[]}>("/analyses"+(patientId!==undefined?"?patient_id="+patientId:""),token);
+  if(!Array.isArray(result?.items)||result.items.some(item=>
+    !item||!Number.isSafeInteger(item.id)||item.id<=0||
+    !Number.isSafeInteger(item.patient_id)||item.patient_id<=0||
+    (patientId!==undefined&&item.patient_id!==patientId)
+  ))throw new ApiError(502,"Analiz geçmişinde hasta veya kayıt kimliği uyuşmayan yanıt alındı.");
+  return result;
+}
