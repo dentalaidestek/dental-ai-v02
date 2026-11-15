@@ -273,3 +273,11 @@ test('Dental Flow rejects successful empty or non-object API responses',async()=
   assert.deepEqual(await api.getFeed('token','discover'),{items:[],next_cursor:null});
  }finally{global.fetch=original}
 });
+
+test('Dental Flow translates network failures into actionable API errors',async()=>{
+ const original=global.fetch;
+ try{
+  global.fetch=async()=>{throw new TypeError('Failed to fetch')};
+  await assert.rejects(()=>api.getFeed('token','discover'),error=>error.status===503&&/bağlanılamadı/.test(error.message));
+ }finally{global.fetch=original}
+});
