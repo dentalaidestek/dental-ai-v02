@@ -94,3 +94,11 @@ test('consultation messages cannot display or overwrite another account or case'
  assert.match(chat,/data=\{visibleData\?\.messages\|\|\[\]\}/);
  assert.match(chat,/return\(\)=>\{requestSeq\.current\+\+;sending\.current=false\}/);
 });
+
+test('Dental Flow picker does not mislabel unnamed PNG and WebP uploads as JPEG',()=>{
+ const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
+ const upload=source.slice(source.indexOf('async function image()'),source.indexOf('async function post()'));
+ assert.match(upload,/a\.mimeType === "image\/png" \? "png"/);
+ assert.match(upload,/a\.mimeType === "image\/webp" \? "webp"/);
+ assert.match(upload,/name: a\.fileName \|\|/);
+});
