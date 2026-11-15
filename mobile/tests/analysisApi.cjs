@@ -90,3 +90,16 @@ test('modern API preserves HTTP errors with null or malformed response bodies',a
   await assert.rejects(()=>getNotifications('token'),error=>error.status===503&&error.message==='Bakım sürüyor');
  }finally{global.fetch=original}
 });
+
+
+test('native image AI rejects more than four images and unsupported file types before network',async()=>{
+ const original=global.fetch;let requests=0;
+ global.fetch=()=>{requests++;throw Error('unexpected network request')};
+ try{
+  const valid={uri:'file:///scan.jpg',name:'scan.jpg',type:'image/jpeg'};
+  await assert.rejects(()=>api.createAnalysis('token',{patientId:8,images:Array(5).fill(valid)}),/en fazla 4/);
+  await assert.rejects(()=>api.createAnalysis('token',{patientId:8,images:[{uri:'file:///scan.txt',name:'scan.txt',type:'text/plain'}]}),/JPEG, PNG veya WebP/);
+  await assert.rejects(()=>api.createAnalysis('token',{patientId:8,images:[{uri:'file:///scan.png',name:'scan.png',type:'application/pdf'}]}),/JPEG, PNG veya WebP/);
+  assert.equal(requests,0);
+ }finally{global.fetch=original}
+});
