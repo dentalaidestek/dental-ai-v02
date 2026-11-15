@@ -71,3 +71,14 @@ Native now uses the same 72,000-character / 216 KB envelope and Unicode-safe 12,
 Commits: `9a33661` transcript/chunker/checkpoint contract; `f62405e` sequential extraction and context carry-forward; `49c4a86` encrypted checkpoint integration and progress; `1936a42` chunk/resume/security regressions; `dc10098` Unicode/limit fixture correction; `10fcdf9` UI limit alignment; `40a9cd5` revision-conflict restart. Pure helper TypeScript compile and isolated Node chunk/resume checks passed in the available scratch runtime; the repository's full `npm test`, Android/iOS export and Python suites remain unexecuted here. No physical microphone/provider/device acceptance is claimed.
 
 Latest PR-head CI (127af68): Android #2030, recovery #824, admin #708 and expert-social #704 have runner_id=0, empty runner_name and zero steps; logs return BlobNotFound. This remains an Actions runner-allocation blocker, not a reported source test result.
+
+
+## Web parity correction — cumulative recording duration (2026-11-16)
+
+Compared the web live timer in `app/static/voice-exam-live.js` with `NativeVoiceRecorder`. The web timer carries elapsed time across pause/resume. Native previously displayed Expo Audio's `durationMillis` for the current recording file, but native recording rotates to a fresh file every 15 seconds; the visible timer could therefore restart at each chunk instead of showing the whole examination.
+
+Native `VoiceDraft` now persists `elapsedMs`. The recorder renders a cumulative `MM:SS` timer, adds a chunk's elapsed interval only after the recorder stop succeeds, and restores the accumulated duration when the same account/patient draft is reopened. Older version-1 drafts without `elapsedMs` remain readable and default to zero. This is local session metadata only; it does not alter transcript, ASR, clinical extraction, approval or patient records.
+
+If the OS kills the process before the active chunk can be stopped/cleaned up, the pending audio reference remains subject to the existing recovery behavior, while that incomplete chunk's duration is not guessed. Completed chunks' elapsed duration remains persisted.
+
+Regression coverage was added for multi-chunk/pause accumulation, `MM:SS` formatting, legacy draft migration, invalid duration rejection, component-level pause/resume and restored display. These tests are committed but have not been executed in this runtime.
