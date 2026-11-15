@@ -61,14 +61,14 @@ test('clinical gallery offers recovery for failed reads and distinguishes empty 
  assert.match(source,/Galeriyi yeniden yükle/);
  assert.match(source,/Bu hastaya ait klinik görsel bulunmuyor/);
  assert.match(source,/!loading&&!!error&&button\('Galeriyi yeniden yükle'/);
- assert.match(source,/!loading&&!error&&items\.length===0/);
- assert.match(source,/confirmDelete\(\),busy\|\|uncertain\|\|items\.length===0/);
+ assert.match(source,/!loading&&!error&&visibleItems\.length===0/);
+ assert.match(source,/confirmDelete\(\),busy\|\|uncertain\|\|visibleItems\.length===0/);
 });
 
 test('uncertain media mutations freeze selection and pagination until reconciliation',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  assert.match(source,/disabled=\{busy\|\|uncertain\} onPress=\{\(\)=>toggle\(item\.id\)\}/);
- assert.match(source,/setSelected\(selected\.length\?\[\]:items\.slice\(0,4\)\.map\(x=>x\.id\)\),busy\|\|uncertain/);
+ assert.match(source,/setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,4\)\.map\(x=>x\.id\)\),busy\|\|uncertain/);
  assert.match(source,/onEndReached=\{\(\)=>\{if\(cursor&&!loading&&!error&&!uncertain\)/);
 });
 
@@ -98,7 +98,7 @@ test('clinical modal and destructive actions require the current loaded account'
 
 test('gallery selection and pagination are restricted to the loaded patient scope',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
- assert.match(source,/function toggle\(id:number\)\{if\(mutation\.current\|\|uncertain\|\|loadedOwner!==owner\|\|!visibleItems\.some\(item=>item\.id===id\)\)return;/);
+ assert.match(source,/function toggle\(id:number\)\{if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|loadedOwner!==owner\|\|!visibleItems\.some\(item=>item\.id===id\)\)return;/);
  assert.match(source,/if\(loadedOwner===owner&&cursor&&!loading&&!error&&!uncertain&&!mutation\.current\)/);
 });
 
