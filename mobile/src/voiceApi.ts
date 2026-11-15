@@ -1,5 +1,5 @@
 import {revalidateSession} from './sessionExpiry';
-import {splitVoiceTranscript,VOICE_TEXT_LIMIT} from './voiceSession';
+import {splitVoiceTranscript} from './voiceSession';
 const BASE="https://dentalai.tr/api/mobile/v1";
 async function send<T>(token:string,path:string,payload:unknown):Promise<T>{
  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),150000);
