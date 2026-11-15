@@ -89,7 +89,7 @@ export async function socialRequest<T>(
     body = raw ? JSON.parse(raw) : {};
   } catch {
     throw new ApiError(
-      response.status || 502,
+      response.ok ? 502 : response.status,
       "Sunucu yanıtı okunamadı. Taslağınız korundu.",
     );
   }
