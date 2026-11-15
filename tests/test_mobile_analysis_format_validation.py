@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from PIL import Image
 
 
@@ -19,6 +19,7 @@ def _validator():
         "Path": Path,
         "Image": Image,
         "HTTPException": HTTPException,
+        "UploadFile": UploadFile,
         "MOBILE_MAX_ANALYSIS_BYTES": 15 * 1024 * 1024,
         "MOBILE_MAX_ANALYSIS_PIXELS": 40_000_000,
     }
@@ -78,6 +79,7 @@ def test_oversize_clinical_image_is_rejected_and_removed():
     tree = ast.parse(source.read_text(encoding="utf-8"))
     node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_copy_validated_analysis_image")
     scope = {"Path": Path, "Image": Image, "HTTPException": HTTPException,
+        "UploadFile": UploadFile,
              "MOBILE_MAX_ANALYSIS_BYTES": 3, "MOBILE_MAX_ANALYSIS_PIXELS": 40_000_000}
     exec(compile(ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[])), str(source), "exec"), scope)
     with TemporaryDirectory() as temp:
