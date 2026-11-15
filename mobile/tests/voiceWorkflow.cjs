@@ -132,16 +132,17 @@ test('native extraction processes web-sized chunks sequentially and resumes afte
   const body=JSON.parse(init.body);calls.push({url,body});
   const prior=body.context?.fields?.chief_complaint?.value||'';
   const value=prior?(prior+' | part'+calls.length):'part'+calls.length;
-  const payload={ok:true,revision,review:{fields:{chief_complaint:{value,quote:'evidence '+calls.length}},teeth:[],communication:[],decision_barriers:[],follow_up_questions:[],literature_topics:[],source_requests:[]}};
+  const payload={ok:true,revision,review:{fields:{chief_complaint:{value,quote:'evidence '+calls.length}},teeth:[],communication:[{category:'PATIENT_RESPONSE',quote:'communication '+calls.length,observation:'observation '+calls.length,suggestion:'suggestion'}],decision_barriers:[{category:'COST',quote:'barrier '+calls.length,observation:'barrier observation'}],follow_up_questions:[{quote:'same quote',question:'same question',reason:'reason',priority:'CLARIFY_NOW',resolved:false}],uncertain:'uncertain '+calls.length,literature_topics:[],source_requests:[]}};
   return{status:200,ok:true,text:async()=>JSON.stringify(payload)};
  };
  vm.runInNewContext(code,{exports,fetch:fakeFetch,setTimeout,clearTimeout,AbortController,Error,require:n=>n==='./sessionExpiry'?{revalidateSession:async()=>{}}:n==='./voiceSession'?require('../src/voiceSession.ts'):{}});
  const transcript='a'.repeat(25000);let saved;
  await assert.rejects(exports.extractVoice('token',8,transcript,{onCheckpoint:async value=>{saved=value;if(value.cursor===1)throw Error('Synthetic interruption')}}),/Synthetic interruption/);
- assert.equal(calls.length,1);assert.equal(saved.cursor,1);
+ assert.equal(calls.length,1);assert.equal(saved.cursor,1);saved.review.follow_up_questions[0].resolved=true;
  const result=await exports.extractVoice('token',8,transcript,{resume:saved,onCheckpoint:async value=>{saved=value}});
  assert.equal(calls.length,3);assert.equal(calls[1].body.context.fields.chief_complaint.value,'part1');
  assert.equal(result.review.fields.chief_complaint.value,'part1 | part2 | part3');assert.equal(saved.cursor,3);
+ assert.equal(result.review.communication.length,3);assert.equal(result.review.decision_barriers.length,3);assert.equal(result.review.follow_up_questions.length,1);assert.equal(result.review.follow_up_questions[0].resolved,true);assert.equal(result.review.uncertainties.length,3);
 });
 
 test('native extraction refuses to merge chunks across a patient revision change',async()=>{
