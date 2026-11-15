@@ -65,10 +65,14 @@ export async function socialRequest<T>(
 ): Promise<T> {
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),init.body instanceof FormData?90000:45000);
+  const externalSignal=init.signal;
+  const abort=()=>controller.abort();
+  if(externalSignal?.aborted)controller.abort();
+  else externalSignal?.addEventListener("abort",abort,{once:true});
   try {
   const response = await fetch(BASE + "/api/expert-social" + path, {
     ...init,
-    signal:init.signal||controller.signal,
+    signal:controller.signal,
     credentials: "omit",
     headers: {
       Authorization: "Bearer " + token,
@@ -98,7 +102,7 @@ export async function socialRequest<T>(
         : "İşlem tamamlanamadı. Tekrar deneyin.",
     );
   return body as T;
-  }finally{clearTimeout(timeout)}
+  }finally{clearTimeout(timeout);externalSignal?.removeEventListener("abort",abort)}
 }
 export const getFeed = (
   t: string,
