@@ -201,3 +201,37 @@ test('analysis history refuses malformed item identifiers and non-array items',a
   assert.equal((await api.getAnalysisHistory('token',7)).items[0].id,3);
  }finally{global.fetch=original}
 });
+
+test('opaque Android content URI with trusted picker MIME receives matching filename',async()=>{
+ const oldFetch=global.fetch,oldForm=global.FormData,parts=[];
+ class FormStub{append(key,value){parts.push({key,value})}}
+ global.FormData=FormStub;
+ let calls=0;
+ global.fetch=async()=>{calls++;return new Response(JSON.stringify({ok:true,analysis_id:92,status:'ANALYZING'}),{status:200})};
+ try{
+  await api.createAnalysis('token',{patientId:7,images:[
+   {uri:'content://media/external/images/media/12345',type:'image/png'},
+   {uri:'content://com.android.providers.media.documents/document/image%3A89',type:'image/webp'},
+   {uri:'content://provider/opaque',type:'image/jpeg'}
+  ]});
+  assert.deepEqual(parts.filter(p=>p.key==='images').map(p=>[p.value.name,p.value.type]),[
+   ['dental-image-0.png','image/png'],['dental-image-1.webp','image/webp'],['dental-image-2.jpg','image/jpeg']
+  ]);
+  assert.equal(calls,1);
+ }finally{global.fetch=oldFetch;global.FormData=oldForm}
+});
+test('opaque Android image URI cannot bypass unsupported or conflicting MIME checks',async()=>{
+ const oldFetch=global.fetch;let calls=0;
+ global.fetch=()=>{calls++;throw Error('unexpected network')};
+ try{
+  for(const image of [
+   {uri:'content://provider/opaque',type:'application/pdf'},
+   {uri:'content://provider/opaque',type:'image/svg+xml'},
+   {uri:'content://provider/scan.png',type:'image/jpeg'},
+   {uri:'content://provider/opaque',name:'scan.webp',type:'image/png'}
+  ]){
+   await assert.rejects(()=>api.createAnalysis('token',{patientId:7,images:[image]}),/JPEG, PNG veya WebP/);
+  }
+  assert.equal(calls,0);
+ }finally{global.fetch=oldFetch}
+});
