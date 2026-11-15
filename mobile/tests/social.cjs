@@ -261,3 +261,15 @@ test('Dental Flow requests combine caller cancellation with an internal timeout'
   assert.equal(captured.aborted,true);
  }finally{global.fetch=original}
 });
+
+test('Dental Flow rejects successful empty or non-object API responses',async()=>{
+ const original=global.fetch;
+ try{
+  for(const payload of ['', 'null', '[]', '"ok"', '42']){
+   global.fetch=async()=>new Response(payload,{status:200});
+   await assert.rejects(()=>api.getFeed('token','discover'),error=>error.status===502);
+  }
+  global.fetch=async()=>new Response(JSON.stringify({items:[],next_cursor:null}),{status:200});
+  assert.deepEqual(await api.getFeed('token','discover'),{items:[],next_cursor:null});
+ }finally{global.fetch=original}
+});
