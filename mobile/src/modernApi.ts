@@ -227,9 +227,14 @@ export async function getDeletedChats(token:string){
  return result;
 }
 
-export async function analyzeSelectedPatientMedia(token:string,patientId:number,mediaIds:number[]){
+export async function analyzeSelectedPatientMedia(token:string,patientId:number,mediaIds:number[],toothNumber?:string,clinicalNotes?:string){
  if(!Number.isSafeInteger(patientId)||patientId<=0||!Array.isArray(mediaIds)||mediaIds.length<1||mediaIds.length>4||new Set(mediaIds).size!==mediaIds.length||mediaIds.some(id=>!Number.isSafeInteger(id)||id<=0))throw Error('1 ile 4 arasında farklı klinik görüntü seçin.');
- const result=await req<{ok:boolean;analysis_id:number}>(`/patients/${patientId}/media/analyze`,token,{method:'POST',body:JSON.stringify({media_ids:mediaIds})});
+ if(toothNumber!==undefined&&(typeof toothNumber!=="string"||toothNumber.length>10))throw Error('Diş numarası en fazla 10 karakter olabilir.');
+ if(clinicalNotes!==undefined&&(typeof clinicalNotes!=="string"||clinicalNotes.length>4000))throw Error('Klinik bilgi en fazla 4000 karakter olabilir.');
+ const body:{media_ids:number[];tooth_number?:string;clinical_notes?:string}={media_ids:mediaIds};
+ if(toothNumber?.trim())body.tooth_number=toothNumber.trim();
+ if(clinicalNotes?.trim())body.clinical_notes=clinicalNotes.trim();
+ const result=await req<{ok:boolean;analysis_id:number}>(`/patients/${patientId}/media/analyze`,token,{method:'POST',body:JSON.stringify(body)});
  if(!result.ok||!Number.isSafeInteger(result.analysis_id)||result.analysis_id<=0)throw Error('Analiz kaydı doğrulanamadı. Geçmişi kontrol edin.');
  return result;
 }
