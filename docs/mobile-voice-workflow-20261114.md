@@ -53,3 +53,12 @@ TypeScript and **253 Node tests passed, 0 failed** (18 session, 46 realtime, 189
 No actual Android microphone/iOS recorder/earpiece/Bluetooth/noise/background/permission-denial or Turkish provider quality test. No signed APK/IPA produced; adb/Android emulator was not available in the inspected workspace. No authenticated production save, actual mail/push or PostgreSQL concurrency/load certification. Extraction/final results before approval are recomputed from the restored text; they are not durable server jobs. Pending audio/private-cache encryption, hard process death and retention need device/security acceptance.
 
 New apply adapter is not deployed. Source changes do not update the installed APK. Native voice source wiring does not certify the entire app or every voice acceptance criterion. Clinical image AI result/review parity, full Academic AI and remaining expert/product work stay in `mobile-web-parity-tracker-20261114.md`, together with P0 CI/API/session/device gates and all original clinical/privacy decisions.
+
+
+## Web entry parity added after source comparison
+
+The web entry page also offers **Yeni hastayla başla** before the existing-patient search. The earlier native entry exposed only NativePatientSelect, so it could not complete this first web action. The native flow now calls an authenticated mobile endpoint that creates the same empty, owner-scoped SES-… patient record and emits the existing patient-created realtime event. It then opens the recorder for that patient.
+
+The native request key is generated once and kept in SecureStore until a valid receipt is returned. A lost response retries the same key; the backend derives a stable per-account anonymous ID and serializes creation on the owner row in PostgreSQL, so the retry resolves to the same patient. The response is private/no-store and contains only the minimal patient payload. The new path does not accept patient fields, does not invoke ASR or clinical inference, and does not write clinical data. Existing-patient selection remains unchanged.
+
+Regression coverage was added for authenticated ownership, account separation, private response headers, retry identity, invalid request keys, native request shape, and the screen's retry-to-recorder transition. These tests are committed but await a runner that actually starts the workflow; no production device or backend acceptance is claimed.
