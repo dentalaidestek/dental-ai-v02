@@ -26,6 +26,12 @@ export type MobileAnalysis={
 
 export async function createAnalysis(token:string,payload:{patientId:number;toothNumber?:string;clinicalNotes?:string;images:Array<{uri:string;name?:string;type?:string}>}){
   if(!Number.isSafeInteger(payload?.patientId)||payload.patientId<=0||!Array.isArray(payload.images)||!payload.images.length||payload.images.some(image=>!image||typeof image.uri!=="string"||!image.uri.trim()))throw Error("Analiz için geçerli hasta ve en az bir klinik görüntü seçin.");
+  // Match the canonical mobile API's 1–4-image contract before any upload.
+  if(payload.images.length>4)throw Error("Bir analiz için en fazla 4 klinik görüntü yüklenebilir.");
+  const allowedTypes=new Set(["image/jpeg","image/png","image/webp"]);
+  const allowedExtensions=/\\.(?:jpe?g|png|webp)$/i;
+  if(payload.images.some(image=>!allowedTypes.has(String(image.type||"image/jpeg").toLowerCase())||!allowedExtensions.test(image.name||"dental-image.jpg")))
+    throw Error("Yalnızca JPEG, PNG veya WebP klinik görüntüleri yüklenebilir.");
   const form=new FormData();
   form.append("patient_id",String(payload.patientId));
   if(payload.toothNumber)form.append("tooth_number",payload.toothNumber);
