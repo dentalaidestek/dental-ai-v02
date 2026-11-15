@@ -170,3 +170,15 @@ test('unnamed PNG and WebP picker assets retain their URI-derived MIME type',asy
   ]);
  }finally{global.fetch=oldFetch;global.FormData=oldForm}
 });
+
+test('clinical image upload rejects unsafe filenames and unknown unnamed URI formats',async()=>{
+ const oldFetch=global.fetch;let requests=0;
+ global.fetch=()=>{requests++;throw Error('unexpected upload')};
+ try{
+  for(const name of ['../scan.jpg','folder/scan.jpg','folder\\\\scan.jpg','bad\\u0000scan.png','bad\\nscan.webp','x'.repeat(256)+'.jpg']){
+   await assert.rejects(()=>api.createAnalysis('token',{patientId:7,images:[{uri:'file:///scan.jpg',name,type:'image/jpeg'}]}));
+  }
+  await assert.rejects(()=>api.createAnalysis('token',{patientId:7,images:[{uri:'content://provider/opaque'}]}),/JPEG, PNG veya WebP/);
+  assert.equal(requests,0);
+ }finally{global.fetch=oldFetch}
+});
