@@ -235,3 +235,16 @@ test('opaque Android image URI cannot bypass unsupported or conflicting MIME che
   assert.equal(calls,0);
  }finally{global.fetch=oldFetch}
 });
+
+
+test('analysis detail rejects duplicate and malformed clinical asset identifiers',async()=>{
+ const oldFetch=global.fetch;
+ try{
+  for(const assets of [[{id:2},{id:2}],[{id:0}],[{id:'4'}],[null]]){
+   global.fetch=async()=>new Response(JSON.stringify({analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7},assets}),{status:200});
+   await assert.rejects(()=>api.getAnalysis('token',23),/hasta veya iş kimliği uyuşmayan/);
+  }
+  global.fetch=async()=>new Response(JSON.stringify({analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7},assets:[{id:2},{id:3}]}),{status:200});
+  assert.equal((await api.getAnalysis('token',23)).assets.length,2);
+ }finally{global.fetch=oldFetch}
+});
