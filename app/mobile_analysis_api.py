@@ -248,21 +248,21 @@ async def create_mobile_analysis(
             staged=[]
             for media in selected_media:
                 try:
-                    source=Path(storage_ensure_local(media.file_path))
+                    source=Path(await run_in_threadpool(storage_ensure_local,media.file_path))
                 except FileNotFoundError as exc:
                     raise HTTPException(404,"Seçilen klinik görüntü dosyası bulunamadı.") from exc
                 ext=source.suffix.lower()
                 stored=f'analysis_{analysis.id}_{uuid.uuid4().hex}{ext}'
                 temporary=Path(staging)/stored
                 destination=Path('uploads')/stored
-                _copy_validated_existing_analysis_image(source,temporary)
+                await run_in_threadpool(_copy_validated_existing_analysis_image,source,temporary)
                 staged.append((temporary,destination))
                 assets.append(ImageAsset(
                     analysis_id=analysis.id,
                     original_filename=Path(media.original_filename).name,
                     stored_filename=stored,
                     file_path=str(destination),
-                    image_type=classify_dental_image(str(temporary)),
+                    image_type=await run_in_threadpool(classify_dental_image,str(temporary)),
                 ))
             for image in valid:
                 name=Path(image.filename).name
@@ -270,16 +270,17 @@ async def create_mobile_analysis(
                 stored=f'analysis_{analysis.id}_{uuid.uuid4().hex}{ext}'
                 temporary=Path(staging)/stored
                 destination=Path('uploads')/stored
-                _copy_validated_analysis_image(image,temporary)
+                await run_in_threadpool(_copy_validated_analysis_image,image,temporary)
                 staged.append((temporary,destination))
-                assets.append(ImageAsset(analysis_id=analysis.id,original_filename=name,stored_filename=stored,file_path=str(destination),image_type=classify_dental_image(str(temporary))))
+                image_type=await run_in_threadpool(classify_dental_image,str(temporary))
+                assets.append(ImageAsset(analysis_id=analysis.id,original_filename=name,stored_filename=stored,file_path=str(destination),image_type=image_type))
             session.add_all(assets)
             session.flush()
             # Reserve canonical queue capacity before any storage publication.
             job=_enqueue_work(session,'VISION','ANALYSIS',analysis.id)
             for temporary,destination in staged:
                 shutil.move(str(temporary),str(destination))
-                storage_persist_file(destination)
+                await run_in_threadpool(storage_persist_file,destination)
         if receipt_key:
             session.add(WorkJob(owner_user_id=user.id,resource_id=analysis.id,resource_type='ANALYSIS',kind='UPLOAD_RECEIPT',source_hash=digest,dedupe_key=receipt_key,status='DONE',payload_json=json.dumps({'job_id':job.id})))
         realtime=_record_realtime_event(session,user.id,"ANALYSIS_CREATED","analysis",analysis.id,{"analysis_id":analysis.id,"patient_id":patient_id,"status":analysis.status,"tooth_number":analysis.tooth_number})
