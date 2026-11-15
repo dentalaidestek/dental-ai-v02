@@ -33,8 +33,8 @@ test('native microphone pauses/resumes and only finishes clinical handoff after 
 });
 test('native microphone elapsed time accumulates across recording chunks and pauses',async()=>{
  const h=recorderUI(),finished=[];let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished:v=>finished.push(v)})));
- await renderer.act(async()=>button(tree,'Muayeneyi Başlat').props.onPress());h.advance(4200);await renderer.act(async()=>button(tree,'Duraklat').props.onPress());assert.equal(JSON.parse(h.store.get('draft')).elapsedMs,4200);assert.ok(text(tree.toJSON()).includes('00:04'));
- await renderer.act(async()=>button(tree,'Devam Et').props.onPress());h.advance(2300);await renderer.act(async()=>button(tree,'Muayeneyi Bitir').props.onPress());assert.equal(JSON.parse(h.store.get('draft')).elapsedMs,6500);assert.ok(text(tree.toJSON()).includes('00:06'));assert.equal(finished.length,1);await renderer.act(async()=>tree.unmount());
+ await renderer.act(async()=>button(tree,'Muayeneyi Başlat').props.onPress());await renderer.act(async()=>h.advance(4200));await renderer.act(async()=>button(tree,'Duraklat').props.onPress());assert.equal(JSON.parse(h.store.get('draft')).elapsedMs,4200);assert.ok(text(tree.toJSON()).includes('00:04'));
+ await renderer.act(async()=>button(tree,'Devam Et').props.onPress());await renderer.act(async()=>h.advance(2300));await renderer.act(async()=>button(tree,'Muayeneyi Bitir').props.onPress());assert.equal(JSON.parse(h.store.get('draft')).elapsedMs,6500);assert.ok(text(tree.toJSON()).includes('00:06'));assert.equal(finished.length,1);await renderer.act(async()=>tree.unmount());
 });
 
 test('pending ASR failure retains recording and never triggers clinical handoff',async()=>{
