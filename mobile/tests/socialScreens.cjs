@@ -111,3 +111,14 @@ test('Dental Flow composer previews each selected photo and clears local thumbna
  assert.match(composer,/setLocalPhotos\(\[\]\)/);
  assert.doesNotMatch(composer,/Yüklenen son fotoğrafın önizlemesi/);
 });
+
+test('failed encrypted Dental Flow draft reads offer non-destructive retry',()=>{
+ const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
+ const draft=source.slice(source.indexOf('function useDraft('),source.indexOf('function Composer('));
+ assert.match(draft,/\[retry, setRetry\] = useState\(0\)/);
+ assert.match(draft,/\[key, retry\]/);
+ assert.match(draft,/retryRead: \(\) => \{ setError\(" "\)/.source? /retryRead:/ : /retryRead:/);
+ const composer=source.slice(source.indexOf('function Composer('),source.indexOf('function Sheet('));
+ assert.match(composer,/title="Tekrar oku" onPress=\{d\.retryRead\}/);
+ assert.match(composer,/title="Bozuk taslağı temizle"/);
+});
