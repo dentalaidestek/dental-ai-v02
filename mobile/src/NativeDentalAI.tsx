@@ -71,8 +71,8 @@ export default function NativeDentalAI({token,userId,initialAnalysisId,initialPa
     const key='dai.analysis.'+userId;
     try{
       await SecureStore.setItemAsync(key,String(id));
-      if(scope!==sessionScope.current||selection!==selectionGeneration.current)
-        await SecureStore.deleteItemAsync(key);
+      // A stale write may finish after a newer selection. Never delete the
+      // key here: that could erase the newer selection's receipt.
     }catch{ /* Secure-store failure must not invalidate an authorized on-screen result. */ }
   }
  }
