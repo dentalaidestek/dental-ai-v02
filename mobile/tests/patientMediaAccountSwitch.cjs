@@ -146,3 +146,10 @@ test('clinical gallery preview and selection handlers require the current patien
  assert.match(source,/onPress=\{\(\)=>\{if\(!current\(\)\|\|loadedOwner!==owner\|\|mutation\.current\|\|uncertain\)return;setPreview\(item\)/);
  assert.match(source,/onPress=\{\(\)=>\{if\(!current\(\)\|\|loadedOwner!==owner\|\|mutation\.current\|\|uncertain\)return;setOpen\(true\)/);
 });
+
+test('picker continuation and delayed acknowledgement cannot bypass scope or mutation locks',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/if\(!current\(\)\|\|mutation\.current\|\|uncertain\)return;if\(!permission\.granted\)/);
+ assert.match(source,/if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|result\.canceled\)return/);
+ assert.match(source,/onPress:\(\)=>\{if\(!current\(\)\|\|mutation\.current\|\|!uncertain\)return;setUncertain\(false\)/);
+});
