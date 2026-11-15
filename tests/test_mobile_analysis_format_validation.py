@@ -49,3 +49,16 @@ def test_mismatched_clinical_image_bytes_are_rejected_and_deleted(fmt, extension
             _validator()(_image(fmt), destination)
         assert error.value.status_code == 422
         assert not destination.exists()
+
+
+def test_analysis_batch_rejects_missing_filename_before_creating_record():
+    source = Path(__file__).resolve().parents[1] / "app" / "mobile_analysis_api.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    endpoint = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "create_mobile_analysis")
+    checks = [node for node in ast.walk(endpoint) if isinstance(node, ast.If)]
+    filename_guards = [node for node in checks if "image.filename" in ast.unparse(node.test) and "any(" in ast.unparse(node.test)]
+    assert filename_guards, "Malformed image parts must be rejected rather than filtered out"
+    guard = filename_guards[0]
+    assert any(isinstance(node, ast.Raise) for node in guard.body)
+    analysis_creation = next(node.lineno for node in ast.walk(endpoint) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Analysis")
+    assert guard.lineno < analysis_creation
