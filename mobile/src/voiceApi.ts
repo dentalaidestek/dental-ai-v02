@@ -19,7 +19,7 @@ async function send<T>(token:string,path:string,payload:unknown):Promise<T>{
  }catch(error){if(error instanceof Error&&error.name==='AbortError')throw Error('Klinik değerlendirme zaman aşımına uğradı. Metniniz bu ekranda korunuyor; tekrar deneyebilirsiniz.');throw error;
  }finally{clearTimeout(timeout)}
 }
-export type AnonymousVoicePatient={id:number;anonymous_id:string;first_name:string|null;last_name:string|null;phone?:string|null;birth_date?:string|null;age?:number|null;chief_complaint?:string|null;created_at?:string|null};
+export type AnonymousVoicePatient={id:number;anonymous_id:string;first_name:string|null;last_name:string|null;phone?:string|null;birth_date?:string|null;age?:number|null;chief_complaint?:string|null;created_at?:string};
 export async function createAnonymousVoicePatient(token:string,requestKey:string):Promise<{patient:AnonymousVoicePatient;already_created:boolean}>{
  if(typeof requestKey!=="string"||!/^[a-f0-9]{32}$/.test(requestKey))throw Error("Yeni hasta isteği doğrulanamadı. Güvenli anahtarı yeniden oluşturun.");
  const result=await send<{ok:true;patient:AnonymousVoicePatient;already_created:boolean}>(token,"/voice-exam/anonymous",{request_key:requestKey});
