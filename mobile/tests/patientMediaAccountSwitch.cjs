@@ -224,7 +224,10 @@ test('selected-media analysis UI carries optional FDI and clinical notes',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  assert.match(source,/accessibilityLabel="Klinik görsel analizi FDI diş numarası"/);
  assert.match(source,/accessibilityLabel="Klinik görsel analizi klinik bilgisi"/);
- assert.match(source,/analyzeSelectedPatientMedia\(token,patientId,selected,toothNumber,clinicalNotes\)/);
+ assert.match(source,/setComposeIds\(\[\.\.\.selected\]\)/);
+ assert.match(source,/existingMediaIds=\{composeIds\}/);
+ assert.match(source,/initialToothNumber=\{composeTooth\}/);
+ assert.match(source,/initialClinicalNotes=\{composeNotes\}/);
  assert.match(source,/maxLength=\{4000\} multiline placeholder="Şikâyet, anamnez ve klinik bulgular"/);
 });
 
