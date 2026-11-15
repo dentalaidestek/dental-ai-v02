@@ -151,13 +151,13 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   <Text style={{color:muted,marginTop:7,lineHeight:21}}>Hastayı seçin, kaydı başlatın ve canlı konuşma metnini izleyin. Klinik çıkarım muayene bitince, kayıt ise hekim onayıyla yapılır.</Text>
   <View style={{backgroundColor:"white",borderRadius:18,padding:16,borderWidth:1,borderColor:line,marginTop:18}}>
    <Text style={{fontWeight:"800",color:navy,marginBottom:9}}>Hasta seçimi</Text>
-   <Pressable accessibilityRole="button" accessibilityState={{busy:creatingAnonymous,disabled:creatingAnonymous||!userId}} disabled={creatingAnonymous||!userId} onPress={()=>void createAnonymousPatient()} style={{backgroundColor:"#1769AA",padding:15,borderRadius:13,alignItems:"center",opacity:creatingAnonymous||!userId?.5:1}}>
+   <Pressable accessibilityRole="button" accessibilityState={{busy:creatingAnonymous,disabled:creatingAnonymous||!userId}} disabled={creatingAnonymous||!userId} onPress={()=>void createAnonymousPatient()} style={{backgroundColor:"#1769AA",padding:15,borderRadius:13,alignItems:"center",opacity:(creatingAnonymous||!userId)?0.5:1}}>
     {creatingAnonymous?<ActivityIndicator color="white"/>:<Text style={{color:"white",fontWeight:"800"}}>Yeni hastayla başla →</Text>}
    </Pressable>
    <Text style={{color:muted,textAlign:"center",marginVertical:12}}>veya mevcut hastayı seç</Text>
    <NativePatientSelect key={token} token={token} value={selected} onChange={setSelected} disabled={creatingAnonymous}/>
    {!!error&&<Text accessibilityRole="alert" style={{color:"#B42318",marginTop:10,lineHeight:20}}>{error}</Text>}
-   <Pressable accessibilityRole="button" disabled={creatingAnonymous} onPress={()=>{if(selected)setStage("exam");else setError("Önce bir hasta seçin.")}} style={{marginTop:18,backgroundColor:navy,padding:15,borderRadius:13,alignItems:"center",opacity:creatingAnonymous?.5:1}}><Text style={{color:"white",fontWeight:"800"}}>{selected?"Muayeneye Devam Et":"Hasta Seçerek Devam Et"}</Text></Pressable>
+   <Pressable accessibilityRole="button" disabled={creatingAnonymous} onPress={()=>{if(selected)setStage("exam");else setError("Önce bir hasta seçin.")}} style={{marginTop:18,backgroundColor:navy,padding:15,borderRadius:13,alignItems:"center",opacity:creatingAnonymous?0.5:1}}><Text style={{color:"white",fontWeight:"800"}}>{selected?"Muayeneye Devam Et":"Hasta Seçerek Devam Et"}</Text></Pressable>
    <Text style={{fontSize:12,color:muted,marginTop:10,lineHeight:18}}>Muayene bilgileri yalnızca hekim onayıyla hasta dosyasına kaydedilir. Yeni hasta kaydı boş bir klinik dosya açar; bilgileri yalnızca hekim onayıyla eklersiniz.</Text>
   </View>
  </ScrollView>
