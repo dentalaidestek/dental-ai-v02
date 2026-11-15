@@ -218,3 +218,41 @@ test('full gallery refresh invalidates preview and zoom on success and failure',
  assert.match(source,/setError\(''\);if\(!more\)\{setSelected\(\[\]\);setPreview\(null\);setZoom\(1\)\}/);
  assert.match(source,/if\(!more\)\{setItems\(\[\]\);setCursor\(null\);setSelected\(\[\]\);setPreview\(null\);setZoom\(1\)\}/);
 });
+
+test('selected-media analysis UI carries optional FDI and clinical notes',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/accessibilityLabel="Klinik görsel analizi FDI diş numarası"/);
+ assert.match(source,/accessibilityLabel="Klinik görsel analizi klinik bilgisi"/);
+ assert.match(source,/analyzeSelectedPatientMedia\(token,patientId,selected,toothNumber,clinicalNotes\)/);
+ assert.match(source,/maxLength=\{4000\} multiline placeholder="Şikâyet, anamnez ve klinik bulgular"/);
+});
+
+function loadModernApi(fetchImpl){
+ const source=fs.readFileSync(require.resolve('../src/modernApi.ts'),'utf8');
+ const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
+ class ApiError extends Error{constructor(status,message){super(message);this.status=status}}
+ const exports={};
+ vm.runInNewContext(code,{
+  exports,fetch:fetchImpl,AbortController,FormData,URLSearchParams,Response,
+  setTimeout,clearTimeout,
+  require:name=>name==='./api'?{ApiError}:name==='./sessionExpiry'?{revalidateSession:async()=>{}}:name==='./chatFiles'?{validateChatFile:()=>{}}:(()=>{throw Error('Unexpected import '+name)})()
+ });
+ return exports;
+}
+
+test('selected-media analysis sends FDI and clinical notes to the canonical mobile endpoint',async()=>{
+ let request;
+ const api=loadModernApi(async(url,init)=>{request={url,init};return new Response(JSON.stringify({ok:true,analysis_id:42}),{status:200,headers:{'Content-Type':'application/json'}})});
+ const result=await api.analyzeSelectedPatientMedia('synthetic-token',8,[21,22],'36','Soğukta kısa süreli ağrı.');
+ assert.equal(result.analysis_id,42);
+ assert.equal(request.url,'https://dentalai.tr/api/mobile/v1/patients/8/media/analyze');
+ assert.deepEqual(JSON.parse(request.init.body),{media_ids:[21,22],tooth_number:'36',clinical_notes:'Soğukta kısa süreli ağrı.'});
+ assert.equal(request.init.credentials,'omit');
+});
+
+test('selected-media analysis rejects oversized clinical context before network access',async()=>{
+ let calls=0;const api=loadModernApi(async()=>{calls++;return new Response('{}',{status:200})});
+ await assert.rejects(()=>api.analyzeSelectedPatientMedia('token',8,[21],'12345678901',''));
+ await assert.rejects(()=>api.analyzeSelectedPatientMedia('token',8,[21],'36','x'.repeat(4001)));
+ assert.equal(calls,0,'invalid clinical context must be rejected before sending patient data');
+});
