@@ -105,8 +105,8 @@ test('voice entry mirrors the web new-patient path and reuses its key after an u
 });
 
 test('native voice transcript matches the web 72k/216KB chunk contract without splitting Unicode',()=>{
- const api=require('../src/voiceSession.ts'),source=('Çürük 36 yüzeyinde ağrı 🦷. Hasta bugün geldi.\\n').repeat(1400);
- const chunks=api.splitVoiceTranscript(source);
+ const api=require('../src/voiceSession.ts'),web=require('../../app/static/voice-finish-draft.js'),source=('Çürük 36 yüzeyinde ağrı 🦷. Hasta bugün geldi.\\n').repeat(1400);
+ const chunks=api.splitVoiceTranscript(source);assert.deepEqual(chunks,web.splitTranscript(source));
  assert.ok(chunks.length>1);assert.equal(chunks.join(''),source);
  for(const chunk of chunks){assert.ok(chunk.length<=12000);assert.ok(api.voiceUtf8Bytes(chunk)<=36000);assert.ok(!/[\\uD800-\\uDBFF]$/.test(chunk));}
  assert.equal(api.voiceUtf8Bytes('🦷'),4);
@@ -114,7 +114,7 @@ test('native voice transcript matches the web 72k/216KB chunk contract without s
  const appended=api.appendVoiceSegment(draft,'long','a'.repeat(19000));assert.equal(appended.transcript.length,19000);
  const full={...draft,transcript:'a'.repeat(72000)};
  assert.throws(()=>api.appendVoiceSegment(full,'long','b'),/72.000/);
- const cjk='漢'.repeat(72000);assert.equal(api.voiceUtf8Bytes(cjk),216000);assert.equal(api.splitVoiceTranscript(cjk).join(''),cjk);assert.throws(()=>api.splitVoiceTranscript('ç'.repeat(72001)),/72.000/);
+ const cjk='漢'.repeat(72000),webDraft=new web.FinishDraft();assert.equal(api.voiceUtf8Bytes(cjk),216000);assert.equal(api.splitVoiceTranscript(cjk).join(''),cjk);webDraft.set(cjk);assert.deepEqual(api.splitVoiceTranscript(cjk),web.splitTranscript(cjk));assert.throws(()=>api.splitVoiceTranscript('ç'.repeat(72001)),/72.000/);
 });
 
 test('voice extraction checkpoint is scoped to account, patient, transcript and expiry',()=>{
