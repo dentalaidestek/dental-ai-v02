@@ -62,3 +62,27 @@ def test_analysis_batch_rejects_missing_filename_before_creating_record():
     assert any(isinstance(node, ast.Raise) for node in guard.body)
     analysis_creation = next(node.lineno for node in ast.walk(endpoint) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Analysis")
     assert guard.lineno < analysis_creation
+
+
+def test_corrupt_clinical_image_is_rejected_and_removed():
+    with TemporaryDirectory() as temp:
+        destination = Path(temp) / "upload.png"
+        with pytest.raises(HTTPException) as error:
+            _validator()(SimpleNamespace(file=io.BytesIO(b"not an image")), destination)
+        assert error.value.status_code == 422
+        assert not destination.exists()
+
+
+def test_oversize_clinical_image_is_rejected_and_removed():
+    source = Path(__file__).resolve().parents[1] / "app" / "mobile_analysis_api.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_copy_validated_analysis_image")
+    scope = {"Path": Path, "Image": Image, "HTTPException": HTTPException,
+             "MOBILE_MAX_ANALYSIS_BYTES": 3, "MOBILE_MAX_ANALYSIS_PIXELS": 40_000_000}
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[])), str(source), "exec"), scope)
+    with TemporaryDirectory() as temp:
+        destination = Path(temp) / "upload.png"
+        with pytest.raises(HTTPException) as error:
+            scope[node.name](_image("PNG"), destination)
+        assert error.value.status_code == 413
+        assert not destination.exists()
