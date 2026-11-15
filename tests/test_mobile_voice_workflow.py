@@ -71,3 +71,35 @@ def test_approved_voice_appointment_uses_web_atomic_schedule_and_conflict_rules(
         records=s.exec(select(main.ScheduleEvent).where(main.ScheduleEvent.owner_user_id==1)).all();assert len(records)==1 and records[0].patient_id==8
     changed={**values,'request_key':'d'*32,'revision':mobile_api._mobile_voice_patient(client_user(engine,1),8)}
     assert client.post(path,json=changed).status_code==409
+
+
+def test_native_anonymous_voice_patient_is_private_owned_and_idempotent(chat,monkeypatch):
+    client,engine=setup(chat,monkeypatch)
+    published=[]
+    monkeypatch.setattr(main,'on_loop',lambda callback,*args:published.append((callback,args)))
+    path='/api/mobile/v1/voice-exam/anonymous'
+    key='e'*32
+    first=client.post(path,json={'request_key':key})
+    assert first.status_code==201,first.text
+    assert first.headers['cache-control']=='private, no-store'
+    assert first.headers['vary']=='Authorization'
+    payload=first.json()
+    assert payload['ok'] is True and payload['already_created'] is False
+    assert payload['patient']['anonymous_id'].startswith('SES-')
+    assert payload['patient']['first_name'] is None and payload['patient']['last_name'] is None
+    repeated=client.post(path,json={'request_key':key})
+    assert repeated.status_code==200,repeated.text
+    assert repeated.json()['patient']['id']==payload['patient']['id']
+    assert repeated.json()['already_created'] is True
+    assert len(published)==1
+    with Session(engine) as session:
+        patient=session.get(main.Patient,payload['patient']['id'])
+        assert patient.owner_user_id==1
+        assert patient.first_name is None and patient.phone is None
+    client.headers['Authorization']='Bearer token2'
+    other=client.post(path,json={'request_key':key})
+    assert other.status_code==201,other.text
+    assert other.json()['patient']['id']!=payload['patient']['id']
+    with Session(engine) as session:
+        assert session.get(main.Patient,other.json()['patient']['id']).owner_user_id==2
+    assert client.post(path,json={'request_key':'not-a-valid-key'}).status_code==422
