@@ -9,23 +9,24 @@ type Picked={uri:string;name:string;type:string};
 export default function NativePatientMedia({token,patientId,onAnalysis}:{token:string;patientId:number;onAnalysis:(id:number)=>void}){
  const {lastEvent}=useRealtime(),[items,setItems]=useState<any[]>([]),[cursor,setCursor]=useState<number|null>(null),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[open,setOpen]=useState(false),[preview,setPreview]=useState<any>(null),[selected,setSelected]=useState<number[]>([]),[pending,setPending]=useState<Picked[]>([]),[mediaType,setMediaType]=useState<'PHOTO'|'RADIOGRAPH'>('PHOTO'),[progress,setProgress]=useState(''),[uncertain,setUncertain]=useState(false),[zoom,setZoom]=useState(1);
  const [loadedOwner,setLoadedOwner]=useState('');const [pendingOwner,setPendingOwner]=useState('');
- const mounted=useRef(true),request=useRef(0),loadLock=useRef(false),mutation=useRef(false),scope=useRef(`${token}:${patientId}`);const owner=`${token}:${patientId}`;scope.current=owner;
+ const mounted=useRef(true),request=useRef(0),pickerGeneration=useRef(0),loadLock=useRef(false),mutation=useRef(false),scope=useRef(`${token}:${patientId}`);const owner=`${token}:${patientId}`;scope.current=owner;
  const current=()=>mounted.current&&scope.current===owner;
  const load=useCallback(async(more=false)=>{if(loadLock.current||(more&&(mutation.current||uncertain||loadedOwner!==owner)))return;loadLock.current=true;const sequence=++request.current;setLoading(true);try{const page=await getMedia(token,patientId,more?cursor??undefined:undefined);if(!current()||sequence!==request.current)return;setItems(previous=>more?[...previous,...page.items.filter(x=>!previous.some(y=>y.id===x.id))]:page.items);setCursor(page.next_before);setLoadedOwner(owner);setError('');if(!more)setSelected([])}catch(e){if(current()&&sequence===request.current){if(!more){setItems([]);setCursor(null);setSelected([])}setLoadedOwner(owner);setError(e instanceof Error?e.message:'Görseller alınamadı.')}}finally{if(current()&&sequence===request.current){loadLock.current=false;setLoading(false)}}},[token,patientId,cursor,uncertain,loadedOwner]);
  const loader=useRef(load);loader.current=load;
- useEffect(()=>{mounted.current=true;request.current++;loadLock.current=false;mutation.current=false;setBusy(false);setOpen(false);setLoading(false);setItems([]);setCursor(null);setLoadedOwner('');setError('');setSelected([]);setPreview(null);setPending([]);setPendingOwner('');setUncertain(false);setProgress('');void loader.current();return()=>{mounted.current=false;request.current++;loadLock.current=false}},[token,patientId]);
+ useEffect(()=>{mounted.current=true;request.current++;pickerGeneration.current++;loadLock.current=false;mutation.current=false;setBusy(false);setOpen(false);setLoading(false);setItems([]);setCursor(null);setLoadedOwner('');setError('');setSelected([]);setPreview(null);setPending([]);setPendingOwner('');setUncertain(false);setProgress('');void loader.current();return()=>{mounted.current=false;request.current++;pickerGeneration.current++;loadLock.current=false}},[token,patientId]);
  useEffect(()=>{if(lastEvent&&['PATIENT_MEDIA_CREATED','PATIENT_MEDIA_DELETED'].includes(String(lastEvent.event_type||lastEvent.type))&&Number(lastEvent.payload?.patient_id||lastEvent.entity_id)===patientId&&!mutation.current)void loader.current()},[lastEvent,patientId]);
  const visibleItems=loadedOwner===owner?items:[];
  const button=(label:string,action:()=>void,disabled=false)=><Pressable accessibilityRole="button" disabled={disabled} onPress={action} style={{padding:12,minHeight:44,opacity:disabled?.5:1}}><Text style={{color:'#1769AA',fontWeight:'700'}}>{label}</Text></Pressable>;
  async function pick(type:'PHOTO'|'RADIOGRAPH'){
   if(!current()||mutation.current||uncertain)return;
-  try{const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();if(!current()||mutation.current||uncertain)return;if(!permission.granted){setError('Klinik görüntü seçmek için fotoğraf izni gerekli.');return}
+  const picker=++pickerGeneration.current;
+  try{const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();if(!current()||picker!==pickerGeneration.current||mutation.current||uncertain)return;if(!permission.granted){setError('Klinik görüntü seçmek için fotoğraf izni gerekli.');return}
    const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsMultipleSelection:true,quality:.9,selectionLimit:12});
-   if(!current()||mutation.current||uncertain||result.canceled)return;
+   if(!current()||picker!==pickerGeneration.current||mutation.current||uncertain||result.canceled)return;
    const files=result.assets.map((asset,i)=>({uri:asset.uri,name:asset.fileName||`klinik-${i}.jpg`,type:asset.mimeType||'image/jpeg'}));
    if(result.assets.some(asset=>(asset.fileSize||0)>15*1024*1024)||files.some(file=>!['image/jpeg','image/png','image/webp'].includes(file.type)))throw Error('JPG, PNG veya WEBP seçin; her görüntü en fazla 15 MB olabilir.');
    setMediaType(type);setPendingOwner(owner);setPending(files);setError('');setProgress('');
-  }catch(e){if(current())setError(e instanceof Error?e.message:'Görüntüler seçilemedi.')}
+  }catch(e){if(current()&&picker===pickerGeneration.current)setError(e instanceof Error?e.message:'Görüntüler seçilemedi.')}
  }
  async function upload(){if(!current()||mutation.current||uncertain||pendingOwner!==owner||!pending.length)return;mutation.current=true;setBusy(true);setError('');const files=[...pending];let completed=0;
   try{for(const file of files){setProgress(`${completed} / ${files.length} görüntü kaydedildi`);await uploadPatientMedia(token,patientId,file,undefined,mediaType);completed++;if(!current())return;setPending(files.slice(completed))}setProgress(`${completed} görüntü kaydedildi`);await loader.current()}
