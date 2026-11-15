@@ -180,3 +180,10 @@ test('failed full refresh clears stale patient images and selection rather than 
  assert.match(visible(tree.root),/offline/);
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('failed gallery refresh resets selection and cursor but preserves paging failures for retry',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/catch\(e\)\{if\(current\(\)&&sequence===request\.current\)\{if\(!more\)\{setItems\(\[\]\);setCursor\(null\);setSelected\(\[\]\)\}/);
+ assert.match(source,/setError\(e instanceof Error\?e\.message:'Görseller alınamadı\.'\)/);
+});
