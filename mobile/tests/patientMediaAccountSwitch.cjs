@@ -162,3 +162,21 @@ test('pending image thumbnails and uploads are scoped to the active patient acco
  assert.match(source,/pendingOwner!==owner\|\|!pending\.length\)return/);
  assert.match(source,/setPending\(\[\]\);setPendingOwner\(''\);setUncertain\(false\)/);
 });
+
+
+test('failed full refresh clears stale patient images and selection rather than displaying outdated clinical records',async()=>{
+ let fail=false;
+ const Media=mountMedia(async()=>{
+  if(fail)throw Error('offline');
+  return {items:[{id:17,url:'https://example.invalid/stale.jpg',media_type:'PHOTO'}],next_before:null};
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'account',patientId:1,onAnalysis:()=>{}}))});
+ assert.ok(tree.root.findAllByType('Image').some(x=>x.props.source?.uri?.includes('stale.jpg')));
+ fail=true;
+ const open=tree.root.findAllByType('Pressable').find(x=>x.props.accessibilityLabel==='Klinik görselleri aç');
+ await renderer.act(async()=>open.props.onPress());
+ assert.ok(!tree.root.findAllByType('Image').some(x=>x.props.source?.uri?.includes('stale.jpg')),'failed refresh must not retain outdated thumbnails');
+ assert.match(visible(tree.root),/offline/);
+ await renderer.act(async()=>tree.unmount());
+});
