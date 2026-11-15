@@ -171,7 +171,7 @@ function Composer({
       const a = result.assets[0];
       const uploaded = await api.uploadSocialImage(token, {
         uri: a.uri,
-        name: a.fileName || "social.jpg",
+        name: a.fileName || ("social." + (a.mimeType === "image/png" ? "png" : a.mimeType === "image/webp" ? "webp" : "jpg")),
         type: a.mimeType || "image/jpeg",
       });
       d.update({ media_ids: [...d.draft.media_ids, uploaded.id] });
