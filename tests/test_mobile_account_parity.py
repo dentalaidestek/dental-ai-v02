@@ -92,3 +92,46 @@ def test_admin_email_cannot_change_and_profile_photo_is_private(account):
     assert response.status_code==200 and response.headers['cache-control']=='private, no-store'
     client.headers['Authorization']='Bearer token2'
     assert client.get(path).status_code==404
+
+
+def test_native_self_erasure_reuses_web_confirmation_and_revokes_the_session(account):
+    client,engine,_=account
+    username='chat-user-1'
+    assert client.post('/api/mobile/v1/account/delete',json={
+        'confirm_username':'different-user','password':'correct-password'
+    }).status_code==400
+    assert client.post('/api/mobile/v1/account/delete',json={
+        'confirm_username':username,'password':'wrong-password'
+    }).status_code==403
+
+    response=client.post('/api/mobile/v1/account/delete',json={
+        'confirm_username':username,'password':'correct-password'
+    })
+    assert response.status_code==200,response.text
+    assert response.json()=={'ok':True,'requires_login':True}
+    assert client.get('/api/mobile/v1/me').status_code==401
+
+    with Session(engine) as s:
+        deleted=s.get(main.User,1)
+        assert deleted is not None and not deleted.is_active
+        assert deleted.display_name=='Silinmiş Kullanıcı'
+        assert deleted.email is None and deleted.password_hash is None
+        assert not s.exec(select(main.SessionToken).where(main.SessionToken.user_id==1)).all()
+        assert not s.exec(select(main.DeletedAccountEmail).where(main.DeletedAccountEmail.deleted_user_id==1)).all()
+
+
+def test_native_self_erasure_keeps_the_web_admin_exclusion(account):
+    client,engine,_=account
+    with Session(engine) as s:
+        user=s.get(main.User,1)
+        user.role='ADMIN'
+        s.add(user)
+        s.add(main.AdminVerifiedSession(token_hash=main.hash_session_token('token1'),user_id=1))
+        s.commit()
+    response=client.post('/api/mobile/v1/account/delete',json={
+        'confirm_username':'chat-user-1','password':'correct-password'
+    })
+    assert response.status_code==409,response.text
+    with Session(engine) as s:
+        user=s.get(main.User,1)
+        assert user.is_active and user.email=='synthetic@example.test'
