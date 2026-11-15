@@ -33,7 +33,7 @@ export async function createAnonymousVoicePatient(token:string,requestKey:string
 export type VoiceField={value:string;quote?:string;edited?:boolean};
 export type VoiceExtraction={ok:boolean;revision:string;review:{
  fields?:Record<string,VoiceField>;teeth?:unknown[];insights?:Record<string,unknown>[];
- communication?:{quote:string;observation:string;suggestion:string}[];
+ communication?:Record<string,unknown>[];
  decision_barriers?:Record<string,unknown>[];follow_up_questions?:Record<string,unknown>[];
  uncertain?:string;uncertainties?:string[];literature_topics?:{topic:string;quote:string}[];
  source_requests?:{term:string;quote:string}[];
