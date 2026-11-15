@@ -78,7 +78,7 @@ export type AnalysisHistoryItem={id:number;patient_id:number;patient_name:string
 export function getAnalysisHistory(token:string,patientId?:number){
   if(patientId!==undefined&&(!Number.isSafeInteger(patientId)||patientId<=0))throw Error("Geçersiz hasta kimliği.");
   return call<{items:AnalysisHistoryItem[]}>("/analyses"+(patientId!==undefined?"?patient_id="+patientId:""),token).then(result=>{
-  if(!Array.isArray(result?.items)||result.items.some(item=>
+  if(!Array.isArray(result?.items)||new Set(result.items.map(item=>item?.id)).size!==result.items.length||result.items.some(item=>
     !item||!Number.isSafeInteger(item.id)||item.id<=0||
     !Number.isSafeInteger(item.patient_id)||item.patient_id<=0||
     (patientId!==undefined&&item.patient_id!==patientId)
