@@ -68,7 +68,7 @@ test('clinical gallery offers recovery for failed reads and distinguishes empty 
 test('uncertain media mutations freeze selection and pagination until reconciliation',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  assert.match(source,/disabled=\{busy\|\|uncertain\} onPress=\{\(\)=>toggle\(item\.id\)\}/);
- assert.match(source,/setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,4\)\.map\(x=>x\.id\)\),busy\|\|uncertain/);
+ assert.match(source,/setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,4\)\.map\(x=>x\.id\)\)\},busy\|\|uncertain\|\|loadedOwner!==owner/);
  assert.match(source,/onEndReached=\{\(\)=>\{if\(loadedOwner===owner&&cursor&&!loading&&!error&&!uncertain&&!mutation\.current\)/);
 });
 
