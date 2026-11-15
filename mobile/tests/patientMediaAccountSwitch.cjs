@@ -204,3 +204,22 @@ test('photo picker results are invalidated when patient scope changes even if th
  assert.match(source,/mounted\.current=false;request\.current\+\+;pickerGeneration\.current\+\+/);
  assert.match(source,/picker!==pickerGeneration\.current\|\|mutation\.current\|\|uncertain\|\|result\.canceled/);
 });
+
+test('full gallery reconciliation closes a preview of an obsolete clinical image',async()=>{
+ let media=[{id:31,url:'https://example.invalid/old-preview.jpg',media_type:'PHOTO'}];
+ const Media=mountMedia(async()=>({items:media,next_before:null}));
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'account',patientId:1,onAnalysis:()=>{}}))});
+ const open=tree.root.findAllByType('Pressable').find(x=>x.props.accessibilityLabel==='Klinik görselleri aç');
+ await renderer.act(async()=>open.props.onPress());
+ const image=tree.root.findAllByType('Pressable').find(x=>x.findAllByType('Image').some(i=>i.props.source?.uri?.includes('old-preview.jpg')));
+ assert.ok(image);
+ await renderer.act(async()=>image.props.onPress());
+ assert.match(visible(tree.root),/Klinik görsel/);
+ media=[];
+ const gallery=tree.root.findAllByType('FlatList')[0];
+ await renderer.act(async()=>gallery.props.onRefresh());
+ assert.ok(!tree.root.findAllByType('Image').some(x=>x.props.source?.uri?.includes('old-preview.jpg')));
+ assert.ok(!visible(tree.root).includes('Görseli Sil'),'removed preview must not retain destructive controls');
+ await renderer.act(async()=>tree.unmount());
+});
