@@ -194,3 +194,27 @@ def test_invalid_saved_media_file_does_not_publish_partial_mixed_batch(chat,monk
     with Session(engine) as s:
         assert not s.exec(select(main.Analysis)).all()
         assert not s.exec(select(main.ImageAsset)).all()
+
+
+def test_mixed_media_materialization_validation_classification_and_persistence_use_worker_pool(chat,monkeypatch,tmp_path):
+    from pathlib import Path
+    c,engine,raw=setup(chat,monkeypatch,tmp_path)
+    saved=tmp_path/"saved.png";saved.write_bytes(raw)
+    _saved_media(engine,saved)
+    calls=[]
+    def materialize(value):return Path(value)
+    def classify(value):return "PERIAPICAL"
+    def persist(value):return None
+    for fn,name in [(materialize,"storage_ensure_local"),(classify,"classify_dental_image"),(persist,"storage_persist_file")]:
+        fn.__name__=name
+    monkeypatch.setattr(mobile_analysis_api,"storage_ensure_local",materialize)
+    monkeypatch.setattr(mobile_analysis_api,"classify_dental_image",classify)
+    monkeypatch.setattr(mobile_analysis_api,"storage_persist_file",persist)
+    original=mobile_analysis_api.run_in_threadpool
+    async def tracked(fn,*args):
+        calls.append(fn.__name__)
+        return await original(fn,*args)
+    monkeypatch.setattr(mobile_analysis_api,"run_in_threadpool",tracked)
+    response=_post_mixed(c,raw,"31","synthetic-worker-pool-001")
+    assert response.status_code==200,response.text
+    assert {"_upload_digest","storage_ensure_local","_copy_validated_existing_analysis_image","_copy_validated_analysis_image","classify_dental_image","storage_persist_file"}.issubset(set(calls))
