@@ -179,5 +179,32 @@ async def mobile_photo(payload:Photo,token:str=Depends(_mobile_access_token),use
     await _invoke(web.account_profile_photo,_mobile_request(token),payload.profile_photo_data)
     return {'ok':True}
 
+
+class AccountDeletion(BaseModel):
+    confirm_username: str = Field(min_length=1, max_length=80)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+@router.post('/account/delete')
+async def mobile_delete_account(
+    payload: AccountDeletion,
+    token: str = Depends(_mobile_access_token),
+    user=Depends(_account_user),
+):
+    """Expose the existing guarded self-erasure flow to native clients."""
+    from app import main as web
+
+    response = await run_in_threadpool(
+        web.delete_own_account,
+        _mobile_request(token),
+        payload.confirm_username,
+        payload.password,
+    )
+    if response.status_code == 303 and response.headers.get('location') == '/login?account_deleted=1':
+        return {'ok': True, 'requires_login': True}
+    _response(response)
+    raise HTTPException(status_code=502, detail='Hesap silme işlemi doğrulanamadı.')
+
+
 from app.mobile_professional_api import router as mobile_professional_router
 router.include_router(mobile_professional_router)
