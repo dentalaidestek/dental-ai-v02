@@ -214,3 +214,11 @@ export const reportSocial = (
     method: "POST",
     body: JSON.stringify({ target_type, target_id, reason }),
   });
+
+export type SocialRelationship={id:number;user_id:number;name:string;photo:string|null;is_expert:boolean;specialty:string|null;following_by_viewer:boolean};
+export async function getSocialRelationships(token:string,ownerId:number,kind:'followers'|'following',before?:number){
+ if(!Number.isSafeInteger(ownerId)||ownerId<1||!['followers','following'].includes(kind)||before!==undefined&&(!Number.isSafeInteger(before)||before<1))throw Error('Geçersiz takip listesi.');
+ const r=await socialRequest<{items:SocialRelationship[];next_cursor:number|null}>(token,`/experts/${ownerId}/${kind}?limit=15`+(before?'&before='+before:''));
+ if(!Array.isArray(r.items)||r.items.length>15||r.items.some(m=>!m||!Number.isSafeInteger(m.user_id)||m.user_id<1||typeof m.name!=='string'||typeof m.is_expert!=='boolean'||typeof m.following_by_viewer!=='boolean'||before!==undefined&&m.user_id>=before)||new Set(r.items.map(m=>m.user_id)).size!==r.items.length||r.next_cursor!==null&&(!Number.isSafeInteger(r.next_cursor)||r.next_cursor<1||!r.items.some(m=>m.user_id===r.next_cursor)||before!==undefined&&r.next_cursor>=before))throw Error('Takip listesi yanıtı doğrulanamadı. Yeniden deneyin.');
+ return{items:r.items.map(m=>({...m,id:m.user_id})),next_before:r.next_cursor};
+}

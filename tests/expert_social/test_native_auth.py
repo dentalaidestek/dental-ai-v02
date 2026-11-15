@@ -73,3 +73,34 @@ def test_native_profile_photo_preserves_block_and_member_scope(env, monkeypatch,
     assert c.get('/api/expert-social/experts/1/photo').status_code == 404
     c.headers.pop('Authorization')
     assert c.get('/api/expert-social/experts/1/photo').status_code == 401
+
+
+def test_native_relationship_lists_are_private_even_to_admin(env):
+    c,_=env
+    native(c,'t2')
+    assert c.put('/api/expert-social/experts/1/follow',json={'followed':True}).status_code==200
+    assert c.get('/api/expert-social/experts/2/following').json()['items'][0]['user_id']==1
+    assert c.get('/api/expert-social/experts/1/followers').status_code==403
+    native(c,'t4')
+    assert c.get('/api/expert-social/experts/1/followers').status_code==403
+    native(c,'t1')
+    result=c.get('/api/expert-social/experts/1/followers')
+    assert result.status_code==200 and result.json()['items'][0]['user_id']==2
+    assert result.headers['cache-control']=='private, no-store'
+
+
+def test_native_relationship_updates_share_web_state_and_hide_blocked_members(env):
+    c,engine=env;native(c,'t2')
+    assert c.put('/api/expert-social/experts/1/follow',json={'followed':True}).status_code==200
+    c.headers.pop('Authorization');c.cookies.set(main.SESSION_COOKIE,'t1')
+    assert c.get('/api/expert-social/experts/1/followers').json()['items'][0]['user_id']==2
+    with Session(engine) as s:s.add(main.UserBlock(blocker_user_id=1,blocked_user_id=2));s.commit()
+    native(c,'t1');assert c.get('/api/expert-social/experts/1/followers').json()['items']==[]
+    native(c,'t2');assert c.get('/api/expert-social/experts/2/following').json()['items']==[]
+
+
+def test_native_following_hides_expert_when_verification_is_revoked(env):
+    c,engine=env;native(c,'t2')
+    assert c.put('/api/expert-social/experts/1/follow',json={'followed':True}).status_code==200
+    with Session(engine) as s:p=s.exec(select(main.ExpertProfile).where(main.ExpertProfile.user_id==1)).one();p.verification_status='REJECTED';s.add(p);s.commit()
+    assert c.get('/api/expert-social/experts/2/following').json()['items']==[]
