@@ -19,6 +19,16 @@ async function send<T>(token:string,path:string,payload:unknown):Promise<T>{
  }catch(error){if(error instanceof Error&&error.name==='AbortError')throw Error('Klinik değerlendirme zaman aşımına uğradı. Metniniz bu ekranda korunuyor; tekrar deneyebilirsiniz.');throw error;
  }finally{clearTimeout(timeout)}
 }
+export type AnonymousVoicePatient={id:number;anonymous_id:string;first_name:string|null;last_name:string|null;phone?:string|null;birth_date?:string|null;age?:number|null;chief_complaint?:string|null;created_at?:string|null};
+export async function createAnonymousVoicePatient(token:string,requestKey:string):Promise<{patient:AnonymousVoicePatient;already_created:boolean}>{
+ if(typeof requestKey!=="string"||!/^[a-f0-9]{32}$/.test(requestKey))throw Error("Yeni hasta isteği doğrulanamadı. Güvenli anahtarı yeniden oluşturun.");
+ const result=await send<{ok:true;patient:AnonymousVoicePatient;already_created:boolean}>(token,"/voice-exam/anonymous",{request_key:requestKey});
+ const patient=result.patient;
+ if(result.ok!==true||!patient||!Number.isSafeInteger(patient.id)||patient.id<=0||typeof patient.anonymous_id!=="string"||!/^SES-[A-F0-9]{16}$/.test(patient.anonymous_id)||typeof result.already_created!=="boolean"||(patient.first_name!==null&&typeof patient.first_name!=="string")||(patient.last_name!==null&&typeof patient.last_name!=="string"))
+  throw Error("Yeni hasta kaydı sunucu tarafından doğrulanamadı. Aynı isteği güvenli biçimde tekrar deneyin.");
+ return {patient,already_created:result.already_created};
+}
+
 export type VoiceField={value:string;quote?:string;edited?:boolean};
 export type VoiceExtraction={ok:boolean;revision:string;review:{fields?:Record<string,VoiceField>;teeth?:unknown[];insights?:Record<string,unknown>[];communication?:{quote:string;observation:string;suggestion:string}[];decision_barriers?:Record<string,unknown>[];follow_up_questions?:Record<string,unknown>[];uncertain?:string;literature_topics?:unknown[];source_requests?:unknown[];appointment?:{quote?:string;acceptance_quote?:string}}};
 export async function extractVoice(token:string,patientId:number,transcript:string):Promise<VoiceExtraction>{
