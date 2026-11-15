@@ -143,3 +143,11 @@ test('native extraction processes web-sized chunks sequentially and resumes afte
  assert.equal(calls.length,3);assert.equal(calls[1].body.context.fields.chief_complaint.value,'part1');
  assert.equal(result.review.fields.chief_complaint.value,'part1 | part2 | part3');assert.equal(saved.cursor,3);
 });
+
+test('native extraction refuses to merge chunks across a patient revision change',async()=>{
+ const exports={},calls=[],first='a'.repeat(64),changed='b'.repeat(64),code=ts.transpileModule(fs.readFileSync(require.resolve('../src/voiceApi.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+ const fakeFetch=async(_url,init)=>{const body=JSON.parse(init.body);calls.push(body);const payload={ok:true,revision:calls.length===1?first:changed,review:{fields:{chief_complaint:{value:'Synthetic complaint '+calls.length,quote:'Synthetic evidence'}},teeth:[],communication:[],decision_barriers:[],follow_up_questions:[],literature_topics:[],source_requests:[]}};return{status:200,ok:true,text:async()=>JSON.stringify(payload)}};
+ vm.runInNewContext(code,{exports,fetch:fakeFetch,setTimeout,clearTimeout,AbortController,Error,require:n=>n==='./sessionExpiry'?{revalidateSession:async()=>{}}:n==='./voiceSession'?require('../src/voiceSession.ts'):{}});
+ let checkpoint;await assert.rejects(exports.extractVoice('token',8,'a'.repeat(25000),{onCheckpoint:async value=>{checkpoint=value}}),/Hasta dosyası görüşme sırasında değişti/);
+ assert.equal(calls.length,2);assert.equal(checkpoint.cursor,1);assert.equal(checkpoint.revision,first);
+});
