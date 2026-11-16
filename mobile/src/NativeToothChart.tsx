@@ -42,7 +42,68 @@ export default function NativeToothChart({token,userId,patientId}:{token:string;
  // A surface belongs to a specific tooth; never carry it into another tooth record.
  useEffect(()=>{setSurfaces([])},[selected,patientId]);
  async function saveSurface(){if(!selected||!surfaceEditor||surfaceSavingRef.current||savingRef.current||treatmentSavingRef.current)return;refreshGeneration.current++;surfaceSavingRef.current=true;setSurfaceBusy(true);const scope=`${token}:${patientId}`,request=requestGeneration.current,tooth=selected,surfaceRequest=++surfaceGeneration.current;setErr("");try{await updateToothSurface(token,patientId,tooth,surfaceEditor,{status:surfaceStatus,note:surfaceNote.trim()});const updated=await getPatient(token,patientId);if(scope===patientScope.current&&request===requestGeneration.current){setD(updated);setSurfaceEditor(null)}}catch(e:any){if(scope===patientScope.current&&request===requestGeneration.current)setErr(e?.message||"Yüzey kaydı doğrulanamadı.")}finally{if(surfaceRequest===surfaceGeneration.current&&scope===patientScope.current&&request===requestGeneration.current){surfaceSavingRef.current=false;setSurfaceBusy(false)}}}
- async function saveTreatment(){if(!selected||treatmentSavingRef.current||surfaceSavingRef.current||savingRef.current||!treatmentName.trim())return;if(treatmentDate.trim()&&!/^\d{4}-\d{2}-\d{2}$/.test(treatmentDate.trim())){setErr("Tedavi tarihi YYYY-AA-GG biçiminde olmalıdır.");return;}refreshGeneration.current++;const scope=`${token}:${patientId}`,request=requestGeneration.current,tooth=selected,treatmentRequest=++treatmentGeneration.current;treatmentSavingRef.current=true;setTreatmentBusy(true);setErr("");try{const payload={tooth_number:tooth,treatment_name:treatmentName.trim(),treatment_date:treatmentDate.trim()||undefined,material:treatmentMaterial.trim(),doctor_note:treatmentNote.trim(),result:treatmentResult.trim()};if(editingTreatment!==null)await updateTreatment(token,patientId,editingTreatment,payload);else await createTreatment(token,patientId,payload);const updated=await getPatient(token,patientId);if(scope===patientScope.current&&request===requestGeneration.current){setD(updated);clearTreatment()}}catch(e:any){if(scope===patientScope.current&&request===requestGeneration.current)setErr(e?.message||"Tedavi kaydı doğrulanamadı. Geçmişi kontrol edin.")}finally{if(treatmentRequest===treatmentGeneration.current&&scope===patientScope.current&&request===requestGeneration.current){treatmentSavingRef.current=false;setTreatmentBusy(false)}}}
+ async function saveTreatment(){
+  if((!selected&&!pendingTreatment)||treatmentSavingRef.current||surfaceSavingRef.current||savingRef.current)return;
+  if(!treatmentIntentReady||treatmentIntentBlocked){setErr("Bekleyen tedavi taslağı kontrol edilmeden yeni işlem başlatılamaz.");return;}
+  if(!pendingTreatment&&!treatmentName.trim()){setErr("Tedavi adı zorunludur.");return;}
+  if(!pendingTreatment&&treatmentDate.trim()&&!/^\\d{4}-\\d{2}-\\d{2}$/.test(treatmentDate.trim())){setErr("Tedavi tarihi YYYY-AA-GG biçiminde olmalıdır.");return;}
+  if(!pendingTreatment&&editingTreatment!==null&&(!editingTreatmentRevision||!/^[a-f0-9]{64}$/.test(editingTreatmentRevision))){setErr("Tedavi sürümü alınamadı. Geçmişi yenileyip yeniden düzenleyin.");return;}
+  refreshGeneration.current++;
+  const scope=`${userId}:${token}:${patientId}`,request=requestGeneration.current,treatmentRequest=++treatmentGeneration.current;
+  treatmentSavingRef.current=true;setTreatmentBusy(true);setErr("");
+  let sent=false;
+  try{
+   let intent=pendingTreatment;
+   if(!intent){
+    const payload:TreatmentPayload={tooth_number:selected,treatment_name:treatmentName.trim(),treatment_date:treatmentDate.trim(),material:treatmentMaterial.trim(),doctor_note:treatmentNote.trim(),result:treatmentResult.trim()};
+    const operation=editingTreatment===null?"CREATE":"UPDATE";
+    const candidate={userId,patientId,operation,treatmentId:editingTreatment,requestKey:Crypto.randomUUID(),expectedRevision:editingTreatmentRevision,payload};
+    intent=parseTreatmentMutationIntent(JSON.stringify(candidate),userId,patientId);
+    await treatmentStore.setItemAsync(treatmentKey,JSON.stringify(intent));
+    if(scope!==patientScope.current||request!==requestGeneration.current)return;
+    setPendingTreatment(intent);
+   }
+   sent=true;
+   if(intent.operation==="CREATE")await createTreatment(token,patientId,intent.payload,intent.requestKey);
+   else await updateTreatment(token,patientId,intent.treatmentId!,intent.payload,intent.requestKey,intent.expectedRevision!);
+   await treatmentStore.deleteItemAsync(treatmentKey);
+   if(scope!==patientScope.current||request!==requestGeneration.current)return;
+   setPendingTreatment(null);setTreatmentUncertain(false);setTreatmentIntentBlocked(false);
+   setEditingTreatment(null);setEditingTreatmentRevision(null);
+   setTreatmentName("");setTreatmentDate("");setTreatmentMaterial("");setTreatmentNote("");setTreatmentResult("");
+   try{
+    const updated=await getPatient(token,patientId);
+    if(scope===patientScope.current&&request===requestGeneration.current){
+     setD(updated);setErr("");
+     const tooth=intent.payload.tooth_number;
+     if(tooth&&/^(?:[1-4][1-8]|[5-8][1-5])$/.test(tooth)){setSelected(tooth);setDentition(Number(tooth[0])>=5?"primary":"adult");setDetailTab("treatments");}
+    }
+   }catch{
+    if(scope===patientScope.current&&request===requestGeneration.current)setErr("Tedavi kaydedildi; diş geçmişi alınamadı. Yenileyin.");
+   }
+  }catch(e){
+   if(scope!==patientScope.current||request!==requestGeneration.current)return;
+   const status=(e as {status?:number})?.status,message=e instanceof Error?e.message:"Tedavi kaydı doğrulanamadı.";
+   if(status===409&&message.includes("Tedavi başka bir oturumda güncellendi")){
+    try{await treatmentStore.deleteItemAsync(treatmentKey);}
+    catch{setTreatmentIntentBlocked(true);setErr("Tedavi sürüm çakışması bulundu ancak güvenli taslak temizlenemedi. Yeni işlem başlatmayın; aynı taslağı doğrulamak için ekranı yeniden açın.");return;}
+    setPendingTreatment(null);setTreatmentUncertain(false);setEditingTreatment(null);setEditingTreatmentRevision(null);
+    try{const updated=await getPatient(token,patientId);if(scope===patientScope.current&&request===requestGeneration.current)setD(updated);}
+    catch{if(scope===patientScope.current&&request===requestGeneration.current)setErr("Tedavi başka bir oturumda güncellendi. Geçmiş yenilenemedi; yeniden deneyin.");}
+    if(scope===patientScope.current&&request===requestGeneration.current)setErr("Tedavi başka bir oturumda güncellendi. Güncel geçmiş yüklendi; yeniden düzenleyin.");
+   }else if([400,403,404,422].includes(Number(status))){
+    try{await treatmentStore.deleteItemAsync(treatmentKey);}
+    catch{setTreatmentIntentBlocked(true);setErr("Sunucu isteği reddetti ancak güvenli taslak temizlenemedi. Yeni işlem başlatmayın; ekranı yeniden açıp kaydı doğrulayın.");return;}
+    setPendingTreatment(null);setTreatmentUncertain(false);setEditingTreatmentRevision(null);
+    setErr(message+" Bilgileri düzeltip yeniden deneyin.");
+   }else{
+    setTreatmentUncertain(sent);
+    setErr(message+(sent?" Aynı işlem anahtarı güvenli taslakta korundu. Tekrar göndermek yerine Bekleyen Tedaviyi Doğrula düğmesini kullanın.":" Güvenli taslak kaydedilemedi; sunucuya istek gönderilmedi."));
+   }
+  }finally{
+   if(treatmentRequest===treatmentGeneration.current&&scope===patientScope.current&&request===requestGeneration.current){treatmentSavingRef.current=false;setTreatmentBusy(false);}
+  }
+ }
  async function save(){if(!selected||savingRef.current||surfaceSavingRef.current||treatmentSavingRef.current)return;refreshGeneration.current++;const tooth=selected;const request=requestGeneration.current;const scope=`${token}:${patientId}`;const saveRequest=++saveGeneration.current;savingRef.current=true;setBusy(true);setErr("");try{await updateTooth(token,patientId,tooth,{status,note:note.trim(),surfaces});const updated=await getPatient(token,patientId);if(request===requestGeneration.current&&scope===patientScope.current)setD(updated)}catch(e:any){if(request===requestGeneration.current&&scope===patientScope.current)setErr(e?.message||"Diş durumu kaydedildiği doğrulanamadı. Yeniden yükleyip kontrol edin.")}finally{if(saveRequest===saveGeneration.current){savingRef.current=false;if(request===requestGeneration.current&&scope===patientScope.current)setBusy(false)}}}
  if(!d)return <View style={{padding:30,alignItems:"center"}}>{err?<><Text accessibilityRole="alert" style={{color:"#B42318",textAlign:"center"}}>{err}</Text><Pressable accessibilityRole="button" onPress={()=>{setErr("");load()}} style={{padding:14,marginTop:12}}><Text style={{color:"#1769AA",fontWeight:"800"}}>Tekrar dene</Text></Pressable></>:<ActivityIndicator color="#071B35"/>}</View>;
  // Keep FDI quadrants together on every screen width; never wrap 16 teeth into arbitrary rows.
