@@ -1,18 +1,21 @@
 import * as FS from 'expo-file-system/legacy';
 import {normalizeAnalysisImages} from './analysisApi';
 import {UploadImage} from './analysisUpload';
+import {ANALYSIS_MAX_IMAGE_BYTES,ANALYSIS_MAX_BATCH_BYTES} from './uploadLimits';
 import {cleanupStaleClinicalMediaTemps,deleteClinicalMediaTemp,deleteClinicalMediaVaultFile,decryptClinicalMediaFile,encryptClinicalMediaFile,validateClinicalMediaVaultFile} from './clinicalMediaVault';
 
-const MAX_ANALYSIS_IMAGE_BYTES=15*1024*1024;
 export async function cacheAnalysisImages(images:Array<{uri:string;name?:string;type?:string}>,userId:number,patientId:number):Promise<UploadImage[]>{
   const normalized=normalizeAnalysisImages(images),cached:UploadImage[]=[];
   try{
     await cleanupStaleClinicalMediaTemps();
+    let totalBytes=0;
     for(const image of normalized){
       const info=await FS.getInfoAsync(image.uri);
-      if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>MAX_ANALYSIS_IMAGE_BYTES)
+      if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>ANALYSIS_MAX_IMAGE_BYTES)
         throw Error('Her klinik görüntü en fazla 15 MB olmalı.');
-      const encryptedUri=await encryptClinicalMediaFile(image.uri,userId,patientId,MAX_ANALYSIS_IMAGE_BYTES);
+      totalBytes+=info.size;
+      if(totalBytes>ANALYSIS_MAX_BATCH_BYTES)throw Error('Bir analizde yeni görüntülerin toplamı en fazla 48 MiB olabilir.');
+      const encryptedUri=await encryptClinicalMediaFile(image.uri,userId,patientId,ANALYSIS_MAX_IMAGE_BYTES);
       cached.push({...image,uri:encryptedUri,encryptedUri,previewUri:image.uri});
     }
     return cached;
@@ -23,13 +26,13 @@ export async function ensureEncryptedAnalysisImages(images:UploadImage[],userId:
   try{
     for(const image of images){
       if(image.encryptedUri){
-        await validateClinicalMediaVaultFile(image.encryptedUri,userId,patientId,MAX_ANALYSIS_IMAGE_BYTES);
+        await validateClinicalMediaVaultFile(image.encryptedUri,userId,patientId,ANALYSIS_MAX_IMAGE_BYTES);
         migrated.push({...image,uri:image.encryptedUri,encryptedUri:image.encryptedUri});
       }else{
         const info=await FS.getInfoAsync(image.uri);
-        if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>MAX_ANALYSIS_IMAGE_BYTES)
+        if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>ANALYSIS_MAX_IMAGE_BYTES)
           throw Error('Önceki analiz taslağındaki geçici görüntü artık bulunmuyor. Hasta analiz geçmişini kontrol edin.');
-        const encryptedUri=await encryptClinicalMediaFile(image.uri,userId,patientId,MAX_ANALYSIS_IMAGE_BYTES);
+        const encryptedUri=await encryptClinicalMediaFile(image.uri,userId,patientId,ANALYSIS_MAX_IMAGE_BYTES);
         if(FS.cacheDirectory&&image.uri.startsWith(FS.cacheDirectory+'dai-analysis-'))await FS.deleteAsync(image.uri,{idempotent:true}).catch(()=>{});
         migrated.push({uri:encryptedUri,encryptedUri,name:image.name,type:image.type});
       }
@@ -39,19 +42,29 @@ export async function ensureEncryptedAnalysisImages(images:UploadImage[],userId:
 }
 export async function prepareAnalysisUploadImages(images:UploadImage[],userId:number,patientId:number):Promise<{images:UploadImage[];cleanup:()=>Promise<void>}>{
   const prepared:UploadImage[]=[],temporary:string[]=[];
+  let totalBytes=0;
   const cleanup=async()=>{await Promise.all(temporary.map(uri=>deleteClinicalMediaTemp(uri).catch(()=>{})));};
   try{
     for(const image of images){
       if(image.encryptedUri){
         const uri=await decryptClinicalMediaFile(image.encryptedUri,userId,patientId,image.name);
-        temporary.push(uri);prepared.push({uri,name:image.name,type:image.type});
+        temporary.push(uri);
+        const info=await FS.getInfoAsync(uri);
+        if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>ANALYSIS_MAX_IMAGE_BYTES)
+          throw Error('Bekleyen analiz görüntüsünün gerçek boyutu geçersiz veya 15 MiB sınırını aşıyor.');
+        totalBytes+=info.size;
+        if(totalBytes>ANALYSIS_MAX_BATCH_BYTES)throw Error('Bir analizde görüntülerin toplamı en fazla 48 MiB olabilir.');
+        prepared.push({uri,name:image.name,type:image.type});
       }else{
         const info=await FS.getInfoAsync(image.uri);
-        if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>MAX_ANALYSIS_IMAGE_BYTES)
-          throw Error('Bekleyen analiz görüntüsünün yerel dosyası bulunamadı. Analiz geçmişini kontrol edin.');
+        if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>ANALYSIS_MAX_IMAGE_BYTES)
+          throw Error('Bekleyen analiz görüntüsünün yerel dosyası bulunamadı. Hasta analiz geçmişini kontrol edin.');
+        totalBytes+=info.size;
+        if(totalBytes>ANALYSIS_MAX_BATCH_BYTES)throw Error('Bir analizde görüntülerin toplamı en fazla 48 MiB olabilir.');
         prepared.push({uri:image.uri,name:image.name,type:image.type});
       }
     }
+  }catch(error){await cleanup();throw error;}
     return {images:prepared,cleanup};
   }catch(error){await cleanup();throw error;}
 }
@@ -65,11 +78,11 @@ export async function clearAnalysisImages(images:UploadImage[]){
 export async function validateCachedAnalysisImages(images:UploadImage[],userId:number,patientId:number){
   for(const image of images){
     if(image.encryptedUri){
-      await validateClinicalMediaVaultFile(image.encryptedUri,userId,patientId,MAX_ANALYSIS_IMAGE_BYTES);
+      await validateClinicalMediaVaultFile(image.encryptedUri,userId,patientId,ANALYSIS_MAX_IMAGE_BYTES);
       continue;
     }
     const info=await FS.getInfoAsync(image.uri);
-    if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>MAX_ANALYSIS_IMAGE_BYTES)
+    if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>ANALYSIS_MAX_IMAGE_BYTES)
       throw Error('Bekleyen görüntünün yerel dosyası bulunamadı. Analiz geçmişini kontrol edin.');
   }
 }
