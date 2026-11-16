@@ -8,6 +8,7 @@ mobile clients do not create a second authentication system.
 from datetime import datetime, timedelta
 from pathlib import Path
 import json
+import hashlib
 import hmac
 import logging
 import os
@@ -22,7 +23,9 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field as RequestField
 from sqlmodel import Session, func, select
+from sqlalchemy import text
 from app.clinical_media import sanitize_clinical_media_image
+from app.work_jobs import WorkJob
 from starlette.requests import Request
 from fastapi.responses import JSONResponse
 
@@ -848,72 +851,178 @@ class MobileTreatmentCreate(BaseModel):
     material: Optional[str] = None
     doctor_note: Optional[str] = None
     result: Optional[str] = None
+    request_key: Optional[str] = None
+    expected_revision: Optional[str] = None
+
+
+_TREATMENT_REQUEST_KEY = re.compile(r"^[A-Za-z0-9_-]{16,80}$")
+_TREATMENT_REVISION = re.compile(r"^[a-f0-9]{64}$")
+
+
+def _normalize_treatment_payload(payload: MobileTreatmentCreate) -> dict:
+    name = (payload.treatment_name or "").strip()
+    if not name or len(name) > 200:
+        raise HTTPException(status_code=422, detail="Tedavi adı 1-200 karakter olmalıdır.")
+    treatment_date = (payload.treatment_date or "").strip() or None
+    if treatment_date:
+        if not re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", treatment_date):
+            raise HTTPException(status_code=422, detail="Tedavi tarihi YYYY-AA-GG biçiminde olmalıdır.")
+        try:
+            datetime.strptime(treatment_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Tedavi tarihi YYYY-AA-GG biçiminde olmalıdır.")
+    tooth = (payload.tooth_number or "").strip() or None
+    if tooth and not _valid_fdi_tooth_number(tooth):
+        raise HTTPException(status_code=422, detail="Geçerli FDI diş numarası girin.")
+    if payload.expected_revision is not None and not _TREATMENT_REVISION.fullmatch(payload.expected_revision):
+        raise HTTPException(status_code=422, detail="Tedavi kayıt sürümü geçersiz.")
+    return {
+        "treatment_name": name,
+        "tooth_number": tooth,
+        "treatment_date": treatment_date,
+        "material": (payload.material or "").strip()[:500] or None,
+        "doctor_note": (payload.doctor_note or "").strip()[:4000] or None,
+        "result": (payload.result or "").strip()[:1000] or None,
+    }
+
+
+def _treatment_revision(treatment: Treatment) -> str:
+    value = {
+        "id": treatment.id,
+        "patient_id": treatment.patient_id,
+        "treatment_name": treatment.treatment_name,
+        "tooth_number": treatment.tooth_number,
+        "treatment_date": treatment.treatment_date,
+        "material": treatment.material,
+        "doctor_note": treatment.doctor_note,
+        "result": treatment.result,
+    }
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+
+
+def _treatment_receipt_key(user_id: int, patient_id: int, operation: str, treatment_id: Optional[int], request_key: str) -> str:
+    if not _TREATMENT_REQUEST_KEY.fullmatch(request_key or ""):
+        raise HTTPException(status_code=422, detail="Geçersiz tedavi işlem anahtarı.")
+    raw = f"mobile-treatment:{user_id}:{patient_id}:{operation}:{treatment_id or 0}:{request_key}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _treatment_payload_hash(patient_id: int, operation: str, treatment_id: Optional[int], expected_revision: Optional[str], values: dict) -> str:
+    payload = [patient_id, operation, treatment_id, expected_revision, values]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+
+
+def _lock_treatment_receipt(session: Session, receipt_key: Optional[str]) -> None:
+    if receipt_key and session.get_bind().dialect.name == "postgresql":
+        slot = int.from_bytes(hashlib.sha256(("treatment-receipt:" + receipt_key).encode()).digest()[:8], "big", signed=True)
+        session.execute(text("SELECT pg_advisory_xact_lock(:slot)"), {"slot": slot})
+
+
+def _existing_treatment_receipt(session: Session, user: User, patient_id: int, receipt_key: str, digest: str):
+    receipt = session.exec(select(WorkJob).where(
+        WorkJob.owner_user_id == user.id,
+        WorkJob.resource_id == patient_id,
+        WorkJob.resource_type == "PATIENT",
+        WorkJob.kind == "TREATMENT_RECEIPT",
+        WorkJob.dedupe_key == receipt_key,
+    )).first()
+    if receipt is None:
+        return None
+    if receipt.source_hash != digest:
+        raise HTTPException(status_code=409, detail="Bu tedavi işlem anahtarı farklı bilgilerle kullanılmış.")
+    try:
+        saved = json.loads(receipt.payload_json or "{}")
+        treatment_id = int(saved["treatment_id"])
+        revision = saved["edit_revision"]
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+        raise HTTPException(status_code=409, detail="Tedavi işlem fişi doğrulanamadı.")
+    treatment = session.get(Treatment, treatment_id)
+    if not treatment or treatment.patient_id != patient_id or not _TREATMENT_REVISION.fullmatch(str(revision)):
+        raise HTTPException(status_code=409, detail="Önceki tedavi işlemi artık doğrulanamıyor; geçmişi yenileyin.")
+    return {"ok": True, "treatment_id": treatment_id, "edit_revision": revision, "replayed": True}
+
+
+def _store_treatment_receipt(session: Session, user: User, patient_id: int, treatment: Treatment, receipt_key: Optional[str], digest: Optional[str], operation: str) -> None:
+    if not receipt_key or not digest:
+        return
+    session.add(WorkJob(
+        owner_user_id=user.id,
+        resource_id=patient_id,
+        resource_type="PATIENT",
+        kind="TREATMENT_RECEIPT",
+        source_hash=digest,
+        dedupe_key=receipt_key,
+        payload_json=json.dumps({
+            "patient_id": patient_id,
+            "treatment_id": treatment.id,
+            "edit_revision": _treatment_revision(treatment),
+            "operation": operation,
+        }, sort_keys=True),
+        status="DONE",
+    ))
 
 
 @router.post("/patients/{patient_id}/treatments", status_code=201)
 def mobile_create_treatment(patient_id: int, payload: MobileTreatmentCreate, user: User = Depends(_mobile_user)):
-    name = payload.treatment_name.strip()
-    if not name or len(name) > 200:
-        raise HTTPException(status_code=422, detail="Tedavi adı 1-200 karakter olmalıdır.")
-    if payload.treatment_date:
-        try:
-            datetime.strptime(payload.treatment_date, "%Y-%m-%d")
-        except ValueError:
-            raise HTTPException(status_code=422, detail="Tedavi tarihi YYYY-AA-GG biçiminde olmalıdır.")
-    tooth = payload.tooth_number.strip() if payload.tooth_number else None
-    if tooth and not _valid_fdi_tooth_number(tooth):
-        raise HTTPException(status_code=422, detail="Geçerli FDI diş numarası girin.")
+    values = _normalize_treatment_payload(payload)
+    receipt_key = _treatment_receipt_key(user.id, patient_id, "CREATE", None, payload.request_key) if payload.request_key else None
+    digest = _treatment_payload_hash(patient_id, "CREATE", None, None, values) if receipt_key else None
     with Session(engine, expire_on_commit=False) as session:
+        _lock_treatment_receipt(session, receipt_key)
         patient = session.get(Patient, patient_id)
         if not patient or patient.owner_user_id != user.id:
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
-        treatment = Treatment(
-            patient_id=patient_id,
-            tooth_number=tooth,
-            treatment_name=name,
-            treatment_date=payload.treatment_date or None,
-            material=payload.material.strip()[:500] if payload.material else None,
-            doctor_note=payload.doctor_note.strip()[:4000] if payload.doctor_note else None,
-            result=payload.result.strip()[:1000] if payload.result else None,
-        )
+        if receipt_key:
+            existing = _existing_treatment_receipt(session, user, patient_id, receipt_key, digest)
+            if existing:
+                return existing
+        treatment = Treatment(patient_id=patient_id, **values)
         session.add(treatment)
         session.flush()
-        event=_record_realtime_event(session,user.id,"PATIENT_UPDATED","patient",patient_id,{"patient_id":patient_id,"treatment_id":treatment.id})
+        revision = _treatment_revision(treatment)
+        _store_treatment_receipt(session, user, patient_id, treatment, receipt_key, digest, "CREATE")
+        event = _record_realtime_event(session, user.id, "TREATMENT_CREATED", "patient", patient_id,
+                                       {"patient_id": patient_id, "treatment_id": treatment.id})
         session.commit()
-        treatment_id=treatment.id
-    on_loop(_publish_realtime_event,event)
-    return {"ok": True, "treatment_id": treatment_id}
+        treatment_id = treatment.id
+    on_loop(_publish_realtime_event, event)
+    return {"ok": True, "treatment_id": treatment_id, "edit_revision": revision, "replayed": False}
 
 
 @router.put("/patients/{patient_id}/treatments/{treatment_id}")
 def mobile_update_treatment(patient_id: int, treatment_id: int, payload: MobileTreatmentCreate, user: User = Depends(_mobile_user)):
-    name = payload.treatment_name.strip()
-    if not name or len(name) > 200:
-        raise HTTPException(status_code=422, detail="Tedavi adı 1-200 karakter olmalıdır.")
-    if payload.treatment_date:
-        try:
-            datetime.strptime(payload.treatment_date, "%Y-%m-%d")
-        except ValueError:
-            raise HTTPException(status_code=422, detail="Tedavi tarihi YYYY-AA-GG biçiminde olmalıdır.")
-    tooth = payload.tooth_number.strip() if payload.tooth_number else None
-    if tooth and not _valid_fdi_tooth_number(tooth):
-        raise HTTPException(status_code=422, detail="Geçerli FDI diş numarası girin.")
+    values = _normalize_treatment_payload(payload)
+    receipt_key = _treatment_receipt_key(user.id, patient_id, "UPDATE", treatment_id, payload.request_key) if payload.request_key else None
+    digest = _treatment_payload_hash(patient_id, "UPDATE", treatment_id, payload.expected_revision, values) if receipt_key else None
     with Session(engine, expire_on_commit=False) as session:
-        patient = session.get(Patient, patient_id)
-        treatment = session.get(Treatment, treatment_id)
-        if not patient or patient.owner_user_id != user.id or not treatment or treatment.patient_id != patient_id:
+        _lock_treatment_receipt(session, receipt_key)
+        patient = session.exec(select(Patient).where(Patient.id == patient_id).with_for_update()).first()
+        if not patient or patient.owner_user_id != user.id:
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        if receipt_key:
+            existing = _existing_treatment_receipt(session, user, patient_id, receipt_key, digest)
+            if existing:
+                if int(json.loads(session.exec(select(WorkJob).where(WorkJob.dedupe_key == receipt_key)).one().payload_json).get("treatment_id", 0)) != treatment_id:
+                    raise HTTPException(status_code=409, detail="Tedavi işlem fişi farklı bir kayda ait.")
+                return existing
+        treatment = session.exec(select(Treatment).where(
+            Treatment.id == treatment_id, Treatment.patient_id == patient_id
+        ).with_for_update().execution_options(populate_existing=True)).first()
+        if not treatment:
             raise HTTPException(status_code=404, detail="Tedavi bulunamadı.")
-        treatment.treatment_name = name
-        treatment.tooth_number = tooth
-        treatment.treatment_date = payload.treatment_date or None
-        treatment.material = payload.material.strip()[:500] if payload.material else None
-        treatment.doctor_note = payload.doctor_note.strip()[:4000] if payload.doctor_note else None
-        treatment.result = payload.result.strip()[:1000] if payload.result else None
+        if payload.expected_revision and _treatment_revision(treatment) != payload.expected_revision:
+            raise HTTPException(status_code=409, detail="Tedavi başka bir oturumda güncellendi. Güncel geçmişi yükleyip değişikliklerinizi yeniden uygulayın.")
+        for key, value in values.items():
+            setattr(treatment, key, value)
         session.add(treatment)
-        event=_record_realtime_event(session,user.id,"PATIENT_UPDATED","patient",patient_id,{"patient_id":patient_id,"treatment_id":treatment_id})
+        session.flush()
+        revision = _treatment_revision(treatment)
+        _store_treatment_receipt(session, user, patient_id, treatment, receipt_key, digest, "UPDATE")
+        event = _record_realtime_event(session, user.id, "TREATMENT_UPDATED", "patient", patient_id,
+                                       {"patient_id": patient_id, "treatment_id": treatment_id})
         session.commit()
-    on_loop(_publish_realtime_event,event)
-    return {"ok": True, "treatment_id": treatment_id}
+    on_loop(_publish_realtime_event, event)
+    return {"ok": True, "treatment_id": treatment_id, "edit_revision": revision, "replayed": False}
 
 
 @router.get("/patients/{patient_id}")
@@ -985,6 +1094,7 @@ def mobile_patient_detail(
                     "material": t.material,
                     "doctor_note": t.doctor_note,
                     "result": t.result,
+                    "edit_revision": _treatment_revision(t),
                     "analysis_id": t.analysis_id,
                     "created_at": t.created_at,
                 }
