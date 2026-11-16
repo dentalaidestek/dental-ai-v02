@@ -163,3 +163,18 @@ test('native analysis composer gives a neutral fallback when patient age and com
  assert.ok(rendered.includes('Ana şikâyet: Belirtilmemiş'));
  await renderer.act(async()=>t.unmount());
 });
+
+
+test('cancelling an active analysis transfer preserves the durable intent for receipt reconciliation',async()=>{
+ let signal;const h=ui({uploadAnalysis:async(_token,_intent,progress,activeSignal)=>{signal=activeSignal;progress(25,256,1024);return new Promise((_resolve,reject)=>activeSignal.addEventListener('abort',()=>reject(Object.assign(new Error('Synthetic uncertain transfer'),{status:408})),{once:true}))}});
+ const t=await mount(h);
+ await renderer.act(async()=>{button(t,'Analizi Başlat').props.onPress();await new Promise(r=>setImmediate(r))});
+ assert.ok(signal,'upload starts with an abort signal');
+ assert.ok(text(t.toJSON()).includes('256 B / 1.0 KiB'));
+ const stop=button(t,'Aktarımı Durdur');assert.ok(stop);
+ await renderer.act(async()=>{stop.props.onPress();await new Promise(r=>setImmediate(r))});
+ assert.equal(signal.aborted,true);
+ assert.ok(h.storage.has('dai.analysis.upload.1.8'),'uncertain upload intent remains durable');
+ assert.ok(button(t,'Aynı Yüklemeyi Sürdür'),'retry must reconcile the same request key before resending');
+ await renderer.act(async()=>t.unmount());
+});
