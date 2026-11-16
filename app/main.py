@@ -10700,7 +10700,11 @@ def edit_patient(
         if s.get_bind().dialect.name == "postgresql":
             patient_query = patient_query.with_for_update()
         patient = s.exec(patient_query).first()
-        if not patient or (user.role != "ADMIN" and patient.owner_user_id != user.id):
+        if (
+            not patient
+            or (user.role != "ADMIN" and patient.owner_user_id != user.id)
+            or (user.role == "ADMIN" and patient.owner_user_id not in {None, user.id})
+        ):
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
         profile = s.exec(select(PatientProfile).where(PatientProfile.patient_id == patient.id)).first()
         if expected_revision and not hmac.compare_digest(_patient_edit_revision(patient, profile), expected_revision):
