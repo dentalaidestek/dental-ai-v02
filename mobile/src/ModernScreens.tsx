@@ -11,6 +11,7 @@ import{ActivityIndicator,Alert,FlatList,Image,Modal,KeyboardAvoidingView,Platfor
 import{getAnalysisHistory,getConsultation,getConsultations,getCourses,getAcademicMessages,getExperts,getMedia,deleteMedia,getNotifications,markNotificationRead,askAcademic,sendConsultationMessage,markConsultationRead,createConsultation,Expert,Consultation,Course,ChatMessage}from"./modernApi";
 import{useRealtime}from"./realtime";
 import {usePagedRecords} from "./usePagedRecords";
+import {resolveNativeNotificationTarget} from "./notificationTarget";
 import {uploadPatientMedia} from "./api";
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",green:"#16803C",red:"#B42318"};
 const card={backgroundColor:C.white,borderRadius:18,borderWidth:1,borderColor:C.line,padding:16,marginBottom:12} as any;
@@ -29,15 +30,25 @@ export function Notifications({token}:{token:string}){
  useEffect(()=>{if(lastEvent&&["NOTICE_CREATED","NOTICE_RESOLVED","MESSAGE_CREATED","CASE_CREATED"].includes(String(lastEvent.event_type||lastEvent.type)))void load()},[lastEvent,load]);
  async function open(item:any){
   const requestToken=token;
-  try{if(!item.read_at){await markNotificationRead(token,item.id);if(activeToken.current!==requestToken)return;setD((old:any)=>old?.accountToken===requestToken?{...old,items:old.items.map((n:any)=>n.id===item.id?{...n,read_at:new Date().toISOString()}:n)}:old);}
-  }catch(e){if(activeToken.current===requestToken)setError(e instanceof Error?e.message:"Bildirim okunmuş olarak işaretlenemedi.");return;}
+  const target=resolveNativeNotificationTarget(item.target_url);
+  if(target.kind==="unsupported"){
+   Alert.alert("Bağlantı açılamıyor","Bu bildirimin hedef sayfası henüz mobil uygulamada bulunmuyor. Bildirim okunmamış bırakıldı.");
+   return;
+  }
+  if(!item.read_at){
+   try{
+    await markNotificationRead(token,item.id);
+    if(activeToken.current!==requestToken)return;
+    setD((old:any)=>old?.accountToken===requestToken?{...old,items:old.items.map((n:any)=>n.id===item.id?{...n,read_at:new Date().toISOString()}:n)}:old);
+   }catch(e){
+    if(activeToken.current===requestToken)setError(e instanceof Error?e.message:"Bildirim okunmuş olarak işaretlenemedi.");
+   }
+  }
   if(activeToken.current!==requestToken)return;
-  const url=String(item.target_url||"");
-  const chat=url.match(/^\/(?:consultations|expert\/consultations|cases)\/(\d+)(?:\/messages)?\/?(?:\?.*)?$/);
-  if(chat){nav.navigate("ConsultationChat",{id:Number(chat[1])});return;}
-  if(/^\/(?:consultations|expert\/consultations)\/?(?:\?.*)?$/.test(url)){nav.navigate("Consultations");return;}
-  if(/^\/patients\/(\d+)(?:\/.*)?$/.test(url)){const id=Number(url.match(/^\/patients\/(\d+)/)?.[1]);if(id)nav.navigate("Patients",{screen:"PatientDetail",params:{id}});return;}
-  // Unsupported web routes stay in the notification center instead of opening an unrelated conversation.
+  if(target.kind==="navigate"){
+   if("params" in target.route)nav.navigate(target.route.screen,target.route.params);
+   else nav.navigate(target.route.screen);
+  }
  }
  return <FlatList style={s.page} contentContainerStyle={s.pad} data={d?.accountToken===token?d.items:[]} keyExtractor={x=>String(x.id)}
  refreshControl={<RefreshControl refreshing={busy&&(!d||d.accountToken===token)} onRefresh={()=>void load()}/>}
