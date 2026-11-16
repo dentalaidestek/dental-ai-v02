@@ -61,7 +61,7 @@ def test_selected_media_analysis_uses_web_creation_and_rejects_other_owner(chat,
 
 def test_native_uploads_return_confirmed_success_after_persistence(chat,monkeypatch,tmp_path):
     from app import mobile_api
-    client,engine=chat;monkeypatch.setattr(mobile_analysis_api,'engine',engine)
+    client,engine=chat;monkeypatch.setattr(mobile_analysis_api,'engine',engine);monkeypatch.setattr(mobile_api,'engine',engine)
     monkeypatch.setattr(main,'classify_dental_image',lambda path:'PHOTO')
     monkeypatch.setattr(mobile_analysis_api,'classify_dental_image',lambda path:'PHOTO')
     monkeypatch.setattr(main,'storage_persist_file',lambda path:None)
