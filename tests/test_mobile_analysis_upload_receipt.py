@@ -290,3 +290,28 @@ def test_native_analysis_rejects_more_than_four_combined_images_before_allocatio
     with Session(engine) as session:
         assert not session.exec(select(main.Analysis)).all()
         assert not session.exec(select(work_jobs.WorkJob).where(work_jobs.WorkJob.kind=='VISION')).all()
+
+
+def test_mobile_analysis_accepts_exactly_four_saved_images_and_rejects_five(chat,monkeypatch,tmp_path):
+    from pathlib import Path
+    c,engine,raw=setup(chat,monkeypatch,tmp_path)
+    saved=tmp_path/'saved-four.png';saved.write_bytes(raw)
+    with Session(engine) as session:
+        for media_id in range(50,55):
+            session.add(main.PatientMedia(
+                id=media_id,patient_id=8,owner_user_id=1,
+                original_filename=f'saved-{media_id}.png',stored_filename=f'saved-{media_id}.png',
+                file_path=str(saved),media_type='RADIOGRAPH',
+            ))
+        session.commit()
+    monkeypatch.setattr(mobile_analysis_api,'storage_ensure_local',lambda value:Path(value))
+    accepted=_post_mixed(c,None,'50,51,52,53','synthetic-exact-four-saved-001')
+    assert accepted.status_code==200,accepted.text
+    with Session(engine) as session:
+        analysis=session.get(main.Analysis,accepted.json()['analysis_id'])
+        assets=session.exec(select(main.ImageAsset).where(main.ImageAsset.analysis_id==analysis.id)).all()
+        assert analysis.patient_id==8 and len(assets)==4
+    rejected=_post_mixed(c,None,'50,51,52,53,54','synthetic-five-saved-001')
+    assert rejected.status_code==422,rejected.text
+    with Session(engine) as session:
+        assert len(session.exec(select(main.Analysis)).all())==1
