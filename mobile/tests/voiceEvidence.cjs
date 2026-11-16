@@ -8,9 +8,9 @@ const ts=require('typescript');
 const helperPath=path.join(__dirname,'../src/voiceEvidencePresentation.ts');
 const helperSource=fs.readFileSync(helperPath,'utf8');
 const compiled=ts.transpileModule(helperSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
-const exports={};
-vm.runInNewContext(compiled,{exports});
-const present=exports.voiceEvidencePresentation;
+const moduleExports={};
+vm.runInNewContext(compiled,{exports:moduleExports});
+const present=moduleExports.voiceEvidencePresentation;
 
 test('current voice extraction displays the exact bounded interview quote',()=>{
  const result=present({quote:'  Hasta: Soğukta kısa süreli ağrı oluyor.  ',origin:'extraction'});
