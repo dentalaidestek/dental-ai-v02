@@ -1,7 +1,7 @@
 import {ApiError,request} from './api';
 import {normalizeAnalysisImages} from './analysisApi';
 import {revalidateSession} from './sessionExpiry';
-export type UploadImage={uri:string;name:string;type:string};
+export type UploadImage={uri:string;name:string;type:string;encryptedUri?:string;previewUri?:string};
 export type UploadIntent={userId:number;patientId:number;requestKey:string;toothNumber:string;clinicalNotes:string;images:UploadImage[];existingMediaIds?:number[]};
 export type UploadReceipt={analysis_id:number;patient_id:number;job_id:number;status:string};
 export function parseUploadIntent(raw:string,userId:number,patientId:number):UploadIntent{
