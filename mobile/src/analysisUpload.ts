@@ -1,5 +1,5 @@
 import {ApiError,request} from './api';
-import {normalizeAnalysisImages} from './analysisApi';
+import {ANALYSIS_MAX_IMAGES,normalizeAnalysisImages} from './analysisApi';
 import {revalidateSession} from './sessionExpiry';
 export type UploadImage={uri:string;name:string;type:string;encryptedUri?:string;previewUri?:string};
 export type UploadIntent={userId:number;patientId:number;requestKey:string;toothNumber:string;clinicalNotes:string;images:UploadImage[];existingMediaIds?:number[]};
@@ -8,10 +8,10 @@ export function parseUploadIntent(raw:string,userId:number,patientId:number):Upl
  const v=JSON.parse(raw);if(v.userId!==userId||v.patientId!==patientId||!Number.isSafeInteger(userId)||userId<1||!Number.isSafeInteger(patientId)||patientId<1||typeof v.requestKey!=='string'||!/^[-_A-Za-z0-9]{16,80}$/.test(v.requestKey)||typeof v.toothNumber!=='string'||typeof v.clinicalNotes!=='string'||v.clinicalNotes.length>4000)throw Error('Bekleyen yükleme hesabı veya hasta kaydı doğrulanamadı.');
  validateUploadFields(v.toothNumber,v.clinicalNotes);
  const existingMediaIds=v.existingMediaIds===undefined?[]:v.existingMediaIds;
- if(!Array.isArray(existingMediaIds)||existingMediaIds.length>4||existingMediaIds.some((id:unknown)=>!Number.isSafeInteger(id)||Number(id)<=0)||new Set(existingMediaIds).size!==existingMediaIds.length)throw Error('Bekleyen kayıtlı klinik görüntüler doğrulanamadı.');
+ if(!Array.isArray(existingMediaIds)||existingMediaIds.length>ANALYSIS_MAX_IMAGES||existingMediaIds.some((id:unknown)=>!Number.isSafeInteger(id)||Number(id)<=0)||new Set(existingMediaIds).size!==existingMediaIds.length)throw Error(`Bekleyen kayıtlı klinik görüntüler doğrulanamadı (en fazla ${ANALYSIS_MAX_IMAGES}).`);
  if(!Array.isArray(v.images))throw Error('Bekleyen yeni klinik görüntüler doğrulanamadı.');
  const images=v.images.length?normalizeAnalysisImages(v.images):[];
- const mediaCount=existingMediaIds.length+images.length;if(mediaCount>4)throw Error('Kayıtlı ve yeni görüntülerin toplamı en fazla 4 olabilir.');if(mediaCount===0&&!v.toothNumber.split(',').some((tooth:string)=>tooth.trim())&&!v.clinicalNotes.trim())throw Error('Görüntü olmadan analiz başlatmak için diş numarası veya klinik bilgi girin.');
+ const mediaCount=existingMediaIds.length+images.length;if(mediaCount>ANALYSIS_MAX_IMAGES)throw Error(`Kayıtlı ve yeni görüntülerin toplamı en fazla ${ANALYSIS_MAX_IMAGES} olabilir.`);if(mediaCount===0&&!v.toothNumber.split(',').some((tooth:string)=>tooth.trim())&&!v.clinicalNotes.trim())throw Error('Görüntü olmadan analiz başlatmak için diş numarası veya klinik bilgi girin.');
  if(images.some(i=>!i.uri.startsWith('file://')||i.uri.length>4096||i.uri.split('/').includes('..')||/[\x00-\x1f]/.test(i.uri)))throw Error('Bekleyen yüklemede yalnızca yerel uygulama dosyaları kullanılabilir.');
  return{...v,existingMediaIds,images};
 }
