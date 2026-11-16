@@ -43,7 +43,7 @@ def clinical(analysis_id:int,user=Depends(_account_user)):
     from app.work_jobs import source_identity
     with Session(web.engine) as s:
         a,p=_owned(s,user,analysis_id);_,_,revision=source_identity(s,'FINAL','ANALYSIS',analysis_id)
-        return {'analysis_id':a.id,'patient_id':p.id,'status':a.status,'clinical_notes':a.clinical_notes,'tooth_number':a.tooth_number,'revision':revision,'result':_result(a),'job':_job(_latest(s,a.id)),'assets':[{'id':x.id,'name':x.original_filename,'image_type':x.image_type,'has_vision':bool(x.vision_snapshot_json),'url':f'/api/mobile/v1/analyses/{a.id}/assets/{x.id}'} for x in s.exec(select(web.ImageAsset).where(web.ImageAsset.analysis_id==a.id).order_by(web.ImageAsset.id)).all()]}
+        return {'analysis_id':a.id,'patient_id':p.id,'patient_anonymous_id':p.anonymous_id,'status':a.status,'clinical_notes':a.clinical_notes,'tooth_number':a.tooth_number,'revision':revision,'result':_result(a),'job':_job(_latest(s,a.id)),'assets':[{'id':x.id,'name':x.original_filename,'image_type':x.image_type,'has_vision':bool(x.vision_snapshot_json),'url':f'/api/mobile/v1/analyses/{a.id}/assets/{x.id}'} for x in s.exec(select(web.ImageAsset).where(web.ImageAsset.analysis_id==a.id).order_by(web.ImageAsset.id)).all()]}
 
 class FinalInput(BaseModel):
     revision:str=Field(pattern=r'^[0-9a-f]{64}$')
