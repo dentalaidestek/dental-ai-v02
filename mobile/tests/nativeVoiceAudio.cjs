@@ -68,6 +68,7 @@ test('server receipt replay must include a valid patient revision and bounded tr
 test('native recorder retries the same segment key and only creates a new key after an explicit warning',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../src/NativeVoiceRecorder.tsx'),'utf8');
  assert.match(source,/transcribeNativeRecording\(token,patientId,segment\.uri,segment\.id,/);
+ assert.match(source,/async function persist\(next:VoiceDraft\)\{const saved=\{\.\.\.next,updatedAt:Date\.now\(\)\};await store\.setItemAsync\(key,JSON\.stringify\(saved\)\);draft\.current=saved/);
  assert.match(source,/VOICE_ASR_OUTCOME_UNKNOWN/);
  assert.match(source,/Önceki isteğin sonucu belirsiz/);
  assert.match(source,/Yeni deneme ayrı bir Gemini çağrısı oluşturabilir/);
