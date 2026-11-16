@@ -1,7 +1,8 @@
 from test_mobile_chat_actions import chat
-from app import main, mobile_analysis_api
-from app.work_jobs import WorkJob
-from sqlmodel import Session
+from app import main, mobile_analysis_api, mobile_api
+from app.work_jobs import WorkJob, prune_history
+from sqlmodel import Session, select
+from datetime import datetime
 from PIL import Image
 import io
 
@@ -165,3 +166,124 @@ def test_mobile_patient_edit_revision_rejects_stale_web_or_device_overwrites(cha
 
     template = Path("app/templates/patient_detail.html").read_text(encoding="utf-8")
     assert 'name="expected_revision" value="{{ patient_edit_revision }}"' in template
+
+
+def test_treatment_create_receipt_replays_once_and_is_owner_scoped(chat):
+    client, engine = chat
+    with Session(engine) as session:
+        session.add(main.Patient(id=81, anonymous_id="SYNTHETIC-TREATMENT", owner_user_id=1))
+        session.commit()
+
+    payload = {
+        "treatment_name": "Kompozit dolgu",
+        "tooth_number": "36",
+        "treatment_date": "2026-11-16",
+        "material": "Kompozit",
+        "doctor_note": "Synthetic note",
+        "result": "Tamamlandı",
+        "request_key": "synthetic-treatment-create-0001",
+    }
+    first = client.post("/api/mobile/v1/patients/81/treatments", json=payload)
+    assert first.status_code == 201, first.text
+    assert first.json()["replayed"] is False
+    assert len(first.json()["edit_revision"]) == 64
+
+    replay = client.post("/api/mobile/v1/patients/81/treatments", json=payload)
+    assert replay.status_code == 201, replay.text
+    assert replay.json()["replayed"] is True
+    assert replay.json()["treatment_id"] == first.json()["treatment_id"]
+
+    changed = client.post("/api/mobile/v1/patients/81/treatments", json={
+        **payload, "treatment_name": "Farklı işlem",
+    })
+    assert changed.status_code == 409, changed.text
+
+    client.headers["Authorization"] = "Bearer token2"
+    assert client.post("/api/mobile/v1/patients/81/treatments", json=payload).status_code == 404
+
+    with Session(engine) as session:
+        rows = session.exec(select(main.Treatment).where(main.Treatment.patient_id == 81)).all()
+        receipts = session.exec(select(WorkJob).where(
+            WorkJob.kind == "TREATMENT_RECEIPT",
+            WorkJob.resource_id == 81,
+        )).all()
+        assert len(rows) == 1
+        assert len(receipts) == 1
+
+
+def test_treatment_update_uses_revision_and_replays_exact_mutation(chat):
+    client, engine = chat
+    with Session(engine) as session:
+        session.add(main.Patient(id=82, anonymous_id="SYNTHETIC-TREATMENT-UPDATE", owner_user_id=1))
+        session.add(main.Treatment(
+            id=821, patient_id=82, tooth_number="36", treatment_name="Eski dolgu",
+            treatment_date="2026-11-01", material="Kompozit", doctor_note="Old note",
+        ))
+        session.commit()
+
+    snapshot = client.get("/api/mobile/v1/patients/82")
+    assert snapshot.status_code == 200, snapshot.text
+    revision = snapshot.json()["treatments"][0]["edit_revision"]
+    payload = {
+        "treatment_name": "Yenilenen dolgu",
+        "tooth_number": "36",
+        "treatment_date": "2026-11-16",
+        "material": "Yeni kompozit",
+        "doctor_note": "Updated synthetic note",
+        "result": "Kontrol Gerekli",
+        "expected_revision": revision,
+        "request_key": "synthetic-treatment-update-0001",
+    }
+    first = client.put("/api/mobile/v1/patients/82/treatments/821", json=payload)
+    assert first.status_code == 200, first.text
+    assert first.json()["replayed"] is False
+    assert first.json()["edit_revision"] != revision
+
+    replay = client.put("/api/mobile/v1/patients/82/treatments/821", json=payload)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["replayed"] is True
+    assert replay.json()["edit_revision"] == first.json()["edit_revision"]
+
+    stale = client.put("/api/mobile/v1/patients/82/treatments/821", json={
+        **payload,
+        "request_key": "synthetic-treatment-update-0002",
+        "treatment_name": "Stale overwrite",
+    })
+    assert stale.status_code == 409, stale.text
+
+    malformed = client.put("/api/mobile/v1/patients/82/treatments/821", json={
+        **payload, "expected_revision": "bad",
+        "request_key": "synthetic-treatment-update-0003",
+    })
+    assert malformed.status_code == 422, malformed.text
+
+    client.headers["Authorization"] = "Bearer token2"
+    assert client.put("/api/mobile/v1/patients/82/treatments/821", json=payload).status_code == 404
+
+    with Session(engine) as session:
+        treatment = session.get(main.Treatment, 821)
+        assert treatment.treatment_name == "Yenilenen dolgu"
+        assert treatment.doctor_note == "Updated synthetic note"
+
+
+def test_treatment_receipts_are_not_pruned_while_patient_exists(chat):
+    client, engine = chat
+    with Session(engine) as session:
+        session.add(main.Patient(id=83, anonymous_id="SYNTHETIC-TREATMENT-RETENTION", owner_user_id=1))
+        session.commit()
+    response = client.post("/api/mobile/v1/patients/83/treatments", json={
+        "treatment_name": "Kontrol", "request_key": "synthetic-treatment-retention-0001",
+    })
+    assert response.status_code == 201, response.text
+    with Session(engine) as session:
+        receipt = session.exec(select(WorkJob).where(
+            WorkJob.kind == "TREATMENT_RECEIPT", WorkJob.resource_id == 83,
+        )).one()
+        receipt.updated_at = datetime(2000, 1, 1)
+        session.add(receipt)
+        session.commit()
+    prune_history(engine)
+    with Session(engine) as session:
+        assert session.exec(select(WorkJob).where(
+            WorkJob.kind == "TREATMENT_RECEIPT", WorkJob.resource_id == 83,
+        )).first() is not None
