@@ -18,7 +18,7 @@ function chartComponent(api,storage=new Map()){
   if(name==='react')return{...React,default:React};
   if(name==='react-native')return native;
   if(name==='@react-navigation/native')return{useNavigation:()=>({getParent:()=>({getParent:()=>({navigate(){}})})}),useIsFocused:()=>focused};
-  if(name==='./api')return api;
+  if(name==='./api')return{getToothChartFocus:async()=>null,...api};
   if(name==='expo-secure-store')return secure;
   if(name==='expo-crypto')return crypto;
   if(name==='./socialDraft')return{chunkedDraftStore:raw=>raw};
@@ -42,6 +42,49 @@ test('patient summary handles names, infant age and incomplete records',()=>{
  assert.equal(toothChartPatientSummary({first_name:'Ada',last_name:'',age:null}),'Ada');
  assert.equal(toothChartPatientSummary({first_name:' ',last_name:null,age:4}),'İsimsiz hasta · 4 yaş');
  assert.equal(toothChartPatientSummary({first_name:'Ada',age:4.5}),'Ada');
+});
+
+
+test('native tooth chart opens the web-selected permanent tooth with its saved status and note',async()=>{
+ focused=true;lastEvent=null;appListeners=[];
+ const detail=patient(8,'Ada');
+ detail.teeth.push({id:2,tooth_number:'36',status:'CARIES',note:'Saved clinical note'});
+ const Chart=chartComponent({getPatient:async()=>detail,getToothChartFocus:async()=> '36'});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush();await flush()});
+ const selected=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş 36, Çürük');
+ assert.ok(selected,'web latest-analysis tooth must be opened automatically');
+ assert.equal(selected.props.accessibilityState.selected,true);
+ assert.ok(flat(tree.toJSON()).includes('Diş 36'));
+ assert.ok(flat(tree.toJSON()).includes('Üst Sol Birinci Molar'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('native tooth chart switches to primary dentition for a web-selected primary tooth',async()=>{
+ focused=true;lastEvent=null;appListeners=[];
+ const Chart=chartComponent({getPatient:async()=>patient(8),getToothChartFocus:async()=> '55'});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush();await flush()});
+ const selected=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş 55, Sağlıklı');
+ assert.ok(selected,'primary FDI tooth must be selected');
+ assert.equal(selected.props.accessibilityState.selected,true);
+ assert.ok(flat(tree.toJSON()).includes('Süt Dişleri'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('a delayed initial-focus response never overrides a tooth selected by the clinician',async()=>{
+ focused=true;lastEvent=null;appListeners=[];const focus=deferred();
+ const Chart=chartComponent({getPatient:async()=>patient(8),getToothChartFocus:()=>focus.promise});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
+ const tooth=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş 11, Sağlıklı');
+ assert.ok(tooth);
+ await renderer.act(async()=>tooth.props.onPress());
+ await renderer.act(async()=>{focus.resolve('36');await flush()});
+ const selected=tree.root.findAllByType('Pressable').filter(node=>node.props.accessibilityState?.selected===true);
+ assert.equal(selected.length,1);
+ assert.equal(selected[0].props.accessibilityLabel,'Diş 11, Sağlıklı');
+ await renderer.act(async()=>tree.unmount());
 });
 
 test('native tooth chart displays the selected patient identity like the web chart',async()=>{
