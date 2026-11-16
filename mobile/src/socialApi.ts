@@ -58,6 +58,35 @@ export type SocialComment = {
   parent_id: number | null;
 };
 export type SocialPage<T> = { items: T[]; next_cursor: number | null };
+export type SocialFeedPage = SocialPage<SocialPost> & { specialties: string[] };
+const SOCIAL_SPECIALTY_FALLBACK = [
+  "Endodonti",
+  "Ortodonti",
+  "Pedodonti",
+  "Periodontoloji",
+  "Protetik Diş Tedavisi",
+  "Restoratif Diş Tedavisi",
+  "Ağız, Diş ve Çene Cerrahisi",
+  "Ağız, Diş ve Çene Radyolojisi",
+];
+function normalizeSocialSpecialties(value: unknown): string[] {
+  if (value === undefined) return [...SOCIAL_SPECIALTY_FALLBACK];
+  if (
+    !Array.isArray(value) ||
+    value.length > 16 ||
+    value.some(
+      (item) =>
+        typeof item !== "string" ||
+        !item.trim() ||
+        item !== item.trim() ||
+        item.length > 80,
+    ) ||
+    new Set(value).size !== value.length
+  ) {
+    throw new ApiError(502, "Dental Akış branş listesi doğrulanamadı.");
+  }
+  return [...value] as string[];
+}
 export async function socialRequest<T>(
   token: string,
   path: string,
@@ -110,15 +139,45 @@ export async function socialRequest<T>(
     throw error;
   }finally{clearTimeout(timeout);externalSignal?.removeEventListener("abort",abort)}
 }
-export const getFeed = (
+export const getFeed = async (
   t: string,
   mode: "discover" | "following",
   before?: number,
-) =>
-  socialRequest<SocialPage<SocialPost>>(
-    t,
-    `/feed/${mode}?limit=15&details=true${before ? "&before=" + before : ""}`,
-  );
+  specialty = "",
+): Promise<SocialFeedPage> => {
+  if (
+    typeof specialty !== "string" ||
+    specialty !== specialty.trim() ||
+    specialty.length > 80
+  ) {
+    throw new Error("Geçersiz branş filtresi.");
+  }
+  const params = ["limit=15", "details=true"];
+  if (before) params.push("before=" + before);
+  if (specialty) params.push("specialty=" + encodeURIComponent(specialty));
+  const page = await socialRequest<
+    SocialPage<SocialPost> & { specialties?: unknown }
+  >(t, `/feed/${mode}?${params.join("&")}`);
+  const specialties = normalizeSocialSpecialties(page.specialties);
+  if (specialty && !specialties.includes(specialty)) {
+    throw new ApiError(
+      422,
+      "Seçilen branş artık mevcut değil. Tümü filtresini seçin.",
+    );
+  }
+  return { ...page, specialties };
+};
+export function socialPostUrl(authorId: number, postId: number): string {
+  if (
+    !Number.isSafeInteger(authorId) ||
+    authorId < 1 ||
+    !Number.isSafeInteger(postId) ||
+    postId < 1
+  ) {
+    throw new Error("Geçersiz gönderi bağlantısı.");
+  }
+  return `${BASE}/expert-support/expert/${authorId}?post=${postId}`;
+}
 export const getExpertPosts = (t: string, id: number, before?: number) =>
   socialRequest<SocialPage<SocialPost>>(
     t,
