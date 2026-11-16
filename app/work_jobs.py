@@ -292,13 +292,15 @@ def collect_garbage(engine):
 def prune_history(engine):
     from sqlalchemy import delete
     from app.main import Analysis, Patient
+    from app.voice_asr_receipts import expire_voice_asr_receipts
     # Upload and treatment receipts remain authoritative while their parent
-    # resource exists. Pruning a live receipt would let a delayed mobile retry
-    # create a second analysis or treatment.
+    # resource exists. Voice ASR receipts have their own 24h encrypted-result
+    # TTL and seven-day tombstone retention; no raw audio is stored.
     live_upload_receipt=and_(WorkJob.kind=='UPLOAD_RECEIPT',WorkJob.resource_type=='ANALYSIS',select(Analysis.id).where(Analysis.id==WorkJob.resource_id).exists())
     live_treatment_receipt=and_(WorkJob.kind=='TREATMENT_RECEIPT',WorkJob.resource_type=='PATIENT',select(Patient.id).where(Patient.id==WorkJob.resource_id).exists())
     live_patient_media_receipt=and_(WorkJob.kind=='PATIENT_MEDIA_RECEIPT',WorkJob.resource_type=='PATIENT',select(Patient.id).where(Patient.id==WorkJob.resource_id).exists())
     with Session(engine) as session:
+        expire_voice_asr_receipts(session, limit=100)
         ids = session.exec(select(WorkJob.id).where(
             WorkJob.status.in_(["DONE", "CANCELLED", "FAILED"]),
             WorkJob.updated_at < now() - timedelta(days=30),
