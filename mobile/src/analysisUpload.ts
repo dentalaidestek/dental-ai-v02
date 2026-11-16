@@ -11,12 +11,12 @@ export function parseUploadIntent(raw:string,userId:number,patientId:number):Upl
  if(!Array.isArray(existingMediaIds)||existingMediaIds.length>4||existingMediaIds.some((id:unknown)=>!Number.isSafeInteger(id)||Number(id)<=0)||new Set(existingMediaIds).size!==existingMediaIds.length)throw Error('Bekleyen kayıtlı klinik görüntüler doğrulanamadı.');
  if(!Array.isArray(v.images))throw Error('Bekleyen yeni klinik görüntüler doğrulanamadı.');
  const images=v.images.length?normalizeAnalysisImages(v.images):[];
- const mediaCount=existingMediaIds.length+images.length;if(mediaCount>4)throw Error('Kayıtlı ve yeni görüntülerin toplamı en fazla 4 olabilir.');if(mediaCount===0&&!v.toothNumber.trim()&&!v.clinicalNotes.trim())throw Error('Görüntü olmadan analiz başlatmak için diş numarası veya klinik bilgi girin.');
+ const mediaCount=existingMediaIds.length+images.length;if(mediaCount>4)throw Error('Kayıtlı ve yeni görüntülerin toplamı en fazla 4 olabilir.');if(mediaCount===0&&!v.toothNumber.split(',').some((tooth:string)=>tooth.trim())&&!v.clinicalNotes.trim())throw Error('Görüntü olmadan analiz başlatmak için diş numarası veya klinik bilgi girin.');
  if(images.some(i=>!i.uri.startsWith('file://')||i.uri.length>4096||i.uri.split('/').includes('..')||/[\x00-\x1f]/.test(i.uri)))throw Error('Bekleyen yüklemede yalnızca yerel uygulama dosyaları kullanılabilir.');
  return{...v,existingMediaIds,images};
 }
 export function validateUploadFields(tooth:string,notes:string){const teeth=tooth.split(',').map(t=>t.trim()).filter(Boolean);if(teeth.length>32||new Set(teeth).size!==teeth.length||teeth.some(t=>!/^(?:[1-4][1-8]|[5-8][1-5])$/.test(t)))throw Error('Geçerli FDI diş numaralarını virgülle ayırarak yazın.');if(notes.length>4000)throw Error('Klinik not en fazla 4000 karakter olabilir.');}
-export function canStartAnalysis(tooth:string,notes:string,savedIds:number[],files:UploadImage[]){return savedIds.length+files.length>0||Boolean(tooth.trim()||notes.trim());}
+export function canStartAnalysis(tooth:string,notes:string,savedIds:number[],files:UploadImage[]){return savedIds.length+files.length>0||Boolean(tooth.split(',').some(value=>value.trim())||notes.trim());}
 function validReceipt(r:any,patientId:number):UploadReceipt{if(!r||!Number.isSafeInteger(r.analysis_id)||r.analysis_id<1||!Number.isSafeInteger(r.job_id)||r.job_id<1||typeof r.status!=='string'||r.patient_id!==patientId)throw new ApiError(502,'Yükleme fişi doğrulanamadı. Aynı yükleme kaydı korundu.');return r}
 export async function analysisUploadReceipt(token:string,intent:UploadIntent){const r=await request<{receipt:UploadReceipt|null}>(`/analyses/uploads/receipt?patient_id=${intent.patientId}&request_key=${encodeURIComponent(intent.requestKey)}`,token);return r.receipt===null?null:validReceipt(r.receipt,intent.patientId)}
 export function uploadAnalysis(token:string,intent:UploadIntent,progress:(percent:number)=>void,signal?:AbortSignal):Promise<UploadReceipt>{
