@@ -91,24 +91,28 @@ test('falls back to staged-byte validation when an Android content provider cann
 
 test('removes crash-orphaned encrypted files while retaining pending files and other patient scopes',async()=>{
  const h=harness(),sourceUri=addSource(h);
- const retained=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024);
- const orphan=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024);
- const otherPatient=await h.api.encryptClinicalMediaFile(sourceUri,7,9,1024);
+ const retained=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024,'archive');
+ const orphan=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024,'archive');
+ const otherPatient=await h.api.encryptClinicalMediaFile(sourceUri,7,9,1024,'archive');
+ const analysisPending=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024,'analysis');
+ const legacy=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024);
  const removed=await h.api.cleanupOrphanedClinicalMediaVaultFiles(7,8,[retained]);
  assert.equal(removed,1);
- assert.equal(h.files.has(retained),true,'the durable pending intent keeps its encrypted file');
- assert.equal(h.files.has(orphan),false,'unreferenced crash residue is deleted');
+ assert.equal(h.files.has(retained),true,'the durable archive intent keeps its encrypted file');
+ assert.equal(h.files.has(orphan),false,'unreferenced archive crash residue is deleted');
  assert.equal(h.files.has(otherPatient),true,'cleanup never crosses patient scope');
+ assert.equal(h.files.has(analysisPending),true,'archive cleanup never deletes analysis drafts');
+ assert.equal(h.files.has(legacy),true,'legacy root-level files are preserved');
 });
 
 test('orphan cleanup fails closed on invalid retained references',async()=>{
- const h=harness(),sourceUri=addSource(h),orphan=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024);
+ const h=harness(),sourceUri=addSource(h),orphan=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024,'archive');
  await assert.rejects(()=>h.api.cleanupOrphanedClinicalMediaVaultFiles(7,8,['file:///documents/private.dai']),/kapsamı doğrulanamadı/);
  assert.equal(h.files.has(orphan),true,'invalid intent must not authorize deletion');
 });
 
 test('orphan cleanup leaves files untouched when scoped directory listing fails',async()=>{
- const h=harness(),sourceUri=addSource(h),orphan=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024);
+ const h=harness(),sourceUri=addSource(h),orphan=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024,'archive');
  h.fsApi.readDirectoryAsync=async()=>{throw Error('synthetic storage listing failure')};
  assert.equal(await h.api.cleanupOrphanedClinicalMediaVaultFiles(7,8,[]),0);
  assert.equal(h.files.has(orphan),true);
@@ -120,4 +124,22 @@ test('native patient media reconciles vault files from the durable pending inten
  assert.ok(source.includes('cleanupOrphanedClinicalMediaVaultFiles'));
  assert.ok(source.includes('saved?.files.flatMap(file=>file.encryptedUri?[file.encryptedUri]:[])??[]'));
  assert.ok(source.includes('await cleanupOrphanedClinicalMediaVaultFiles(userId,patientId,files.flatMap(file=>file.encryptedUri?[file.encryptedUri]:[]))'));
+});
+
+
+test('vault URI validation accepts only the legacy root or known archive/analysis namespaces',async()=>{
+ const h=harness(),sourceUri=addSource(h);
+ const archive=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024,'archive');
+ const analysis=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024,'analysis');
+ assert.equal(await h.api.isClinicalMediaVaultUri(archive,7,8),true);
+ assert.equal(await h.api.isClinicalMediaVaultUri(analysis,7,8),true);
+ assert.equal(await h.api.isClinicalMediaVaultUri('file:///documents/dai-clinical-vault/7/8/unknown/file.dai',7,8),false);
+});
+
+test('native upload callers use isolated archive and analysis purposes',()=>{
+ const gallery=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ const analysis=fs.readFileSync(require.resolve('../src/nativeAnalysisFiles.ts'),'utf8');
+ assert.ok(gallery.includes("CLINICAL_MEDIA_MAX_FILE_BYTES,'archive'"));
+ assert.ok(gallery.includes("12*1024*1024,'archive'"));
+ assert.ok(analysis.includes("ANALYSIS_MAX_IMAGE_BYTES,'analysis'"));
 });
