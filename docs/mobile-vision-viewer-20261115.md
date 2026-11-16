@@ -26,3 +26,13 @@ Implemented on the existing native viewer:
 Five React renderer regressions were added to mobile/tests/visionViewer.cjs (already included by npm run test:beta): three-tab availability, permanent FDI filtering/treatment delegation, confirmed clinical-note persistence, uncertain acknowledgement preservation, and rendering the canonical treatment result.
 
 **Validation boundary:** these five renderer tests are committed but have not run in this environment. The current GitHub Actions runner issue prevents the repository beta suite from starting. Source inspection confirms the viewer uses only parent callbacks for writes and the existing API/job path; that is not a substitute for the React renderer, full Expo typecheck, Android/iOS device, or clinical acceptance tests.
+
+
+### Follow-up hardening — 2026-11-17
+
+A review of the new tab flow found two additional safety edges and they were corrected before handoff:
+
+- A completed PRELIMINARY result (or an already-rendered treatment result) no longer leaves an enabled Analiz Et action in the tab. This prevents a second paid analysis from being started just because the viewer remains open. A failed/cancelled retryable job exposes the existing canonical job retry instead of creating a new analysis.
+- If a clinical-note write has an uncertain acknowledgement, the child editor remains populated and the same text is restored into the parent review's encrypted pending-note workflow. A second viewer note is locked until that pending note is reconciled.
+
+Two additional renderer regressions cover failed-job retry instead of duplicate create, and locking the chart tab while a parent note is pending. Total new viewer renderer cases in this pass: seven. All remain committed but unexecuted until the Actions runner can execute the beta suite.
