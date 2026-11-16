@@ -420,3 +420,28 @@ test('anonymous voice patient creation rejects invalid keys and ambiguous receip
   assert.equal(calls,1);
  }finally{global.fetch=original}
 });
+
+
+test('native voice history uses authenticated no-store GET and validates approved provenance',async()=>{
+ const original=global.fetch;let call;
+ global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'a'.repeat(64),fields:{medical_history:{value:'Astım beyanı',quote:'Önceki onaylı kayıt',analysis_id:17}},notice:'Hastayla güncelliğini doğrulayın.'}))};
+ try{
+  const result=await api.getVoiceHistory('secret',12);
+  assert.match(call.url,/\\/patients\\/12\\/voice-exam\\/history$/);
+  assert.equal(call.init.method,'GET');assert.equal(call.init.headers.Authorization,'Bearer secret');
+  assert.equal(call.init.headers['Cache-Control'],'no-store');assert.equal(call.init.body,undefined);
+  assert.equal(result.fields.medical_history.value,'Astım beyanı');assert.equal(result.fields.medical_history.analysis_id,17);
+ }finally{global.fetch=original}
+});
+
+test('native voice history rejects foreign field names, missing provenance and invalid revisions',async()=>{
+ const original=global.fetch;
+ try{
+  global.fetch=async()=>response(JSON.stringify({ok:true,revision:'a'.repeat(64),fields:{chief_complaint:{value:'Synthetic',quote:'Synthetic',analysis_id:1}},notice:'Synthetic'}));
+  await assert.rejects(()=>api.getVoiceHistory('token',8),/geçmişi doğrulanamadı/);
+  global.fetch=async()=>response(JSON.stringify({ok:true,revision:'not-a-revision',fields:{},notice:'Synthetic'}));
+  await assert.rejects(()=>api.getVoiceHistory('token',8),/geçmişi doğrulanamadı/);
+  global.fetch=async()=>response(JSON.stringify({ok:true,revision:'a'.repeat(64),fields:{medications:{value:'Synthetic',quote:'Synthetic',analysis_id:0}},notice:'Synthetic'}));
+  await assert.rejects(()=>api.getVoiceHistory('token',8),/geçmişi doğrulanamadı/);
+ }finally{global.fetch=original}
+});
