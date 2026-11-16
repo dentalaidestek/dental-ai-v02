@@ -146,7 +146,7 @@ def _upload_digest(patient_id,tooth,notes,images,existing_media_ids=()):
                 size+=len(chunk)
                 if size>MOBILE_MAX_ANALYSIS_BYTES:raise HTTPException(413,'Bir görüntü en fazla 25 MiB olabilir.')
                 batch_total+=len(chunk)
-                if batch_total>MOBILE_MAX_ANALYSIS_BATCH_BYTES:raise HTTPException(413,'Toplam analiz görüntüleri en fazla 80 MiB olabilir.')
+                if batch_total>MOBILE_MAX_ANALYSIS_BATCH_BYTES:raise HTTPException(413,'Toplam analiz görüntüleri en fazla 48 MiB olabilir.')
                 digest.update(chunk)
         finally:image.file.seek(0)
         hashes.append([image.filename,size,digest.hexdigest()])
