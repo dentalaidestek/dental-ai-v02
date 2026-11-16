@@ -136,7 +136,11 @@ def test_mobile_support_case_link_reports_and_ticket_cursor_paging(monkeypatch, 
         other = main.User(username="support-parity-other", role="DOCTOR", display_name="Other", email_verified_at=now)
         session.add_all([owner, other]); session.commit()
         token = "mobile-support-parity-owner"
-        session.add(main.SessionToken(token_hash=main.hash_session_token(token), user_id=owner.id, expires_at=now + main.timedelta(days=1)))
+        other_token = "mobile-support-parity-other"
+        session.add_all([
+            main.SessionToken(token_hash=main.hash_session_token(token), user_id=owner.id, expires_at=now + main.timedelta(days=1)),
+            main.SessionToken(token_hash=main.hash_session_token(other_token), user_id=other.id, expires_at=now + main.timedelta(days=1)),
+        ])
         case = main.ConsultationCase(
             requester_user_id=owner.id, expert_user_id=other.id, specialty="Endodonti",
             clinical_summary="Özet", question="Soru", expert_response_deadline=now + main.timedelta(days=1),
@@ -159,6 +163,7 @@ def test_mobile_support_case_link_reports_and_ticket_cursor_paging(monkeypatch, 
         assert isinstance(report_ticket_id, int)
         report_detail = client.get(f"/api/mobile/v1/support/tickets/{report_ticket_id}", headers=headers)
         assert report_detail.status_code == 200
+        assert client.get(f"/api/mobile/v1/support/tickets/{report_ticket_id}", headers={"Authorization": "Bearer " + other_token}).status_code == 404
         created = client.post("/api/mobile/v1/support/tickets", headers=headers, json={
             "subject": "Vaka ile ilgili", "message": "Destek açıklaması",
             "request_key": "support_case_link_key_01", "case_id": case_id,
