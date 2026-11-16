@@ -21,6 +21,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field as RequestField
 from sqlmodel import Session, func, select
 from PIL import Image, ImageOps
+from app.clinical_media import sanitize_clinical_media_image
 from starlette.requests import Request
 from fastapi.responses import JSONResponse
 
@@ -94,38 +95,20 @@ def _copy_validated_image(upload: UploadFile, destination: Path, max_bytes: int)
                 if total > max_bytes:
                     raise HTTPException(status_code=413, detail="Görüntü dosyası çok büyük.")
                 out.write(chunk)
-        with Image.open(destination) as image:
-            width, height = image.size
-            if width <= 0 or height <= 0 or width * height > MOBILE_MAX_IMAGE_PIXELS:
-                raise HTTPException(status_code=422, detail="Görüntü çözünürlüğü çok büyük.")
-            image.verify()
-        # Clinical uploads may contain GPS coordinates, device IDs and patient
-        # identifiers in EXIF. Re-encode pixel data before persistent storage.
-        expected_formats = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP"}
-        expected = expected_formats.get(destination.suffix.lower())
-        if expected is None:
-            raise HTTPException(status_code=422, detail="Desteklenmeyen görüntü formatı.")
-        with Image.open(destination) as original:
-            if original.format != expected:
-                raise HTTPException(status_code=422, detail="Dosya uzantısı görüntü formatıyla eşleşmiyor.")
-            oriented = ImageOps.exif_transpose(original)
-            mode = "RGB" if expected == "JPEG" else ("RGBA" if "A" in oriented.getbands() else "RGB")
-            pixels = oriented.convert(mode)
-            clean = Image.new(mode, pixels.size)
-            clean.paste(pixels)
-            temporary = destination.with_name(destination.name + ".sanitized")
-            try:
-                clean.save(temporary, format=expected)
-                temporary.replace(destination)
-            finally:
-                temporary.unlink(missing_ok=True)
+        sanitize_clinical_media_image(
+            destination,
+            destination.suffix.lower(),
+            MOBILE_MAX_IMAGE_PIXELS,
+        )
     except HTTPException:
         destination.unlink(missing_ok=True)
         raise
+    except ValueError as exc:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         destination.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail="Geçersiz veya bozuk görüntü dosyası.") from exc
-
 
 class LoginRequest(BaseModel):
     login: str
