@@ -252,3 +252,26 @@ def test_receipt_key_is_dedicated_strict_32_byte_hex_secret():
     assert receipts.encryption_key("12" * 32) == bytes.fromhex("12" * 32)
     with pytest.raises(receipts.ReceiptKeyUnavailable):
         receipts.encryption_key("not-a-secret")
+
+
+def test_voice_capacity_failure_is_typed_as_safe_pre_provider_retry(monkeypatch):
+    from app import voice_exam_core as core
+
+    monkeypatch.setenv("GEMINI_API_KEY", "configured")
+    monkeypatch.setenv("VOICE_EXAM_GEMINI_MODEL", "gemini-test")
+    class BusyCapacity:
+        def acquire(self, blocking=False):
+            assert blocking is False
+            return False
+    monkeypatch.setattr(core, "_capacity", BusyCapacity())
+    with pytest.raises(core.VoiceBusy):
+        core.extract(data=b"bounded-audio", mime="audio/webm", transcription_only=True)
+
+
+def test_missing_gemini_configuration_is_typed_before_provider_call(monkeypatch):
+    from app import voice_exam_core as core
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("VOICE_EXAM_GEMINI_MODEL", "gemini-test")
+    with pytest.raises(core.VoiceConfigurationError):
+        core.extract(data=b"bounded-audio", mime="audio/webm", transcription_only=True)
