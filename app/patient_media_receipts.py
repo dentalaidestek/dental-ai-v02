@@ -86,9 +86,17 @@ def upgrade_legacy_receipt(
     digest=None; its authenticated owner/patient/request-key scope still binds
     the row, and the legacy fingerprint can be safely keyed without raw media.
     """
+    try:
+        if int(receipt.owner_user_id) != owner_id or int(receipt.resource_id) != patient_id:
+            raise ValueError("receipt scope mismatch")
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise PatientMediaReceiptCorrupt("Clinical-media receipt scope is invalid.") from exc
+
     payload = _receipt_payload(receipt)
     version = payload.get("fingerprint_version")
     if version is None:
+        if digest is not None and legacy_digest is None:
+            raise PatientMediaReceiptCorrupt("Legacy replay requires its original content fingerprint.")
         old_digest = receipt.source_hash
         if not isinstance(old_digest, str) or not _HEX_DIGEST.fullmatch(old_digest):
             raise PatientMediaReceiptCorrupt("Legacy clinical-media fingerprint is invalid.")
@@ -101,7 +109,7 @@ def upgrade_legacy_receipt(
         )
         return True
 
-    if version != FINGERPRINT_VERSION:
+    if type(version) is not int or version != FINGERPRINT_VERSION:
         raise PatientMediaReceiptCorrupt("Unsupported clinical-media fingerprint version.")
     if not isinstance(receipt.source_hash, str) or not _HEX_DIGEST.fullmatch(receipt.source_hash):
         raise PatientMediaReceiptCorrupt("Keyed clinical-media fingerprint is invalid.")
