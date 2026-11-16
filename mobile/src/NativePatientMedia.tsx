@@ -12,32 +12,33 @@ import NativeAnalysisUpload from './NativeAnalysisUpload';
 import {cleanupStaleClinicalMediaTemps,deleteClinicalMediaTemp,deleteClinicalMediaVaultFile,decryptClinicalMediaFile,encryptClinicalMediaFile,isClinicalMediaVaultUri,validateClinicalMediaVaultFile} from './clinicalMediaVault';
 import {useRealtime} from './realtime';
 import {CLINICAL_MEDIA_PICKER_MAX_FILES,normalizeClinicalMediaAssets} from './clinicalMediaPicker';
+import {CLINICAL_MEDIA_BATCH_ID_PATTERN,ensureClinicalMediaBatchId} from './clinicalMediaBatch';
 import {ANALYSIS_MAX_IMAGES} from './analysisApi';
 import {CLINICAL_MEDIA_MAX_BATCH_BYTES,CLINICAL_MEDIA_MAX_FILE_BYTES} from './uploadLimits';
 
 type Picked={uri:string;encryptedUri?:string;previewUri?:string;name:string;type:string;requestKey:string};
-type PendingUpload={version:1|2;userId:number;patientId:number;mediaType:'PHOTO'|'RADIOGRAPH';files:Picked[];updatedAt:number};
+type PendingUpload={version:1|2|3;batchId?:string;userId:number;patientId:number;mediaType:'PHOTO'|'RADIOGRAPH';files:Picked[];updatedAt:number};
 function storedPending(value:PendingUpload):PendingUpload{return {...value,files:value.files.map(({previewUri,...file})=>file)}}
 const uploadKeyFor=(userId:number,patientId:number)=>`dai.patient-media.upload.${userId}.${patientId}`;
 function parsePendingUpload(raw:string|null,userId:number,patientId:number):PendingUpload|null{
  if(!raw)return null;
  let value:any;try{value=JSON.parse(raw)}catch{throw Error('Bekleyen klinik görüntü taslağı okunamadı.')}
- if(!value||(value.version!==1&&value.version!==2)||value.userId!==userId||value.patientId!==patientId||!['PHOTO','RADIOGRAPH'].includes(value.mediaType)||!Array.isArray(value.files)||value.files.length<1||value.files.length>CLINICAL_MEDIA_PICKER_MAX_FILES||!Number.isFinite(value.updatedAt)||value.files.some((file:any)=>!file||typeof file.uri!=='string'||!file.uri||typeof file.name!=='string'||!file.name||typeof file.type!=='string'||!['image/jpeg','image/png','image/webp'].includes(file.type)||typeof file.requestKey!=='string'||!/^[A-Za-z0-9_-]{16,96}$/.test(file.requestKey)||file.encryptedUri!==undefined&&(typeof file.encryptedUri!=='string'||file.encryptedUri!==file.uri||!isClinicalMediaVaultUri(file.encryptedUri,userId,patientId)))||new Set(value.files.map((file:any)=>file.requestKey)).size!==value.files.length)
+ if(!value||(value.version!==1&&value.version!==2&&value.version!==3)||value.userId!==userId||value.patientId!==patientId||!['PHOTO','RADIOGRAPH'].includes(value.mediaType)||!Array.isArray(value.files)||value.files.length<1||value.files.length>CLINICAL_MEDIA_PICKER_MAX_FILES||!Number.isFinite(value.updatedAt)||value.batchId!==undefined&&(typeof value.batchId!=='string'||!CLINICAL_MEDIA_BATCH_ID_PATTERN.test(value.batchId))||value.files.some((file:any)=>!file||typeof file.uri!=='string'||!file.uri||typeof file.name!=='string'||!file.name||typeof file.type!=='string'||!['image/jpeg','image/png','image/webp'].includes(file.type)||typeof file.requestKey!=='string'||!/^[A-Za-z0-9_-]{16,96}$/.test(file.requestKey)||file.encryptedUri!==undefined&&(typeof file.encryptedUri!=='string'||file.encryptedUri!==file.uri||!isClinicalMediaVaultUri(file.encryptedUri,userId,patientId)))||new Set(value.files.map((file:any)=>file.requestKey)).size!==value.files.length)
   throw Error('Bekleyen klinik görüntü taslağı doğrulanamadı. Yeni yükleme başlatılmadı.');
- if(value.version===2&&value.files.some((file:any)=>!file.encryptedUri))
+ if((value.version===2||value.version===3)&&value.files.some((file:any)=>!file.encryptedUri))
   throw Error('Şifreli klinik görüntü taslağı eksik. Yeni yükleme başlatılmadı.');
  return {...value,files:value.files.map(({previewUri,...file}:any)=>file)} as PendingUpload;
 }
 export default function NativePatientMedia({token,userId,patientId,onAnalysis}:{token:string;userId:number;patientId:number;onAnalysis:(id:number)=>void}){
  const uploadStore=useMemo(()=>chunkedDraftStore(SecureStore,Crypto.randomUUID,300),[]);
  const uploadKey=uploadKeyFor(userId,patientId),focused=useIsFocused();
- const {lastEvent}=useRealtime(),[items,setItems]=useState<any[]>([]),[cursor,setCursor]=useState<number|null>(null),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[open,setOpen]=useState(false),[preview,setPreview]=useState<any>(null),[selected,setSelected]=useState<number[]>([]),[pending,setPending]=useState<Picked[]>([]),[mediaType,setMediaType]=useState<'PHOTO'|'RADIOGRAPH'>('PHOTO'),[progress,setProgress]=useState(''),[uncertain,setUncertain]=useState(false),[zoom,setZoom]=useState(1),[uploadReady,setUploadReady]=useState(false),[uploadBlocked,setUploadBlocked]=useState(false),[byteProgress,setByteProgress]=useState({loaded:0,total:0,lengthComputable:false});
+ const {lastEvent}=useRealtime(),[items,setItems]=useState<any[]>([]),[cursor,setCursor]=useState<number|null>(null),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[open,setOpen]=useState(false),[preview,setPreview]=useState<any>(null),[selected,setSelected]=useState<number[]>([]),[pending,setPending]=useState<Picked[]>([]),[pendingBatchId,setPendingBatchId]=useState(''),[mediaType,setMediaType]=useState<'PHOTO'|'RADIOGRAPH'>('PHOTO'),[progress,setProgress]=useState(''),[uncertain,setUncertain]=useState(false),[zoom,setZoom]=useState(1),[uploadReady,setUploadReady]=useState(false),[uploadBlocked,setUploadBlocked]=useState(false),[byteProgress,setByteProgress]=useState({loaded:0,total:0,lengthComputable:false});
  const [loadedOwner,setLoadedOwner]=useState('');const [pendingOwner,setPendingOwner]=useState(''),[toothNumber,setToothNumber]=useState(''),[clinicalNotes,setClinicalNotes]=useState(''),[composeOpen,setComposeOpen]=useState(false),[composeIds,setComposeIds]=useState<number[]>([]),[composeTooth,setComposeTooth]=useState(''),[composeNotes,setComposeNotes]=useState('');
  const mounted=useRef(true),request=useRef(0),pickerGeneration=useRef(0),loadLock=useRef(false),mutation=useRef(false),scope=useRef(`${userId}:${token}:${patientId}`);const owner=`${userId}:${token}:${patientId}`;scope.current=owner;
  const current=()=>mounted.current&&scope.current===owner;
  const load=useCallback(async(more=false)=>{if(loadLock.current||(more&&(mutation.current||uncertain||loadedOwner!==owner)))return;loadLock.current=true;const sequence=++request.current;setLoading(true);try{const page=await getMedia(token,patientId,more?cursor??undefined:undefined);if(!current()||sequence!==request.current)return;setItems(previous=>more?[...previous,...page.items.filter(x=>!previous.some(y=>y.id===x.id))]:page.items);setCursor(page.next_before);setLoadedOwner(owner);setError('');if(!more){setSelected([]);setPreview(null);setZoom(1)}}catch(e){if(current()&&sequence===request.current){if(!more){setItems([]);setCursor(null);setSelected([]);setPreview(null);setZoom(1)}setLoadedOwner(owner);setError(e instanceof Error?e.message:'Görseller alınamadı.')}}finally{if(current()&&sequence===request.current){loadLock.current=false;setLoading(false)}}},[token,patientId,cursor,uncertain,loadedOwner]);
  const loader=useRef(load);loader.current=load;
- useEffect(()=>{mounted.current=true;request.current++;pickerGeneration.current++;loadLock.current=false;mutation.current=false;setBusy(false);setOpen(false);setComposeOpen(false);setComposeIds([]);setComposeTooth('');setComposeNotes('');setLoading(false);setItems([]);setCursor(null);setLoadedOwner('');setError('');setSelected([]);setPreview(null);setPending([]);setPendingOwner('');setToothNumber('');setClinicalNotes('');setUncertain(false);setProgress('');setByteProgress({loaded:0,total:0,lengthComputable:false});setUploadReady(false);setUploadBlocked(false);let active=true;void(async()=>{try{await cleanupStaleClinicalMediaTemps();const raw=await uploadStore.getItemAsync(uploadKey);const saved=parsePendingUpload(raw,userId,patientId);if(saved&&active&&current()){setPending(saved.files);setMediaType(saved.mediaType);setPendingOwner(owner);setProgress(`Önceki oturumdan ${saved.files.length} bekleyen klinik görüntü bulundu.`)}}catch(e){if(active&&current()){setUploadBlocked(true);setError(e instanceof Error?e.message:'Güvenli klinik görüntü taslağı okunamadı.')}}finally{if(active&&current())setUploadReady(true)}})();return()=>{active=false;mounted.current=false;request.current++;pickerGeneration.current++;loadLock.current=false}},[token,userId,patientId,uploadKey]);
+ useEffect(()=>{mounted.current=true;request.current++;pickerGeneration.current++;loadLock.current=false;mutation.current=false;setBusy(false);setOpen(false);setComposeOpen(false);setComposeIds([]);setComposeTooth('');setComposeNotes('');setLoading(false);setItems([]);setCursor(null);setLoadedOwner('');setError('');setSelected([]);setPreview(null);setPending([]);setPendingBatchId('');setPendingOwner('');setToothNumber('');setClinicalNotes('');setUncertain(false);setProgress('');setByteProgress({loaded:0,total:0,lengthComputable:false});setUploadReady(false);setUploadBlocked(false);let active=true;void(async()=>{try{await cleanupStaleClinicalMediaTemps();const raw=await uploadStore.getItemAsync(uploadKey);const saved=parsePendingUpload(raw,userId,patientId);if(saved&&active&&current()){const batchId=ensureClinicalMediaBatchId(saved.batchId,Crypto.randomUUID);const version=saved.files.every(file=>!!file.encryptedUri)?3:1;const migrated:PendingUpload={...saved,version,batchId};await uploadStore.setItemAsync(uploadKey,JSON.stringify(storedPending(migrated)));if(!active||!current())return;setPendingBatchId(batchId);setPending(saved.files);setMediaType(saved.mediaType);setPendingOwner(owner);setProgress(`Önceki oturumdan ${saved.files.length} bekleyen klinik görüntü bulundu.`)}}catch(e){if(active&&current()){setUploadBlocked(true);setError(e instanceof Error?e.message:'Güvenli klinik görüntü taslağı okunamadı.')}}finally{if(active&&current())setUploadReady(true)}})();return()=>{active=false;mounted.current=false;request.current++;pickerGeneration.current++;loadLock.current=false}},[token,userId,patientId,uploadKey]);
  useEffect(()=>{if(!focused)return;void loader.current();const listener=AppState.addEventListener('change',state=>{if(state==='active'&&focused)void loader.current()});return()=>listener.remove()},[focused,owner]);
  useEffect(()=>{if(lastEvent&&['PATIENT_MEDIA_CREATED','PATIENT_MEDIA_DELETED'].includes(String(lastEvent.event_type||lastEvent.type))&&Number(lastEvent.payload?.patient_id||lastEvent.entity_id)===patientId&&!mutation.current)void loader.current()},[lastEvent,patientId]);
  const visibleItems=loadedOwner===owner?items:[];
@@ -53,6 +54,7 @@ export default function NativePatientMedia({token,userId,patientId,onAnalysis}:{
    if(!current()||picker!==pickerGeneration.current||mutation.current||uncertain||result.canceled)return;
    if(!result.assets.length||result.assets.length>CLINICAL_MEDIA_PICKER_MAX_FILES)throw Error(`Tek seferde en fazla ${CLINICAL_MEDIA_PICKER_MAX_FILES} klinik görüntü seçebilirsiniz.`);
    const rawFiles:Picked[]=normalizeClinicalMediaAssets(result.assets).map(asset=>({...asset,requestKey:Crypto.randomUUID()}));
+   const batchId=ensureClinicalMediaBatchId(undefined,Crypto.randomUUID);
    mutation.current=true;setBusy(true);setError('');setProgress('Görüntüler cihazda şifreleniyor…');
    const encrypted:Picked[]=[];let batchBytes=0;
    try{
@@ -66,10 +68,10 @@ export default function NativePatientMedia({token,userId,patientId,onAnalysis}:{
      if(batchBytes>CLINICAL_MEDIA_MAX_BATCH_BYTES)throw Error('Tek klinik arşiv yüklemesinde toplam boyut en fazla 96 MiB olabilir.');
      if(!current()||picker!==pickerGeneration.current){await Promise.all(encrypted.map(item=>deleteClinicalMediaVaultFile(item.encryptedUri!).catch(()=>{})));return;}
     }
-    const intent:PendingUpload={version:2,userId,patientId,mediaType:type,files:encrypted,updatedAt:Date.now()};
+    const intent:PendingUpload={version:3,batchId,userId,patientId,mediaType:type,files:encrypted,updatedAt:Date.now()};
     await uploadStore.setItemAsync(uploadKey,JSON.stringify(storedPending(intent)));
     if(!current()||picker!==pickerGeneration.current){await Promise.all(encrypted.map(item=>deleteClinicalMediaVaultFile(item.encryptedUri!).catch(()=>{})));return;}
-    setMediaType(type);setPendingOwner(owner);setPending(encrypted);setError('');setProgress('Şifreli yükleme taslağı kaydedildi.');setByteProgress({loaded:0,total:0,lengthComputable:false});
+    setMediaType(type);setPendingBatchId(batchId);setPendingOwner(owner);setPending(encrypted);setError('');setProgress('Şifreli yükleme taslağı kaydedildi.');setByteProgress({loaded:0,total:0,lengthComputable:false});
    }catch(error){
     await Promise.all(encrypted.map(item=>deleteClinicalMediaVaultFile(item.encryptedUri!).catch(()=>{})));
     throw error;
@@ -78,12 +80,13 @@ export default function NativePatientMedia({token,userId,patientId,onAnalysis}:{
  }
 async function savePending(files:Picked[]){
   if(files.length){
-   const version=files.every(file=>!!file.encryptedUri)?2:1;
-   await uploadStore.setItemAsync(uploadKey,JSON.stringify(storedPending({version,userId,patientId,mediaType,files,updatedAt:Date.now()})));
+   const batchId=ensureClinicalMediaBatchId(pendingBatchId,Crypto.randomUUID);
+   const version=files.every(file=>!!file.encryptedUri)?3:1;
+   await uploadStore.setItemAsync(uploadKey,JSON.stringify(storedPending({version,batchId,userId,patientId,mediaType,files,updatedAt:Date.now()})));
   }else await uploadStore.deleteItemAsync(uploadKey);
  }
 async function upload(reconcile=false){
-  if(!current()||mutation.current||(uncertain&&!reconcile)||pendingOwner!==owner||!pending.length||!uploadReady||uploadBlocked)return;
+  if(!current()||mutation.current||(uncertain&&!reconcile)||pendingOwner!==owner||!pending.length||!uploadReady||uploadBlocked||!CLINICAL_MEDIA_BATCH_ID_PATTERN.test(pendingBatchId))return;
   mutation.current=true;setBusy(true);setError('');setByteProgress({loaded:0,total:0,lengthComputable:false});
   const files=[...pending];let remaining=[...files],completed=0;
   try{
@@ -103,7 +106,7 @@ async function upload(reconcile=false){
      await validateClinicalMediaVaultFile(file.encryptedUri!,userId,patientId,12*1024*1024);
      const tempUri=await decryptClinicalMediaFile(file.encryptedUri!,userId,patientId,file.name);
      try{
-      await uploadPatientMedia(token,patientId,{uri:tempUri,name:file.name,type:file.type},undefined,mediaType,file.requestKey,value=>{if(current())setByteProgress(value)});
+      await uploadPatientMedia(token,patientId,{uri:tempUri,name:file.name,type:file.type},undefined,mediaType,file.requestKey,pendingBatchId,value=>{if(current())setByteProgress(value)});
      }finally{await deleteClinicalMediaTemp(tempUri).catch(()=>{});}
     }
     if(!current())return;
@@ -112,14 +115,16 @@ async function upload(reconcile=false){
     if(file.encryptedUri)await deleteClinicalMediaVaultFile(file.encryptedUri).catch(()=>{});
     setProgress(completed+' / '+files.length+' görüntü kaydedildi');setByteProgress({loaded:0,total:0,lengthComputable:false});
    }
-   if(!remaining.length){setPendingOwner('');setUncertain(false);setProgress(completed+' görüntü kaydedildi');}
+   if(!remaining.length){setPendingOwner('');setPendingBatchId('');setUncertain(false);setProgress(completed+' görüntü kaydedildi');}
    await loader.current();
   }catch(e){
    if(current()){
     const code=(e as {code?:string})?.code;
     const localFailure=['SOURCE_MISSING','VAULT_MISSING','KEY_MISSING','KEY_INVALID','AUTH_FAILED','INVALID_VAULT'].includes(String(code||''));
-    setUncertain(!localFailure);
-    setError((e instanceof Error?e.message:'Yükleme tamamlanamadı.')+(localFailure?' Sunucuya yeni dosya gönderilmedi; bekleyen taslağı ve sunucu fişini kontrol edip eksik görüntüyü yeniden seçebilirsiniz.':' Aynı işlem anahtarları güvenli taslakta korundu; devam ettiğinizde sunucu fişleri kontrol edilerek eksik dosyalar yüklenir.'));
+    const status=(e as {status?:number})?.status;
+    const definiteRejection=typeof status==='number'&&[400,413,422,403,404].includes(status);
+    setUncertain(!localFailure&&!definiteRejection);
+    setError((e instanceof Error?e.message:'Yükleme tamamlanamadı.')+(localFailure?' Sunucuya yeni dosya gönderilmedi; bekleyen taslağı ve sunucu fişini kontrol edip eksik görüntüyü yeniden seçebilirsiniz.':definiteRejection?' Sunucu yeni kaydı kabul etmedi. Yükleme grubunu temizleyip daha küçük bir grup seçebilirsiniz.':' Aynı işlem anahtarları güvenli taslakta korundu; devam ettiğinizde sunucu fişleri kontrol edilerek eksik dosyalar yüklenir.'));
     void loader.current();
    }
   }finally{if(current()){mutation.current=false;setBusy(false)}}
@@ -135,12 +140,12 @@ async function clearPending(){
     await savePending(remaining);if(!current())return;setPending(remaining);
     await Promise.all(found.filter(file=>file.encryptedUri).map(file=>deleteClinicalMediaVaultFile(file.encryptedUri!).catch(()=>{})));
     setProgress(found.length+' görüntünün sunucu kaydı bulundu; yeniden yüklenmedi.');
-    if(!remaining.length)setPendingOwner('');
+    if(!remaining.length){setPendingOwner('');setPendingBatchId('');}
     await loader.current();return;
    }
    await Promise.all(pending.filter(file=>file.encryptedUri).map(file=>deleteClinicalMediaVaultFile(file.encryptedUri!).catch(()=>{})));
    await uploadStore.deleteItemAsync(uploadKey);if(!current())return;
-   setPending([]);setPendingOwner('');setProgress('Bekleyen taslak kaldırıldı.');setError('');
+   setPending([]);setPendingBatchId('');setPendingOwner('');setProgress('Bekleyen taslak kaldırıldı.');setError('');
   }catch(e){if(current())setError((e instanceof Error?e.message:'Sunucu fişleri kontrol edilemedi.')+' Taslak korunuyor; bağlantı geldiğinde yeniden kontrol edin.')}
   finally{if(current()){mutation.current=false;setBusy(false)}}
  }
