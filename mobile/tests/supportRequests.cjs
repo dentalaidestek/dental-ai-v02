@@ -53,3 +53,22 @@ test('support mutation endpoints reject unauthenticated requests and oversized c
  assert.ok(backend.includes('len(subject) > 160'));
  assert.ok(backend.includes('len(message) > 4000'));
 });
+
+test('native support exposes optional expert conversation linking and persists its selection',()=>{
+ assert.ok(api.includes('getSupportConversationOptions'));
+ assert.ok(api.includes('case_id:caseId??null'));
+ assert.ok(screen.includes('İlgili uzman konuşması (isteğe bağlı)'));
+ assert.ok(screen.includes('caseId:caseId??null'));
+ assert.ok(screen.includes('Konuşma yalnızca destek ekibiyle ilişkilendirilir'));
+});
+test('native support exposes reports and cursor pagination for tickets and messages',()=>{
+ assert.ok(api.includes('getSupportReports'));
+ assert.ok(api.includes('getSupportTickets=async(t:string,before?:number)'));
+ assert.ok(api.includes('before_id='+ 'before'));
+ assert.ok(screen.includes('Bildirimlerim'));
+ assert.ok(screen.includes('Daha eski destek taleplerini yükle'));
+ assert.ok(screen.includes('Daha eski mesajları yükle'));
+ assert.ok(backend.includes('/support/reports'));
+ assert.ok(backend.includes('/support/conversation-options'));
+ assert.ok(backend.includes('next_before_id'));
+});
