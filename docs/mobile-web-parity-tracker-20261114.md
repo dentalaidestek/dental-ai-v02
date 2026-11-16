@@ -504,3 +504,5 @@ Commits in this pass: c284ae3 (native viewer UI), e0ec071 (canonical parent acti
 
 
 Follow-up safety review (2026-11-17): completed treatment results now suppress a second Analiz Et action; failed/cancelled retryable jobs use the canonical retry action. An uncertain clinical-note acknowledgement restores the exact pending text into the parent encrypted note workflow and locks a second write until reconciliation. Two more renderer regressions cover these guards. Seven new viewer renderer cases are committed; none is claimed executed while Actions still fails before the first step.
+
+Final viewer interaction pass: tooth chips and both clinical text inputs are now disabled while a parent mutation or unresolved note is pending, preventing the visible draft from diverging from its encrypted intent. One additional renderer test covers the parent-busy treatment lock. Eight new viewer renderer cases are committed in total; still unexecuted until GitHub Actions allocates a runner.
