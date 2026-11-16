@@ -5,7 +5,7 @@ import pytest
 from starlette.exceptions import HTTPException
 
 from app.upload_io import copy_image, upload_size, validate_path_batch, validate_upload_batch
-from app.request_limits import request_body_limit
+from app.request_limits import RequestLimits, request_body_limit
 from app.upload_limits import (
     MAX_ANALYSIS_BATCH_BYTES,
     MAX_ANALYSIS_IMAGE_BYTES,
@@ -83,3 +83,30 @@ def test_raw_http_body_limits_cover_multipart_overhead_and_respect_global_cap():
     assert mobile_archive == MAX_PATIENT_MEDIA_FILE_BYTES + 256 * 1024
     assert request_body_limit({"method": "POST", "path": "/analysis/new/12"}, 32 * 1024 * 1024) == 32 * 1024 * 1024
     assert request_body_limit({"method": "GET", "path": "/patients/12/media"}, global_limit) == global_limit
+
+
+@pytest.mark.asyncio
+async def test_asgi_body_counter_rejects_chunked_or_understated_multipart_body():
+    from app.upload_limits import MAX_PATIENT_MEDIA_FILE_BYTES
+
+    sent = []
+    async def downstream(scope, receive, send):
+        await receive()
+
+    async def receive():
+        return {"type": "http.request", "body": b"x" * (MAX_PATIENT_MEDIA_FILE_BYTES + 300 * 1024), "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http", "method": "POST", "path": "/api/mobile/v1/patients/1/media",
+        "headers": [
+            (b"content-type", b"multipart/form-data; boundary=test"),
+            (b"content-length", b"1"),
+        ],
+    }
+    middleware = RequestLimits(downstream, max_bytes=128 * 1024 * 1024)
+    with pytest.raises(HTTPException) as exc:
+        await middleware(scope, receive, send)
+    assert exc.value.status_code == 413
