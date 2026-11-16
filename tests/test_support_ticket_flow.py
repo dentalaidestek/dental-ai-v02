@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -132,5 +133,15 @@ def test_support_ticket_full_user_admin_turn_lifecycle(monkeypatch, tmp_path):
     assert {notice.notice_type for notice in notices} >= {
         "SUPPORT_MESSAGE", "SUPPORT_TICKET_UPDATE"
     }
+    notice_targets = {notice.notice_type: notice.target_url for notice in notices}
+    assert notice_targets["SUPPORT_MESSAGE"] == f"/support-request?ticket_id={ticket_id}"
+    assert notice_targets["SUPPORT_TICKET_UPDATE"] == f"/support-request?ticket_id={ticket_id}"
     assert (admin_id, "SUPPORT_TICKET_CREATED") in published
     assert (user_id, "SUPPORT_MESSAGE_CREATED") in published
+
+
+def test_support_request_template_opens_the_ticket_named_by_a_notification():
+    template = (Path(main.__file__).parent / "templates" / "support_request.html").read_text(encoding="utf-8")
+    assert 'new URLSearchParams(window.location.search).get("ticket_id")' in template
+    assert 'data-support-toggle="' in template
+    assert "Number.isSafeInteger(numericTicketId)" in template
