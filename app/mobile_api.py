@@ -1426,6 +1426,7 @@ def _patient_media_receipt_key(user_id: int, patient_id: int, request_key: str) 
 
 def _patient_media_payload_hash(file_hash: str, media_type: str, tooth_number: Optional[str],
                                 note: Optional[str], original_name: str) -> str:
+    """Build the legacy canonical digest; callers must HMAC it before persistence."""
     payload = [file_hash, media_type, tooth_number, note, original_name]
     return hashlib.sha256(json.dumps(
         payload, ensure_ascii=False, separators=(",", ":")
