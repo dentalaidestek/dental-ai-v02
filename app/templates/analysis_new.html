@@ -15,7 +15,7 @@
         <input type="hidden" name="existing_media_ids" value="{{ selected_media_ids }}">
         <div class="analysis-selected-media analysis-selected-media-multi">
             <div class="analysis-selected-media-thumbs">
-                {% for media in selected_media[:analysis_image_limit|default(4)] %}
+                {% for media in selected_media[:analysis_image_limit] %}
                 <img src="/patients/{{ patient.id }}/media/{{ media.id }}/file" alt="Seçilen klinik görüntü">
                 {% endfor %}
                 {% if selected_media|length > 4 %}<span class="analysis-selected-media-more">+{{ selected_media|length - 4 }}</span>{% endif %}
@@ -44,14 +44,14 @@
                     Görüntü yükle
                     <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
                 </label>
-                <p class="muted analysis-field-help">Kayıtlı görüntüler dahil toplam en fazla {{ analysis_image_limit|default(4) }} görüntü kullanılabilir. Tür otomatik belirlenir.</p>
+                <p class="muted analysis-field-help">Kayıtlı görüntüler dahil toplam en fazla {{ analysis_image_limit }} görüntü kullanılabilir. Tür otomatik belirlenir.</p>
             </details>
             {% else %}
             <label>
                 Görüntü yükle
                 <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
             </label>
-            <p class="muted analysis-field-help">En fazla {{ analysis_image_limit|default(4) }} görüntü yükleyebilirsiniz. Görüntü türü otomatik belirlenir.</p>
+            <p class="muted analysis-field-help">En fazla {{ analysis_image_limit }} görüntü yükleyebilirsiniz. Görüntü türü otomatik belirlenir.</p>
             {% endif %}
         </div>
 
