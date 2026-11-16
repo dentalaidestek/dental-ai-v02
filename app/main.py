@@ -7526,6 +7526,7 @@ def expert_support_request_page(request: Request, expert_user_id: int, patient_i
         ).order_by(PatientMedia.uploaded_at.desc())).all() if patient else []
     return templates.TemplateResponse(request=request, name="expert_request.html", context={
         "user": user, "expert": expert, "profile": profile, "patient": patient, "patient_media": patient_media,
+                "analysis_image_limit": MAX_ANALYSIS_IMAGES,
         "request_key": str(uuid.uuid4()),
     })
 
@@ -10831,6 +10832,9 @@ def patient_detail(request: Request, patient_id: int):
         )
 
 
+MAX_ANALYSIS_IMAGES = 4  # Shared web/native admission limit; gallery storage has its own 12-file batch limit.
+
+
 def _patient_media_has_valid_signature(path: Path, extension: str) -> bool:
     try:
         with path.open("rb") as image_file:
@@ -11160,8 +11164,8 @@ def new_analysis(
     requested_ids = _parse_patient_media_ids(media_ids)
     if media_id is not None and media_id not in requested_ids:
         requested_ids.insert(0, media_id)
-    if len(requested_ids) > 12:
-        return HTMLResponse("Tek analizde en fazla 12 kayıtlı görüntü seçebilirsiniz.", status_code=400)
+    if len(requested_ids) > MAX_ANALYSIS_IMAGES:
+        return HTMLResponse(f"Tek analizde en fazla {MAX_ANALYSIS_IMAGES} kayıtlı görüntü seçebilirsiniz.", status_code=400)
 
     selected_media: list[PatientMedia] = []
     with Session(engine, expire_on_commit=False) as s:
@@ -11188,6 +11192,7 @@ def new_analysis(
             "patient": patient,
             "selected_media": selected_media,
             "selected_media_ids": ",".join(str(media.id) for media in selected_media),
+            "analysis_image_limit": MAX_ANALYSIS_IMAGES,
         },
     )
 
@@ -12259,8 +12264,8 @@ def create_analysis(
         if existing_media_id is not None and existing_media_id not in requested_media_ids:
             requested_media_ids.insert(0, existing_media_id)
         new_image_count = sum(1 for img in images if img and img.filename)
-        if len(requested_media_ids) + new_image_count > 4:
-            return HTMLResponse("Tek analizde toplam en fazla 4 görüntü kullanabilirsiniz.", status_code=400)
+        if len(requested_media_ids) + new_image_count > MAX_ANALYSIS_IMAGES:
+            return HTMLResponse(f"Tek analizde kayıtlı ve yeni görüntülerin toplamı en fazla {MAX_ANALYSIS_IMAGES} olabilir.", status_code=400)
 
         selected_media_items: list[tuple[PatientMedia, Path]] = []
         selected_media_rows = []
