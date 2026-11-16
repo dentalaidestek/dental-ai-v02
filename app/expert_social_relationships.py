@@ -204,13 +204,15 @@ def register_relationships(
                         "followed_at": followed_at.isoformat() + "Z",
                     }
                 )
-            return JSONResponse(
-                {
-                    "items": items,
-                    "next_cursor": rows[-1][0].id if has_more else None,
-                },
-                headers=headers,
-            )
+            payload = {
+                "items": items,
+                "next_cursor": rows[-1][0].id if has_more else None,
+            }
+            # Native clients need the same taxonomy as the web filter chips.
+            # Keep it off subsequent pages to avoid repeating static metadata.
+            if before is None:
+                payload["specialties"] = list(main.EXPERT_SPECIALTIES)
+            return JSONResponse(payload, headers=headers)
 
     @router.get("/experts/{expert_id}/followers")
     def followers(
