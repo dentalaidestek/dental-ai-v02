@@ -26,19 +26,18 @@ def sanitize_clinical_media_image(
     The caller owns byte-count enforcement while streaming the upload. This
     helper bounds decoded pixels, rejects animated containers, verifies that
     the extension matches the actual image format, and atomically replaces the
-    original with a metadata-clean encoding. JPEGs are saved at high quality
-    without chroma subsampling; WebP is saved losslessly so radiographic detail
-    is not needlessly degraded.
+    staged file with a metadata-clean encoding. A rejected staged file is
+    removed so callers cannot leave an unreferenced PHI-bearing temporary file.
     """
     normalized_extension = (extension or "").lower()
     expected_format = _EXPECTED_FORMATS.get(normalized_extension)
-    if expected_format is None:
-        raise ValueError("Desteklenmeyen klinik görüntü formatı.")
-    if not isinstance(max_pixels, int) or isinstance(max_pixels, bool) or max_pixels <= 0:
-        raise ValueError("Geçersiz görüntü çözünürlük sınırı.")
-
     temporary = path.with_name(path.name + ".sanitized")
     try:
+        if expected_format is None:
+            raise ValueError("Desteklenmeyen klinik görüntü formatı.")
+        if not isinstance(max_pixels, int) or isinstance(max_pixels, bool) or max_pixels <= 0:
+            raise ValueError("Geçersiz görüntü çözünürlük sınırı.")
+
         with Image.open(path) as probe:
             width, height = probe.size
             if probe.format != expected_format:
@@ -53,9 +52,8 @@ def sanitize_clinical_media_image(
             if original.format != expected_format:
                 raise ValueError("Dosya uzantısı görüntü formatıyla eşleşmiyor.")
             oriented = ImageOps.exif_transpose(original)
-            mode = "RGB" if expected_format == "JPEG" else (
-                "RGBA" if "A" in oriented.getbands() else "RGB"
-            )
+            has_alpha = "A" in oriented.getbands() or "transparency" in oriented.info
+            mode = "RGB" if expected_format == "JPEG" else ("RGBA" if has_alpha else "RGB")
             pixels = oriented.convert(mode)
             clean = Image.new(mode, pixels.size)
             clean.paste(pixels)
@@ -75,8 +73,10 @@ def sanitize_clinical_media_image(
             clean.save(temporary, format=expected_format, **save_options)
             temporary.replace(path)
     except ValueError:
+        path.unlink(missing_ok=True)
         raise
     except Exception as exc:
+        path.unlink(missing_ok=True)
         raise ValueError("Geçersiz veya bozuk klinik görüntü dosyası.") from exc
     finally:
         temporary.unlink(missing_ok=True)
