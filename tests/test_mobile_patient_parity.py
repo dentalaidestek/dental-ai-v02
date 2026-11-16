@@ -292,14 +292,14 @@ def test_treatment_receipts_are_not_pruned_while_patient_exists(chat):
 
 def test_mobile_patient_media_upload_receipt_replays_once_and_is_owner_scoped(chat, monkeypatch, tmp_path):
     client, engine = chat
+    persisted = []
+    async def async_publish(_event):
+        return None
     monkeypatch.setattr(mobile_api, "engine", engine)
     monkeypatch.setattr(mobile_api, "storage_persist_file", lambda path: persisted.append(str(path)))
     monkeypatch.setattr(mobile_api, "storage_delete", lambda path: None)
     monkeypatch.setattr(mobile_api, "_publish_realtime_event", async_publish)
     monkeypatch.chdir(tmp_path)
-    persisted = []
-    async def async_publish(_event):
-        return None
 
     with Session(engine) as session:
         session.add(main.Patient(id=84, anonymous_id="SYNTHETIC-MEDIA-RECEIPT", owner_user_id=1))
