@@ -501,3 +501,6 @@ The native image viewer previously had only the findings list. The web viewer ex
 Five renderer regressions added to the already-registered mobile/tests/visionViewer.cjs: tab availability, permanent FDI selection/delegation, confirmed note save, uncertain save preservation, and canonical treatment-result rendering. They are committed but not executed because current Actions jobs fail before runner allocation. Full typecheck, Node suite, Android/iOS device and clinical acceptance remain open.
 
 Commits in this pass: c284ae3 (native viewer UI), e0ec071 (canonical parent actions), 80b3030 (renderer regressions), 580ab8c (viewer documentation); tracker update follows. PR #257 remains Draft. No main merge, live deploy, APK/IPA publication or clinical record mutation.
+
+
+Follow-up safety review (2026-11-17): completed treatment results now suppress a second Analiz Et action; failed/cancelled retryable jobs use the canonical retry action. An uncertain clinical-note acknowledgement restores the exact pending text into the parent encrypted note workflow and locks a second write until reconciliation. Two more renderer regressions cover these guards. Seven new viewer renderer cases are committed; none is claimed executed while Actions still fails before the first step.
