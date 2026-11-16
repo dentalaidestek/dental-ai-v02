@@ -7,6 +7,42 @@ from PIL import Image
 import io
 import json
 
+
+def test_tooth_chart_initial_focus_matches_web_latest_analysis_and_is_owner_scoped(chat, monkeypatch):
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    base = datetime(2026, 11, 16, 12, 0, 0)
+    with Session(engine) as session:
+        session.add_all([
+            main.Patient(id=8, anonymous_id="SYNTHETIC-FOCUS-8", owner_user_id=1),
+            main.Patient(id=9, anonymous_id="SYNTHETIC-FOCUS-9", owner_user_id=2),
+            main.Patient(id=10, anonymous_id="SYNTHETIC-FOCUS-10", owner_user_id=1),
+        ])
+        session.add_all([
+            main.Analysis(id=101, patient_id=8, tooth_number="36", status="AI_ANALYZED", created_at=base),
+            main.Analysis(id=102, patient_id=8, tooth_number="55", status="AI_FINAL", created_at=base.replace(minute=1)),
+            # Same timestamp is resolved by descending id, matching the web query.
+            main.Analysis(id=103, patient_id=8, tooth_number="18", status="VISION_READY", created_at=base.replace(minute=2)),
+            main.Analysis(id=104, patient_id=8, tooth_number="48", status="DRAFT", created_at=base.replace(minute=3)),
+            main.Analysis(id=105, patient_id=8, tooth_number="99", status="AI_FINAL", created_at=base.replace(minute=4)),
+            main.Analysis(id=106, patient_id=9, tooth_number="21", status="AI_FINAL", created_at=base.replace(minute=5)),
+        ])
+        session.commit()
+
+    response = client.get("/api/mobile/v1/patients/8/tooth-chart/focus")
+    assert response.status_code == 200, response.text
+    assert response.json() == {"latest_analysis_tooth": "18"}
+
+    # An owned patient without an eligible analysis is an explicit empty focus.
+    empty = client.get("/api/mobile/v1/patients/10/tooth-chart/focus")
+    assert empty.status_code == 200, empty.text
+    assert empty.json() == {"latest_analysis_tooth": None}
+
+    # Existing patients belonging to another account remain indistinguishable from missing IDs.
+    assert client.get("/api/mobile/v1/patients/9/tooth-chart/focus").status_code == 404
+    assert client.get("/api/mobile/v1/patients/999/focus").status_code == 404
+
+
 def test_patient_history_filters_tooth_and_marks_only_confirmed_voice_reviews(chat,monkeypatch):
     client,engine=chat;monkeypatch.setattr(mobile_analysis_api,'engine',engine)
     with Session(engine) as s:
