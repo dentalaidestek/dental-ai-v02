@@ -426,6 +426,7 @@ def test_mobile_patient_media_preserves_extension_and_enforces_web_validation(ch
 
 def test_web_analysis_selection_and_submission_share_four_image_limit(chat,monkeypatch,tmp_path):
     client,engine=chat
+    client.cookies.set(main.SESSION_COOKIE,'token1')
     main.UPLOAD_DIR.mkdir(parents=True,exist_ok=True)
     image=tmp_path/'synthetic-analysis-limit.png'
     Image.new('RGB',(8,8),'white').save(image)
