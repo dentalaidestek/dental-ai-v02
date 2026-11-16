@@ -59,7 +59,7 @@ export default function NativePatientMedia({token,userId,patientId,onAnalysis}:{
    const encrypted:Picked[]=[];let batchBytes=0;
    try{
     for(const file of rawFiles){
-     const encryptedUri=await encryptClinicalMediaFile(file.uri,userId,patientId,CLINICAL_MEDIA_MAX_FILE_BYTES);
+     const encryptedUri=await encryptClinicalMediaFile(file.uri,userId,patientId,CLINICAL_MEDIA_MAX_FILE_BYTES,'archive');
      encrypted.push({...file,uri:encryptedUri,encryptedUri,previewUri:file.uri});
      const encryptedInfo=await FS.getInfoAsync(encryptedUri);
      const plainBytes=encryptedInfo.exists&&Number.isFinite(encryptedInfo.size)?encryptedInfo.size-40:0;
@@ -99,7 +99,7 @@ async function upload(reconcile=false){
     let file=original;
     if(!receipt.found){
      if(!file.encryptedUri){
-      const encryptedUri=await encryptClinicalMediaFile(file.uri,userId,patientId,12*1024*1024);
+      const encryptedUri=await encryptClinicalMediaFile(file.uri,userId,patientId,12*1024*1024,'archive');
       file={...file,uri:encryptedUri,encryptedUri};
       remaining=remaining.map(item=>item.requestKey===file.requestKey?file:item);
       await savePending(remaining);if(!current())return;setPending(remaining);
