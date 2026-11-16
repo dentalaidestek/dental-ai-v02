@@ -10930,7 +10930,7 @@ def upload_patient_media(
                         break
                     total += len(chunk)
                     if total > max_bytes:
-                        raise ValueError("Bir görüntü en fazla 12 MB olabilir.")
+                        raise ValueError("Bir görüntü en fazla 12 MiB olabilir.")
                     buffer.write(chunk)
 
             if not _patient_media_has_valid_signature(destination, extension):
