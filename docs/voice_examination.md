@@ -205,3 +205,40 @@ packet lengths are rejected before provider calls. No temporary audio files are
 introduced. Tests cover the packet path and the absence of automatic parallel
 clinical calls, cached final-review reuse, retained communication feedback and
 phase progression. Main and production remain untouched.
+
+
+## Native mobile ASR idempotency and recovery
+
+The native binary audio endpoint requires the X-Voice-Request-Key header, using the
+persisted SecureStore segment ID. The server scopes its receipt to authenticated owner,
+patient and segment key, and hashes the canonical MIME plus streamed audio bytes.
+Reusing a key with different audio is rejected with HTTP 409 before Gemini is
+called. A completed result is replayed from the receipt; the same request does not
+invoke Gemini again.
+
+The receipt stores only an AES-GCM encrypted transcript and the patient revision.
+Raw audio is held only in bounded request memory and is never written to disk or
+the database. Configure VOICE_ASR_RECEIPT_KEY as 64 hexadecimal characters
+(32 random bytes; for example generate a value with openssl rand -hex 32) in
+the deployment secret store before enabling native voice uploads. The key is
+deliberately separate from account, admin and object-storage credentials. Missing
+or malformed configuration fails closed with HTTP 503. Do not commit the value
+to source control. Rotate it only after the 24-hour result TTL and seven-day
+tombstone window have elapsed, otherwise outstanding receipts cannot be decrypted.
+
+Encrypted transcripts are replayable for 24 hours. The worker's bounded history
+pruner clears the ciphertext after that window and keeps a key tombstone for up
+to seven days. A live PROCESSING receipt returns an in-progress response. If its
+lease expires without a committed result, the receipt becomes terminal
+OUTCOME_UNKNOWN; the server does not automatically call Gemini again because
+the previous provider call may already have completed. The native app preserves
+the local clip and offers a separate, explicitly confirmed new-key attempt. That
+action can create a new Gemini call and may incur another provider charge.
+Capacity/configuration failures known to occur before a provider call are marked
+RETRYABLE and can safely reuse the original key.
+
+This is at-most-once protection for the persisted receipt lifecycle, not a
+provider-side idempotency guarantee. A process crash after Gemini succeeds but
+before the encrypted result commits is intentionally treated as unknown rather
+than silently re-billed. The receipt table reuses the existing WorkJob schema;
+no database migration or patient-chart write is introduced.
