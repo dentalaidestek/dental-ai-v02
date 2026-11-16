@@ -11,6 +11,8 @@ function mountMedia(getMedia, options={}){
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const native=Object.fromEntries(['ActivityIndicator','FlatList','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]));
+ const appStateListeners=options.appStateListeners||new Set();
+ native.AppState={addEventListener:(_event,listener)=>{appStateListeners.add(listener);return{remove:()=>appStateListeners.delete(listener)}}};
  native.Alert={alert(...args){options.onAlert?.(...args)}};
  native.FlatList=props=>React.createElement('FlatList',props,...(props.data||[]).map((item,index)=>props.renderItem?.({item,index})),props.ListFooterComponent||null);
  const storage=options.storage||new Map();
@@ -24,6 +26,7 @@ function mountMedia(getMedia, options={}){
  vm.runInNewContext(code,{exports,Error,Date,Set,JSON,Number,Array,Promise,require:name=>{
   if(name==='react')return {...React,default:React};
   if(name==='react-native')return native;
+  if(name==='@react-navigation/native')return {useIsFocused:()=>options.focused===undefined?true:options.focused};
   if(name==='expo-image-picker')return options.picker||{};
   if(name==='expo-secure-store')return secureStore;
   if(name==='expo-crypto')return {randomUUID:()=>options.randomUUID?.()||`synthetic-media-key-${String(++keySequence).padStart(4,'0')}`};
@@ -47,7 +50,9 @@ function mountMedia(getMedia, options={}){
   throw Error('Unexpected import '+name);
  }});
  const Component=exports.default;
- return props=>React.createElement(Component,{userId:1,...props});
+ const Wrapped=props=>React.createElement(Component,{userId:1,...props});
+ Wrapped.appStateListeners=appStateListeners;
+ return Wrapped;
 }
 const visible=node=>typeof node==='string'?node:Array.isArray(node)?node.map(visible).join(''):node?.children?node.children.map(visible).join(''):'';
 const findButton=(tree,label)=>tree.root.findAllByType('Pressable').find(node=>visible(node).includes(label));
@@ -452,4 +457,29 @@ test('new patient media drafts persist ciphertext only and upload through a disp
  assert.deepEqual(deletedVault,[encryptedUri]);
  assert.equal(storage.has('dai.patient-media.upload.1.8'),false);
  await renderer.act(async()=>tree.unmount());
+});
+
+
+test('clinical gallery refreshes on focus and app foreground without polling',async()=>{
+ const listeners=new Set(),calls=[];const options={appStateListeners:listeners,focused:true};
+ const Media=mountMedia(async()=>{calls.push(calls.length+1);return{items:[{id:calls.length,url:'https://example.invalid/gallery-'+calls.length+'.jpg',media_type:'PHOTO'}],next_before:null}},options);
+ const props={token:'account',patientId:8,onAnalysis:()=>{}};let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,props))});
+ assert.equal(calls.length,1,'mount performs one initial gallery read');
+ assert.equal(listeners.size,1,'focused gallery subscribes to app state');
+ const listener=[...listeners][0];
+ await renderer.act(async()=>listener('background'));
+ assert.equal(calls.length,1,'background transition does not trigger a request');
+ await renderer.act(async()=>listener('active'));
+ assert.equal(calls.length,2,'foreground return refreshes the canonical gallery');
+ options.focused=false;
+ await renderer.act(async()=>tree.update(React.createElement(Media,props)));
+ assert.equal(listeners.size,0,'blur removes the app-state listener');
+ const beforeFocus=calls.length;
+ options.focused=true;
+ await renderer.act(async()=>tree.update(React.createElement(Media,props)));
+ assert.equal(calls.length,beforeFocus+1,'returning to the patient screen refreshes the gallery');
+ assert.equal(listeners.size,1);
+ await renderer.act(async()=>tree.unmount());
+ assert.equal(listeners.size,0,'unmount removes the app-state listener');
 });
