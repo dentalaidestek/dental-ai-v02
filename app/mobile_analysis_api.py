@@ -1,6 +1,8 @@
 """Native Dental AI API using the production storage and durable work queue."""
 from pathlib import Path
 from app.clinical_media import sanitize_clinical_media_image
+from app.upload_limits import MAX_ANALYSIS_IMAGE_BYTES, MAX_ANALYSIS_BATCH_BYTES, MAX_CLINICAL_IMAGE_PIXELS
+from app.upload_io import validate_upload_batch, validate_path_batch
 import json
 import hashlib
 import re
@@ -45,8 +47,9 @@ def _patient_payload(patient: Patient) -> dict:
         "chief_complaint": patient.chief_complaint,
         "created_at": patient.created_at,
     }
-MOBILE_MAX_ANALYSIS_BYTES = max(1, int(os.getenv("MOBILE_MAX_ANALYSIS_BYTES", str(15 * 1024 * 1024))))
-MOBILE_MAX_ANALYSIS_PIXELS = max(1, int(os.getenv("MOBILE_MAX_ANALYSIS_PIXELS", "40000000")))
+MOBILE_MAX_ANALYSIS_BYTES = MAX_ANALYSIS_IMAGE_BYTES
+MOBILE_MAX_ANALYSIS_BATCH_BYTES = MAX_ANALYSIS_BATCH_BYTES
+MOBILE_MAX_ANALYSIS_PIXELS = MAX_CLINICAL_IMAGE_PIXELS
 
 def _copy_validated_analysis_image(upload: UploadFile, destination: Path) -> None:
     total = 0
@@ -133,6 +136,7 @@ def _upload_key(user_id,key):return hashlib.sha256(f'mobile-analysis-upload:{use
 
 def _upload_digest(patient_id,tooth,notes,images,existing_media_ids=()):
     hashes=[]
+    batch_total=0
     for image in images:
         digest=hashlib.sha256();size=0
         try:
@@ -140,7 +144,9 @@ def _upload_digest(patient_id,tooth,notes,images,existing_media_ids=()):
                 chunk=image.file.read(1024*1024)
                 if not chunk:break
                 size+=len(chunk)
-                if size>MOBILE_MAX_ANALYSIS_BYTES:raise HTTPException(413,'Görüntü dosyası çok büyük.')
+                if size>MOBILE_MAX_ANALYSIS_BYTES:raise HTTPException(413,'Bir görüntü en fazla 25 MiB olabilir.')
+                batch_total+=len(chunk)
+                if batch_total>MOBILE_MAX_ANALYSIS_BATCH_BYTES:raise HTTPException(413,'Toplam analiz görüntüleri en fazla 80 MiB olabilir.')
                 digest.update(chunk)
         finally:image.file.seek(0)
         hashes.append([image.filename,size,digest.hexdigest()])
@@ -232,6 +238,27 @@ async def create_mobile_analysis(
                 if not media or (user.role!="ADMIN" and media.owner_user_id!=user.id):
                     raise HTTPException(404,"Seçilen klinik görüntü bulunamadı.")
                 selected_media.append(media)
+
+        # Enforce actual byte counts for both fresh multipart files and saved
+        # patient media before creating an Analysis row or staging any bytes.
+        new_bytes = validate_upload_batch(
+            valid,
+            maximum_file=MOBILE_MAX_ANALYSIS_BYTES,
+            maximum_total=MOBILE_MAX_ANALYSIS_BATCH_BYTES,
+        )
+        saved_paths = []
+        for media in selected_media:
+            try:
+                saved_paths.append(Path(await run_in_threadpool(storage_ensure_local, media.file_path)))
+            except FileNotFoundError as exc:
+                raise HTTPException(404, "Seçilen klinik görüntü dosyası bulunamadı.") from exc
+        saved_bytes = validate_path_batch(
+            saved_paths,
+            maximum_file=MOBILE_MAX_ANALYSIS_BYTES,
+            maximum_total=MOBILE_MAX_ANALYSIS_BATCH_BYTES,
+        )
+        if new_bytes + saved_bytes > MOBILE_MAX_ANALYSIS_BATCH_BYTES:
+            raise HTTPException(413, "Kayıtlı ve yeni görüntülerin toplamı en fazla 80 MiB olabilir.")
 
         analysis = Analysis(
             patient_id=patient_id,
