@@ -5,10 +5,11 @@ function harness(){
  const react={useState:initial=>{const id=cursor++;if(!(id in state))state[id]=typeof initial==='function'?initial():initial;return [state[id],v=>state[id]=typeof v==='function'?v(state[id]):v]},useRef:v=>{const i=ri++;return refs[i]||(refs[i]={current:v})},useEffect:(f,deps)=>{const i=ei++;if(!previous[i]||deps.some((v,j)=>!Object.is(v,previous[i].deps[j])))effects.push(()=>{previous[i]?.cleanup?.();previous[i]={deps,cleanup:f()}})},createElement:(type,props,...children)=>({type,props:{...props,children}})};react.default=react;
  const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8')+'\nexport const __test={PostCard,CommentThread,Composer};';
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText,exports={};
- const native={Alert:{alert:(...args)=>alerts.push(args)},StyleSheet:{create:s=>s},Pressable:'Pressable',Text:'Text',View:'View',Image:'Image'};
- const api={getComments:async(...args)=>{requests.push(args);return {items:[{id:20,text:'reply',author_name:'R',parent_id:10}],next_cursor:null}}};
+ const shared=[];
+ const native={Alert:{alert:(...args)=>alerts.push(args)},Share:{share:async options=>{shared.push(options);return {action:'sharedAction'}}},StyleSheet:{create:s=>s},Pressable:'Pressable',Text:'Text',View:'View',Image:'Image'};
+ const api={getComments:async(...args)=>{requests.push(args);return {items:[{id:20,text:'reply',author_name:'R',parent_id:10}],next_cursor:null}},setFollow:async(_t,_id,followed)=>({following_by_viewer:followed}),socialPostUrl:(authorId,postId)=>'https://dentalai.tr/expert-support/expert/'+authorId+'?post='+postId};
  vm.runInNewContext(code,{exports,require:n=>n==='react'?react:n==='react-native'?native:n==='./socialApi'?api:n==='./socialDraft'?{chunkedDraftStore:()=>({}),draftKey:()=> 'draft',readDraft:async()=>null}:n==='expo-crypto'?{randomUUID:()=> 'synthetic-id'}:{}});
- return {alerts,refs,requests,render:(name,props)=>{cursor=ri=ei=0;const tree=exports.__test[name](props);while(effects.length)effects.shift()();return tree}};
+ return {alerts,refs,requests,shared,render:(name,props)=>{cursor=ri=ei=0;const tree=exports.__test[name](props);while(effects.length)effects.shift()();return tree}};
 }
 function nodes(tree){if(!tree||typeof tree!=='object')return [];return [tree,...(tree.props?.children||[]).flat(Infinity).flatMap(nodes)];}
 const text=n=>typeof n==='string'?n:!n||typeof n!=='object'?'':(n.props?.children||[]).flat(Infinity).map(text).join('');
@@ -19,6 +20,40 @@ test('Android owner menu exposes every action without an Alert exceeding three b
  tree=h.render('PostCard',props);const sheet=nodes(tree).find(n=>n.props?.title==='Gönderi işlemleri');assert.ok(sheet,'native action sheet opens');
  const labels=nodes(sheet).map(n=>n.props?.title);for(const label of ['Düzenle','Sabitle','Yorumları kapat','Sil'])assert.ok(labels.includes(label),label);
 });
+test('published Dental Flow cards follow the author and share a canonical post URL',async()=>{
+ const h=harness(),followed=[],supported=[];
+ const post={id:42,author_id:7,author_name:'Synthetic expert',text:'Synthetic post',media:[],status:'PUBLISHED',owned:false,author_followed:false,author_support_available:true,comments_closed:false,liked:false,like_count:0,comment_count:0,created_at:'2026-11-17'};
+ const props={token:'synthetic',userId:2,post,onUpdate(){},onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow:(...args)=>followed.push(args),onSupport:()=>supported.push(true)};
+ let tree=h.render('PostCard',props);
+ const follow=nodes(tree).find(n=>n.props?.accessibilityLabel==='Takip et');assert.ok(follow);
+ await follow.props.onPress();await tick();assert.deepEqual(followed,[[7,true]]);
+ tree=h.render('PostCard',{...props,post:{...post,author_followed:true}});
+ const support=nodes(tree).find(n=>n.props?.accessibilityLabel==='Uzmandan Destek Al');assert.ok(support);support.props.onPress();assert.deepEqual(supported,[true]);
+ const share=nodes(tree).find(n=>n.props?.accessibilityLabel==='Gönderi bağlantısını paylaş');assert.ok(share);
+ await share.props.onPress();assert.deepEqual(h.shared[0],{message:'https://dentalai.tr/expert-support/expert/7?post=42',url:'https://dentalai.tr/expert-support/expert/7?post=42'});
+});
+
+test('pending posts disable like/share and closed comments are not opened',()=>{
+ const h=harness(),post={id:3,author_id:7,author_name:'Expert',text:'Pending',media:[],status:'PENDING',owned:true,comments_closed:true,liked:false,like_count:0,comment_count:0,created_at:'2026-11-17'};
+ const tree=h.render('PostCard',{token:'synthetic',userId:2,post,onUpdate(){},onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow(){},onSupport(){}});
+ const like=nodes(tree).find(n=>n.props?.accessibilityLabel==='Beğen');
+ const share=nodes(tree).find(n=>n.props?.accessibilityLabel==='Gönderi bağlantısını paylaş');
+ assert.equal(like.props.disabled,true);assert.equal(share.props.disabled,true);
+ assert.ok(text(tree).includes('Yorumlar kapalı'));
+ assert.equal(nodes(tree).some(n=>n.props?.accessibilityLabel?.startsWith('Yorumlar ')),false);
+});
+
+test('Dental Flow native filters use the web taxonomy and reset the paged scope',()=>{
+ const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
+ const feed=source.slice(source.indexOf('export function DentalFlow('),source.indexOf('const s = StyleSheet.create'));
+ assert.match(feed,/api\.getFeed\(token, mode, before, selectedSpecialty\)/);
+ assert.ok(feed.includes('selectedSpecialty}'));
+ assert.ok(feed.includes('Branş filtresi:'));
+ assert.match(feed,/specialties\.map\(\(specialty\)/);
+ assert.match(feed,/navigation\.navigate\("ExpertDirectory"\)/);
+ assert.match(feed,/mode === "following" && !followed/);
+});
+
 test('composer cannot unmount a pending upload or submission and overwrite a newer draft',async()=>{
  const h=harness();let closed=0;const props={token:'synthetic',userId:1,onClose:()=>closed++,onPosted(){}};
  let tree=h.render('Composer',props);await tick();tree=h.render('Composer',props);
