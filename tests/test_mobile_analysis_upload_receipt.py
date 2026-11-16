@@ -263,6 +263,8 @@ def test_clinical_only_analysis_rejects_empty_context_before_allocating_records(
     c,engine,_=setup(chat,monkeypatch,tmp_path)
     response=post_clinical_only(c,key="synthetic-empty-context-001",tooth="",note="")
     assert response.status_code==422
+    separator_only=post_clinical_only(c,key="synthetic-separator-context-001",tooth=" , , ",note="")
+    assert separator_only.status_code==422
     with Session(engine) as s:
         assert s.exec(select(main.Analysis)).all()==[]
         assert s.exec(select(main.ImageAsset)).all()==[]
