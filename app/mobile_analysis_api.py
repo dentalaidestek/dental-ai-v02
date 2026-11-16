@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
 from app.main import (
-    Analysis, ImageAsset, Patient, PatientMedia, User, engine,
+    Analysis, ImageAsset, Patient, PatientMedia, User, engine, MAX_ANALYSIS_IMAGES,
     _enqueue_work, _latest_work,
     classify_dental_image, storage_ensure_local, storage_persist_file,
     _record_realtime_event, _publish_realtime_event, on_loop,
@@ -79,8 +79,8 @@ def _parse_existing_media_ids(raw):
     if raw is None or not raw.strip():
         return []
     parts=[part.strip() for part in raw.split(",")]
-    if len(parts)>4 or any(not re.fullmatch(r"[1-9][0-9]*",part) for part in parts):
-        raise HTTPException(422,"Geçerli ve en fazla dört kayıtlı klinik görüntü seçin.")
+    if len(parts)>MAX_ANALYSIS_IMAGES or any(not re.fullmatch(r"[1-9][0-9]*",part) for part in parts):
+        raise HTTPException(422,f"Geçerli ve en fazla {MAX_ANALYSIS_IMAGES} kayıtlı klinik görüntü seçin.")
     ids=[int(part) for part in parts]
     if len(set(ids))!=len(ids):
         raise HTTPException(422,"Aynı klinik görüntü birden fazla seçilemez.")
@@ -192,8 +192,8 @@ async def create_mobile_analysis(
     valid = images
     media_count=len(selected_media_ids)+len(valid)
     has_clinical_context=bool(teeth or (clinical_notes or "").strip())
-    if media_count>4:
-        raise HTTPException(status_code=422, detail="Kayıtlı ve yeni görüntülerin toplamı en fazla 4 olabilir.")
+    if media_count>MAX_ANALYSIS_IMAGES:
+        raise HTTPException(status_code=422, detail=f"Kayıtlı ve yeni görüntülerin toplamı en fazla {MAX_ANALYSIS_IMAGES} olabilir.")
     if media_count==0 and not has_clinical_context:
         raise HTTPException(status_code=422, detail="Görüntü olmadan analiz başlatmak için diş numarası veya klinik bilgi girin.")
     allowed = {".jpg", ".jpeg", ".png", ".webp"}
