@@ -98,6 +98,8 @@ test('reopening with a note absent from server keeps the exact draft for explici
  const t=await open(h);
  assert.equal(t.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Analiz hekim notu').props.value,'Synthetic note');
  assert.equal(t.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Manuel klinik bulgu').props.value,'Manual finding');
+ assert.equal(t.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Analiz hekim notu').props.editable,false);
+ assert.equal(t.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Manuel klinik bulgu').props.editable,false);
  assert.ok(button(t,'Sunucudaki Notu Kontrol Et'));
  assert.equal(button(t,'Analize Not Kaydet').props.disabled,true);
  await renderer.act(async()=>button(t,'Sunucudaki Notu Kontrol Et').props.onPress());
