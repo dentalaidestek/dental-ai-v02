@@ -65,3 +65,5 @@ A second gap was stale chart state after returning from another screen or foregr
 Regression coverage added to `mobile/tests/toothChartLifecycle.cjs` and included in `npm run test:beta`: patient identity formatting (including age zero), native header identity, focus/foreground refresh preserving an unsaved tooth note, payload.patient_id event routing, and out-of-order refresh response rejection.
 
 The tests are committed but have not been executed in this environment because the repository cannot be cloned here (GitHub DNS resolution fails) and the current Actions jobs fail before runner steps. No typecheck, Android build, or device acceptance is claimed for this change.
+
+A follow-up race guard invalidates in-flight background/realtime refreshes as soon as a tooth, surface or treatment mutation starts, and suppresses new passive refreshes while a clinical mutation is in progress. This prevents a pre-save read from arriving late and replacing a confirmed post-save chart response. Added a regression for that ordering.
