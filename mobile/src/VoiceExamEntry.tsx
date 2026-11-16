@@ -11,6 +11,7 @@ import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import {chunkedDraftStore} from "./socialDraft";
 import {parseVoiceExtractionCheckpoint,splitVoiceTranscript} from "./voiceSession";
+import {voiceEvidencePresentation} from "./voiceEvidencePresentation";
 
 const navy="#071B35",muted="#63748A",line="#E1E7EF";
 const fieldLabels:Record<string,string>={first_name:"Ad",last_name:"Soyad",age:"Yaş",chief_complaint:"Başvuru şikâyeti",medical_history:"Sağlık geçmişi",family_history:"Aile sağlık öyküsü",materials:"Konuşulan materyaller",dental_history:"Önceki diş tedavileri",oral_habits:"Ağız bakımı ve alışkanlıklar",medications:"İlaç bilgileri",allergies:"Alerji bilgileri",clinical_findings:"Muayene bulguları",plan:"Konuşulan tedavi planı"};
@@ -22,6 +23,15 @@ function readable(value:unknown):string{
  if(value&&typeof value==="object"){const item=value as Record<string,unknown>;return Object.entries(item).slice(0,30).map(([key,val])=>key.replace(/_/g," ")+": "+readable(val)).filter(Boolean).join("\n")||"Ayrıntı belirtilmedi";}
  return "";
 }
+function VoiceEvidence({item}:{item:{quote?:string;origin?:string;edited?:boolean}}){
+ const evidence=voiceEvidencePresentation(item);
+ return <View style={{marginTop:7,padding:10,borderRadius:9,backgroundColor:"#F6FAFD",borderWidth:1,borderColor:line}}>
+  <Text style={{fontSize:12,fontWeight:"800",color:muted}}>{evidence.label}</Text>
+  {evidence.hasEvidence?<Text selectable style={{color:navy,lineHeight:19,marginTop:4}}>{evidence.quote}</Text>:<Text style={{color:"#9A6700",lineHeight:19,marginTop:4}}>Dayanak metni sunulmadı; kaydetmeden önce alanı doğrulayın.</Text>}
+  {evidence.edited&&<Text style={{color:"#9A6700",lineHeight:18,marginTop:5}}>Bu alan hekim tarafından düzenlendi. Kaydetmeden önce dayanakla karşılaştırın.</Text>}
+ </View>;
+}
+
 function ResultSection({name,items}:{name:string;items:unknown}){
  const [expanded,setExpanded]=useState(false);const rows=Array.isArray(items)?items:items==null?[]:[items];
  return <View style={{borderWidth:1,borderColor:line,borderRadius:13,marginTop:12,overflow:"hidden"}}>
@@ -233,7 +243,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy||audioSession.started&&!audioSession.finished||!consent||!selected||!transcript.trim()||transcript.length>72000} onPress={()=>void processText()} style={{backgroundColor:processing||audioBusy||deviceCheckBusy||!consent||!selected||!transcript.trim()||transcript.length>72000?"#9BA7B7":"#1769AA",borderRadius:12,padding:15,alignItems:"center",marginTop:18}}><Text style={{color:"white",fontWeight:"800"}}>{processing?"Değerlendiriliyor…":"Muayeneyi Bitir ve Metni Çözümle"}</Text></Pressable>
    {review&&<View style={{marginTop:18,borderTopWidth:1,borderTopColor:line,paddingTop:15}}>
     <Text style={{fontSize:17,fontWeight:"800",color:navy}}>Çıkarılan muayene bilgileri</Text>
-    <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>setEditingFields(v=>!v)} style={{paddingVertical:12}}><Text style={{fontWeight:"800",color:"#1769AA"}}>{editingFields?"Düzenlemeyi bitir":"Çıkarılan bilgileri kontrol et / düzenle"}</Text></Pressable>{Object.entries(review.review.fields||{}).map(([name,item])=><View key={name} style={{paddingVertical:9,borderBottomWidth:1,borderBottomColor:line}}><Text style={{fontWeight:"700",color:navy}}>{fieldLabels[name]||name.replace(/_/g," ")}</Text>{editingFields?<TextInput multiline accessibilityLabel={fieldLabels[name]||name} value={item.value} editable={!processing&&!audioBusy&&!deviceCheckBusy&&!applyBusy} onChangeText={value=>{generation.current++;setReview(previous=>previous?{...previous,review:{...previous.review,fields:{...previous.review.fields,[name]:{...previous.review.fields?.[name],value,edited:true}}}}:previous);setFinalResult(null)}} style={{color:navy,borderWidth:1,borderColor:line,borderRadius:9,padding:10,marginTop:6}}/>:<Text style={{color:muted,marginTop:4}}>{item.value}</Text>}</View>)}
+    <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>setEditingFields(v=>!v)} style={{paddingVertical:12}}><Text style={{fontWeight:"800",color:"#1769AA"}}>{editingFields?"Düzenlemeyi bitir":"Çıkarılan bilgileri kontrol et / düzenle"}</Text></Pressable>{Object.entries(review.review.fields||{}).map(([name,item])=><View key={name} style={{paddingVertical:9,borderBottomWidth:1,borderBottomColor:line}}><Text style={{fontWeight:"700",color:navy}}>{fieldLabels[name]||name.replace(/_/g," ")}</Text>{editingFields?<TextInput multiline accessibilityLabel={fieldLabels[name]||name} value={item.value} editable={!processing&&!audioBusy&&!deviceCheckBusy&&!applyBusy} onChangeText={value=>{generation.current++;setReview(previous=>previous?{...previous,review:{...previous.review,fields:{...previous.review.fields,[name]:{...previous.review.fields?.[name],value,edited:true}}}}:previous);setFinalResult(null)}} style={{color:navy,borderWidth:1,borderColor:line,borderRadius:9,padding:10,marginTop:6}}/>:<Text style={{color:muted,marginTop:4}}>{item.value}</Text>}<VoiceEvidence item={item}/></View>)}
     <ReviewRemovableSection name="Hasta iletişimi ve hekim önerileri" items={review.review.communication} disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onRemove={index=>removeExtractedItem("communication",index)}/>
     <ReviewRemovableSection name="Karar verme engelleri" items={review.review.decision_barriers} disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onRemove={index=>removeExtractedItem("decision_barriers",index)}/>
     <ReviewRemovableSection name="Netleştirilmesi gereken takip soruları" items={review.review.follow_up_questions} disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onRemove={index=>removeExtractedItem("follow_up_questions",index)}/>
