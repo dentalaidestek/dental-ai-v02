@@ -87,3 +87,29 @@ test('falls back to staged-byte validation when an Android content provider cann
  assert.equal(h.files.has(encrypted),true);
  assert.equal([...h.files.keys()].some(uri=>uri.includes('dai-clinical-stage-')),false);
 });
+
+
+test('removes crash-orphaned encrypted files while retaining pending files and other patient scopes',async()=>{
+ const h=harness(),sourceUri=addSource(h);
+ const retained=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024);
+ const orphan=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024);
+ const otherPatient=await h.api.encryptClinicalMediaFile(sourceUri,7,9,1024);
+ const removed=await h.api.cleanupOrphanedClinicalMediaVaultFiles(7,8,[retained]);
+ assert.equal(removed,1);
+ assert.equal(h.files.has(retained),true,'the durable pending intent keeps its encrypted file');
+ assert.equal(h.files.has(orphan),false,'unreferenced crash residue is deleted');
+ assert.equal(h.files.has(otherPatient),true,'cleanup never crosses patient scope');
+});
+
+test('orphan cleanup fails closed on invalid retained references',async()=>{
+ const h=harness(),sourceUri=addSource(h),orphan=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024);
+ await assert.rejects(()=>h.api.cleanupOrphanedClinicalMediaVaultFiles(7,8,['file:///documents/private.dai']),/kapsamı doğrulanamadı/);
+ assert.equal(h.files.has(orphan),true,'invalid intent must not authorize deletion');
+});
+
+test('orphan cleanup leaves files untouched when scoped directory listing fails',async()=>{
+ const h=harness(),sourceUri=addSource(h),orphan=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024);
+ h.fsApi.readDirectoryAsync=async()=>{throw Error('synthetic storage listing failure')};
+ assert.equal(await h.api.cleanupOrphanedClinicalMediaVaultFiles(7,8,[]),0);
+ assert.equal(h.files.has(orphan),true);
+});
