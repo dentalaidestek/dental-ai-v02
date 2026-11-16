@@ -1,3 +1,5 @@
+import {CLINICAL_MEDIA_MAX_FILES,CLINICAL_MEDIA_MAX_FILE_BYTES,CLINICAL_MEDIA_MAX_BATCH_BYTES} from './uploadLimits';
+
 export type ClinicalMediaPickerAsset = {
   uri: string;
   fileName?: string | null;
@@ -11,8 +13,8 @@ export type NormalizedClinicalMediaAsset = {
   type: 'image/jpeg' | 'image/png' | 'image/webp';
 };
 
-export const CLINICAL_MEDIA_PICKER_MAX_FILES = 12;
-export const CLINICAL_MEDIA_PICKER_MAX_BYTES = 12 * 1024 * 1024;
+export const CLINICAL_MEDIA_PICKER_MAX_FILES = CLINICAL_MEDIA_MAX_FILES;
+export const CLINICAL_MEDIA_PICKER_MAX_BYTES = CLINICAL_MEDIA_MAX_FILE_BYTES;
 
 const MIME_BY_EXTENSION: Record<string, NormalizedClinicalMediaAsset['type']> = {
   jpg: 'image/jpeg',
@@ -37,6 +39,9 @@ export function normalizeClinicalMediaAssets(
   if (!Array.isArray(assets) || assets.length < 1 || assets.length > CLINICAL_MEDIA_PICKER_MAX_FILES) {
     throw new Error('Tek seferde 1–12 klinik görüntü seçebilirsiniz.');
   }
+
+  const reportedTotal = assets.reduce((sum, asset) => sum + (typeof asset?.fileSize === 'number' && Number.isFinite(asset.fileSize) && asset.fileSize >= 0 ? asset.fileSize : 0), 0);
+  if (reportedTotal > CLINICAL_MEDIA_MAX_BATCH_BYTES) throw new Error('Tek klinik arşiv yüklemesinde toplam boyut en fazla 96 MiB olabilir.');
 
   return assets.map((asset, index) => {
     if (!asset || typeof asset.uri !== 'string' || !asset.uri.trim() ||
