@@ -457,6 +457,7 @@ document.addEventListener("keydown", function(event) {
     const countLabel = document.getElementById("patientMediaSelectedCount");
     const analyzeButton = document.getElementById("patientMediaAnalyzeSelected");
     const selectAllButton = document.getElementById("patientMediaSelectAll");
+    const maxAnalysisImages = {{ analysis_image_limit|default(4) }};
     if (!checkboxes.length) return;
 
     function selectedIds() {
@@ -465,17 +466,17 @@ document.addEventListener("keydown", function(event) {
 
     function updateSelectionUI() {
         const ids = selectedIds();
-        if (countLabel) countLabel.textContent = ids.length + " seçili" + (checkboxes.length > 12 ? " · en fazla 12" : "");
+        if (countLabel) countLabel.textContent = ids.length + " seçili · analiz sınırı " + maxAnalysisImages;
         if (analyzeButton) analyzeButton.disabled = ids.length === 0;
-        const selectedTarget = Math.min(checkboxes.length, 12);
+        const selectedTarget = Math.min(checkboxes.length, maxAnalysisImages);
         if (selectAllButton) selectAllButton.textContent = ids.length === selectedTarget && selectedTarget ? "Seçimi Kaldır" : "Tümünü Seç";
     }
 
     checkboxes.forEach(function (box) {
         box.addEventListener("change", function () {
-            if (box.checked && selectedIds().length > 12) {
+            if (box.checked && selectedIds().length > maxAnalysisImages) {
                 box.checked = false;
-                window.alert("Tek analiz için en fazla 12 görüntü seçebilirsiniz.");
+                window.alert("Tek analizde en fazla " + maxAnalysisImages + " görüntü seçebilirsiniz.");
             }
             updateSelectionUI();
         });
@@ -484,9 +485,9 @@ document.addEventListener("keydown", function(event) {
     if (selectAllButton) {
         selectAllButton.addEventListener("click", function () {
             const selectedIdsNow = selectedIds();
-            const targetCount = Math.min(checkboxes.length, 12);
+            const targetCount = Math.min(checkboxes.length, maxAnalysisImages);
             const shouldSelect = selectedIdsNow.length !== targetCount;
-            checkboxes.forEach(function (box, index) { box.checked = shouldSelect && index < 12; });
+            checkboxes.forEach(function (box, index) { box.checked = shouldSelect && index < maxAnalysisImages; });
             updateSelectionUI();
         });
     }
