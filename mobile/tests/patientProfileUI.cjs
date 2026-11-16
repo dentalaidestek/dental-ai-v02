@@ -217,3 +217,14 @@ test('secure intent cleanup failure blocks subsequent treatment writes',async()=
  assert.equal(calls,1,'a blocked secure draft must not produce another server mutation');
  await renderer.act(async()=>tree.unmount());
 });
+
+test('patient profile edit validation matches the web form and mobile API contract',()=>{
+ const validate=presentationExports.patientProfileEditError;
+ assert.equal(validate({first_name:' Ada ',last_name:' Kaya ',phone:''}),null);
+ assert.equal(validate({first_name:'Ada',last_name:'Kaya',phone:'05123456789'}),null);
+ assert.equal(validate({first_name:' ',last_name:'Kaya',phone:''}),'Ad ve soyad zorunludur.');
+ for(const phone of ['5','0512345678','04123456789','05abcdefgh','051234567890']){
+  assert.equal(validate({first_name:'Ada',last_name:'Kaya',phone}),'Telefon numarası 05 ile başlamalı ve toplam 11 rakam olmalıdır.');
+ }
+ assert.equal(validate({first_name:'Ada',last_name:'Kaya',phone:'   '}),null);
+});
