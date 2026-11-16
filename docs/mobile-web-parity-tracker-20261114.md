@@ -490,3 +490,14 @@ Code-bearing head: `5d574b38e2cfd6dd0e4d053a39d596a9de91ff70`; the branch subseq
 - All inspected jobs completed failure with empty step arrays; all three log downloads returned `BlobNotFound 404`. Combined status checks are empty. `npm ci`, TypeScript, Node beta tests, Gradle and pytest did not start. The security workflow now includes the ASR receipt test, but that test has not executed yet.
 
 This confirms a pre-step GitHub Actions execution/runner problem, not a failing assertion or compiler diagnostic. The exact owner-level hosted-runner/account/billing cause is not exposed by the available repository records. The repository owner must inspect Actions runner availability and usage/billing. Do not report CI green.
+
+
+## 2026-11-17 — Native image viewer tab parity
+
+Web-first inspection compared app/templates/analysis_viewer.html, vision_service/templates/radiograph_viewer.html, vision_service/templates/intraoral_viewer.html and their embedded JS with mobile/src/NativeVisionViewer.tsx and NativeClinicalReview.tsx.
+
+The native image viewer previously had only the findings list. The web viewer exposes Bulgular / Tedavi / Klinik Bilgi in the same image context. Added the dark navy three-tab native layout. Treatment selection delegates to the existing authenticated selected-teeth route and canonical PRELIMINARY WorkJob; parent ClinicalReview remains the only job poller/retry owner. Clinical Information delegates to the existing parent durable note-intent/reconciliation path, so uncertain writes preserve the draft and never auto-resubmit. No new API, schema, AI/provider call, polling loop or automatic patient-chart write.
+
+Five renderer regressions added to the already-registered mobile/tests/visionViewer.cjs: tab availability, permanent FDI selection/delegation, confirmed note save, uncertain save preservation, and canonical treatment-result rendering. They are committed but not executed because current Actions jobs fail before runner allocation. Full typecheck, Node suite, Android/iOS device and clinical acceptance remain open.
+
+Commits in this pass: c284ae3 (native viewer UI), e0ec071 (canonical parent actions), 80b3030 (renderer regressions), 580ab8c (viewer documentation); tracker update follows. PR #257 remains Draft. No main merge, live deploy, APK/IPA publication or clinical record mutation.
