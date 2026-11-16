@@ -21,7 +21,7 @@ function parsePendingUpload(raw:string|null,userId:number,patientId:number):Pend
   throw Error('Bekleyen klinik görüntü taslağı doğrulanamadı. Yeni yükleme başlatılmadı.');
  if(value.version===2&&value.files.some((file:any)=>!file.encryptedUri))
   throw Error('Şifreli klinik görüntü taslağı eksik. Yeni yükleme başlatılmadı.');
- return value as PendingUpload;
+ return {...value,files:value.files.map(({previewUri,...file}:any)=>file)} as PendingUpload;
 }
 export default function NativePatientMedia({token,userId,patientId,onAnalysis}:{token:string;userId:number;patientId:number;onAnalysis:(id:number)=>void}){
  const uploadStore=useMemo(()=>chunkedDraftStore(SecureStore,Crypto.randomUUID,300),[]);
