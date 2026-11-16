@@ -98,6 +98,6 @@ Branch-only correction:
 
 Commits: `d14b720`, `93e87fe`, `750534f`, `56c0e05` (implementation and regressions); documentation follows in the current branch.
 
-Validation limit: the new tests are registered through the existing `patientProfileUI.cjs` entry in `npm run test:beta`, but the repository suite has not executed in this environment. Latest Android typecheck and security jobs again failed before runner assignment: job records contain no executed steps and log downloads return `BlobNotFound 404`. This does not establish a TypeScript or pytest failure. No green CI is claimed.
+Validation: the new regressions are registered through the existing `patientProfileUI.cjs` entry in `npm run test:beta`. The isolated presentation helper passed a strict TypeScript compile and nine direct validation assertions. The React Native renderer test and full repository suite have not executed. Latest Android typecheck and security jobs failed before runner assignment: job records contain no executed steps and log downloads return `BlobNotFound 404`. This does not establish a component typecheck or pytest result. No green CI is claimed.
 
 No main merge, production deployment, database migration, APK/IPA publication or patient-data mutation.
