@@ -61,11 +61,13 @@ def test_sanitizer_rejects_extension_mismatch_and_corrupt_image(tmp_path):
     Image.new("RGB", (8, 8), "white").save(mismatch, format="PNG")
     with pytest.raises(ValueError, match="uzantısı"):
         sanitize_clinical_media_image(mismatch, ".jpg", max_pixels=1_000)
+    assert not mismatch.exists(), "rejected staged files must not remain on disk"
 
     corrupt = tmp_path / "corrupt.jpg"
     corrupt.write_bytes(b"\\xff\\xd8\\xffnot-a-real-jpeg")
     with pytest.raises(ValueError, match="Geçersiz veya bozuk"):
         sanitize_clinical_media_image(corrupt, ".jpg", max_pixels=1_000)
+    assert not corrupt.exists(), "corrupt PHI-bearing staging files must be removed"
 
 
 def test_sanitizer_rejects_oversized_and_animated_clinical_images(tmp_path):
@@ -73,6 +75,7 @@ def test_sanitizer_rejects_oversized_and_animated_clinical_images(tmp_path):
     Image.new("RGB", (20, 10), "white").save(oversized, format="PNG")
     with pytest.raises(ValueError, match="çözünürlüğü"):
         sanitize_clinical_media_image(oversized, ".png", max_pixels=100)
+    assert not oversized.exists()
 
     animated = tmp_path / "animated.webp"
     first = Image.new("RGB", (8, 8), "white")
@@ -80,6 +83,7 @@ def test_sanitizer_rejects_oversized_and_animated_clinical_images(tmp_path):
     first.save(animated, format="WEBP", save_all=True, append_images=[second], duration=100, loop=0)
     with pytest.raises(ValueError, match="Hareketli"):
         sanitize_clinical_media_image(animated, ".webp", max_pixels=1_000)
+    assert not animated.exists()
 
 
 def test_web_and_native_upload_routes_use_the_same_sanitizer_before_persistence():
@@ -144,3 +148,19 @@ def test_native_analysis_of_legacy_gallery_media_sanitizes_only_the_copy(tmp_pat
         assert archived.getexif().get(315) == "Legacy synthetic device"
     with Image.open(destination) as analyzed:
         assert not dict(analyzed.getexif())
+
+
+def test_palette_png_transparency_is_preserved_when_metadata_is_removed(tmp_path):
+    path = tmp_path / "transparent.png"
+    image = Image.new("P", (2, 1))
+    image.putpalette([255, 0, 0, 0, 255, 0] + [0, 0, 0] * 254)
+    image.putdata([0, 1])
+    image.info["transparency"] = 0
+    image.save(path, format="PNG")
+
+    sanitize_clinical_media_image(path, ".png", max_pixels=1_000)
+
+    with Image.open(path) as clean:
+        assert clean.mode == "RGBA"
+        assert clean.getpixel((0, 0))[3] == 0
+        assert clean.getpixel((1, 0))[3] == 255
