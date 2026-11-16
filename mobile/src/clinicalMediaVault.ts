@@ -149,6 +149,38 @@ export async function deleteClinicalMediaTemp(uri:string):Promise<void>{
   if(!name.startsWith(STAGE_PREFIX)&&!name.startsWith(UPLOAD_PREFIX))throw new ClinicalMediaVaultError('INVALID_TEMP','Geçici klinik dosya adı doğrulanamadı.');
   await FS.deleteAsync(uri,{idempotent:true});
 }
+/** Remove crash-orphaned encrypted files for one user/patient scope.
+ * The caller passes every encrypted URI still referenced by its durable
+ * pending upload intent. Invalid retained paths fail closed; directory-listing
+ * failures leave all files untouched.
+ */
+export async function cleanupOrphanedClinicalMediaVaultFiles(
+  userId:number,
+  patientId:number,
+  retainedUris:readonly string[],
+):Promise<number>{
+  validScope(userId,patientId);
+  if(!Array.isArray(retainedUris))
+    throw new ClinicalMediaVaultError('INVALID_VAULT','Bekleyen klinik görüntü listesi doğrulanamadı.');
+  const retained=new Set<string>();
+  for(const uri of retainedUris){
+    if(!isClinicalMediaVaultUri(uri,userId,patientId))
+      throw new ClinicalMediaVaultError('INVALID_VAULT','Bekleyen klinik görüntü kapsamı doğrulanamadı.');
+    retained.add(uri);
+  }
+  const directory=documentRoot()+userId+'/'+patientId+'/';
+  let names:string[];
+  try{names=await FS.readDirectoryAsync(directory);}catch{return 0;}
+  let deleted=0;
+  for(const name of names){
+    if(!/^[A-Za-z0-9_-]{16,96}\.dai$/.test(name))continue;
+    const uri=directory+name;
+    if(retained.has(uri))continue;
+    try{await FS.deleteAsync(uri,{idempotent:true});deleted++;}catch{}
+  }
+  return deleted;
+}
+
 export async function cleanupStaleClinicalMediaTemps(maxAgeMs=60*60*1000):Promise<void>{
   if(!FS.cacheDirectory)return;
   let names:string[]=[];try{names=await FS.readDirectoryAsync(FS.cacheDirectory);}catch{return;}
