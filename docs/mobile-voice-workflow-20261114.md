@@ -82,3 +82,19 @@ Native `VoiceDraft` now persists `elapsedMs`. The recorder renders a cumulative 
 If the OS kills the process before the active chunk can be stopped/cleaned up, the pending audio reference remains subject to the existing recovery behavior, while that incomplete chunk's duration is not guessed. Completed chunks' elapsed duration remains persisted.
 
 Regression coverage was added for multi-chunk/pause accumulation, `MM:SS` formatting, legacy draft migration, invalid duration rejection, component-level pause/resume and restored display. These tests are committed but have not been executed in this runtime.
+
+
+## Evidence provenance parity — 2026-11-16
+
+Re-read the web review renderer in `app/templates/voice_exam_panel.html` and `app/static/voice-exam.js` before changing native UI. The web shows each extracted field's supporting quote in a dedicated evidence disclosure and labels prior approved history separately. Native review and the final approval checklist previously showed field values without their supporting quote, so a clinician could select a value without seeing the exact statement that produced it.
+
+Native now uses one bounded presentation helper in both the extraction review and the final approval screen:
+- Current extraction is labelled `Bu muayenedeki konuşma dayanağı`.
+- Previously approved history is labelled `Önceki hekim onaylı kayıttaki dayanak`; it is not presented as a current patient statement.
+- The exact quote is visible and selectable before approval. Missing evidence is explicit and asks the clinician to verify the field.
+- A clinician-edited value is visibly marked so it is compared with the original quote.
+- Tooth selections also show their supporting statement before save.
+
+The helper trims and caps display evidence at the existing 3,000-character field bound. It changes presentation only: no new provider call, API, database column, patient write or clinical inference was added. The existing apply payload still sends only the clinician-selected field values; it does not add field quotes to the patient profile. Existing tooth-note behavior is unchanged.
+
+Regression file: `mobile/tests/voiceEvidence.cjs`, registered in `npm run test:beta`. Four isolated helper tests passed locally (current quote, prior-history provenance, missing evidence and 3,000-character bound). The integration/source-contract assertion is committed but awaits the full mobile dependency/test environment. This is not a full React Native typecheck, complete beta suite or Android/iOS device test.
