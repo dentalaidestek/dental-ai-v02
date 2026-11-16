@@ -155,6 +155,10 @@ def test_mobile_support_case_link_reports_and_ticket_cursor_paging(monkeypatch, 
         reports = client.get("/api/mobile/v1/support/reports", headers=headers)
         assert reports.status_code == 200
         assert [x["id"] for x in reports.json()["items"]] == [report_id]
+        report_ticket_id = reports.json()["items"][0]["ticket_id"]
+        assert isinstance(report_ticket_id, int)
+        report_detail = client.get(f"/api/mobile/v1/support/tickets/{report_ticket_id}", headers=headers)
+        assert report_detail.status_code == 200
         created = client.post("/api/mobile/v1/support/tickets", headers=headers, json={
             "subject": "Vaka ile ilgili", "message": "Destek açıklaması",
             "request_key": "support_case_link_key_01", "case_id": case_id,
