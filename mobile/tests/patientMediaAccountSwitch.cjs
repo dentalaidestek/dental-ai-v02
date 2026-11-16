@@ -13,20 +13,39 @@ function mountMedia(getMedia, options={}){
  const native=Object.fromEntries(['ActivityIndicator','FlatList','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]));
  native.Alert={alert(...args){options.onAlert?.(...args)}};
  native.FlatList=props=>React.createElement('FlatList',props,...(props.data||[]).map((item,index)=>props.renderItem?.({item,index})),props.ListFooterComponent||null);
+ const storage=options.storage||new Map();
+ const secureStore=options.secureStore||{
+  getItemAsync:async key=>storage.has(key)?storage.get(key):null,
+  setItemAsync:async(key,value)=>{storage.set(key,value)},
+  deleteItemAsync:async key=>{storage.delete(key)}
+ };
+ let keySequence=0;
  const exports={};
- vm.runInNewContext(code,{exports,Error,require:name=>{
+ vm.runInNewContext(code,{exports,Error,Date,Set,JSON,Number,Array,Promise,require:name=>{
   if(name==='react')return {...React,default:React};
   if(name==='react-native')return native;
   if(name==='expo-image-picker')return options.picker||{};
-  if(name==='./api')return {uploadPatientMedia:async()=>{}};
+  if(name==='expo-secure-store')return secureStore;
+  if(name==='expo-crypto')return {randomUUID:()=>options.randomUUID?.()||`synthetic-media-key-${String(++keySequence).padStart(4,'0')}`};
+  if(name==='./socialDraft')return {chunkedDraftStore:raw=>raw};
+  if(name==='./api')return {
+   getPatientMediaUpload:async(...args)=>options.onReceipt?options.onReceipt(...args):({found:false}),
+   uploadPatientMedia:async(...args)=>options.onUpload?options.onUpload(...args):({media:{id:1,original_filename:'synthetic.png',media_type:'PHOTO'},replayed:false})
+  };
   if(name==='./modernApi')return {getMedia,analyzeSelectedPatientMedia:async()=>({analysis_id:1}),deleteMedia:async(...args)=>{options.onDelete?.(...args)},deleteAllPatientMedia:async(...args)=>{options.onDelete?.(...args)}};
   if(name==='./realtime')return {useRealtime:()=>({lastEvent:null})};
   if(name==='./NativeAnalysisUpload')return {default:props=>React.createElement('NativeAnalysisUpload',props)};
   throw Error('Unexpected import '+name);
  }});
- return exports.default;
+ const Component=exports.default;
+ return props=>React.createElement(Component,{userId:1,...props});
 }
 const visible=node=>typeof node==='string'?node:Array.isArray(node)?node.map(visible).join(''):node?.children?node.children.map(visible).join(''):'';
+const findButton=(tree,label)=>tree.root.findAllByType('Pressable').find(node=>visible(node).includes(label));
+async function press(tree,label){
+ const node=findButton(tree,label);assert.ok(node,'missing button: '+label);
+ await renderer.act(async()=>{node.props.onPress?.();await new Promise(resolve=>setImmediate(resolve))});
+}
 
 test('switching accounts starts a new gallery request while the old request is pending',async()=>{
  let resolveOld;
@@ -297,5 +316,102 @@ test('account switch closes a mixed analysis composer and clears prior saved-med
  await renderer.act(async()=>tree.update(React.createElement(Media,{token:'new',userId:2,patientId:9,onAnalysis:()=>{}})));
  await new Promise(resolve=>setImmediate(resolve));
  assert.equal(tree.root.findAllByType('NativeAnalysisUpload').length,0);
+ await renderer.act(async()=>tree.unmount());
+});
+
+
+
+test('clinical media upload persists its receipt key before transfer and displays byte progress',async()=>{
+ const storage=new Map(),uploadCalls=[],receiptCalls=[];let finishUpload;
+ const picker={requestMediaLibraryPermissionsAsync:async()=>({granted:true}),launchImageLibraryAsync:async()=>({canceled:false,assets:[{uri:'file:///synthetic-clinical.png',fileName:'synthetic-clinical.png',mimeType:'image/png',fileSize:1024}]})};
+ const Media=mountMedia(async()=>({items:[],next_before:null}),{
+  storage,picker,
+  onReceipt:async(_token,patientId,key)=>{receiptCalls.push([patientId,key]);return {found:false}},
+  onUpload:async(_token,patientId,file,_tooth,mediaType,key,onProgress)=>{
+   uploadCalls.push([patientId,file.name,mediaType,key]);
+   assert.ok(storage.has('dai.patient-media.upload.1.8'),'upload intent must be persisted before network transfer');
+   onProgress({loaded:512,total:1024,lengthComputable:true});
+   await new Promise(resolve=>{finishUpload=resolve});
+   return {media:{id:88,original_filename:file.name,media_type:mediaType},replayed:false};
+  }
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'token',patientId:8,onAnalysis:()=>{}}));await new Promise(resolve=>setImmediate(resolve))});
+ await press(tree,'Fotoğraf Ekle');
+ await press(tree,'Kaydet');
+ assert.ok(finishUpload,'upload should start after receipt lookup');
+ assert.match(visible(tree.toJSON()),/50%/);
+ const intent=JSON.parse(storage.get('dai.patient-media.upload.1.8'));
+ assert.equal(intent.version,1);assert.equal(intent.userId,1);assert.equal(intent.patientId,8);
+ assert.equal(intent.files.length,1);assert.match(intent.files[0].requestKey,/^[A-Za-z0-9_-]{16,96}$/);
+ assert.deepEqual(receiptCalls,[[8,intent.files[0].requestKey]]);
+ assert.deepEqual(uploadCalls,[[8,'synthetic-clinical.png','PHOTO',intent.files[0].requestKey]]);
+ await renderer.act(async()=>{finishUpload();await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(storage.has('dai.patient-media.upload.1.8'),false);
+ assert.match(visible(tree.toJSON()),/1 görüntü kaydedildi/);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('process-death recovery reconciles a server receipt before attempting another upload',async()=>{
+ const storage=new Map(),key='synthetic-media-recovery-0001';let uploads=0;const receipts=[];
+ storage.set('dai.patient-media.upload.1.8',JSON.stringify({version:1,userId:1,patientId:8,mediaType:'RADIOGRAPH',updatedAt:Date.now(),files:[{uri:'file:///restored.png',name:'restored.png',type:'image/png',requestKey:key}]}));
+ const Media=mountMedia(async()=>({items:[],next_before:null}),{
+  storage,
+  onReceipt:async(_token,patientId,requestKey)=>{receipts.push([patientId,requestKey]);return {found:true,media:{id:91,original_filename:'restored.png',media_type:'RADIOGRAPH'}}},
+  onUpload:async()=>{uploads++;throw Error('must not upload a receipt already present on server')}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'token',patientId:8,onAnalysis:()=>{}}));await new Promise(resolve=>setImmediate(resolve))});
+ assert.match(visible(tree.toJSON()),/Önceki oturumdan 1 bekleyen klinik görüntü bulundu/);
+ await press(tree,'Kaydet');
+ assert.deepEqual(receipts,[[8,key]]);
+ assert.equal(uploads,0);
+ assert.equal(storage.has('dai.patient-media.upload.1.8'),false);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('uncertain upload resumes with the same request key and never blindly duplicates media',async()=>{
+ const storage=new Map(),receiptKeys=[];let uploads=0;
+ const picker={requestMediaLibraryPermissionsAsync:async()=>({granted:true}),launchImageLibraryAsync:async()=>({canceled:false,assets:[{uri:'file:///retry.png',fileName:'retry.png',mimeType:'image/png',fileSize:100}]})};
+ const Media=mountMedia(async()=>({items:[],next_before:null}),{
+  storage,picker,
+  onReceipt:async(_token,_patientId,key)=>{receiptKeys.push(key);return {found:receiptKeys.length>1}},
+  onUpload:async()=>{uploads++;throw Error('response lost after transfer')}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'token',patientId:8,onAnalysis:()=>{}}));await new Promise(resolve=>setImmediate(resolve))});
+ await press(tree,'Fotoğraf Ekle');
+ await press(tree,'Kaydet');
+ assert.equal(uploads,1);
+ assert.ok(storage.has('dai.patient-media.upload.1.8'));
+ await press(tree,'Bekleyen yüklemeyi güvenle doğrula');
+ assert.equal(uploads,1,'server receipt must suppress a duplicate transfer');
+ assert.equal(receiptKeys.length,2);
+ assert.equal(receiptKeys[0],receiptKeys[1]);
+ assert.equal(storage.has('dai.patient-media.upload.1.8'),false);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('clinical media upload is blocked when SecureStore cannot persist the intent',async()=>{
+ const picker={requestMediaLibraryPermissionsAsync:async()=>({granted:true}),launchImageLibraryAsync:async()=>({canceled:false,assets:[{uri:'file:///not-persisted.png',fileName:'not-persisted.png',mimeType:'image/png',fileSize:100}]})};
+ let uploads=0;
+ const secureStore={getItemAsync:async()=>null,setItemAsync:async()=>{throw Error('secure store unavailable')},deleteItemAsync:async()=>{}};
+ const Media=mountMedia(async()=>({items:[],next_before:null}),{secureStore,picker,onUpload:async()=>{uploads++}});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'token',patientId:8,onAnalysis:()=>{}}));await new Promise(resolve=>setImmediate(resolve))});
+ await press(tree,'Fotoğraf Ekle');
+ assert.match(visible(tree.toJSON()),/secure store unavailable/);
+ assert.equal(uploads,0);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('pending clinical media drafts are isolated by user and patient identity',async()=>{
+ const storage=new Map();
+ storage.set('dai.patient-media.upload.1.8',JSON.stringify({version:1,userId:1,patientId:8,mediaType:'PHOTO',updatedAt:Date.now(),files:[{uri:'file:///private.png',name:'private.png',type:'image/png',requestKey:'synthetic-private-media-0001'}]}));
+ const Media=mountMedia(async()=>({items:[],next_before:null}),{storage});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'other-account',userId:2,patientId:8,onAnalysis:()=>{}}));await new Promise(resolve=>setImmediate(resolve))});
+ assert.doesNotMatch(visible(tree.toJSON()),/Önceki oturumdan 1 bekleyen klinik görüntü bulundu/);
+ assert.equal(storage.has('dai.patient-media.upload.1.8'),true);
  await renderer.act(async()=>tree.unmount());
 });

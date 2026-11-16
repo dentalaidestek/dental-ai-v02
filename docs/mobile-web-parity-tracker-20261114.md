@@ -146,3 +146,12 @@ Fixed on the PR branch: `App.tsx` now passes `userId`; `NativeToothChart` uses t
 Added five `toothChartLifecycle.cjs` regressions: create-before-send and remount retry, update revision, definitive 422 retry, legacy missing revision, and cross-account draft isolation. They are in the existing `test:beta` command but are not claimed green.
 
 Starting HEAD `91abd3d`; twenty commits advanced the branch to `08bdf89` (code-bearing HEAD `2981893`; subsequent commits update visual parity and verification notes). A follow-up source review also replaced an invalid draft-restore setter with explicit field restoration before committing. Latest-head Android push/PR, security recovery, admin security and expert-social runs all failed before steps: all seven jobs show `runner_id=0`, empty runner/group, `steps=[]`, and logs `BlobNotFound 404`. No TypeScript, Node, pytest or Gradle process ran. No main merge or live deploy.
+
+
+
+## 2026-11-16 — clinical media upload recovery (branch-only)
+- Web-first comparison: patient profile upload is a single multi-file form (maximum 12 images, 12 MB each); native previously used a 15 MB limit, in-memory-only pending selection, and count-only progress.
+- Added owner/patient-scoped server receipts with sanitized-byte + metadata digest, replay protection, payload-mismatch 409, deleted-media tombstones, and a receipt-status endpoint.
+- Native queue is persisted before transfer in SecureStore; retries reconcile the same UUID receipt before any resend. Native upload now exposes actual multipart byte progress.
+- Regression coverage added for replay, owner isolation, retention, process-death reconciliation, stable-key retry, secure-store failure, and progress. Full local suites remain unrun because the private GitHub repository could not be cloned in this runtime; CI runner allocation is the current verification blocker.
+- Remaining media gap: a picker cache URI can be evicted by Android before a pending upload is resumed. If no server receipt exists, the original image must be selected again; no extra unencrypted copy is created.
