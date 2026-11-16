@@ -67,3 +67,18 @@ Regression coverage added to `mobile/tests/toothChartLifecycle.cjs` and included
 The tests are committed but have not been executed in this environment because the repository cannot be cloned here (GitHub DNS resolution fails) and the current Actions jobs fail before runner steps. No typecheck, Android build, or device acceptance is claimed for this change.
 
 A follow-up race guard invalidates in-flight background/realtime refreshes as soon as a tooth, surface or treatment mutation starts, and suppresses new passive refreshes while a clinical mutation is in progress. This prevents a pre-save read from arriving late and replacing a confirmed post-save chart response. Added a regression for that ordering.
+
+
+## 2026-11-16 — Cross-client stale patient edit protection
+
+Re-read the web patient information form and canonical `/patients/{id}/edit` handler before changing native behavior. Both web and mobile now use the same opaque SHA-256 revision fingerprint over the editable patient fields plus `PatientProfile.address`. The fingerprint is a concurrency marker, not an authorization credential; owner checks remain separate.
+
+- Web `patient_detail.html` posts the revision rendered with its patient snapshot.
+- Web edit and mobile `PUT /api/mobile/v1/patients/{id}` lock the patient row on PostgreSQL, compare the submitted revision before writing, and reject stale snapshots with HTTP 409.
+- Mobile patient detail returns `edit_revision`; native sends it with edits. Older app versions may omit it for compatibility.
+- On 409, native preserves the clinician's draft and offers an explicit "Güncel hasta bilgilerini yükle" action. The action replaces the draft only after the clinician chooses it, then asks them to reapply their changes.
+- The existing ADMIN patient boundary is preserved: only unowned or self-owned patients remain editable by ADMIN, matching `_owned_patient`.
+
+Regression sources added/updated: `tests/test_mobile_patient_parity.py`, `mobile/tests/patientApi.cjs`, and `mobile/tests/patientProfileUI.cjs`. They cover revision shape, successful revision advancement, stale-write 409 without overwriting the current record, malformed revision rejection, native request serialization and explicit conflict reload.
+
+These tests are committed but not executed in a complete checkout. The current GitHub Actions jobs again failed before any step; no TypeScript, pytest or Android build result is claimed. Physical two-account web/native conflict acceptance remains open. Treatment-create/update receipts and uncertain delete reconciliation are still separate outstanding work.
