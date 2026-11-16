@@ -5,7 +5,7 @@ export type NativeNotificationRoute =
   | { screen: "Program" }
   | { screen: "ExpertDirectory" }
   | { screen: "ExpertManagement" }
-  | { screen: "SupportRequests" };
+  | { screen: "SupportRequests"; params: { ticketId?: number } };
 
 export type NativeNotificationTarget =
   | { kind: "none" }
@@ -16,6 +16,30 @@ function positiveId(raw: string): number | null {
   if (!/^\d{1,15}$/.test(raw)) return null;
   const id = Number(raw);
   return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+function queryParam(raw: string, key: string): string | null {
+  const start = raw.indexOf("?");
+  if (start < 0) return null;
+  const query = raw.slice(start + 1).split("#", 1)[0];
+  for (const part of query.split("&")) {
+    const separator = part.indexOf("=");
+    const rawName = separator < 0 ? part : part.slice(0, separator);
+    let name = rawName;
+    try {
+      name = decodeURIComponent(rawName.replace(/\+/g, " "));
+    } catch {
+      continue;
+    }
+    if (name !== key) continue;
+    const rawValue = separator < 0 ? "" : part.slice(separator + 1);
+    try {
+      return decodeURIComponent(rawValue.replace(/\+/g, " "));
+    } catch {
+      return "";
+    }
+  }
+  return null;
 }
 
 /** Resolve only known, same-origin web notification paths to real native screens. */
@@ -50,7 +74,14 @@ export function resolveNativeNotificationTarget(value: unknown): NativeNotificat
     return { kind: "navigate", route: { screen: "ExpertDirectory" } };
   }
   if (path === "/support-request") {
-    return { kind: "navigate", route: { screen: "SupportRequests" } };
+    const rawTicketId = queryParam(raw, "ticket_id");
+    if (rawTicketId === null) {
+      return { kind: "navigate", route: { screen: "SupportRequests", params: {} } };
+    }
+    const ticketId = positiveId(rawTicketId);
+    return ticketId
+      ? { kind: "navigate", route: { screen: "SupportRequests", params: { ticketId } } }
+      : { kind: "unsupported", path };
   }
   if (path === "/program") {
     return { kind: "navigate", route: { screen: "Program" } };

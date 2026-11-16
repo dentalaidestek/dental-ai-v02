@@ -36,7 +36,7 @@ test('missing target URLs remain actionable as read-only notifications',()=>{
 });
 
 test('unsupported routes are explicit instead of opening an unrelated screen',()=>{
- assert.deepEqual(resolve('/support-request'),{kind:'navigate',route:{screen:'SupportRequests'}});
+ assert.deepEqual(resolve('/support-request'),{kind:'navigate',route:{screen:'SupportRequests',params:{}}});
  assert.deepEqual(resolve('/admin'),{kind:'unsupported',path:'/admin'});
 });
 
@@ -58,4 +58,15 @@ test('notification screen resolves the web route before marking it read',()=>{
  assert.ok(open.indexOf('resolveNativeNotificationTarget(item.target_url)')>=0);
  assert.ok(open.indexOf('target.kind==="unsupported"')<open.indexOf('markNotificationRead(token,item.id)'));
  assert.ok(open.includes('Bu bildirimin hedef sayfası henüz mobil uygulamada bulunmuyor'));
+});
+
+test('support notification links retain a validated ticket id for native conversation detail',()=>{
+ for(const url of ['/support-request?ticket_id=42','/support-request/?from=notice&ticket_id=42','/support-request?ticket_id=%34%32#conversation'])
+  assert.deepEqual(resolve(url),{kind:'navigate',route:{screen:'SupportRequests',params:{ticketId:42}}});
+ assert.deepEqual(resolve('/support-request?from=notice'),{kind:'navigate',route:{screen:'SupportRequests',params:{}}});
+});
+
+test('malformed support ticket identifiers never become native navigation parameters',()=>{
+ for(const url of ['/support-request?ticket_id=0','/support-request?ticket_id=abc','/support-request?ticket_id=9007199254740992','/support-request?ticket_id=%ZZ'])
+  assert.deepEqual(resolve(url),{kind:'unsupported',path:'/support-request'});
 });
