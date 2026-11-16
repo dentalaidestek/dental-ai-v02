@@ -26,7 +26,7 @@ export async function ensureEncryptedAnalysisImages(images:UploadImage[],userId:
   try{
     for(const image of images){
       if(image.encryptedUri){
-        await validateClinicalMediaVaultFile(image.encryptedUri,userId,patientId,ANALYSIS_MAX_IMAGE_BYTES);
+        await validateClinicalMediaVaultFile(image.encryptedUri,userId,patientId,ANALYSIS_MAX_IMAGE_BYTES,'analysis');
         migrated.push({...image,uri:image.encryptedUri,encryptedUri:image.encryptedUri});
       }else{
         const info=await FS.getInfoAsync(image.uri);
@@ -48,7 +48,7 @@ export async function prepareAnalysisUploadImages(images:UploadImage[],userId:nu
     for(const image of images){
       let uri=image.uri;
       if(image.encryptedUri){
-        uri=await decryptClinicalMediaFile(image.encryptedUri,userId,patientId,image.name);
+        uri=await decryptClinicalMediaFile(image.encryptedUri,userId,patientId,image.name,'analysis');
         temporary.push(uri);
       }
       const info=await FS.getInfoAsync(uri);
@@ -72,7 +72,7 @@ export async function clearAnalysisImages(images:UploadImage[]){
 export async function validateCachedAnalysisImages(images:UploadImage[],userId:number,patientId:number){
   for(const image of images){
     if(image.encryptedUri){
-      await validateClinicalMediaVaultFile(image.encryptedUri,userId,patientId,ANALYSIS_MAX_IMAGE_BYTES);
+      await validateClinicalMediaVaultFile(image.encryptedUri,userId,patientId,ANALYSIS_MAX_IMAGE_BYTES,'analysis');
       continue;
     }
     const info=await FS.getInfoAsync(image.uri);
