@@ -117,6 +117,30 @@ def test_status_lookup_can_key_a_legacy_receipt_without_raw_media():
     assert json.loads(row.payload_json)["fingerprint_version"] == 1
 
 
+def test_receipt_scope_mismatch_and_boolean_version_fail_closed():
+    legacy = "e" * 64
+    row = receipt(legacy)
+    with pytest.raises(PatientMediaReceiptCorrupt):
+        upgrade_legacy_receipt(
+            row, digest=None, legacy_digest=None, key=KEY,
+            owner_id=OWNER_ID + 1, patient_id=PATIENT_ID,
+        )
+
+    keyed = keyed_fingerprint(legacy, KEY, OWNER_ID, PATIENT_ID)
+    row = receipt(keyed, payload={
+        "patient_id": PATIENT_ID,
+        "media_id": 901,
+        "batch_id": BATCH_ID,
+        "file_bytes": 2048,
+        "fingerprint_version": True,
+    })
+    with pytest.raises(PatientMediaReceiptCorrupt):
+        upgrade_legacy_receipt(
+            row, digest=keyed, legacy_digest=legacy, key=KEY,
+            owner_id=OWNER_ID, patient_id=PATIENT_ID,
+        )
+
+
 def test_corrupt_legacy_receipt_fails_closed():
     row = receipt("not-a-digest", payload={"patient_id": PATIENT_ID, "media_id": 901})
     with pytest.raises(PatientMediaReceiptCorrupt):
