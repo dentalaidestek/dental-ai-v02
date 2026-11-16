@@ -226,3 +226,16 @@ The branch was checked again after the code and tracker commits. PR head is now 
 - Admin security: run `43852619602` — `security` job has an empty step array.
 
 The job-log requests for Android typecheck and both security jobs returned `BlobNotFound 404`; all four runs exposed zero artifacts, and the code-bearing commit's combined status was empty. This confirms that the current CI failure is before any test/build step, not a red assertion or a TypeScript diagnostic. The 10/10 isolated picker tests and isolated strict TypeScript check above remain the only executed checks for this pass. Full Android typecheck/APK and server security regressions remain blocked.
+
+
+## 2026-11-16 — Support-ticket notification deep links
+
+Web reference checked before implementation: `support_request.html`, `_support_status_regions.html`, the authenticated support conversation handlers and the native `Notifications` / `NativeSupportRequests` flow. Previously, support notifications opened only the inbox root, so the user had to locate the relevant ticket manually.
+
+- User-facing support-message and status notifications now carry the owned `ticket_id` in the same-origin `/support-request?ticket_id=...` target. Report updates use the linked report ticket when one exists.
+- Native notification routing parses only the `ticket_id` query parameter, rejects malformed/zero/unsafe identifiers, and passes a numeric ID to the support screen.
+- The native screen opens that ID only through the existing authenticated `getSupportTicket` owner-scoped API, then marks the returned conversation read. No notification payload is treated as ticket content or authorization.
+- The web support page reads the same query parameter and expands/scrolls to the matching ticket already rendered for the signed-in owner. Unknown or unauthorized IDs reveal no ticket data.
+- Added native route, support-screen contract, backend notification-target and web-template regressions.
+
+Validation boundary: source-contract edits and Git object creation are complete; full mobile Node/TypeScript, Python support lifecycle, Android build and security suites still require a GitHub Actions runner. The latest pre-change CI jobs all failed with `runner_id=0`, empty runner names and `steps=[]`; no compiler, Gradle or pytest step started. No green CI is claimed.
