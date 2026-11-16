@@ -19,7 +19,7 @@ This is a concrete source-level Android typecheck defect discovered even though 
 - `mobile/App.tsx` passes the authenticated `userId` into `NativeToothChart`.
 - `NativeToothChart` uses the same `dai.treatment.{userId}.{patientId}` SecureStore scope and `chunkedDraftStore` as the patient profile. The intent is account- and patient-bound and parsed with `parseTreatmentMutationIntent` before use.
 - A new intent is durably stored before any treatment mutation request. Create sends its stable request key; update sends both the stable request key and the selected record's 64-character `edit_revision`.
-- An uncertain response keeps the exact intent and exposes an explicit **Bekleyen Tedaviyi Doğrula** action. Reopening the screen restores the draft and reuses the same key; it does not silently create a second treatment.
+- An uncertain response keeps the exact intent and exposes an explicit **Bekleyen Tedaviyi Doğrula** action. Reopening the screen restores each treatment field individually and reuses the same key; it does not silently create a second treatment.
 - A missing/invalid treatment revision blocks update before network access. Definitive 400/422 validation rejection clears the rejected intent while preserving editable fields; stale-revision 409 clears the obsolete edit and reloads current history; 403/404 clears the stale form.
 - Patient/account scope is included in the screen's request-generation checks so a late response from a previous account cannot update the current chart.
 
@@ -38,6 +38,6 @@ The file is already included in `mobile/package.json` under `test:beta`.
 
 ## Verification boundary
 
-The code and tests are committed to `feature/mobile-web-parity-20261110`. They have **not** been reported green: the repository's latest Actions runs before this change exposed jobs with no executed steps and log downloads returning `BlobNotFound 404`. Consequently no `tsc`, Node regression suite, pytest, Gradle build or device test has run in this runtime. The new commits should trigger fresh CI; the runner/account configuration still needs repository-owner inspection if jobs again stop before steps.
+The code and tests are committed to \`feature/mobile-web-parity-20261110\`; starting HEAD \`91abd3d\`, the branch advanced by 11 commits to \`d3c6c5c\`. They have **not** been reported green. Current-head Android PR #2335 (\`43811247198\`), Android push #2334 (\`43811241117\`), Android test APK #285 (\`43811241121\`), Security recovery #974 (\`43811247103\`), Admin security #858 (\`43811247100\`) and Expert social #854 (\`43811247129\`) all failed before steps. The raw job records show \`runner_id=0\`, empty runner name/group, \`labels=[ubuntu-latest]\`, \`steps=[]\`, and 2–3 second completion. All eight job-log downloads returned \`BlobNotFound 404\`. Consequently no \`npm ci\`, \`tsc\`, Node regression suite, pytest, Gradle build or device test ran. This confirms that GitHub did not assign a runner; the exact account/billing/hosted-runner entitlement cause remains outside the available repository records and needs repository-owner inspection.
 
 No main merge, live deployment, APK/IPA publication or real patient-record mutation was performed.
