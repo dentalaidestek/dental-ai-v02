@@ -13,7 +13,7 @@ Added `app/clinical_media.py` as the shared image intake boundary. It:
 - verifies that the decoded image format matches the filename extension;
 - rejects malformed files, unsupported formats, animated containers and images above the configured pixel limit;
 - applies EXIF orientation before storage/inference;
-- re-encodes pixel data without carrying EXIF or ancillary text metadata;
+- re-encodes pixel data without carrying EXIF or ancillary text metadata, preserves PNG palette transparency, and removes rejected staged files so invalid PHI-bearing temporary uploads are not left behind;
 - retains only a bounded ICC profile because it affects color interpretation;
 - uses JPEG quality 95 with no chroma subsampling, lossless WebP and PNG re-encoding;
 - writes to a temporary sibling and atomically replaces the staged file.
@@ -32,9 +32,9 @@ The archived source object is not rewritten when it is selected for analysis; on
 
 ## Regression coverage
 
-Added `tests/test_clinical_media_sanitizer.py` with cases for JPEG orientation/EXIF removal, PNG text-metadata removal, lossless WebP pixel preservation, extension mismatch, corrupt files, pixel bounds, animated WebP rejection, route wiring, native direct-analysis upload and legacy archive-copy behavior.
+Added `tests/test_clinical_media_sanitizer.py` with nine test cases covering JPEG orientation/EXIF removal, PNG text-metadata removal, palette transparency, lossless WebP pixel preservation, extension mismatch, corrupt files, pixel bounds, animated WebP rejection, rejected-file cleanup, route wiring, native direct-analysis upload and legacy archive-copy behavior.
 
-An isolated local execution of the sanitizer logic passed six checks: JPEG orientation/EXIF removal, PNG metadata removal, WebP pixel preservation, format mismatch rejection, pixel-limit rejection and animated-image rejection. The complete repository pytest file, Android typecheck and device tests have not been executed in this connector-only run; the committed tests are not represented as green.
+An isolated local execution of the sanitizer logic passed eight checks: JPEG orientation/EXIF removal, PNG metadata removal, PNG palette transparency, WebP pixel preservation, format mismatch rejection, pixel-limit rejection, animated-image rejection and staged-file cleanup. The complete repository pytest file, Android typecheck and device tests have not been executed in this connector-only run; the committed tests are not represented as green.
 
 ## Remaining acceptance
 
