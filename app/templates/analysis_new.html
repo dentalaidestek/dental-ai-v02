@@ -15,7 +15,7 @@
         <input type="hidden" name="existing_media_ids" value="{{ selected_media_ids }}">
         <div class="analysis-selected-media analysis-selected-media-multi">
             <div class="analysis-selected-media-thumbs">
-                {% for media in selected_media[:analysis_image_limit|default(4)] %}
+                {% for media in selected_media[:analysis_image_limit] %}
                 <img src="/patients/{{ patient.id }}/media/{{ media.id }}/file" alt="Seçilen klinik görüntü">
                 {% endfor %}
                 {% if selected_media|length > (analysis_image_limit|default(4)) %}<span class="analysis-selected-media-more">+{{ selected_media|length - (analysis_image_limit|default(4)) }}</span>{% endif %}
