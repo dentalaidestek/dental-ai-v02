@@ -270,3 +270,23 @@ def test_clinical_only_analysis_rejects_empty_context_before_allocating_records(
         assert s.exec(select(main.ImageAsset)).all()==[]
         assert s.exec(select(work_jobs.WorkJob)).all()==[]
 
+
+
+def test_native_analysis_rejects_more_than_four_combined_images_before_allocation(chat,monkeypatch,tmp_path):
+    c,engine,raw=setup(chat,monkeypatch,tmp_path)
+    too_many_saved=c.post('/api/mobile/v1/analyses',data={
+        'patient_id':'8','request_key':'synthetic-five-saved-media-001',
+        'existing_media_ids':'31,32,33,34,35',
+    })
+    assert too_many_saved.status_code==422
+    assert 'en fazla 4 kayıtlı klinik görüntü' in too_many_saved.text
+
+    four_saved_plus_new=c.post('/api/mobile/v1/analyses',data={
+        'patient_id':'8','request_key':'synthetic-four-plus-new-001',
+        'existing_media_ids':'31,32,33,34',
+    },files=[('images',('extra.png',raw,'image/png'))])
+    assert four_saved_plus_new.status_code==422
+    assert 'toplamı en fazla 4' in four_saved_plus_new.text
+    with Session(engine) as session:
+        assert not session.exec(select(main.Analysis)).all()
+        assert not session.exec(select(work_jobs.WorkJob).where(work_jobs.WorkJob.kind=='VISION')).all()
