@@ -19,7 +19,7 @@ test('Grad-CAM attention matches the web modality pools',()=>{
  assert.ok(!unknown.some(item=>item.attention));
  assert.ok(!model.visionFindings(snapshot).some(item=>item.attention),'missing modality fails closed');
 });
-function ui(getVision){const exports={},timers=[];let nextTimer=0;const schedule=(fn,delay)=>{const id=++nextTimer;timers.push({id,fn,delay,cancelled:false});return id},cancel=id=>{const timer=timers.find(x=>x.id===id);if(timer)timer.cancelled=true};const native={StyleSheet:{create:x=>x},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','Modal','Pressable','ScrollView','Text','View'].map(x=>[x,x]))};vm.runInNewContext(compile('../src/NativeVisionViewer.tsx'),{exports,Error,setTimeout:schedule,clearTimeout:cancel,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='react-native-svg'?{default:'Svg',Rect:'Rect'}:n==='@react-navigation/native'?{useIsFocused:()=>true}:n==='./visionModel'?model:{getVision,clinicalImage:()=>({uri:'https://example.invalid/synthetic.png',headers:{Authorization:'Bearer synthetic'}})}});exports.default.__timers=timers;return exports.default}
+function ui(getVision){const exports={},timers=[];let nextTimer=0;const schedule=(fn,delay)=>{const id=++nextTimer;timers.push({id,fn,delay,cancelled:false});return id},cancel=id=>{const timer=timers.find(x=>x.id===id);if(timer)timer.cancelled=true};const native={StyleSheet:{create:x=>x},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};vm.runInNewContext(compile('../src/NativeVisionViewer.tsx'),{exports,Error,setTimeout:schedule,clearTimeout:cancel,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='react-native-svg'?{default:'Svg',Rect:'Rect'}:n==='@react-navigation/native'?{useIsFocused:()=>true}:n==='./visionModel'?model:{getVision,clinicalImage:()=>({uri:'https://example.invalid/synthetic.png',headers:{Authorization:'Bearer synthetic'}})}});exports.default.__timers=timers;return exports.default}
 test('native image dimensions drive SVG viewBox and a finding selection highlights its actual region',async()=>{const Component=ui(async()=>({pending:false,findings:model.visionFindings({findings:[finding]},'PANORAMIC')}));let t;await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:1,assetId:4,onClose(){}})));await renderer.act(async()=>t.root.findByType('Image').props.onLoad({nativeEvent:{source:{width:1000,height:500}}}));assert.equal(t.root.findByType('Svg').props.viewBox,'0 0 1000 500');const box=t.root.findByType('Rect');assert.equal(box.props.x,200);assert.equal(box.props.y,150);const firstWidth=box.props.strokeWidth;await renderer.act(async()=>box.props.onPress());assert.equal(t.root.findByType('Rect').props.strokeWidth,firstWidth*2);assert.ok(text(t.toJSON()).includes('kesin lezyon sınırı'));await renderer.act(async()=>t.unmount())});
 test('unlocalized native finding is shown in list and never represented as an invented rectangle',async()=>{const Component=ui(async()=>({pending:false,findings:model.visionFindings({findings:[{label:'Synthetic unlocalized'}]},'INTRAORAL_PHOTO')}));let t;await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:1,assetId:4,onClose(){}})));await renderer.act(async()=>t.root.findByType('Image').props.onLoad({nativeEvent:{source:{width:1000,height:500}}}));assert.equal(t.root.findAllByType('Rect').length,0);assert.ok(text(t.toJSON()).includes('doğrulanabilir konum bulunmuyor'));await renderer.act(async()=>t.unmount())});
 
@@ -58,5 +58,73 @@ test('native viewer switches between authorized assets using web modality labels
  assert.ok(next);
  await renderer.act(async()=>next.props.onPress());
  assert.deepEqual(selected,[5]);
+ await renderer.act(async()=>t.unmount());
+});
+
+
+const findPressable=(root,label)=>root.findAllByType('Pressable').find(node=>text(node)===label);
+test('native viewer exposes the same three clinical tabs as the web viewer',async()=>{
+ const Component=ui(async()=>({pending:false,findings:[]}));let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:7,assetId:4,onClose(){}})));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ for(const label of ['Bulgular','Tedavi','Klinik Bilgi'])assert.ok(findPressable(t.root,label),label+' tab is present');
+ await renderer.act(async()=>findPressable(t.root,'Klinik Bilgi').props.onPress());
+ assert.ok(text(t.toJSON()).includes('Diş Şeması / Klinik Bilgi'));
+ await renderer.act(async()=>t.unmount());
+});
+
+test('treatment tab preselects only supported permanent FDI findings and delegates to canonical parent job',async()=>{
+ const Component=ui(async()=>({pending:false,findings:model.visionFindings({findings:[finding,{...finding,label:'Primary tooth finding',fdi:'55'}]},'PANORAMIC')})),calls=[];let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:8,assetId:4,onRunTreatmentAnalysis:async teeth=>{calls.push(teeth);return true},onClose(){}})));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ await renderer.act(async()=>findPressable(t.root,'Tedavi').props.onPress());
+ assert.ok(text(t.toJSON()).includes('36'));
+ assert.ok(!text(t.toJSON()).includes('55'));
+ await renderer.act(async()=>findPressable(t.root,'Analiz Et').props.onPress());
+ assert.deepEqual(calls,[['36']]);
+ assert.ok(text(t.toJSON()).includes('Tedavi değerlendirmesi başlatıldı'));
+ await renderer.act(async()=>t.unmount());
+});
+
+test('clinical information tab saves through the supplied durable parent callback and clears only after confirmation',async()=>{
+ const Component=ui(async()=>({pending:false,findings:[]})),saved=[];let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:9,assetId:4,onSaveClinicalNote:async value=>{saved.push(value);return true},onClose(){}})));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ await renderer.act(async()=>findPressable(t.root,'Klinik Bilgi').props.onPress());
+ const tooth=findPressable(t.root,'36');
+ await renderer.act(async()=>tooth.props.onPress());
+ const findingInput=t.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Manuel bulgu');
+ const noteInput=t.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Klinik not');
+ await renderer.act(async()=>{findingInput.props.onChangeText('Restorasyon kenarında açıklık');noteInput.props.onChangeText('Klinik kontrol önerildi.')});
+ await renderer.act(async()=>findPressable(t.root,'Onayla').props.onPress());
+ assert.deepEqual(saved,[{tooth:'36',finding:'Restorasyon kenarında açıklık',note:'Klinik kontrol önerildi.'}]);
+ const after=t.root.findAllByType('TextInput');
+ assert.ok(after.every(node=>node.props.value===''));
+ assert.ok(text(t.toJSON()).includes('sunucuda doğrulandı'));
+ await renderer.act(async()=>t.unmount());
+});
+
+test('uncertain clinical-note acknowledgement preserves native inputs and does not auto-resubmit',async()=>{
+ const Component=ui(async()=>({pending:false,findings:[]})),saved=[];let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:10,assetId:4,onSaveClinicalNote:async value=>{saved.push(value);return false},onClose(){}})));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ await renderer.act(async()=>findPressable(t.root,'Klinik Bilgi').props.onPress());
+ const input=t.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Klinik not');
+ await renderer.act(async()=>input.props.onChangeText('Bekleyen klinik not'));
+ await renderer.act(async()=>findPressable(t.root,'Klinik Notu Kaydet').props.onPress());
+ assert.equal(saved.length,1);
+ assert.equal(t.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Klinik not').props.value,'Bekleyen klinik not');
+ assert.ok(text(t.toJSON()).includes('Girişleriniz korundu'));
+ await renderer.act(async()=>t.unmount());
+});
+
+test('treatment tab renders the canonical result and only offers retry for retryable preliminary jobs',async()=>{
+ const Component=ui(async()=>({pending:false,findings:[]}));let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:11,assetId:4,clinicalResult:{status:'INITIAL',treatment_options:[{title:'Restorasyon değerlendirmesi',description:'Klinik muayene ile doğrulanmalı.'}]},clinicalJob:{id:77,kind:'PRELIMINARY',status:'DONE',retryable:false},onClose(){}})));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ await renderer.act(async()=>findPressable(t.root,'Tedavi').props.onPress());
+ assert.ok(text(t.toJSON()).includes('Restorasyon değerlendirmesi'));
+ assert.ok(text(t.toJSON()).includes('Klinik muayene ile doğrulanmalı.'));
+ assert.ok(findPressable(t.root,'Analiz Et'));
  await renderer.act(async()=>t.unmount());
 });
