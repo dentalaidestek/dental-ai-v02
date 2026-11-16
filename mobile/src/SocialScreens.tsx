@@ -830,6 +830,7 @@ function PostCard({
   onEdit,
   onFollow,
   onSupport,
+  showExpertActions,
 }: {
   token: string;
   userId: number;
@@ -841,6 +842,7 @@ function PostCard({
   onEdit: () => void;
   onFollow: (authorId: number, followed: boolean) => void;
   onSupport: () => void;
+  showExpertActions: boolean;
 }) {
   const [busy, setBusy] = useState(false),
     [followBusy, setFollowBusy] = useState(false),
@@ -1012,7 +1014,7 @@ function PostCard({
           <Text style={s.action}>Bağlantı</Text>
         </Pressable>
       </View>
-      {post.status === "PUBLISHED" && (
+      {showExpertActions && post.status === "PUBLISHED" && (
         <View style={s.row}>
           <Pressable accessibilityRole="button" onPress={onProfile}>
             <Text style={s.action}>Uzman profili</Text>
@@ -1323,6 +1325,7 @@ export function DentalFlow({
             userId={user.id}
             post={item}
             onFollow={updateFollow}
+            showExpertActions={!expertId}
             onSupport={() =>
               navigation.navigate("NewConsultation", {
                 expert: {

@@ -23,7 +23,7 @@ test('Android owner menu exposes every action without an Alert exceeding three b
 test('published Dental Flow cards follow the author and share a canonical post URL',async()=>{
  const h=harness(),followed=[],supported=[];
  const post={id:42,author_id:7,author_name:'Synthetic expert',text:'Synthetic post',media:[],status:'PUBLISHED',owned:false,author_followed:false,author_support_available:true,comments_closed:false,liked:false,like_count:0,comment_count:0,created_at:'2026-11-17'};
- const props={token:'synthetic',userId:2,post,onUpdate(){},onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow:(...args)=>followed.push(args),onSupport:()=>supported.push(true)};
+ const props={token:'synthetic',userId:2,post,showExpertActions:true,onUpdate(){},onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow:(...args)=>followed.push(args),onSupport:()=>supported.push(true)};
  let tree=h.render('PostCard',props);
  const follow=nodes(tree).find(n=>n.props?.accessibilityLabel==='Takip et');assert.ok(follow);
  await follow.props.onPress();await tick();assert.deepEqual(followed,[[7,true]]);
@@ -35,12 +35,14 @@ test('published Dental Flow cards follow the author and share a canonical post U
 
 test('pending posts disable like/share and closed comments are not opened',()=>{
  const h=harness(),post={id:3,author_id:7,author_name:'Expert',text:'Pending',media:[],status:'PENDING',owned:true,comments_closed:true,liked:false,like_count:0,comment_count:0,created_at:'2026-11-17'};
- const tree=h.render('PostCard',{token:'synthetic',userId:2,post,onUpdate(){},onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow(){},onSupport(){}});
+ const tree=h.render('PostCard',{token:'synthetic',userId:2,post,showExpertActions:true,onUpdate(){},onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow(){},onSupport(){}});
  const like=nodes(tree).find(n=>n.props?.accessibilityLabel==='Beğen');
  const share=nodes(tree).find(n=>n.props?.accessibilityLabel==='Gönderi bağlantısını paylaş');
  assert.equal(like.props.disabled,true);assert.equal(share.props.disabled,true);
  assert.ok(text(tree).includes('Yorumlar kapalı'));
  assert.equal(nodes(tree).some(n=>n.props?.accessibilityLabel?.startsWith('Yorumlar ')),false);
+ const profileTree=h.render('PostCard',{token:'synthetic',userId:2,post:{...post,status:'PUBLISHED'},showExpertActions:false,onUpdate(){},onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow(){},onSupport(){}});
+ assert.equal(text(profileTree).includes('Uzman profili'),false);
 });
 
 test('Dental Flow native filters use the web taxonomy and reset the paged scope',()=>{
