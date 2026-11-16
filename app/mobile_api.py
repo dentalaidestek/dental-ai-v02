@@ -1456,7 +1456,12 @@ def _patient_media_result(media: PatientMedia, replayed: bool = False) -> dict:
 
 
 def _find_patient_media_receipt(session: Session, user: User, patient_id: int,
-                                receipt_key: str, digest: Optional[str] = None):
+                                receipt_key: str, digest: Optional[str] = None,
+                                legacy_digest: Optional[str] = None, key: Optional[bytes] = None):
+    from app.patient_media_receipts import (
+        PatientMediaReceiptConflict, PatientMediaReceiptCorrupt, upgrade_legacy_receipt,
+    )
+
     receipt = session.exec(select(WorkJob).where(
         WorkJob.owner_user_id == user.id,
         WorkJob.resource_id == patient_id,
@@ -1466,8 +1471,19 @@ def _find_patient_media_receipt(session: Session, user: User, patient_id: int,
     )).first()
     if receipt is None:
         return None
-    if digest is not None and receipt.source_hash != digest:
-        raise HTTPException(status_code=409, detail="Bu klinik görüntü işlem anahtarı farklı bir dosya veya bilgilerle kullanılmış.")
+    if key is None:
+        raise HTTPException(status_code=503, detail="Klinik görüntü yükleme kurtarma anahtarı yapılandırılmamış.")
+    try:
+        upgraded = upgrade_legacy_receipt(
+            receipt, digest=digest, legacy_digest=legacy_digest, key=key,
+            owner_id=user.id, patient_id=patient_id,
+        )
+    except PatientMediaReceiptConflict as exc:
+        raise HTTPException(status_code=409, detail="Bu klinik görüntü işlem anahtarı farklı bir dosya veya bilgilerle kullanılmış.") from exc
+    except PatientMediaReceiptCorrupt as exc:
+        raise HTTPException(status_code=409, detail="Klinik görüntü işlem fişi doğrulanamadı.") from exc
+    if upgraded:
+        session.add(receipt)
     try:
         saved = json.loads(receipt.payload_json or "{}")
         media_id = int(saved["media_id"])
@@ -1495,6 +1511,7 @@ def _store_patient_media_receipt(session: Session, user: User, patient_id: int,
         payload_json=json.dumps({
             "patient_id": patient_id, "media_id": media.id,
             "batch_id": batch_id, "file_bytes": file_bytes,
+            "fingerprint_version": 1,
         }, sort_keys=True),
         status="DONE",
     ))
@@ -1555,6 +1572,11 @@ async def mobile_patient_media_upload(
     if normalized_note and len(normalized_note) > 2000:
         raise HTTPException(status_code=422, detail="Klinik not 2000 karakteri aşamaz.")
     receipt_key = _patient_media_receipt_key(user.id, patient_id, request_key)
+    from app.patient_media_receipts import encryption_key, keyed_fingerprint, PatientMediaReceiptKeyUnavailable
+    try:
+        fingerprint_key = encryption_key()
+    except PatientMediaReceiptKeyUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Klinik görüntü yükleme kurtarma anahtarı yapılandırılmamış.") from exc
     if not _PATIENT_MEDIA_BATCH_ID.fullmatch(batch_id or ""):
         raise HTTPException(status_code=422, detail="Geçersiz klinik görüntü yükleme grubu.")
     image = image or file
@@ -1571,6 +1593,7 @@ async def mobile_patient_media_upload(
     destination.parent.mkdir(parents=True, exist_ok=True)
     persisted = False
     digest = None
+    legacy_digest = None
     try:
         file_bytes = _copy_validated_image(image, destination, MOBILE_MAX_PATIENT_MEDIA_BYTES)
         file_digest = hashlib.sha256()
@@ -1580,7 +1603,8 @@ async def mobile_patient_media_upload(
                 if not chunk:
                     break
                 file_digest.update(chunk)
-        digest = _patient_media_payload_hash(file_digest.hexdigest(), media_type, tooth, normalized_note, original_name) if receipt_key else None
+        legacy_digest = _patient_media_payload_hash(file_digest.hexdigest(), media_type, tooth, normalized_note, original_name)
+        digest = keyed_fingerprint(legacy_digest, fingerprint_key, user.id, patient_id)
         with Session(engine, expire_on_commit=False) as session:
             patient = session.exec(select(Patient).where(
                 Patient.id == patient_id, Patient.owner_user_id == user.id
@@ -1589,9 +1613,12 @@ async def mobile_patient_media_upload(
                 raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
             _lock_patient_media_receipt(session, receipt_key)
             if receipt_key:
-                existing = _find_patient_media_receipt(session, user, patient_id, receipt_key, digest)
+                existing = _find_patient_media_receipt(
+                    session, user, patient_id, receipt_key, digest,
+                    legacy_digest=legacy_digest, key=fingerprint_key,
+                )
                 if existing:
-                    session.rollback()
+                    session.commit()
                     destination.unlink(missing_ok=True)
                     return JSONResponse(existing, headers={"Cache-Control": "private, no-store"})
             # The locked patient row makes this cross-request counter atomic across workers.
@@ -1634,8 +1661,12 @@ async def mobile_patient_media_upload(
                     Patient.id == patient_id, Patient.owner_user_id == user.id
                 )).first()
                 if patient:
-                    existing = _find_patient_media_receipt(session, user, patient_id, receipt_key, digest)
+                    existing = _find_patient_media_receipt(
+                        session, user, patient_id, receipt_key, digest,
+                        legacy_digest=legacy_digest, key=fingerprint_key,
+                    )
                     if existing:
+                        session.commit()
                         return JSONResponse(existing, headers={"Cache-Control": "private, no-store"})
         raise HTTPException(status_code=409, detail="Klinik görüntü işlemi aynı anda tamamlandı. Galeriyi yenileyip işlem fişini doğrulayın.")
     except Exception:
@@ -1660,13 +1691,21 @@ def mobile_patient_media_upload_status(
     user: User = Depends(_mobile_user),
 ):
     receipt_key = _patient_media_receipt_key(user.id, patient_id, request_key)
+    from app.patient_media_receipts import encryption_key, PatientMediaReceiptKeyUnavailable
+    try:
+        fingerprint_key = encryption_key()
+    except PatientMediaReceiptKeyUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Klinik görüntü yükleme kurtarma anahtarı yapılandırılmamış.") from exc
     with Session(engine, expire_on_commit=False) as session:
         patient = session.exec(select(Patient).where(
             Patient.id == patient_id, Patient.owner_user_id == user.id
         )).first()
         if not patient:
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
-        existing = _find_patient_media_receipt(session, user, patient_id, receipt_key)
+        existing = _find_patient_media_receipt(
+            session, user, patient_id, receipt_key, key=fingerprint_key,
+        )
+        session.commit()
         return JSONResponse(
             {"found": existing is not None, "media": existing["media"] if existing else None},
             headers={"Cache-Control": "private, no-store"},
