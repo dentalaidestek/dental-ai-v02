@@ -1984,8 +1984,8 @@ async def mobile_analyze_patient_media(patient_id:int, payload:MobileSelectedMed
     from fastapi import BackgroundTasks
     import re
     ids=payload.media_ids
-    if not 1 <= len(ids) <= 4 or any(i <= 0 for i in ids) or len(set(ids)) != len(ids):
-        raise HTTPException(status_code=422,detail="1 ile 4 arasında farklı klinik görüntü seçin.")
+    if not 1 <= len(ids) <= web.MAX_ANALYSIS_IMAGES or any(i <= 0 for i in ids) or len(set(ids)) != len(ids):
+        raise HTTPException(status_code=422,detail=f"1 ile {web.MAX_ANALYSIS_IMAGES} arasında farklı klinik görüntü seçin.")
     with Session(engine) as session:
         patient=session.get(Patient,patient_id)
         if not patient or patient.owner_user_id != user.id:
