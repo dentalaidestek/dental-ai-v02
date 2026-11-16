@@ -85,7 +85,7 @@ function validateTreatmentTarget(patientId:number,payload:TreatmentPayload,treat
  if(!/^[A-Za-z0-9_-]{16,80}$/.test(requestKey))throw new Error("Geçersiz tedavi işlem anahtarı.");
  if(expectedRevision!==undefined&&!/^[a-f0-9]{64}$/.test(expectedRevision))throw new Error("Tedavi kayıt sürümü geçersiz.");
  if(payload.treatment_date){
-  const m=/^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(payload.treatment_date);
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(payload.treatment_date);
   const y=m?Number(m[1]):0,month=m?Number(m[2]):0,day=m?Number(m[3]):0;
   const valid=!!m&&y>=1&&month>=1&&month<=12&&day>=1&&day<=new Date(Date.UTC(y,month,0)).getUTCDate();
   if(!valid)throw new Error("Tedavi tarihi YYYY-AA-GG biçiminde geçerli bir tarih olmalıdır.");
