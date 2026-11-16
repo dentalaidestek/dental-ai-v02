@@ -36,7 +36,7 @@ test('missing target URLs remain actionable as read-only notifications',()=>{
 });
 
 test('unsupported routes are explicit instead of opening an unrelated screen',()=>{
- assert.deepEqual(resolve('/support-request'),{kind:'unsupported',path:'/support-request'});
+ assert.deepEqual(resolve('/support-request'),{kind:'navigate',route:{screen:'SupportRequests'}});
  assert.deepEqual(resolve('/admin'),{kind:'unsupported',path:'/admin'});
 });
 
