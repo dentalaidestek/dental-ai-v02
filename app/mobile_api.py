@@ -62,7 +62,7 @@ from app.main import (
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, storage_delete, _record_patient_realtime_events,
     _patient_edit_revision,
     _record_realtime_event, _publish_realtime_event, on_loop,
-    _support_user_can_reply, _support_unread_count, _mark_support_read,
+    _support_user_can_reply, _support_unread_count, _mark_support_read, UserReport,
     _cancel_pending_program_reminders, _resolve_notifications, _record_program_realtime_event, _utcnow_naive,
     _ensure_email_verification_challenge, _verify_email_code,
 )
@@ -1668,6 +1668,7 @@ class MobileSupportCreate(BaseModel):
     subject: str
     message: str
     request_key: str
+    case_id: Optional[int] = None
 
 
 class MobileSupportReply(BaseModel):
@@ -1691,11 +1692,14 @@ def _support_mutation_replay(session: Session, key: str, user_id: int, operation
 
 
 @router.get("/support/tickets")
-def mobile_support_tickets(token: str = Depends(_mobile_access_token), user: User = Depends(_mobile_user)):
+def mobile_support_tickets(before_id: Optional[int] = Query(None, ge=1), limit: int = Query(50, ge=1, le=100), token: str = Depends(_mobile_access_token), user: User = Depends(_mobile_user)):
     with Session(engine, expire_on_commit=False) as session:
-        tickets = session.exec(select(SupportTicket).where(
-            SupportTicket.user_id == user.id, SupportTicket.source_type == "SUPPORT"
-        ).order_by(SupportTicket.updated_at.desc(), SupportTicket.id.desc()).limit(100)).all()
+        query = select(SupportTicket).where(SupportTicket.user_id == user.id, SupportTicket.source_type == "SUPPORT")
+        if before_id is not None:
+            query = query.where(SupportTicket.id < before_id)
+        tickets = session.exec(query.order_by(SupportTicket.id.desc()).limit(limit + 1)).all()
+        has_more = len(tickets) > limit
+        tickets = tickets[:limit]
         items = []
         for ticket in tickets:
             latest = session.exec(select(SupportTicketMessage).where(
@@ -1709,7 +1713,31 @@ def mobile_support_tickets(token: str = Depends(_mobile_access_token), user: Use
                 "unread_count": _support_unread_count(session, ticket.id, "USER"),
                 "can_reply": _support_user_can_reply(session, ticket),
             })
-        return {"items": items, "total": len(items)}
+        return {"items": items, "total": len(items), "has_more": has_more, "next_before_id": tickets[-1].id if has_more and tickets else None}
+
+
+@router.get("/support/reports")
+def mobile_support_reports(token: str = Depends(_mobile_access_token), user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        reports = session.exec(select(UserReport).where(UserReport.reporter_user_id == user.id).order_by(UserReport.id.desc()).limit(100)).all()
+        return {"items": [{"id": r.id, "case_id": r.case_id, "reason": r.reason, "detail": r.detail or "", "status": r.status, "created_at": r.created_at.isoformat()} for r in reports], "total": len(reports)}
+
+
+@router.get("/support/conversation-options")
+def mobile_support_conversation_options(token: str = Depends(_mobile_access_token), user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        cases = session.exec(select(ConsultationCase).where(
+            (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
+        ).order_by(ConsultationCase.requested_at.desc()).limit(100)).all()
+        items = []
+        for case in cases:
+            has_message = session.exec(select(ConsultationMessage.id).where(ConsultationMessage.case_id == case.id).limit(1)).first() is not None
+            if not has_message and not (case.requester_user_id == user.id and datetime.utcnow() > case.expert_response_deadline):
+                continue
+            other_id = case.expert_user_id if case.requester_user_id == user.id else case.requester_user_id
+            other = session.get(User, other_id)
+            items.append({"id": case.id, "other_display_name": other.display_name if other else "Kullanıcı", "status": case.status})
+        return {"items": items}
 
 
 @router.post("/support/tickets")
@@ -1718,13 +1746,23 @@ def mobile_support_create(payload: MobileSupportCreate, token: str = Depends(_mo
     message = payload.message.strip()
     if not subject or len(subject) > 160 or not message or len(message) > 4000:
         raise HTTPException(status_code=422, detail="Konu (1–160) ve açıklama (1–4000 karakter) zorunludur.")
+    linked_case_id = None
+    if payload.case_id is not None:
+        with Session(engine, expire_on_commit=False) as check_session:
+            case = check_session.get(ConsultationCase, payload.case_id)
+            if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+                raise HTTPException(status_code=403, detail="Bu konuşmayı destek talebine bağlama yetkiniz yok.")
+            has_message = check_session.exec(select(ConsultationMessage.id).where(ConsultationMessage.case_id == case.id).limit(1)).first() is not None
+            if not has_message and not (case.requester_user_id == user.id and datetime.utcnow() > case.expert_response_deadline):
+                raise HTTPException(status_code=403, detail="Bu konuşma henüz destek talebine bağlanamaz.")
+            linked_case_id = case.id
     key = _support_receipt_key(user.id, "CREATE", payload.request_key)
-    digest = hashlib.sha256(json.dumps({"subject": subject, "message": message}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    digest = hashlib.sha256(json.dumps({"subject": subject, "message": message, "case_id": linked_case_id}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     with Session(engine, expire_on_commit=False) as session:
         replay = _support_mutation_replay(session, key, user.id, "CREATE", digest)
         if replay:
             return {"ok": True, "ticket_id": replay.ticket_id, "status": "REPLAYED", "replayed": True}
-        ticket = SupportTicket(user_id=user.id, subject=subject, message=message, source_type="SUPPORT")
+        ticket = SupportTicket(user_id=user.id, subject=subject, message=message, case_id=linked_case_id, source_type="SUPPORT")
         session.add(ticket)
         session.flush()
         session.add(MobileSupportMutationReceipt(receipt_key=key, user_id=user.id, operation="CREATE", payload_hash=digest, ticket_id=ticket.id))
