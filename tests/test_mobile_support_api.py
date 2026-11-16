@@ -122,3 +122,55 @@ def test_support_receipt_schema_has_serialized_production_upgrade():
     assert "def _upgrade_support_receipts_schema(main):" in migration
     assert migration.count("MobileSupportMutationReceipt.__table__.create(connection, checkfirst=True)") >= 2
     assert "if _upgrade_support_receipts_schema(main):" in migration
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
+def test_mobile_support_case_link_reports_and_ticket_cursor_paging(monkeypatch, tmp_path):
+    engine = create_engine("sqlite:///" + str(tmp_path / "mobile-support-parity.db"), connect_args={"check_same_thread": False})
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(main, "engine", engine)
+    monkeypatch.setattr("app.mobile_api.engine", engine)
+    now = main._utcnow_naive()
+    with Session(engine, expire_on_commit=False) as session:
+        owner = main.User(username="support-parity-owner", role="DOCTOR", display_name="Owner", email_verified_at=now)
+        other = main.User(username="support-parity-other", role="DOCTOR", display_name="Other", email_verified_at=now)
+        session.add_all([owner, other]); session.commit()
+        token = "mobile-support-parity-owner"
+        session.add(main.SessionToken(token_hash=main.hash_session_token(token), user_id=owner.id, expires_at=now + main.timedelta(days=1)))
+        case = main.ConsultationCase(
+            requester_user_id=owner.id, expert_user_id=other.id, specialty="Endodonti",
+            clinical_summary="Özet", question="Soru", expert_response_deadline=now + main.timedelta(days=1),
+        )
+        session.add(case); session.flush()
+        session.add(main.ConsultationMessage(case_id=case.id, sender_user_id=owner.id, message_type="TEXT", content="Merhaba"))
+        report = main.UserReport(reporter_user_id=owner.id, reported_user_id=other.id, case_id=case.id, reason="OTHER", detail="İnceleme")
+        session.add(report); session.commit()
+        case_id, report_id = case.id, report.id
+
+    with TestClient(main.app) as client:
+        headers = {"Authorization": "Bearer " + token}
+        options = client.get("/api/mobile/v1/support/conversation-options", headers=headers)
+        assert options.status_code == 200
+        assert [x["id"] for x in options.json()["items"]] == [case_id]
+        reports = client.get("/api/mobile/v1/support/reports", headers=headers)
+        assert reports.status_code == 200
+        assert [x["id"] for x in reports.json()["items"]] == [report_id]
+        created = client.post("/api/mobile/v1/support/tickets", headers=headers, json={
+            "subject": "Vaka ile ilgili", "message": "Destek açıklaması",
+            "request_key": "support_case_link_key_01", "case_id": case_id,
+        })
+        assert created.status_code == 200, created.text
+        with Session(engine) as session:
+            ticket = session.get(main.SupportTicket, created.json()["ticket_id"])
+            assert ticket.case_id == case_id
+        for n in range(3):
+            with Session(engine) as session:
+                ticket = main.SupportTicket(user_id=owner.id, subject=f"Eski {n}", message="Mesaj", source_type="SUPPORT")
+                session.add(ticket); session.commit()
+        first = client.get("/api/mobile/v1/support/tickets?limit=2", headers=headers)
+        assert first.status_code == 200
+        assert len(first.json()["items"]) == 2
+        assert first.json()["has_more"] is True
+        second = client.get("/api/mobile/v1/support/tickets?limit=2&before_id=" + str(first.json()["next_before_id"]), headers=headers)
+        assert second.status_code == 200
+        assert not ({x["id"] for x in first.json()["items"]} & {x["id"] for x in second.json()["items"]})
