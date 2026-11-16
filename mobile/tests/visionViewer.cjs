@@ -25,7 +25,15 @@ test('pending vision polling backs off exponentially and does not schedule overl
 });
 
 
-test('native viewer passes the selected asset modality to the canonical vision parser',async()=>{\n let received=null;const Component=ui(async(...args)=>{received=args;return{pending:false,findings:[]}});let t;\n await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:1,assetId:4,assets:[{id:4,name:'intraoral.png',image_type:'INTRAORAL_PHOTO'}],onClose(){}})));\n await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});\n assert.deepEqual(received,['A',1,4,'INTRAORAL_PHOTO']);\n await renderer.act(async()=>t.unmount());\n});\n\ntest('native viewer switches between authorized assets using web modality labels without a new asset-list request',async()=>{
+test('native viewer passes the selected asset modality to the canonical vision parser',async()=>{
+ let received=null;const Component=ui(async(...args)=>{received=args;return{pending:false,findings:[]}});let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:1,assetId:4,assets:[{id:4,name:'intraoral.png',image_type:'INTRAORAL_PHOTO'}],onClose(){}})));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ assert.deepEqual(received,['A',1,4,'INTRAORAL_PHOTO']);
+ await renderer.act(async()=>t.unmount());
+});
+
+test('native viewer switches between authorized assets using web modality labels without a new asset-list request',async()=>{
  const Component=ui(async()=>({pending:false,findings:[]})),selected=[];
  const assets=[{id:4,name:'bitewing.png',image_type:'BITEWING'},{id:5,name:'intraoral.png',image_type:'INTRAORAL_PHOTO'}];
  let t;
