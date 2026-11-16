@@ -132,6 +132,8 @@ def _upgrade_support_receipts_schema(main):
 
 def _apply_baseline():
     from app import main
+    if _upgrade_support_receipts_schema(main):
+        return
     if _upgrade_learning_schema(main):
         return
     if _upgrade_recent_schema(main):
