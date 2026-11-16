@@ -373,3 +373,56 @@ The next gate remains execution of the full suite on a working runner and physic
 Web/native endpoint comparison found a remaining reliability and cost issue. `mobile/src/nativeVoiceAudio.ts` uploads each retained clip without a stable segment request key. `app/mobile_api.py:mobile_voice_audio` streams the clip and calls `core.extract(..., transcription_only=True)`, then returns the transcript without a durable receipt/deduplication record. If Gemini completes but the response is lost, the native recorder correctly keeps the local clip and a retry can invoke transcription again; the caller cannot reconcile the first result and may append a duplicate segment.
 
 No quick client-only fix is safe: the server must be able to replay the exact result after a lost response, while transcript data is sensitive and raw audio must remain unpersisted. Next voice work should evaluate a short-lived, encrypted, owner+patient+segment-key+audio-digest receipt with strict TTL/size bounds, same-key/different-content rejection, cross-account isolation and process-death recovery. This is an identified open issue, not implemented or accepted.
+
+
+## Implemented — native voice ASR idempotency and recovery (2026-11-16)
+
+The previously open uncertain-retry finding is now implemented on
+feature/mobile-web-parity-20261110. Before changing native code, the browser flow
+was rechecked in voice_exam_panel.html and voice-exam.js and compared with the
+mobile_voice_audio endpoint. The browser keeps its pending audio result in the
+page flow; the native adapter had no durable receipt after its Gemini call.
+
+Changes:
+- NativeVoiceRecorder now sends its persisted SecureStore segment UUID as
+  X-Voice-Request-Key. A retry of the same retained clip reuses the same key.
+- The backend hashes canonical MIME plus streamed audio bytes and scopes the
+  receipt by authenticated owner, patient and segment key. Same key/different
+  bytes is rejected with 409 before Gemini.
+- The existing WorkJob table is reused without a schema migration. The only
+  stored result is an AES-GCM encrypted transcript plus patient revision; raw
+  audio is not stored and no patient chart field is written.
+- A 180-second processing lease distinguishes an active request from an
+  abandoned one. A completed receipt replays the exact transcript. An expired
+  in-flight lease becomes terminal OUTCOME_UNKNOWN; it is not automatically
+  submitted to Gemini again because the provider may already have completed.
+- Capacity/configuration rejections classified before provider invocation are
+  RETRYABLE with the same key. Other ambiguous provider failures are terminal.
+- The native UI preserves the clip and offers a new-key attempt only after an
+  explicit warning that another Gemini call and provider charge may occur.
+  The new key is written to SecureStore before the in-memory draft is changed.
+- The encrypted result expires after 24 hours. A bounded worker cleanup clears
+  ciphertext and retains tombstones for seven days; cleanup is throttled to
+  five-minute intervals and processes at most 100 receipts per pass.
+- render.yaml declares VOICE_ASR_RECEIPT_KEY as a secret. It must be set to a
+  32-byte random value encoded as 64 hex characters before native audio uploads
+  can be deployed. Missing configuration fails closed with HTTP 503.
+
+Verification performed in this workspace:
+- Native ASR client harness: 5/5 tests passed on Node 22.16.0.
+- Strict TypeScript check for nativeVoiceAudio.ts passed with local Expo/API
+  declaration stubs; NativeVoiceRecorder.tsx transpile/syntax check passed.
+- AES-GCM round-trip, plaintext-absence and AAD tamper rejection checks passed.
+- 12 Python regression tests were added for replay, different-content conflict,
+  owner/patient isolation, active/expired leases, 24-hour TTL, retryable
+  pre-provider failures, tamper rejection, cleanup and typed core errors.
+  They were not executed here because SQLModel is not installed in the local
+  sandbox; GitHub Actions jobs also failed before exposing any runner steps.
+- Latest Android typecheck, beta APK, voice and security jobs have empty step
+  arrays and their log downloads return BlobNotFound. This is a GitHub Actions
+  runner/log-artifact infrastructure blocker, not an observed compiler/test
+  assertion. The repository cannot repair runner provisioning through a code
+  patch. Full project CI and Python regression execution remain required.
+
+Latest branch HEAD: fbd09803a37101f5fec983a2293556882297508f. No main merge,
+production deployment, APK/IPA release or patient-record mutation occurred.
