@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
 from types import SimpleNamespace
 
 import pytest
@@ -302,3 +303,13 @@ def test_patient_deletion_erases_encrypted_voice_receipt_immediately(receipt_db)
         session.commit()
         assert counts["deleted"] == 1
         assert session.exec(select(WorkJob)).all() == []
+
+
+def test_audio_fingerprint_is_keyed_and_stable_for_the_same_clip():
+    audio_digest = hashlib.sha256(b"synthetic-audio").digest()
+    first = receipts.audio_content_digest("audio/webm", audio_digest, KEY)
+    replay = receipts.audio_content_digest("audio/webm", audio_digest, KEY)
+    rotated = receipts.audio_content_digest("audio/webm", audio_digest, bytes.fromhex("22" * 32))
+    assert first == replay
+    assert first != rotated
+    assert len(first) == 64
