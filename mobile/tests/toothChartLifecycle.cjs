@@ -61,7 +61,7 @@ test('native tooth chart opens the web-selected permanent tooth with its saved s
  assert.ok(notesTab);
  await renderer.act(async()=>notesTab.props.onPress());
  const clinicalNote=tree.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Diş notları');
- assert.equal(clinicalNote.props.value,'Saved clinical Note');
+ assert.equal(clinicalNote.props.value,'Saved clinical note');
  await renderer.act(async()=>tree.unmount());
 });
 
