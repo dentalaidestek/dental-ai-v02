@@ -26,7 +26,7 @@ from sqlmodel import SQLModel, Session, func, select, Field as SQLField
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
 from app.clinical_media import sanitize_clinical_media_image
-from app.upload_limits import MAX_PATIENT_MEDIA_FILE_BYTES, MAX_ANALYSIS_IMAGE_BYTES, MAX_ANALYSIS_BATCH_BYTES
+from app.upload_limits import (MAX_PATIENT_MEDIA_FILES, MAX_PATIENT_MEDIA_FILE_BYTES, MAX_PATIENT_MEDIA_BATCH_BYTES, MAX_ANALYSIS_IMAGE_BYTES, MAX_ANALYSIS_BATCH_BYTES)
 from app.work_jobs import WorkJob
 from starlette.requests import Request
 from fastapi.responses import JSONResponse
@@ -76,6 +76,7 @@ MOBILE_MAX_IMAGE_PIXELS = max(1, int(os.getenv("MOBILE_MAX_IMAGE_PIXELS", "40000
 MOBILE_MAX_ANALYSIS_BYTES = MAX_ANALYSIS_IMAGE_BYTES
 MOBILE_MAX_PATIENT_MEDIA_BYTES = MAX_PATIENT_MEDIA_FILE_BYTES
 _PATIENT_MEDIA_REQUEST_KEY = re.compile(r"^[A-Za-z0-9_-]{16,96}$")
+_PATIENT_MEDIA_BATCH_ID = re.compile(r"^[A-Za-z0-9_-]{16,96}$")
 LOGIN_RATE_WINDOW_SECONDS = LOGIN_WINDOW_SECONDS
 LOGIN_RATE_MAX_FAILURES = LOGIN_MAX_FAILURES
 
@@ -94,7 +95,7 @@ def _clear_login_failures(login: str) -> None:
     clear_auth_attempt(engine, bucket_key("login", login))
 
 
-def _copy_validated_image(upload: UploadFile, destination: Path, max_bytes: int) -> None:
+def _copy_validated_image(upload: UploadFile, destination: Path, max_bytes: int) -> int:
     total = 0
     try:
         with destination.open("wb") as out:
@@ -111,6 +112,8 @@ def _copy_validated_image(upload: UploadFile, destination: Path, max_bytes: int)
             destination.suffix.lower(),
             MOBILE_MAX_IMAGE_PIXELS,
         )
+        # Return the original streamed byte count; sanitization may change file size.
+        return total
     except HTTPException:
         destination.unlink(missing_ok=True)
         raise
@@ -1441,10 +1444,8 @@ def _find_patient_media_receipt(session: Session, user: User, patient_id: int,
 
 
 def _store_patient_media_receipt(session: Session, user: User, patient_id: int,
-                                 media: PatientMedia, receipt_key: Optional[str],
-                                 digest: Optional[str]) -> None:
-    if not receipt_key or not digest:
-        return
+                                 media: PatientMedia, receipt_key: str, digest: str,
+                                 batch_id: str, file_bytes: int) -> None:
     session.add(WorkJob(
         owner_user_id=user.id,
         resource_id=patient_id,
@@ -1452,9 +1453,44 @@ def _store_patient_media_receipt(session: Session, user: User, patient_id: int,
         kind=_PATIENT_MEDIA_RECEIPT_KIND,
         source_hash=digest,
         dedupe_key=receipt_key,
-        payload_json=json.dumps({"patient_id": patient_id, "media_id": media.id}, sort_keys=True),
+        result_ref=batch_id,
+        payload_json=json.dumps({
+            "patient_id": patient_id, "media_id": media.id,
+            "batch_id": batch_id, "file_bytes": file_bytes,
+        }, sort_keys=True),
         status="DONE",
     ))
+
+
+def _patient_media_batch_usage(session: Session, user: User, patient_id: int,
+                               batch_id: str) -> tuple[int, int]:
+    """Read persisted per-file receipts for this patient-scoped upload batch.
+
+    The caller holds the patient row lock, serializing quota admission across
+    concurrent uploads for the same patient on PostgreSQL. Replayed receipts
+    are returned before this function and therefore never count twice.
+    """
+    receipts = session.exec(select(WorkJob).where(
+        WorkJob.owner_user_id == user.id,
+        WorkJob.resource_id == patient_id,
+        WorkJob.resource_type == "PATIENT",
+        WorkJob.kind == _PATIENT_MEDIA_RECEIPT_KIND,
+        WorkJob.result_ref == batch_id,
+    )).all()
+    total_bytes = 0
+    for receipt in receipts:
+        try:
+            payload = json.loads(receipt.payload_json or "{}")
+            file_bytes = payload.get("file_bytes")
+            if (payload.get("batch_id") != batch_id or
+                    payload.get("patient_id") != patient_id or
+                    not isinstance(file_bytes, int) or isinstance(file_bytes, bool) or
+                    file_bytes < 1 or file_bytes > MAX_PATIENT_MEDIA_FILE_BYTES):
+                raise ValueError("invalid patient media batch receipt")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            raise HTTPException(status_code=409, detail="Klinik görüntü yükleme grubu fişi doğrulanamadı.")
+        total_bytes += file_bytes
+    return len(receipts), total_bytes
 
 
 @router.post("/patients/{patient_id}/media")
@@ -1465,7 +1501,8 @@ async def mobile_patient_media_upload(
     tooth_number: Optional[str] = Form(None),
     note: Optional[str] = Form(None),
     media_type: str = Form("PHOTO"),
-    request_key: Optional[str] = Form(None),
+    request_key: str = Form(...),
+    batch_id: str = Form(...),
     user: User = Depends(_mobile_user),
 ):
     media_type = (media_type or "").strip().upper()
@@ -1477,7 +1514,9 @@ async def mobile_patient_media_upload(
     normalized_note = (note or "").strip() or None
     if normalized_note and len(normalized_note) > 2000:
         raise HTTPException(status_code=422, detail="Klinik not 2000 karakteri aşamaz.")
-    receipt_key = _patient_media_receipt_key(user.id, patient_id, request_key) if request_key is not None else None
+    receipt_key = _patient_media_receipt_key(user.id, patient_id, request_key)
+    if not _PATIENT_MEDIA_BATCH_ID.fullmatch(batch_id or ""):
+        raise HTTPException(status_code=422, detail="Geçersiz klinik görüntü yükleme grubu.")
     image = image or file
     if not image or not image.filename:
         raise HTTPException(status_code=422, detail="Görüntü seçin.")
@@ -1493,7 +1532,7 @@ async def mobile_patient_media_upload(
     persisted = False
     digest = None
     try:
-        _copy_validated_image(image, destination, MOBILE_MAX_PATIENT_MEDIA_BYTES)
+        file_bytes = _copy_validated_image(image, destination, MOBILE_MAX_PATIENT_MEDIA_BYTES)
         file_digest = hashlib.sha256()
         with destination.open("rb") as saved_file:
             while True:
@@ -1515,6 +1554,12 @@ async def mobile_patient_media_upload(
                     session.rollback()
                     destination.unlink(missing_ok=True)
                     return JSONResponse(existing, headers={"Cache-Control": "private, no-store"})
+            # The locked patient row makes this cross-request counter atomic across workers.
+            batch_count, batch_bytes = _patient_media_batch_usage(session, user, patient_id, batch_id)
+            if batch_count >= MAX_PATIENT_MEDIA_FILES:
+                raise HTTPException(status_code=413, detail=f"Bir klinik arşiv yükleme grubunda en fazla {MAX_PATIENT_MEDIA_FILES} görüntü olabilir.")
+            if batch_bytes + file_bytes > MAX_PATIENT_MEDIA_BATCH_BYTES:
+                raise HTTPException(status_code=413, detail="Bir klinik arşiv yükleme grubunun toplamı 96 MiB sınırını aşamaz.")
             persisted = True
             storage_persist_file(destination)
             media = PatientMedia(
@@ -1529,7 +1574,7 @@ async def mobile_patient_media_upload(
             )
             session.add(media)
             session.flush()
-            _store_patient_media_receipt(session, user, patient_id, media, receipt_key, digest)
+            _store_patient_media_receipt(session, user, patient_id, media, receipt_key, digest, batch_id, file_bytes)
             realtime = _record_realtime_event(
                 session, user.id, "PATIENT_MEDIA_CREATED", "patient", patient_id,
                 {"patient_id": patient_id, "media_id": media.id, "filename": media.original_filename},
