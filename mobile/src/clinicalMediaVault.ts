@@ -73,7 +73,7 @@ export async function encryptClinicalMediaFile(sourceUri:string,userId:number,pa
   const stageUri=cache+STAGE_PREFIX+Crypto.randomUUID()+'.bin';
   let destination='';
   try{
-    await FS.copyAsync({from:sourceUri,to:stageUri});
+    try{await FS.copyAsync({from:sourceUri,to:stageUri);}catch{throw new ClinicalMediaVaultError('SOURCE_MISSING','Seçilen klinik görüntü artık cihazda bulunmuyor. Bekleyen taslağı sunucu fişleriyle kontrol edip görseli yeniden seçin.');}
     const info=await FS.getInfoAsync(stageUri);
     if(!info.exists||!Number.isFinite(info.size)||info.size<1)
       throw new ClinicalMediaVaultError('SOURCE_MISSING','Seçilen klinik görüntü artık cihazda bulunmuyor. Yeniden seçin.');
@@ -89,7 +89,7 @@ export async function encryptClinicalMediaFile(sourceUri:string,userId:number,pa
     const directory=document+userId+'/'+patientId+'/';
     await FS.makeDirectoryAsync(directory,{intermediates:true});
     destination=directory+Crypto.randomUUID()+'.dai';
-    await FS.writeAsStringAsync(destination,bytesToHex(packed));
+    await FS.writeAsStringAsync(destination,encodeBase64(packed),{encoding:'base64'} as any);
     return destination;
   }catch(error){
     if(destination)await FS.deleteAsync(destination,{idempotent:true}).catch(()=>{});
@@ -103,7 +103,7 @@ export async function validateClinicalMediaVaultFile(uri:string,userId:number,pa
   if(!isClinicalMediaVaultUri(uri,userId,patientId))
     throw new ClinicalMediaVaultError('INVALID_VAULT','Klinik görüntü güvenli dosya yolu doğrulanamadı.');
   const info=await FS.getInfoAsync(uri);
-  if(!info.exists||!Number.isFinite(info.size)||info.size<82||info.size>2*(maxBytes+40))
+  if(!info.exists||!Number.isFinite(info.size)||info.size<41||info.size>maxBytes+40)
     throw new ClinicalMediaVaultError('VAULT_MISSING','Şifreli klinik görüntü bulunamadı veya bozuk. Taslağı doğrulayın.');
   await loadKey(userId,patientId,false);
 }
@@ -112,12 +112,10 @@ export async function decryptClinicalMediaFile(uri:string,userId:number,patientI
   if(!isClinicalMediaVaultUri(uri,userId,patientId))
     throw new ClinicalMediaVaultError('INVALID_VAULT','Klinik görüntü güvenli dosya yolu doğrulanamadı.');
   const info=await FS.getInfoAsync(uri);
-  if(!info.exists||!Number.isFinite(info.size)||info.size<82)
+  if(!info.exists||!Number.isFinite(info.size)||info.size<41)
     throw new ClinicalMediaVaultError('VAULT_MISSING','Şifreli klinik görüntü bulunamadı. Görseli yeniden seçin.');
-  const packedHex=await FS.readAsStringAsync(uri);
-  if(!/^(?:[0-9a-f]{2})+$/i.test(packedHex))
-    throw new ClinicalMediaVaultError('INVALID_VAULT','Şifreli klinik görüntü dosyası bozuk.');
-  const packed=hexToBytes(packedHex);
+  const packedBase64=await FS.readAsStringAsync(uri,{encoding:'base64'} as any);
+  const packed=decodeBase64(packedBase64);
   if(packed.length<41)throw new ClinicalMediaVaultError('INVALID_VAULT','Şifreli klinik görüntü dosyası eksik.');
   const key=await loadKey(userId,patientId,false);
   let plaintext:Uint8Array;
