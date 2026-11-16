@@ -30,7 +30,8 @@ export async function ensureEncryptedAnalysisImages(images:UploadImage[],userId:
         if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>MAX_ANALYSIS_IMAGE_BYTES)
           throw Error('Önceki analiz taslağındaki geçici görüntü artık bulunmuyor. Hasta analiz geçmişini kontrol edin.');
         const encryptedUri=await encryptClinicalMediaFile(image.uri,userId,patientId,MAX_ANALYSIS_IMAGE_BYTES);
-        migrated.push({...image,uri:encryptedUri,encryptedUri,previewUri:image.uri});
+        if(FS.cacheDirectory&&image.uri.startsWith(FS.cacheDirectory+'dai-analysis-'))await FS.deleteAsync(image.uri,{idempotent:true}).catch(()=>{});
+        migrated.push({uri:encryptedUri,encryptedUri,name:image.name,type:image.type});
       }
     }
     return migrated;
