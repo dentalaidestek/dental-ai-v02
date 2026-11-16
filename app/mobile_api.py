@@ -865,7 +865,7 @@ def _normalize_treatment_payload(payload: MobileTreatmentCreate) -> dict:
         raise HTTPException(status_code=422, detail="Tedavi adı 1-200 karakter olmalıdır.")
     treatment_date = (payload.treatment_date or "").strip() or None
     if treatment_date:
-        if not re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", treatment_date):
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", treatment_date):
             raise HTTPException(status_code=422, detail="Tedavi tarihi YYYY-AA-GG biçiminde olmalıdır.")
         try:
             datetime.strptime(treatment_date, "%Y-%m-%d")
@@ -939,7 +939,7 @@ def _existing_treatment_receipt(session: Session, user: User, patient_id: int, r
     treatment = session.get(Treatment, treatment_id)
     if not treatment or treatment.patient_id != patient_id or not _TREATMENT_REVISION.fullmatch(str(revision)):
         raise HTTPException(status_code=409, detail="Önceki tedavi işlemi artık doğrulanamıyor; geçmişi yenileyin.")
-    return {"ok": True, "treatment_id": treatment_id, "edit_revision": revision, "replayed": True}
+    return {"ok": True, "treatment_id": treatment_id, "edit_revision": revision, "operation": saved.get("operation"), "replayed": True}
 
 
 def _store_treatment_receipt(session: Session, user: User, patient_id: int, treatment: Treatment, receipt_key: Optional[str], digest: Optional[str], operation: str) -> None:
@@ -965,7 +965,7 @@ def _store_treatment_receipt(session: Session, user: User, patient_id: int, trea
 @router.post("/patients/{patient_id}/treatments", status_code=201)
 def mobile_create_treatment(patient_id: int, payload: MobileTreatmentCreate, user: User = Depends(_mobile_user)):
     values = _normalize_treatment_payload(payload)
-    receipt_key = _treatment_receipt_key(user.id, patient_id, "CREATE", None, payload.request_key) if payload.request_key else None
+    receipt_key = _treatment_receipt_key(user.id, patient_id, "CREATE", None, payload.request_key) if payload.request_key is not None else None
     digest = _treatment_payload_hash(patient_id, "CREATE", None, None, values) if receipt_key else None
     with Session(engine, expire_on_commit=False) as session:
         _lock_treatment_receipt(session, receipt_key)
@@ -1002,7 +1002,7 @@ def mobile_update_treatment(patient_id: int, treatment_id: int, payload: MobileT
         if receipt_key:
             existing = _existing_treatment_receipt(session, user, patient_id, receipt_key, digest)
             if existing:
-                if int(json.loads(session.exec(select(WorkJob).where(WorkJob.dedupe_key == receipt_key)).one().payload_json).get("treatment_id", 0)) != treatment_id:
+                if existing.get("operation") != "UPDATE" or existing["treatment_id"] != treatment_id:
                     raise HTTPException(status_code=409, detail="Tedavi işlem fişi farklı bir kayda ait.")
                 return existing
         treatment = session.exec(select(Treatment).where(
