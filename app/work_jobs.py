@@ -315,7 +315,7 @@ def prune_history(engine):
     live_patient_media_receipt=and_(WorkJob.kind=='PATIENT_MEDIA_RECEIPT',WorkJob.resource_type=='PATIENT',select(Patient.id).where(Patient.id==WorkJob.resource_id).exists())
     with Session(engine) as session:
         if _voice_receipt_prune_due():
-            expire_voice_asr_receipts(session, limit=100)
+            expire_voice_asr_receipts(session, patient_model=Patient, limit=100)
         ids = session.exec(select(WorkJob.id).where(
             WorkJob.status.in_(["DONE", "CANCELLED", "FAILED"]),
             WorkJob.updated_at < now() - timedelta(days=30),
