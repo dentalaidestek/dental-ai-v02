@@ -1826,7 +1826,7 @@ def mobile_support_ticket_detail(ticket_id: int, before_id: Optional[int] = None
 def mobile_support_ticket_read(ticket_id: int, through_message_id: Optional[int] = None, token: str = Depends(_mobile_access_token), user: User = Depends(_mobile_user)):
     with Session(engine, expire_on_commit=False) as session:
         ticket = session.get(SupportTicket, ticket_id)
-        if not ticket or ticket.user_id != user.id or ticket.source_type != "SUPPORT":
+        if not ticket or not _mobile_support_ticket_owned(session, ticket, user.id):
             raise HTTPException(status_code=404, detail="Destek talebi bulunamadı.")
         remaining = _mark_support_read(session, ticket.id, "USER", through_message_id)
         session.commit()
