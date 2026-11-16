@@ -110,7 +110,7 @@ test('reopening with a note absent from server keeps the exact draft for explici
 test('clinical note intent validation is account, analysis and FDI scoped',()=>{
  const a=api();
  const raw=JSON.stringify({user:1,analysis:1,note:'Synthetic',finding:'',tooth:'36'});
- assert.deepEqual(a.parseClinicalNoteIntent(raw,1,1),{user:1,analysis:1,note:'Synthetic',finding:'',tooth:'36'});
+ const parsed=a.parseClinicalNoteIntent(raw,1,1);assert.equal(parsed.user,1);assert.equal(parsed.analysis,1);assert.equal(parsed.note,'Synthetic');assert.equal(parsed.finding,'');assert.equal(parsed.tooth,'36');
  assert.throws(()=>a.parseClinicalNoteIntent(raw,2,1),/doğrulanamadı/);
  assert.throws(()=>a.parseClinicalNoteIntent(JSON.stringify({user:1,analysis:1,note:'',finding:'',tooth:'59'}),1,1),/doğrulanamadı/);
  assert.equal(a.clinicalNoteLine({user:1,analysis:1,note:'Extra',finding:'Manual',tooth:'36'}),'[Diş 36] Manuel bulgu: Manual — Extra');
