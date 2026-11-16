@@ -132,6 +132,7 @@
                 <button type="button" class="patient-media-pick patient-media-radiograph" data-media-type="RADIOGRAPH">🩻 <span>Röntgen Ekle</span></button>
                 <button type="button" class="patient-media-pick patient-media-photo" data-media-type="PHOTO">📷 <span>Fotoğraf Ekle</span></button>
             </div>
+            <p class="muted">Klinik arşive tek seferde en fazla {{ patient_media_upload_limit|default(12) }} görüntü ekleyebilirsiniz. Bir AI analizinde kayıtlı ve yeni görüntülerin toplamı en fazla {{ analysis_image_limit }} olabilir.</p>
             <div class="patient-media-pending" id="patientMediaPending" hidden>
                 <span id="patientMediaSelected">Henüz görüntü seçilmedi.</span>
                 <button type="submit" class="patient-media-save" id="patientMediaSave" disabled>Kaydet</button>
@@ -424,6 +425,7 @@ document.addEventListener("keydown", function(event) {
     const save = document.getElementById("patientMediaSave");
     const pending = document.getElementById("patientMediaPending");
     const pickButtons = document.querySelectorAll(".patient-media-pick");
+    const maxPatientMediaUploadFiles = {{ patient_media_upload_limit|default(12) }};
     if (!fileInput || !typeInput || !selected || !save) return;
 
     pickButtons.forEach(function (button) {
@@ -441,6 +443,14 @@ document.addEventListener("keydown", function(event) {
 
     fileInput.addEventListener("change", function () {
         const count = fileInput.files ? fileInput.files.length : 0;
+        if (count > maxPatientMediaUploadFiles) {
+            fileInput.value = "";
+            selected.textContent = "En fazla " + maxPatientMediaUploadFiles + " görüntü seçebilirsiniz.";
+            save.disabled = true;
+            if (pending) pending.hidden = true;
+            window.alert("Klinik arşive tek seferde en fazla " + maxPatientMediaUploadFiles + " görüntü ekleyebilirsiniz.");
+            return;
+        }
         if (!count) {
             selected.textContent = "Henüz görüntü seçilmedi.";
             save.disabled = true;
