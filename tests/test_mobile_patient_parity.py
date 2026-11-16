@@ -32,13 +32,17 @@ def test_selected_media_analysis_uses_web_creation_and_rejects_other_owner(chat,
         for ident,owner in [(8,1),(9,2)]:
             s.add(main.Patient(id=ident,anonymous_id='SYNTHETIC-'+str(ident),owner_user_id=owner))
             s.add(main.PatientMedia(id=ident,patient_id=ident,owner_user_id=owner,stored_filename='synthetic.png',original_filename='synthetic.png',file_path=str(image)))
+        for ident in range(80,85):
+            s.add(main.PatientMedia(id=ident,patient_id=8,owner_user_id=1,stored_filename='synthetic.png',original_filename='synthetic.png',file_path=str(image)))
         s.commit()
+    assert main.MAX_ANALYSIS_IMAGES==4
+    assert client.post('/api/mobile/v1/patients/8/media/analyze',json={'media_ids':[80,81,82,83,84]}).status_code==422
     assert client.post('/api/mobile/v1/patients/8/media/analyze',json={'media_ids':[9]}).status_code==404
     assert client.post('/api/mobile/v1/patients/9/media/analyze',json={'media_ids':[9]}).status_code==404
     assert client.post('/api/mobile/v1/patients/8/media/analyze',json={'media_ids':[8,8]}).status_code==422
     assert client.post('/api/mobile/v1/patients/8/media/analyze',json={'media_ids':[8],'clinical_notes':'x'*4001}).status_code==422
     response=client.post('/api/mobile/v1/patients/8/media/analyze',json={
-        'media_ids':[8], 'tooth_number':'36', 'clinical_notes':'Soğukta kısa süreli ağrı.'
+        'media_ids':[80,81,82,83], 'tooth_number':'36', 'clinical_notes':'Soğukta kısa süreli ağrı.'
     })
     assert response.status_code==200,response.text
     with Session(engine) as s:
@@ -47,7 +51,7 @@ def test_selected_media_analysis_uses_web_creation_and_rejects_other_owner(chat,
         assert analysis.tooth_number=='36'
         assert analysis.clinical_notes=='Soğukta kısa süreli ağrı.'
         from sqlmodel import select
-        assert len(s.exec(select(main.ImageAsset).where(main.ImageAsset.analysis_id==analysis.id)).all())==1
+        assert len(s.exec(select(main.ImageAsset).where(main.ImageAsset.analysis_id==analysis.id)).all())==4
     assert client.delete('/api/mobile/v1/patients/9/media').status_code==404
     assert client.delete('/api/mobile/v1/patients/8/media').status_code==200
     with Session(engine) as s:
