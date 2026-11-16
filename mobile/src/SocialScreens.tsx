@@ -840,7 +840,7 @@ function PostCard({
   onProfile: () => void;
   onImage: (url: string) => void;
   onEdit: () => void;
-  onFollow: (authorId: number, followed: boolean) => void;
+  onFollow: (authorId: number, followed: boolean) => Promise<boolean>;
   onSupport: () => void;
   showExpertActions: boolean;
 }) {
@@ -878,12 +878,7 @@ function PostCard({
     setFollowBusy(true);
     setError("");
     try {
-      const result = await api.setFollow(
-        token,
-        post.author_id,
-        !post.author_followed,
-      );
-      onFollow(post.author_id, result.following_by_viewer);
+      await onFollow(post.author_id, !post.author_followed);
     } catch (e) {
       setError(message(e));
     } finally {
@@ -1122,6 +1117,7 @@ export function DentalFlow({
   canCompose?: boolean;
 }) {
   const followLock = useRef(false);
+  const feedFollowLocks = useRef(new Set<number>());
   const editLock = useRef(false);
   const profileGeneration = useRef(0);
   const [mode, setMode] = useState<"discover" | "following">("discover"),
@@ -1155,14 +1151,29 @@ export function DentalFlow({
     pages.setItems((v) =>
       p ? v.map((x) => (x.id === id ? p : x)) : v.filter((x) => x.id !== id),
     );
-  const updateFollow = (authorId: number, followed: boolean) =>
-    pages.setItems((v) =>
-      mode === "following" && !followed
-        ? v.filter((x) => x.author_id !== authorId)
-        : v.map((x) =>
-            x.author_id === authorId ? { ...x, author_followed: followed } : x,
-          ),
-    );
+  const updateFollow = async (
+    authorId: number,
+    followed: boolean,
+  ): Promise<boolean> => {
+    if (feedFollowLocks.current.has(authorId)) {
+      throw new Error("Bu uzman için takip işlemi zaten sürüyor.");
+    }
+    feedFollowLocks.current.add(authorId);
+    try {
+      const result = await api.setFollow(token, authorId, followed);
+      const next = result.following_by_viewer;
+      pages.setItems((v) =>
+        mode === "following" && !next
+          ? v.filter((x) => x.author_id !== authorId)
+          : v.map((x) =>
+              x.author_id === authorId ? { ...x, author_followed: next } : x,
+            ),
+      );
+      return next;
+    } finally {
+      feedFollowLocks.current.delete(authorId);
+    }
+  };
   useEffect(() => {
     const request = ++profileGeneration.current;
     setStats(null);

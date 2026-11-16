@@ -23,7 +23,7 @@ test('Android owner menu exposes every action without an Alert exceeding three b
 test('published Dental Flow cards follow the author and share a canonical post URL',async()=>{
  const h=harness(),followed=[],supported=[];
  const post={id:42,author_id:7,author_name:'Synthetic expert',text:'Synthetic post',media:[],status:'PUBLISHED',owned:false,author_followed:false,author_support_available:true,comments_closed:false,liked:false,like_count:0,comment_count:0,created_at:'2026-11-17'};
- const props={token:'synthetic',userId:2,post,showExpertActions:true,onUpdate(){},onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow:(...args)=>followed.push(args),onSupport:()=>supported.push(true)};
+ const props={token:'synthetic',userId:2,post,showExpertActions:true,onUpdate(){},onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow:async(...args)=>{followed.push(args);return true},onSupport:()=>supported.push(true)};
  let tree=h.render('PostCard',props);
  const follow=nodes(tree).find(n=>n.props?.accessibilityLabel==='Takip et');assert.ok(follow);
  await follow.props.onPress();await tick();assert.deepEqual(followed,[[7,true]]);
@@ -55,6 +55,11 @@ test('Dental Flow native filters use the web taxonomy and reset the paged scope'
  assert.match(feed,/specialties\.map\(\(specialty\)/);
  assert.match(feed,/navigation\.navigate\("ExpertDirectory"\)/);
  assert.match(feed,/mode === "following" && !followed/);
+ assert.match(feed,/feedFollowLocks\.current\.has\(authorId\)/);
+ assert.match(feed,/await api\.setFollow\(token, authorId, followed\)/);
+ assert.match(feed,/feedFollowLocks\.current\.delete\(authorId\)/);
+ const card=source.slice(source.indexOf('function PostCard('),source.indexOf('function Comments('));
+ assert.doesNotMatch(card,/api\.setFollow/);
 });
 
 test('composer cannot unmount a pending upload or submission and overwrite a newer draft',async()=>{
