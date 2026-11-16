@@ -1479,10 +1479,11 @@ async def mobile_patient_media_upload(
     image = image or file
     if not image or not image.filename:
         raise HTTPException(status_code=422, detail="Görüntü seçin.")
-    original_name = Path(image.filename).name[:255]
-    ext = Path(original_name).suffix.lower()
+    raw_original_name = Path(image.filename).name
+    ext = Path(raw_original_name).suffix.lower()
     if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
         raise HTTPException(status_code=422, detail="Desteklenmeyen görüntü formatı.")
+    original_name = raw_original_name if len(raw_original_name) <= 255 else raw_original_name[:255 - len(ext)] + ext
 
     stored = f"patient_{patient_id}_{uuid.uuid4().hex}{ext}"
     destination = Path("uploads") / "patient-media" / stored
@@ -1505,7 +1506,7 @@ async def mobile_patient_media_upload(
                 if existing:
                     session.rollback()
                     destination.unlink(missing_ok=True)
-                    return existing
+                    return JSONResponse(existing, headers={"Cache-Control": "private, no-store"})
             persisted = True
             storage_persist_file(destination)
             media = PatientMedia(
@@ -1542,7 +1543,7 @@ async def mobile_patient_media_upload(
                 if patient:
                     existing = _find_patient_media_receipt(session, user, patient_id, receipt_key, digest)
                     if existing:
-                        return existing
+                        return JSONResponse(existing, headers={"Cache-Control": "private, no-store"})
         raise HTTPException(status_code=409, detail="Klinik görüntü işlemi aynı anda tamamlandı. Galeriyi yenileyip işlem fişini doğrulayın.")
     except Exception:
         try:
@@ -1556,7 +1557,7 @@ async def mobile_patient_media_upload(
             logging.exception("Failed to clean local clinical media upload: %s", destination)
         raise
     await _publish_realtime_event(realtime)
-    return result
+    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/patients/{patient_id}/media/uploads/{request_key}")
@@ -1573,7 +1574,10 @@ def mobile_patient_media_upload_status(
         if not patient:
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
         existing = _find_patient_media_receipt(session, user, patient_id, receipt_key)
-        return {"found": existing is not None, "media": existing["media"] if existing else None}
+        return JSONResponse(
+            {"found": existing is not None, "media": existing["media"] if existing else None},
+            headers={"Cache-Control": "private, no-store"},
+        )
 
 def _mobile_access_token(credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer)) -> str:
     if not credentials or credentials.scheme.lower() != "bearer":

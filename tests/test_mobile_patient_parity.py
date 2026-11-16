@@ -236,6 +236,7 @@ def test_treatment_update_uses_revision_and_replays_exact_mutation(chat):
     }
     first = client.put("/api/mobile/v1/patients/82/treatments/821", json=payload)
     assert first.status_code == 200, first.text
+    assert first.headers.get("cache-control") == "private, no-store"
     assert first.json()["replayed"] is False
     assert first.json()["edit_revision"] != revision
 
@@ -325,6 +326,7 @@ def test_mobile_patient_media_upload_receipt_replays_once_and_is_owner_scoped(ch
 
     status = client.get(f"/api/mobile/v1/patients/84/media/uploads/{key}")
     assert status.status_code == 200, status.text
+    assert status.headers.get("cache-control") == "private, no-store"
     assert status.json()["found"] is True
     assert status.json()["media"]["id"] == first.json()["media"]["id"]
 
@@ -381,3 +383,42 @@ def test_patient_media_receipts_are_not_pruned_while_patient_exists(chat):
             WorkJob.kind == "PATIENT_MEDIA_RECEIPT",
             WorkJob.resource_id == 85,
         )).first() is not None
+
+
+
+def test_mobile_patient_media_preserves_extension_and_enforces_web_validation(chat, monkeypatch, tmp_path):
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    monkeypatch.setattr(mobile_api, "storage_persist_file", lambda _path: None)
+    monkeypatch.setattr(mobile_api, "storage_delete", lambda _path: None)
+    async def async_publish(_event):
+        return None
+    monkeypatch.setattr(mobile_api, "_publish_realtime_event", async_publish)
+    monkeypatch.chdir(tmp_path)
+    with Session(engine) as session:
+        session.add(main.Patient(id=86, anonymous_id="SYNTHETIC-MEDIA-VALIDATION", owner_user_id=1))
+        session.commit()
+
+    raw = io.BytesIO()
+    Image.new("RGB", (16, 12), (12, 24, 36)).save(raw, format="PNG")
+    long_name = "x" * 300 + ".png"
+    saved = client.post("/api/mobile/v1/patients/86/media", data={
+        "media_type": "PHOTO", "request_key": "synthetic-media-long-name-0001",
+    }, files={"file": (long_name, raw.getvalue(), "image/png")})
+    assert saved.status_code == 200, saved.text
+    with Session(engine) as session:
+        media = session.exec(select(main.PatientMedia).where(main.PatientMedia.patient_id == 86)).one()
+        assert len(media.original_filename) == 255
+        assert media.original_filename.endswith(".png")
+
+    invalid_tooth = client.post("/api/mobile/v1/patients/86/media", data={
+        "media_type": "PHOTO", "tooth_number": "56",
+        "request_key": "synthetic-media-invalid-fdi-0001",
+    }, files={"file": ("synthetic.png", raw.getvalue(), "image/png")})
+    assert invalid_tooth.status_code == 422
+
+    monkeypatch.setattr(mobile_api, "MOBILE_MAX_PATIENT_MEDIA_BYTES", 64)
+    oversized = client.post("/api/mobile/v1/patients/86/media", data={
+        "media_type": "PHOTO", "request_key": "synthetic-media-over-limit-0001",
+    }, files={"file": ("synthetic.png", raw.getvalue(), "image/png")})
+    assert oversized.status_code == 413
