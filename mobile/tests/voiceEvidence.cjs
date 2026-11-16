@@ -48,5 +48,5 @@ test('both native review and final approval render provenance before any save',(
  assert.match(approval,/voiceEvidencePresentation/);
  assert.match(approval,/<VoiceEvidence item=\{item\}\/>/);
  assert.match(approval,/<VoiceEvidence item=\{\{quote:t\.quote\}\}\/>/);
- assert.match(approval,/Object\.fromEntries\(fields\.map\(name=>\[name,review\.review\.fields\?\.\[name\]\?\.value\|\|' '\]\)\)/);
+ assert.ok(approval.includes("Object.fromEntries(fields.map(name=>[name,review.review.fields?.[name]?.value||'']))"));
 });
