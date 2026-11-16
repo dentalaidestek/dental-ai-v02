@@ -52,7 +52,8 @@ from app.database import create_app_engine
 from app.expert_social_identity import expert_display_name
 from app.auth_rate import AuthRateBucket, LOGIN_WINDOW_SECONDS, LOGIN_MAX_FAILURES, admit as admit_auth_attempt, clear as clear_auth_attempt
 from app import work_jobs
-from app.upload_io import copy_image
+from app.upload_io import copy_image, validate_upload_batch, validate_path_batch
+from app.upload_limits import (MAX_PATIENT_MEDIA_FILES, MAX_PATIENT_MEDIA_FILE_BYTES, MAX_PATIENT_MEDIA_BATCH_BYTES, MAX_ANALYSIS_IMAGES, MAX_ANALYSIS_IMAGE_BYTES, MAX_ANALYSIS_BATCH_BYTES, MAX_CLINICAL_IMAGE_PIXELS)
 from app.provider_budget import ProviderCounter, ProviderSlot, ProviderBusy
 from app.object_cache import scoped as storage_scoped, CacheCapacityError
 from app.object_storage import ObjectStorageError
@@ -10833,8 +10834,7 @@ def patient_detail(request: Request, patient_id: int):
         )
 
 
-MAX_PATIENT_MEDIA_UPLOAD_FILES = 12  # Archive batch upload limit; distinct from per-analysis admission.
-MAX_ANALYSIS_IMAGES = 4  # Shared web/native admission limit for saved plus newly uploaded images.
+MAX_PATIENT_MEDIA_UPLOAD_FILES = MAX_PATIENT_MEDIA_FILES  # Shared archive count contract.
 
 
 def _patient_media_has_valid_signature(path: Path, extension: str) -> bool:
@@ -10887,11 +10887,16 @@ def upload_patient_media(
         return HTMLResponse("Geçersiz klinik görüntü türü.", status_code=400)
 
     allowed_extensions = {".jpg", ".jpeg", ".png", ".webp"}
-    max_bytes = 12 * 1024 * 1024
+    max_bytes = MAX_PATIENT_MEDIA_FILE_BYTES
     saved_paths: list[Path] = []
     selected_files = [upload for upload in files if upload and upload.filename]
     if len(selected_files) > MAX_PATIENT_MEDIA_UPLOAD_FILES:
         return HTMLResponse(f"Tek seferde en fazla {MAX_PATIENT_MEDIA_UPLOAD_FILES} görüntü yükleyebilirsiniz.", status_code=400)
+    try:
+        validate_upload_batch(selected_files, maximum_file=MAX_PATIENT_MEDIA_FILE_BYTES,
+                              maximum_total=MAX_PATIENT_MEDIA_BATCH_BYTES)
+    except HTTPException as exc:
+        return HTMLResponse(str(exc.detail), status_code=exc.status_code)
 
     try:
         with Session(engine, expire_on_commit=False) as auth_session:
@@ -12288,6 +12293,25 @@ def create_analysis(
                 return HTMLResponse("Seçilen klinik görüntü dosyası bulunamadı.", status_code=404)
             selected_media_items.append((media, media_path))
 
+        # Reject oversized batches before creating an Analysis row or staging
+        # any clinical bytes. Saved media is re-counted from private storage;
+        # new multipart sizes come from Starlette's parsed byte counter.
+        try:
+            new_bytes = validate_upload_batch(
+                [image for image in images if image and image.filename],
+                maximum_file=MAX_ANALYSIS_IMAGE_BYTES,
+                maximum_total=MAX_ANALYSIS_BATCH_BYTES,
+            )
+            saved_bytes = validate_path_batch(
+                [path for _, path in selected_media_items],
+                maximum_file=MAX_ANALYSIS_IMAGE_BYTES,
+                maximum_total=MAX_ANALYSIS_BATCH_BYTES,
+            )
+            if new_bytes + saved_bytes > MAX_ANALYSIS_BATCH_BYTES:
+                raise HTTPException(413, "Kayıtlı ve yeni görüntülerin toplamı en fazla 80 MiB olabilir.")
+        except HTTPException as exc:
+            return HTMLResponse(str(exc.detail), status_code=exc.status_code)
+
         analysis = Analysis(
             patient_id=patient_id,
             tooth_number=tooth_number,
@@ -12312,7 +12336,8 @@ def create_analysis(
                 f"{uuid.uuid4().hex}{source_ext}"
             )
             destination = UPLOAD_DIR / stored_name
-            shutil.copy2(selected_media_path, destination)
+            with selected_media_path.open("rb") as source:
+                copy_image(source, destination, maximum=MAX_ANALYSIS_IMAGE_BYTES)
             # Legacy gallery objects are sanitized again on the analysis copy
             # before classification/provider work; the archived original is untouched.
             sanitize_clinical_media_image(destination, source_ext, max_pixels=40_000_000)
