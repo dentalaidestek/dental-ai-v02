@@ -9,3 +9,20 @@ The additive mobile vision route delegates to the actual web `analysis_asset_vis
 Tests exercise normalized/pixel clipping, dedup/fusion/attention/unlocalized data, natural image/SVG geometry and selected-region highlighting, owner access, stale snapshot job reuse and failed-job behavior. Source tests do not establish device canvas/touch/rotation/color/EXIF fidelity, source-to-native screenshot equivalence, native performance or real production inference. Full original tracker/device/security/store gates remain open. No main merge, backend deployment or store publication.
 
 Final combined checkpoint: TypeScript clean;320Node and240selectedPython passed with zero failures; Android/iOSHermes exports succeeded. The viewer portion includes five native geometry/UI tests and three canonical server snapshot/authorization/job tests. Exact source and clinical acceptance still require real Android/iOS data/device tests.
+
+
+## Native viewer tabs — 2026-11-17
+
+Re-inspected the web entry app/templates/analysis_viewer.html and both embedded viewers (radiograph_viewer.html / intraoral_viewer.html, plus their JS). The web viewer exposes three persistent actions beneath the image: **Bulgular**, **Tedavi**, and **Klinik Bilgi**. The native viewer previously exposed only the finding list; treatment selection and manual clinical information existed elsewhere on the parent review screen, so the image context was lost when using those actions.
+
+Implemented on the existing native viewer:
+
+- Recreated the dark navy, three-tab layout under the image, retaining native image/SVG geometry, modality asset strip, zoom/fit and finding filters.
+- **Bulgular** retains canonical findings, confidence/fusion rules, attention labeling and list-only handling for missing geometry.
+- **Tedavi** mirrors the web's permanent FDI selection and preselects only supported permanent-tooth findings. It calls the existing authenticated /analyses/{id}/selected-teeth adapter, which delegates to the canonical web viewer_analyze handler and its durable PRELIMINARY WorkJob. The parent screen remains the single owner of job polling and retry; no second polling loop or AI request was added.
+- **Klinik Bilgi** exposes FDI tooth selection, manual finding and note inputs. It delegates to the existing parent callback, which persists the same account+analysis-scoped encrypted SecureStore intent and reconciles the exact canonical note line before clearing the editor. An uncertain result keeps the text and does not auto-resubmit. The mobile endpoint delegates to the web save_viewer_finding / save_analysis_viewer_note handlers.
+- No new endpoint, database table, provider call, patient-chart auto-write or clinical taxonomy was introduced. Manual clinical notes remain explicit clinician actions.
+
+Five React renderer regressions were added to mobile/tests/visionViewer.cjs (already included by npm run test:beta): three-tab availability, permanent FDI filtering/treatment delegation, confirmed clinical-note persistence, uncertain acknowledgement preservation, and rendering the canonical treatment result.
+
+**Validation boundary:** these five renderer tests are committed but have not run in this environment. The current GitHub Actions runner issue prevents the repository beta suite from starting. Source inspection confirms the viewer uses only parent callbacks for writes and the existing API/job path; that is not a substitute for the React renderer, full Expo typecheck, Android/iOS device, or clinical acceptance tests.
