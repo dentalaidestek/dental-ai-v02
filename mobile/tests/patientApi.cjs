@@ -216,46 +216,46 @@ test('bearer-auth patient and notification requests never attach ambient web coo
 });
 
 test('treatment writes reject invalid patient, treatment and FDI identifiers before network access',()=>{
- const {createTreatment,updateTreatment}=require('../src/api.ts');
+ const {createTreatment,updateTreatment}=require('../src/api.ts'),requestKey='synthetic-treatment-request-0001',revision='a'.repeat(64);
  const original=global.fetch;
  global.fetch=()=>{throw Error('unexpected network call')};
  try{
   for(const id of [0,-1,1.5,Number.NaN]){
-   assert.throws(()=>createTreatment('token',id,{treatment_name:'Dolgu'}),/Geçersiz hasta/);
+   assert.throws(()=>createTreatment('token',id,{treatment_name:'Dolgu'},requestKey),/Geçersiz hasta/);
   }
   for(const id of [0,-2,1.5]){
-   assert.throws(()=>updateTreatment('token',1,id,{treatment_name:'Dolgu'}),/Geçersiz hasta veya tedavi/);
+   assert.throws(()=>updateTreatment('token',1,id,{treatment_name:'Dolgu'},requestKey,revision),/Geçersiz hasta veya tedavi/);
   }
   for(const tooth of ['19','49','56','89','../11']){
-   assert.throws(()=>createTreatment('token',1,{treatment_name:'Dolgu',tooth_number:tooth}),/Geçersiz FDI/);
+   assert.throws(()=>createTreatment('token',1,{treatment_name:'Dolgu',tooth_number:tooth},requestKey),/Geçersiz FDI/);
   }
-  assert.throws(()=>createTreatment('token',1,{treatment_name:'   '}),/Tedavi adı/);
+  assert.throws(()=>createTreatment('token',1,{treatment_name:'   '},requestKey),/Tedavi adı/);
  }finally{global.fetch=original}
 });
 test('treatment writes preserve valid primary and permanent tooth routes',async()=>{
- const {createTreatment,updateTreatment}=require('../src/api.ts');
+ const {createTreatment,updateTreatment}=require('../src/api.ts'),requestKey='synthetic-treatment-request-0002',revision='a'.repeat(64);
  const original=global.fetch;const urls=[];
- global.fetch=async url=>{urls.push(url);return reply({ok:true,treatment_id:7})};
+ global.fetch=async url=>{urls.push(url);return reply({ok:true,treatment_id:7,edit_revision:'b'.repeat(64),replayed:false})};
  try{
-  await createTreatment('token',4,{treatment_name:'Dolgu',tooth_number:'36'});
-  await updateTreatment('token',4,7,{treatment_name:'Kron',tooth_number:'85'});
+  await createTreatment('token',4,{treatment_name:'Dolgu',tooth_number:'36'},requestKey);
+  await updateTreatment('token',4,7,{treatment_name:'Kron',tooth_number:'85'},requestKey,revision);
   assert.match(urls[0],/\/patients\/4\/treatments$/);
   assert.match(urls[1],/\/patients\/4\/treatments\/7$/);
  }finally{global.fetch=original}
 });
 
 test('treatment date and name validation matches backend clinical contract',async()=>{
- const {createTreatment}=require('../src/api.ts');
+ const {createTreatment}=require('../src/api.ts'),requestKey='synthetic-treatment-request-0003';
  const original=global.fetch;const bodies=[];
- global.fetch=async (_url,init)=>{bodies.push(JSON.parse(init.body));return reply({ok:true,treatment_id:9})};
+ global.fetch=async (_url,init)=>{bodies.push(JSON.parse(init.body));return reply({ok:true,treatment_id:9,edit_revision:'c'.repeat(64),replayed:false})};
  try{
   for(const date of ['2026-02-30','2025-02-29','2026-13-01','2026-00-10','2026-12-00','2026/11/14','not-a-date']){
-   assert.throws(()=>createTreatment('token',1,{treatment_name:'Dolgu',treatment_date:date}),/Tedavi tarihi/);
+   assert.throws(()=>createTreatment('token',1,{treatment_name:'Dolgu',treatment_date:date},requestKey),/Tedavi tarihi/);
   }
-  assert.throws(()=>createTreatment('token',1,{treatment_name:'x'.repeat(201)}),/200 karakter/);
+  assert.throws(()=>createTreatment('token',1,{treatment_name:'x'.repeat(201)},requestKey),/200 karakter/);
   assert.equal(bodies.length,0);
-  await createTreatment('token',1,{treatment_name:'Dolgu',treatment_date:'2024-02-29'});
-  await createTreatment('token',1,{treatment_name:'Kanal tedavisi',treatment_date:''});
+  await createTreatment('token',1,{treatment_name:'Dolgu',treatment_date:'2024-02-29'},requestKey);
+  await createTreatment('token',1,{treatment_name:'Kanal tedavisi',treatment_date:''},requestKey);
   assert.equal(bodies.length,2);
  }finally{global.fetch=original}
 });
