@@ -1,5 +1,7 @@
 import React,{useCallback,useEffect,useState}from"react";
-import{ActivityIndicator,Alert,FlatList,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,Text,TextInput,View}from"react-native";
+import{ActivityIndicator,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,Text,TextInput,View}from"react-native";
+import * as SecureStore from "expo-secure-store";
+import{useRealtime}from"./realtime";
 import{createSupportTicket,getSupportTicket,getSupportTickets,markSupportTicketRead,replySupportTicket,SupportTicket,SupportMessage}from"./modernApi";
 
 const navy="#071B35",blue="#0878F9",muted="#718096",line="#E5EAF0";
@@ -7,6 +9,7 @@ const labels:Record<string,string>={OPEN:"Açık",IN_PROGRESS:"İşlemde",USER_R
 const filters=["ALL","OPEN","WAITING","IN_PROGRESS","CLOSED"];
 function statusMatch(status:string,filter:string){return filter==="ALL"||(filter==="WAITING"&&(status==="USER_REPLIED"||status==="ANSWERED"))||status===filter}
 export default function NativeSupportRequests({token}:{token:string}){
+ const{lastEvent}=useRealtime();
  const[items,setItems]=useState<SupportTicket[]>([]),[filter,setFilter]=useState("ALL"),[selected,setSelected]=useState<number|null>(null);
  const[detail,setDetail]=useState<any>(null),[subject,setSubject]=useState(""),[message,setMessage]=useState(""),[reply,setReply]=useState("");
  const[loading,setLoading]=useState(false),[sending,setSending]=useState(false),[error,setError]=useState(""),[createKey,setCreateKey]=useState(""),[replyKey,setReplyKey]=useState("");
