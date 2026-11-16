@@ -4,7 +4,8 @@ export type NativeNotificationRoute =
   | { screen: "Patients"; params: { screen: "PatientDetail"; params: { id: number } } }
   | { screen: "Program" }
   | { screen: "ExpertDirectory" }
-  | { screen: "ExpertManagement" };
+  | { screen: "ExpertManagement" }
+  | { screen: "SupportRequests" };
 
 export type NativeNotificationTarget =
   | { kind: "none" }
@@ -47,6 +48,9 @@ export function resolveNativeNotificationTarget(value: unknown): NativeNotificat
   }
   if (path === "/expert-support") {
     return { kind: "navigate", route: { screen: "ExpertDirectory" } };
+  }
+  if (path === "/support-request") {
+    return { kind: "navigate", route: { screen: "SupportRequests" } };
   }
   if (path === "/program") {
     return { kind: "navigate", route: { screen: "Program" } };
