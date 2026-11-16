@@ -20,7 +20,7 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
  useEffect(()=>{onSessionState?.({started:view.audioStarted===true||view.ended,finished:view.ended&&view.segments.length===0})},[view,onSessionState]);
  useEffect(()=>{onBusyChanged?.(occupied||!ready);return()=>onBusyChanged?.(false)},[occupied,ready,onBusyChanged]);
  usePreventRemove(occupied,()=>Alert.alert('Muayene sürüyor','Önce muayeneyi duraklatın veya bitirin.'));
- async function persist(next:VoiceDraft){const saved={...next,updatedAt:Date.now()};await store.setItemAsync(key,JSON.stringify(saved));draft.current=saved;if(mounted.current)setView(saved);}
+ async function persist(next:VoiceDraft){draft.current={...next,updatedAt:Date.now()};if(mounted.current)setView(draft.current);await store.setItemAsync(key,JSON.stringify(draft.current));}
  async function removeFile(uri:string){if(FileSystem.cacheDirectory&&uri.startsWith(FileSystem.cacheDirectory))await FileSystem.deleteAsync(uri,{idempotent:true}).catch(()=>{});}
  useEffect(()=>{mounted.current=true;void(async()=>{try{const raw=await store.getItemAsync(key),saved=parseVoiceDraft(raw,userId,patientId,0);if(saved&&Date.now()-saved.updatedAt>86400000){for(const s of saved.segments)await removeFile(s.uri);await store.deleteItemAsync(key)}else if(saved){draft.current=saved;if(mounted.current){setView(saved);setElapsedMs(saved.elapsedMs||0);transcriptCallback.current(saved.transcript);if(saved.segments.length)setError('Bekleyen ses kaydı bulundu. Tekrar kaydetmeden önce yazıya çevirin veya taslağı temizleyin.')}}}catch(e){if(mounted.current){setStorageBlocked(true);setError(e instanceof Error?e.message:'Muayene taslağı alınamadı.')}}finally{if(mounted.current)setReady(true)}})();return()=>{mounted.current=false;wanted.current=false;if(timer.current)clearTimeout(timer.current);controller.current?.abort();if(active.current){const id=active.current,startedAt=chunkStartedAt.current;active.current=null;chunkStartedAt.current=null;void recorder.stop().then(()=>{const elapsed=startedAt===null?draft.current:addVoiceElapsed(draft.current,startedAt,Date.now());return persist({...elapsed,segments:elapsed.segments.map(s=>s.id===id?{...s,ready:true}:s)})}).catch(()=>{})}}},[key]);
  useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(ready&&!storageBlocked&&value!==draft.current.transcript){void persist({...draft.current,transcript:value,ended:false}).catch(()=>{if(mounted.current)setError('Metin bu cihazda saklanamadı. Ekrandan ayrılmadan önce bağlantıyı ve cihazı kontrol edin.')})}},[value,ready,storageBlocked]);
@@ -73,7 +73,10 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
     {text:'Yeni deneme',style:'destructive',onPress:()=>void(async()=>{
      const next={...draft.current,segments:draft.current.segments.map(item=>
       item.id===segment.id?{...item,id:Crypto.randomUUID(),ready:true}:item)};
-     await persist(next);
+     const saved={...next,updatedAt:Date.now()};
+     await store.setItemAsync(key,JSON.stringify(saved));
+     draft.current=saved;
+     if(mounted.current)setView(saved);
      setIndeterminateSegmentId(null);
      setError('');
      await drain();
