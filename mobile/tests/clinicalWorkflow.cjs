@@ -40,3 +40,22 @@ test('clinical result does not expose the raw internal patient database id',asyn
  assert.ok(!rendered.includes('Hasta #8'));
  await renderer.act(async()=>t.unmount());
 });
+
+
+test('clinical workspace rejects duplicate or malformed asset metadata before rendering',async()=>{
+ const asset={id:4,name:'synthetic.png',image_type:'BITEWING',has_vision:true,url:'/api/mobile/v1/analyses/1/assets/4'};
+ const duplicate=api(async()=>({...base,assets:[asset,asset]}));
+ await assert.rejects(()=>duplicate.getClinical('A',1),/Klinik sonuç doğrulanamadı/);
+ const malformed=api(async()=>({...base,assets:[{...asset,id:0}]}));
+ await assert.rejects(()=>malformed.getClinical('A',1),/Klinik sonuç doğrulanamadı/);
+ const external=api(async()=>({...base,assets:[{...asset,url:'https://example.invalid/private'}]}));
+ await assert.rejects(()=>external.getClinical('A',1),/Klinik sonuç doğrulanamadı/);
+});
+
+test('clinical workspace rejects malformed job state instead of exposing unsafe retry controls',async()=>{
+ const h=api(async()=>({...base,job:{id:7,kind:'FINAL',status:'FAILED',retryable:'yes'}}));
+ await assert.rejects(()=>h.getClinical('A',1),/Klinik sonuç doğrulanamadı/);
+ const valid=api(async()=>({...base,job:{id:7,kind:'FINAL',status:'FAILED',retryable:true}}));
+ const result=await valid.getClinical('A',1);
+ assert.equal(result.job.retryable,true);
+});
