@@ -46,25 +46,19 @@ export async function prepareAnalysisUploadImages(images:UploadImage[],userId:nu
   const cleanup=async()=>{await Promise.all(temporary.map(uri=>deleteClinicalMediaTemp(uri).catch(()=>{})));};
   try{
     for(const image of images){
+      let uri=image.uri;
       if(image.encryptedUri){
-        const uri=await decryptClinicalMediaFile(image.encryptedUri,userId,patientId,image.name);
+        uri=await decryptClinicalMediaFile(image.encryptedUri,userId,patientId,image.name);
         temporary.push(uri);
-        const info=await FS.getInfoAsync(uri);
-        if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>ANALYSIS_MAX_IMAGE_BYTES)
-          throw Error('Bekleyen analiz görüntüsünün gerçek boyutu geçersiz veya 15 MiB sınırını aşıyor.');
-        totalBytes+=info.size;
-        if(totalBytes>ANALYSIS_MAX_BATCH_BYTES)throw Error('Bir analizde görüntülerin toplamı en fazla 48 MiB olabilir.');
-        prepared.push({uri,name:image.name,type:image.type});
-      }else{
-        const info=await FS.getInfoAsync(image.uri);
-        if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>ANALYSIS_MAX_IMAGE_BYTES)
-          throw Error('Bekleyen analiz görüntüsünün yerel dosyası bulunamadı. Hasta analiz geçmişini kontrol edin.');
-        totalBytes+=info.size;
-        if(totalBytes>ANALYSIS_MAX_BATCH_BYTES)throw Error('Bir analizde görüntülerin toplamı en fazla 48 MiB olabilir.');
-        prepared.push({uri:image.uri,name:image.name,type:image.type});
       }
+      const info=await FS.getInfoAsync(uri);
+      if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>ANALYSIS_MAX_IMAGE_BYTES)
+        throw Error('Bekleyen analiz görüntüsünün gerçek boyutu geçersiz veya 15 MiB sınırını aşıyor.');
+      totalBytes+=info.size;
+      if(totalBytes>ANALYSIS_MAX_BATCH_BYTES)
+        throw Error('Bir analizde görüntülerin toplamı en fazla 48 MiB olabilir.');
+      prepared.push({uri,name:image.name,type:image.type});
     }
-  }catch(error){await cleanup();throw error;}
     return {images:prepared,cleanup};
   }catch(error){await cleanup();throw error;}
 }
