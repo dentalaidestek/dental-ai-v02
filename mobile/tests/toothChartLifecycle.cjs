@@ -83,3 +83,24 @@ test('overlapping chart refreshes keep the newest patient response',async()=>{
  assert.ok(flat(tree.toJSON()).includes('Ada New'));
  await renderer.act(async()=>tree.unmount());
 });
+
+test('an in-flight background refresh cannot overwrite a confirmed tooth save',async()=>{
+ focused=true;lastEvent=null;appListeners=[];let calls=0;const older=deferred();
+ const Chart=chartComponent({
+  getPatient:()=>{calls++;if(calls===1)return Promise.resolve(patient(8,'Ada','HEALTHY'));if(calls===2)return older.promise;if(calls===3)return Promise.resolve(patient(8,'Ada','CARIES'));throw Error('unexpected extra patient read')},
+  updateTooth:async()=>({ok:true})
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel===label||node.findAllByType('Text').some(child=>flat(child.children).includes(label)));assert.ok(item,'missing control '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{appListeners.slice().forEach(listener=>listener('active'))});
+ assert.equal(calls,2);
+ await press('Diş 11, Sağlıklı');
+ await press('Diş durumu: Çürük');
+ await press('Durumu Kaydet');
+ assert.equal(calls,3,'successful save must fetch the committed server state');
+ await renderer.act(async()=>{older.resolve(patient(8,'Ada','HEALTHY'));await flush()});
+ const labels=tree.root.findAllByType('Pressable').map(node=>node.props.accessibilityLabel);
+ assert.ok(labels.includes('Diş 11, Çürük'),'a stale pre-save refresh must not replace the saved status');
+ await renderer.act(async()=>tree.unmount());
+});
