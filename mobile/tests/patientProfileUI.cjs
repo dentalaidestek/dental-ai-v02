@@ -158,3 +158,20 @@ test('stale patient revision preserves the draft until the clinician explicitly 
  assert.ok(!text(tree.toJSON()).includes('Güncel hasta bilgilerini yükle'));
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('secure intent cleanup failure blocks subsequent treatment writes',async()=>{
+ const storage=new Map();storage.delete=()=>{throw new Error('synthetic keychain failure')};
+ let calls=0;const Profile=component({getPatient:async()=>patient(8),createTreatment:async()=>{calls++;throw Object.assign(new Error('Validation rejected'),{status:422})}},'NativePatientProfile',storage);let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ await press('Yeni Tedavi');
+ const input=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Tedavi adı *');assert.ok(input);
+ await renderer.act(async()=>input.props.onChangeText('Synthetic treatment'));
+ await press('Tedaviyi Kaydet');
+ assert.ok(storage.has('dai.treatment.1.8'));
+ assert.ok(text(tree.toJSON()).includes('güvenli taslak temizlenemedi'));
+ await press('Bekleyen Tedaviyi Doğrula');
+ assert.equal(calls,1,'a blocked secure draft must not produce another server mutation');
+ await renderer.act(async()=>tree.unmount());
+});
