@@ -53,7 +53,7 @@ export function normalizeClinicalMediaAssets(
         throw new Error('Klinik görüntü boyutu geçersiz. Görüntüyü yeniden seçin.');
       }
       if (asset.fileSize > CLINICAL_MEDIA_PICKER_MAX_BYTES) {
-        throw new Error('Her klinik görüntü en fazla 12 MB olabilir.');
+        throw new Error('Her klinik görüntü en fazla 12 MiB olabilir.');
       }
     }
 
