@@ -15,6 +15,7 @@ The native Academic AI screen previously polled a durable run and prevented dupl
 - Added a validated client helper. Course and run IDs must be positive safe integers; the response must match the existing durable-run contract.
 - Added “Bu işlemi durdur” only while the current course run is QUEUED/RUNNING. The control is disabled while the request is pending and the screen shows the canonical CANCELLED state/error only after a server response.
 - On an uncertain cancellation response, the client reads the canonical run status before leaving the current state unresolved; repeated cancel remains safe.
+- If the cancel POST reply is lost but the subsequent status read confirms a terminal state, the native screen treats that canonical state as recovered rather than showing a false cancellation failure.
 - Added a run-version guard so a previously-started status poll cannot overwrite a newer cancellation response.
 - Backend regressions cover owner isolation, cross-course isolation, idempotent repeated cancellation, private/no-store response and preservation of the queued run after unauthorized attempts. Native regressions cover endpoint shape, active-run UI, canonical result and stale-poll race.
 
