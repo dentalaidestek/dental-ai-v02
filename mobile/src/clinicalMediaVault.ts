@@ -62,13 +62,17 @@ export function isClinicalMediaVaultUri(uri:string,userId?:number,patientId?:num
   const root=FS.documentDirectory+VAULT_ROOT;
   if(!uri.startsWith(root)||uri.includes('..')||!uri.endsWith('.dai'))return false;
   const relative=uri.slice(root.length).split('/');
-  if(relative.length!==3||!/^\d+$/.test(relative[0])||!/^\d+$/.test(relative[1])||!/^[A-Za-z0-9_-]{16,96}\.dai$/.test(relative[2]))return false;
+  if(!/^\d+$/.test(relative[0])||! /^\d+$/.test(relative[1]))return false;
+  const legacy=relative.length===3&&/^[A-Za-z0-9_-]{16,96}\.dai$/.test(relative[2]);
+  const purposeScoped=relative.length===4&&['archive','analysis'].includes(relative[2])&&/^[A-Za-z0-9_-]{16,96}\.dai$/.test(relative[3]);
+  if(!legacy&&!purposeScoped)return false;
   return (userId===undefined||Number(relative[0])===userId)&&(patientId===undefined||Number(relative[1])===patientId);
 }
-export async function encryptClinicalMediaFile(sourceUri:string,userId:number,patientId:number,maxBytes:number):Promise<string>{
+export async function encryptClinicalMediaFile(sourceUri:string,userId:number,patientId:number,maxBytes:number,purpose?:'archive'|'analysis'):Promise<string>{
   validScope(userId,patientId);
-  if(typeof sourceUri!=='string'||!sourceUri||!Number.isSafeInteger(maxBytes)||maxBytes<1)
-    throw new ClinicalMediaVaultError('INVALID_SOURCE','Klinik görüntü kaynağı geçersiz.');
+  if(typeof sourceUri!=='string'||!sourceUri||!Number.isSafeInteger(maxBytes)||maxBytes<1||
+     purpose!==undefined&&purpose!=='archive'&&purpose!=='analysis')
+    throw new ClinicalMediaVaultError('INVALID_SOURCE','Klinik görüntü kaynağı veya depolama amacı geçersiz.');
   const cache=cacheRoot(),document=documentRoot();
   const stageUri=cache+STAGE_PREFIX+Crypto.randomUUID()+'.bin';
   let destination='';
@@ -98,7 +102,7 @@ export async function encryptClinicalMediaFile(sourceUri:string,userId:number,pa
     const key=await loadKey(userId,patientId,true),nonce=randomBytes(24);
     const ciphertext=xchacha20poly1305(key,nonce).encrypt(plaintext);
     const packed=new Uint8Array(nonce.length+ciphertext.length);packed.set(nonce);packed.set(ciphertext,nonce.length);
-    const directory=document+userId+'/'+patientId+'/';
+    const directory=document+userId+'/'+patientId+(purpose?'/'+purpose:'')+'/';
     await FS.makeDirectoryAsync(directory,{intermediates:true});
     destination=directory+Crypto.randomUUID()+'.dai';
     await FS.writeAsStringAsync(destination,encodeBase64(packed),{encoding:'base64'} as any);
@@ -158,17 +162,24 @@ export async function cleanupOrphanedClinicalMediaVaultFiles(
   userId:number,
   patientId:number,
   retainedUris:readonly string[],
+  purpose:'archive'|'analysis'='archive',
 ):Promise<number>{
   validScope(userId,patientId);
-  if(!Array.isArray(retainedUris))
+  if(!Array.isArray(retainedUris)||!['archive','analysis'].includes(purpose))
     throw new ClinicalMediaVaultError('INVALID_VAULT','Bekleyen klinik görüntü listesi doğrulanamadı.');
+  const patientRoot=documentRoot()+userId+'/'+patientId+'/';
+  const directory=patientRoot+purpose+'/';
   const retained=new Set<string>();
   for(const uri of retainedUris){
     if(!isClinicalMediaVaultUri(uri,userId,patientId))
       throw new ClinicalMediaVaultError('INVALID_VAULT','Bekleyen klinik görüntü kapsamı doğrulanamadı.');
-    retained.add(uri);
+    if(uri.startsWith(directory))retained.add(uri);
+    else if(uri.startsWith(patientRoot)&&!uri.slice(patientRoot.length).includes('/')){
+      // Older app versions stored encrypted files directly under patientRoot.
+      // Preserve those legacy files; this cleanup never scans that directory.
+      continue;
+    }else throw new ClinicalMediaVaultError('INVALID_VAULT','Bekleyen klinik görüntü depolama amacı eşleşmiyor.');
   }
-  const directory=documentRoot()+userId+'/'+patientId+'/';
   let names:string[];
   try{names=await FS.readDirectoryAsync(directory);}catch{return 0;}
   let deleted=0;
