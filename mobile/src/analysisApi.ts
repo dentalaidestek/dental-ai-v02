@@ -3,6 +3,8 @@ import {revalidateSession} from './sessionExpiry';
 
 const API_BASE="https://dentalai.tr/api/mobile/v1";
 
+export const ANALYSIS_MAX_IMAGES = 4;
+
 async function call<T>(path:string,token:string,options:RequestInit={}):Promise<T>{
   const controller=new AbortController(),external=options.signal,abort=()=>controller.abort();
   const timeout=setTimeout(abort,options.body instanceof FormData?120000:30000);
@@ -25,7 +27,7 @@ export type MobileAnalysis={
 };
 
 export function normalizeAnalysisImages(images:Array<{uri:string;name?:string;type?:string}>){
-  if(!Array.isArray(images)||!images.length||images.length>4||images.some(i=>!i||typeof i.uri!=="string"||!i.uri))throw Error("1–4 geçerli klinik görüntü seçin.");
+  if(!Array.isArray(images)||!images.length||images.length>ANALYSIS_MAX_IMAGES||images.some(i=>!i||typeof i.uri!=="string"||!i.uri))throw Error(`1–${ANALYSIS_MAX_IMAGES} geçerli klinik görüntü seçin.`);
   const allowedTypes=new Set(["image/jpeg","image/png","image/webp"]);
   const allowedExtensions=/\.(?:jpe?g|png|webp)$/i;
   // Never label PNG/WebP bytes as JPEG when the picker omits MIME metadata.
