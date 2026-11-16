@@ -60,6 +60,7 @@ test('rejects disagreement between a supported filename and source URI extension
 
 test('rejects MIME and filename disagreement before encryption or upload',()=>{
  assert.throws(()=>normalizeClinicalMediaAssets([asset({
+  uri:'content://media/opaque/42',
   fileName:'image.png',
   mimeType:'image/jpeg'
  })]),/Dosya adı ve görüntü türü eşleşmiyor/);
