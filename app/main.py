@@ -10822,7 +10822,11 @@ def patient_detail(request: Request, patient_id: int):
             context={
                 "patient": patient,
                 "analysis_image_limit": MAX_ANALYSIS_IMAGES,
+            "analysis_image_max_bytes": MAX_ANALYSIS_IMAGE_BYTES,
+            "analysis_batch_max_bytes": MAX_ANALYSIS_BATCH_BYTES,
                 "patient_media_upload_limit": MAX_PATIENT_MEDIA_UPLOAD_FILES,
+                "patient_media_max_file_bytes": MAX_PATIENT_MEDIA_FILE_BYTES,
+                "patient_media_max_batch_bytes": MAX_PATIENT_MEDIA_BATCH_BYTES,
                 "patient_profile": patient_profile,
                 "patient_edit_revision": _patient_edit_revision(patient, patient_profile),
                 "analyses": analyses,
