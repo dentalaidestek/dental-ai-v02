@@ -36,3 +36,5 @@ A review of the new tab flow found two additional safety edges and they were cor
 - If a clinical-note write has an uncertain acknowledgement, the child editor remains populated and the same text is restored into the parent review's encrypted pending-note workflow. A second viewer note is locked until that pending note is reconciled.
 
 Two additional renderer regressions cover failed-job retry instead of duplicate create, and locking the chart tab while a parent note is pending. Total new viewer renderer cases in this pass: seven. All remain committed but unexecuted until the Actions runner can execute the beta suite.
+
+A final interaction pass also disables FDI chips and both text inputs while the parent is mutating or a note is pending. This prevents the visible child draft from drifting away from the exact encrypted payload waiting for server reconciliation. One renderer regression covers parent-busy treatment locking; the seven earlier new cases plus this case make **eight** new viewer renderer cases in this pass.
