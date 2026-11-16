@@ -11,7 +11,7 @@ function harness(fetchAnalysis){
  const react={useCallback:f=>f,useRef:value=>{const i=refIndex++;return refs[i]??(refs[i]={current:value})},useState:()=>{const i=stateIndex++;return [states[i],value=>{states[i]=value}]},useEffect:(f,deps)=>{const i=effectIndex++;if(!previous[i]||deps.some((v,j)=>!Object.is(v,previous[i].deps[j]))){effects.push(()=>{previous[i]?.cleanup?.();previous[i]={deps,cleanup:f()}})}},createElement:()=>null};react.default=react;
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeDentalAI.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const exports={};
- vm.runInNewContext(code,{exports,require:name=>name==='react'?react:name==='./api'?{getPatients:async()=>({items:[]})}:name==='./analysisApi'?{getAnalysis:fetchAnalysis}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:{}});
+ vm.runInNewContext(code,{exports,require:name=>name==='react'?react:name==='react-native'?{AppState:{addEventListener:()=>({remove(){}})}}:name==='./api'?{getPatients:async()=>({items:[]})}:name==='./analysisApi'?{getAnalysis:fetchAnalysis}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:{}});
  const render=()=>{stateIndex=0;effectIndex=0;refIndex=0;exports.default({token});while(effects.length)effects.shift()();};
  return {states,render,setEvent:value=>{event=value;render()},setToken:value=>{token=value;render()},unmount:()=>previous.forEach(x=>x?.cleanup?.())};
 }
@@ -45,3 +45,4 @@ test('analysis selection, token replacement and unmount reject stale results',as
   assert.equal(h.states[3],before);
  }
 });
+
