@@ -28,6 +28,15 @@ function mountMedia(getMedia, options={}){
   if(name==='expo-secure-store')return secureStore;
   if(name==='expo-crypto')return {randomUUID:()=>options.randomUUID?.()||`synthetic-media-key-${String(++keySequence).padStart(4,'0')}`};
   if(name==='./socialDraft')return {chunkedDraftStore:raw=>raw};
+  if(name==='./clinicalMediaVault')return {
+   cleanupStaleClinicalMediaTemps:async()=>{},
+   encryptClinicalMediaFile:async(uri,userId,patientId)=>options.onEncrypt?options.onEncrypt(uri,userId,patientId):'file:///documents/dai-clinical-vault/'+userId+'/'+patientId+'/synthetic-media-key-0001.dai',
+   decryptClinicalMediaFile:async(uri,userId,patientId,name)=>options.onDecrypt?options.onDecrypt(uri,userId,patientId,name):'file:///cache/dai-clinical-upload-synthetic.png',
+   deleteClinicalMediaVaultFile:async uri=>{options.onDeleteVault?.(uri)},
+   deleteClinicalMediaTemp:async uri=>{options.onDeleteTemp?.(uri)},
+   isClinicalMediaVaultUri:(uri,userId,patientId)=>typeof uri==='string'&&uri.startsWith('file:///documents/dai-clinical-vault/'+userId+'/'+patientId+'/')&&uri.endsWith('.dai'),
+   validateClinicalMediaVaultFile:async()=>{}
+  };
   if(name==='./api')return {
    getPatientMediaUpload:async(...args)=>options.onReceipt?options.onReceipt(...args):({found:false}),
    uploadPatientMedia:async(...args)=>options.onUpload?options.onUpload(...args):({media:{id:1,original_filename:'synthetic.png',media_type:'PHOTO'},replayed:false})
@@ -413,5 +422,34 @@ test('pending clinical media drafts are isolated by user and patient identity',a
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'other-account',userId:2,patientId:8,onAnalysis:()=>{}}));await new Promise(resolve=>setImmediate(resolve))});
  assert.doesNotMatch(visible(tree.toJSON()),/Önceki oturumdan 1 bekleyen klinik görüntü bulundu/);
  assert.equal(storage.has('dai.patient-media.upload.1.8'),true);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('new patient media drafts persist ciphertext only and upload through a disposable plaintext file',async()=>{
+ const storage=new Map(),encryptedUri='file:///documents/dai-clinical-vault/1/8/synthetic-media-key-0001.dai',tempUri='file:///cache/dai-clinical-upload-synthetic.png',uploaded=[],deletedVault=[],deletedTemp=[],encrypted=[];
+ const picker={requestMediaLibraryPermissionsAsync:async()=>({granted:true}),launchImageLibraryAsync:async()=>({canceled:false,assets:[{uri:'file:///picker/private-clinical.png',fileName:'private-clinical.png',mimeType:'image/png',fileSize:1024}]})};
+ const Media=mountMedia(async()=>({items:[],next_before:null}),{
+  storage,picker,
+  onEncrypt:async(uri,userId,patientId)=>{encrypted.push({uri,userId,patientId});return encryptedUri},
+  onDecrypt:async(uri,userId,patientId,name)=>{assert.equal(uri,encryptedUri);assert.equal(userId,1);assert.equal(patientId,8);assert.equal(name,'private-clinical.png');return tempUri},
+  onUpload:async(...args)=>{uploaded.push(args);return{media:{id:91,original_filename:'private-clinical.png',media_type:'PHOTO'},replayed:false}},
+  onDeleteVault:uri=>deletedVault.push(uri),
+  onDeleteTemp:uri=>deletedTemp.push(uri)
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'account-a',patientId:8,onAnalysis:()=>{}}))});
+ await press(tree,'▧ Fotoğraf Ekle');
+ const raw=JSON.parse(storage.get('dai.patient-media.upload.1.8'));
+ assert.equal(raw.version,2);
+ assert.equal(raw.files[0].uri,encryptedUri);
+ assert.equal(raw.files[0].encryptedUri,encryptedUri);
+ assert.ok(!JSON.stringify(raw).includes('file:///picker/private-clinical.png'),'picker cache URI must not be persisted');
+ await press(tree,'Kaydet');
+ assert.equal(encrypted.length,1);
+ assert.equal(uploaded.length,1);
+ assert.equal(uploaded[0][2].uri,tempUri,'multipart upload receives only a short-lived decrypted file');
+ assert.deepEqual(deletedTemp,[tempUri]);
+ assert.deepEqual(deletedVault,[encryptedUri]);
+ assert.equal(storage.has('dai.patient-media.upload.1.8'),false);
  await renderer.act(async()=>tree.unmount());
 });
