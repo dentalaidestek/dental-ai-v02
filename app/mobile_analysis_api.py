@@ -190,7 +190,7 @@ async def create_mobile_analysis(
         raise HTTPException(status_code=422, detail="Her klinik görüntünün dosya adı bulunmalıdır.")
     valid = images
     media_count=len(selected_media_ids)+len(valid)
-    has_clinical_context=bool((tooth_number or "").strip() or (clinical_notes or "").strip())
+    has_clinical_context=bool(teeth or (clinical_notes or "").strip())
     if media_count>4:
         raise HTTPException(status_code=422, detail="Kayıtlı ve yeni görüntülerin toplamı en fazla 4 olabilir.")
     if media_count==0 and not has_clinical_context:
