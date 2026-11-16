@@ -297,3 +297,24 @@ test('native tooth chart labels patient right and left and preserves web FDI qua
  assert.deepEqual(fdi,['18','17','16','15','14','13','12','11','21','22','23','24','25','26','27','28','48','47','46','45','44','43','42','41','31','32','33','34','35','36','37','38']);
  await renderer.act(async()=>tree.unmount());
 });
+
+test('native tooth detail panel can be closed like the web sheet without changing chart records',async()=>{
+ focused=true;lastEvent=null;appListeners=[];
+ const Chart=chartComponent({getPatient:async()=>patient(8)});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
+ const tooth=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş 11, Sağlıklı');
+ assert.ok(tooth);
+ await renderer.act(async()=>tooth.props.onPress());
+ const close=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş panelini kapat');
+ assert.ok(close,'web tooth sheet exposes a close action');
+ assert.equal(close.props.accessibilityRole,'button');
+ assert.ok(close.props.accessibilityHint);
+ await renderer.act(async()=>close.props.onPress());
+ assert.equal(tree.root.findAllByType('Pressable').filter(node=>node.props.accessibilityLabel==='Diş panelini kapat').length,0);
+ const stillOnChart=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş 11, Sağlıklı');
+ assert.ok(stillOnChart,'closing details must not remove the tooth from the chart');
+ assert.equal(stillOnChart.props.accessibilityState.selected,false);
+ assert.equal(tree.root.findAllByType('TextInput').filter(node=>node.props.accessibilityLabel==='Diş notları').length,0);
+ await renderer.act(async()=>tree.unmount());
+});
