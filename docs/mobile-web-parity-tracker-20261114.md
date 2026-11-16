@@ -169,7 +169,7 @@ Completed the three previously-open support items:
 Regression additions:
 - Python: eligible case listing and linking, report list + linked thread, cross-account report detail/reply denial, and ticket cursor non-overlap.
 - Node source-contract: case selection/persistence, report list/thread opening, ticket and message pagination. Wired into existing `test:beta` script.
-- GitHub source-level assertions: 12/12 core implementation checks passed after correcting one assertion to match the explicit participant-set check. These are not runtime tests.
+- GitHub source-level assertions: 13/13 core implementation checks passed after correcting one assertion to match the explicit participant-set check. These are not runtime tests.
 
 Latest commit: `e20f0b7645e50ac1b8d180eecfd5be804b59bfd1`. Latest-head Actions runs: Android #2459, Security recovery #1036, Admin security #920, Expert social #916; all concluded failure. Job records are exposed without runner step detail in the current response, so no TypeScript/Gradle/pytest pass is claimed. The previously observed runner-allocation/empty-step + BlobNotFound pattern remains unresolved; repository owner must inspect Actions runner/usage configuration.
 
