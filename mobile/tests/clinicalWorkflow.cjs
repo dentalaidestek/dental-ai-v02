@@ -14,7 +14,7 @@ test('native clinical review displays web string findings, treatment and uncerta
 test('final evaluation requires all answers and clinician consent; double tap queues once',async()=>{const h=harness(),t=await open(h);assert.equal(button(t,'Yeni Bilgilerle Tekrar Analiz Et').props.disabled,true);await renderer.act(async()=>t.root.findByType('TextInput').props.onChangeText('Synthetic clinical answer'));assert.equal(button(t,'Yeni Bilgilerle Tekrar Analiz Et').props.disabled,true);await renderer.act(async()=>t.root.findAllByType('Pressable').find(n=>n.props.accessibilityRole==='checkbox').props.onPress());await renderer.act(async()=>{const b=button(t,'Yeni Bilgilerle Tekrar Analiz Et');b.props.onPress();b.props.onPress();await new Promise(r=>setImmediate(r))});assert.equal(h.calls.length,1);assert.equal(h.calls[0].answers.answer_0,'Synthetic clinical answer');assert.equal(h.calls[0].revision,revision);assert.equal(h.storage.size,0);await renderer.act(async()=>t.unmount())});
 test('uncertain final submission retains exact answers and revision across reopen',async()=>{const saved={user:1,analysis:1,revision,answers:{answer_0:'Original synthetic answer'}},calls=[],h=harness({submitClinical:async(_t,intent)=>{calls.push(intent);throw Error('Synthetic uncertain response')}},saved),t=await open(h);await renderer.act(async()=>button(t,'Bekleyen Klinik Cevapları Doğrula').props.onPress());assert.equal(calls[0].revision,revision);assert.equal(calls[0].answers.answer_0,saved.answers.answer_0);assert.ok(h.storage.has('dai.clinical.final.1.1'));await renderer.act(async()=>t.unmount());h.endpoint.submitClinical=async(_t,intent)=>{calls.push(intent);return{ok:true,job:{id:7,kind:'FINAL',status:'DONE'}}};const next=await open(h);await renderer.act(async()=>button(next,'Bekleyen Klinik Cevapları Doğrula').props.onPress());assert.deepEqual(calls[0],calls[1]);assert.equal(h.storage.size,0);await renderer.act(async()=>next.unmount())});
 test('a saved clinical intent from another account blocks all final writes',async()=>{const h=harness({}, {user:2,analysis:1,revision,answers:{answer_0:'Other synthetic answer'}}),t=await open(h);assert.equal(h.calls.length,0);assert.ok(text(t.toJSON()).includes('Bekleyen klinik cevap kaydı okunamadı'));await renderer.act(async()=>t.unmount())});
-test('failed manual note cannot be appended twice before server note reconciliation',async()=>{let calls=0;const h=harness({saveClinicalNote:async()=>{calls++;throw Error('Synthetic ambiguous note')}}),t=await open(h);await renderer.act(async()=>button(t,'Hekim Notu / Diş Seçimi').props.onPress());await renderer.act(async()=>t.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Analiz hekim notu').props.onChangeText('Synthetic note'));await renderer.act(async()=>button(t,'Analize Not Kaydet').props.onPress());assert.equal(calls,1);assert.equal(button(t,'Analize Not Kaydet').props.disabled,true);assert.ok(button(t,'Kaydedilmiş Notu Kontrol Ettim'));await renderer.act(async()=>t.unmount())});
+test('uncertain manual note is stored before sending and never auto-retried',async()=>{let calls=0;const h=harness({saveClinicalNote:async()=>{calls++;throw Error('Synthetic ambiguous note')}}),t=await open(h);await renderer.act(async()=>button(t,'Hekim Notu / Diş Seçimi').props.onPress());await renderer.act(async()=>t.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Analiz hekim notu').props.onChangeText('Synthetic note'));await renderer.act(async()=>button(t,'Analize Not Kaydet').props.onPress());assert.equal(calls,1);assert.equal(button(t,'Analize Not Kaydet').props.disabled,true);assert.ok(button(t,'Sunucudaki Notu Kontrol Et'));assert.ok(h.storage.has('dai.clinical.note.1.1'));await renderer.act(async()=>t.unmount())});
 test('clinical transport rejects wrong analysis and malformed final receipt',async()=>{const a=api(async()=>({...base,analysis_id:2}));await assert.rejects(()=>a.getClinical('A',1),/doğrulanamadı/);const b=api(async()=>({ok:true,job:{id:0,kind:'FINAL'}}));await assert.rejects(()=>b.submitClinical('A',{user:1,analysis:1,revision,answers:{answer_0:'Synthetic'}}),/doğrulanamadı/);assert.throws(()=>a.parseClinicalIntent(JSON.stringify({user:1,analysis:1,revision,answers:{answer_0:''}}),1,1));});
 test('definite stale-source rejection clears old intent and requires fresh clinician answers',async()=>{const saved={user:1,analysis:1,revision,answers:{answer_0:'Old synthetic answer'}},h=harness({submitClinical:async()=>{throw Object.assign(Error('Source changed'),{status:409})}},saved),t=await open(h);await renderer.act(async()=>button(t,'Bekleyen Klinik Cevapları Doğrula').props.onPress());assert.equal(h.storage.size,0);assert.equal(button(t,'Yeni Bilgilerle Tekrar Analiz Et').props.disabled,true);assert.equal(t.root.findByType('TextInput').props.value,'');assert.ok(text(t.toJSON()).includes('Source changed'));await renderer.act(async()=>t.unmount())});
 
@@ -77,4 +77,39 @@ test('NEEDS_INFO status explains the clinical information gap like the web resul
  assert.ok(rendered.includes('Kritik klinik bilgiler gerekiyor'));
  assert.ok(rendered.includes('tedavi güvenliğini değiştirebilecek eksik bilgileri'));
  await renderer.act(async()=>t.unmount());
+});
+
+
+test('reopening a clinical review reconciles a note already committed by the server',async()=>{
+ const pending={user:1,analysis:1,note:'Synthetic note',finding:'',tooth:'36'};
+ const h=harness({getClinical:async()=>({...base,clinical_notes:'[Diş 36] Synthetic note'})});
+ h.storage.set('dai.clinical.note.1.1',JSON.stringify(pending));
+ const t=await open(h);
+ assert.equal(h.storage.has('dai.clinical.note.1.1'),false);
+ assert.ok(text(t.toJSON()).includes('Önceki oturumda kaydedilen hekim notu sunucuda doğrulandı.'));
+ assert.ok(!text(t.toJSON()).includes('Kaydedilmediğini Doğruladım'));
+ await renderer.act(async()=>t.unmount());
+});
+
+test('reopening with a note absent from server keeps the exact draft for explicit reconciliation',async()=>{
+ const pending={user:1,analysis:1,note:'Synthetic note',finding:'Manual finding',tooth:'36'};
+ const h=harness({getClinical:async()=>({...base,clinical_notes:null})});
+ h.storage.set('dai.clinical.note.1.1',JSON.stringify(pending));
+ const t=await open(h);
+ assert.equal(t.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Analiz hekim notu').props.value,'Synthetic note');
+ assert.equal(t.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Manuel klinik bulgu').props.value,'Manual finding');
+ assert.ok(button(t,'Sunucudaki Notu Kontrol Et'));
+ assert.equal(button(t,'Analize Not Kaydet').props.disabled,true);
+ await renderer.act(async()=>button(t,'Sunucudaki Notu Kontrol Et').props.onPress());
+ assert.ok(button(t,'Kaydedilmediğini Doğruladım — Aynı Notu Yeniden Dene'));
+ await renderer.act(async()=>t.unmount());
+});
+
+test('clinical note intent validation is account, analysis and FDI scoped',()=>{
+ const a=api();
+ const raw=JSON.stringify({user:1,analysis:1,note:'Synthetic',finding:'',tooth:'36'});
+ assert.deepEqual(a.parseClinicalNoteIntent(raw,1,1),{user:1,analysis:1,note:'Synthetic',finding:'',tooth:'36'});
+ assert.throws(()=>a.parseClinicalNoteIntent(raw,2,1),/doğrulanamadı/);
+ assert.throws(()=>a.parseClinicalNoteIntent(JSON.stringify({user:1,analysis:1,note:'',finding:'',tooth:'59'}),1,1),/doğrulanamadı/);
+ assert.equal(a.clinicalNoteLine({user:1,analysis:1,note:'Extra',finding:'Manual',tooth:'36'}),'[Diş 36] Manuel bulgu: Manual — Extra');
 });
