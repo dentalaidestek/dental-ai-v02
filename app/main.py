@@ -13089,7 +13089,7 @@ def admin_center_support_message(request: Request, ticket_id: int, message: str 
                 notice_type="SUPPORT_MESSAGE",title="Destek Ekibinden yeni mesaj",
                 message="Uzman bildiriminiz hakkında yeni bir mesaj var." if ticket.source_type=="REPORT" else "Destek talebinizde yeni bir mesaj var.",
                 related_type="support_ticket",related_id=ticket.id,
-                dedup_key=f"support-message:{support_message.id}",target_url="/support-request",
+                dedup_key=f"support-message:{support_message.id}",target_url=f"/support-request?ticket_id={ticket.id}",
             )
         for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():
             peer_events.append(_record_realtime_event(
@@ -13139,7 +13139,7 @@ def admin_center_support_update(request: Request, ticket_id: int, status: str = 
                 related_type="support_ticket",
                 related_id=ticket.id,
                 dedup_key=f"support-ticket:{ticket.id}:{status}:{ticket.updated_at.isoformat()}",
-                target_url="/support-request",
+                target_url=f"/support-request?ticket_id={ticket.id}",
             )
             user_status_event=_record_realtime_event(
                 s,ticket.user_id,"SUPPORT_TICKET_UPDATED","support_ticket",ticket.id,
@@ -13187,7 +13187,7 @@ def admin_center_report_update(request: Request, report_id: int, status: str = F
                 related_type="user_report",
                 related_id=report.id,
                 dedup_key=f"user-report:{report.id}:{status}",
-                target_url="/support-request",
+                target_url=f"/support-request?ticket_id={linked_ticket.id}" if linked_ticket else "/support-request",
             )
         for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"USER_REPORT_UPDATED","user_report",report.id,{"report_id":report.id,"status":status,"case_id":report.case_id,"requires_fragment":False}))
         s.add(AdminAuditLog(admin_user_id=admin.id,action="USER_REPORT_"+status,target_user_id=report.reported_user_id,detail=f"#{report.id}"));s.commit()
