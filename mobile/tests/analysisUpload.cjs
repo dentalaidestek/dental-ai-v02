@@ -69,3 +69,46 @@ test('definitive missing saved-media response releases the stale local intent',a
  assert.ok(text(t.toJSON()).includes('saved media missing'));
  await renderer.act(async()=>t.unmount());
 });
+
+test('clinical-only intent requires real clinical context and is eligible without media',()=>{
+ const api=require('../src/analysisUpload.ts');
+ const clinical={...intent,toothNumber:'',clinicalNotes:'Cold sensitivity for three days',images:[],existingMediaIds:[]};
+ assert.doesNotThrow(()=>api.parseUploadIntent(JSON.stringify(clinical),1,8));
+ assert.equal(api.canStartAnalysis('',clinical.clinicalNotes,[],[]),true);
+ assert.equal(api.canStartAnalysis('36','',[],[]),true);
+ assert.equal(api.canStartAnalysis('','',[],[]),false);
+ const empty={...clinical,clinicalNotes:''};
+ assert.throws(()=>api.parseUploadIntent(JSON.stringify(empty),1,8),/Görüntü olmadan/);
+});
+
+test('native composer submits clinical-only preliminary analysis without placeholder image',async()=>{
+ const h=ui(),opened=[],t=await mount(h,async id=>opened.push(id));
+ assert.equal(button(t,'Analizi Başlat').props.disabled,true);
+ await renderer.act(async()=>{
+  t.root.findByProps({accessibilityLabel:'Analiz klinik bilgileri'}).props.onChangeText('Synthetic cold sensitivity without an image');
+ });
+ const start=button(t,'Analizi Başlat');
+ assert.ok(start&&!start.props.disabled);
+ await renderer.act(async()=>{start.props.onPress();await new Promise(r=>setImmediate(r))});
+ assert.equal(h.calls.length,1);
+ assert.deepEqual(Array.from(h.calls[0].images),[]);
+ assert.deepEqual(Array.from(h.calls[0].existingMediaIds),[]);
+ assert.equal(h.calls[0].clinicalNotes,'Synthetic cold sensitivity without an image');
+ assert.deepEqual(opened,[41]);
+ assert.ok(text(t.toJSON()).includes('Klinik ön değerlendirme'));
+ await renderer.act(async()=>t.unmount());
+});
+
+test('clinical-only multipart request sends no synthetic empty image part',async()=>{
+ const exports={},parts=[];
+ class Form{append(key,value){parts.push([key,value])}}
+ class XHR{constructor(){this.upload={}}open(){}setRequestHeader(){}send(){this.status=200;this.responseText=JSON.stringify(receipt);this.onload()}abort(){this.onabort?.()}}
+ const {ApiError}=require('../src/api.ts');
+ vm.runInNewContext(compile('../src/analysisUpload.ts'),{exports,Error,FormData:Form,XMLHttpRequest:XHR,setTimeout:()=>1,clearTimeout(){},require:n=>n==='./api'?{ApiError}:n==='./analysisApi'?require('../src/analysisApi.ts'):{revalidateSession:async()=>{}}});
+ const clinical={...intent,toothNumber:'',clinicalNotes:'Synthetic clinical context',images:[],existingMediaIds:[]};
+ await exports.uploadAnalysis('token',clinical,()=>{});
+ assert.equal(parts.filter(part=>part[0]==='images').length,0);
+ assert.equal(parts.find(part=>part[0]==='clinical_notes')[1],clinical.clinicalNotes);
+ assert.equal(parts.find(part=>part[0]==='request_key')[1],clinical.requestKey);
+});
+
