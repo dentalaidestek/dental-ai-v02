@@ -7526,7 +7526,6 @@ def expert_support_request_page(request: Request, expert_user_id: int, patient_i
         ).order_by(PatientMedia.uploaded_at.desc())).all() if patient else []
     return templates.TemplateResponse(request=request, name="expert_request.html", context={
         "user": user, "expert": expert, "profile": profile, "patient": patient, "patient_media": patient_media,
-                "analysis_image_limit": MAX_ANALYSIS_IMAGES,
         "request_key": str(uuid.uuid4()),
     })
 
@@ -10821,6 +10820,7 @@ def patient_detail(request: Request, patient_id: int):
             name="patient_detail.html",
             context={
                 "patient": patient,
+                "analysis_image_limit": MAX_ANALYSIS_IMAGES,
                 "patient_profile": patient_profile,
                 "patient_edit_revision": _patient_edit_revision(patient, patient_profile),
                 "analyses": analyses,
