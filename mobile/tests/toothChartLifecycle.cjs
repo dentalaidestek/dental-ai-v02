@@ -8,21 +8,28 @@ const renderer=require('react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
 require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,filename);
 let focused=true,lastEvent=null,appListeners=[];
-function chartComponent(api){
+function chartComponent(api,storage=new Map()){
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeToothChart.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2020}}).outputText;
  const native={AppState:{addEventListener:(_event,listener)=>{appListeners.push(listener);return{remove(){appListeners=appListeners.filter(x=>x!==listener)}}}},...Object.fromEntries(['ActivityIndicator','Image','Pressable','ScrollView','Text','TextInput','View'].map(name=>[name,name]))};
- const exports={};
+ const exports={};let sequence=0;
+ const secure={getItemAsync:async key=>storage.has(key)?storage.get(key):null,setItemAsync:async(key,value)=>storage.set(key,value),deleteItemAsync:async key=>storage.delete(key)};
+ const crypto={randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,"0")}`};
  vm.runInNewContext(code,{exports,require:name=>{
   if(name==='react')return{...React,default:React};
   if(name==='react-native')return native;
   if(name==='@react-navigation/native')return{useNavigation:()=>({getParent:()=>({getParent:()=>({navigate(){}})})}),useIsFocused:()=>focused};
   if(name==='./api')return api;
+  if(name==='expo-secure-store')return secure;
+  if(name==='expo-crypto')return crypto;
+  if(name==='./socialDraft')return{chunkedDraftStore:raw=>raw};
+  if(name==='./treatmentMutation')return require('../src/treatmentMutation.ts');
   if(name==='./realtime')return{useRealtime:()=>({lastEvent})};
   if(name==='./toothChartPresentation')return require('../src/toothChartPresentation.ts');
   if(name==='./NativeToothVisual'||name==='./NativeDateField'||name==='./NativePatientHistory')return{default:'Child'};
   throw Error('unexpected import '+name);
  }});
- return exports.default;
+ const Original=exports.default;
+ return props=>React.createElement(Original,{userId:1,...props});
 }
 const patient=(id,firstName='Synthetic',status='HEALTHY',age=35)=>({patient:{id,first_name:firstName,last_name:'Patient',age,anonymous_id:'SYN-'+id},teeth:[{id:1,tooth_number:'11',status,note:'saved note'}],surfaces:[],treatments:[],media:[]});
 const flat=node=>typeof node==='string'?node:Array.isArray(node)?node.map(flat).join(''):node?.children?node.children.map(flat).join(''):'';
@@ -102,5 +109,62 @@ test('an in-flight background refresh cannot overwrite a confirmed tooth save',a
  await renderer.act(async()=>{older.resolve(patient(8,'Ada','HEALTHY'));await flush()});
  const labels=tree.root.findAllByType('Pressable').map(node=>node.props.accessibilityLabel);
  assert.ok(labels.includes('Diş 11, Çürük'),'a stale pre-save refresh must not replace the saved status');
+ await renderer.act(async()=>tree.unmount());
+});
+
+
+test('tooth chart persists a treatment request before sending and reuses its key after remount',async()=>{
+ focused=true;lastEvent=null;appListeners=[];const storage=new Map(),calls=[];let first=true;
+ const api={
+  getPatient:async()=>patient(8),
+  createTreatment:async(...args)=>{
+   calls.push({args,stored:storage.has('dai.treatment.1.8')});
+   if(first){first=false;throw Object.assign(new Error('Synthetic network timeout'),{status:503});}
+   return{ok:true,treatment_id:9,edit_revision:'d'.repeat(64),replayed:true};
+  }
+ };
+ const press=async(tree,label)=>{const item=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel===label||node.findAllByType('Text').some(child=>flat(child.children).includes(label)));assert.ok(item,'missing control '+label);await renderer.act(async()=>item.props.onPress())};
+ const Chart=chartComponent(api,storage);let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
+ await press(tree,'Diş 11, Sağlıklı');
+ await press(tree,'Tedavi Geçmişi');
+ const input=tree.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Tedavi adı');assert.ok(input);
+ await renderer.act(async()=>input.props.onChangeText('Synthetic composite'));
+ await press(tree,'Tedavi Kaydı Ekle');
+ assert.equal(calls.length,1);
+ assert.ok(calls[0].stored,'durable intent must be stored before the network request');
+ const originalKey=calls[0].args[3];assert.match(originalKey,/^synthetic-treatment-request-/);
+ assert.ok(storage.has('dai.treatment.1.8'),'uncertain result must retain the secure intent');
+ assert.ok(tree.root.findAllByType('Pressable').some(node=>node.props.accessibilityLabel==='Bekleyen Tedaviyi Doğrula'));
+ await renderer.act(async()=>tree.unmount());
+
+ const Restored=chartComponent(api,storage);
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Restored,{token:'account-a',patientId:8}));await flush()});
+ await press(tree,'Bekleyen Tedaviyi Doğrula');
+ assert.equal(calls.length,2);
+ assert.equal(calls[1].args[3],originalKey,'restart must reuse the exact original idempotency key');
+ assert.equal(storage.has('dai.treatment.1.8'),false,'confirmed receipt must clear the secure intent');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('tooth chart treatment updates send the stored edit revision and a stable request key',async()=>{
+ focused=true;lastEvent=null;appListeners=[];const revision='c'.repeat(64),calls=[];
+ const record={id:7,tooth_number:'11',treatment_name:'Old treatment',treatment_date:'2026-11-01',material:'Old material',doctor_note:'Old note',result:'Old result',edit_revision:revision};
+ const api={
+  getPatient:async()=>({...patient(8),treatments:[record]}),
+  updateTreatment:async(...args)=>{calls.push(args);return{ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false};}
+ };
+ const Chart=chartComponent(api);let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel===label||node.findAllByType('Text').some(child=>flat(child.children).includes(label)));assert.ok(item,'missing control '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
+ await press('Diş 11, Sağlıklı');await press('Tedavi Geçmişi');await press('Düzenle');
+ const input=tree.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Tedavi adı');assert.ok(input);
+ await renderer.act(async()=>input.props.onChangeText('Updated treatment'));
+ await press('Tedaviyi Güncelle');
+ assert.equal(calls.length,1);
+ assert.equal(calls[0][2],7);
+ assert.equal(calls[0][4].startsWith('synthetic-treatment-request-'),true);
+ assert.equal(calls[0][5],revision,'update must use the revision from the selected treatment record');
+ assert.ok(!tree.root.findAllByType('Pressable').some(node=>node.props.accessibilityLabel==='Bekleyen Tedaviyi Doğrula'));
  await renderer.act(async()=>tree.unmount());
 });
