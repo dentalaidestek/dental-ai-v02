@@ -72,3 +72,11 @@ test('native support exposes reports and cursor pagination for tickets and messa
  assert.ok(backend.includes('/support/conversation-options'));
  assert.ok(backend.includes('next_before_id'));
 });
+
+test('support notifications open the exact ticket through the authenticated owner-scoped detail API',()=>{
+ assert.match(screen,/initialTicketId\?:number/);
+ assert.match(screen,/Number\.isSafeInteger\(initialTicketId\)/);
+ assert.ok(screen.includes('void open(initialTicketId)'));
+ assert.ok(screen.includes('getSupportTicket(token,id)'));
+ assert.ok(app.includes('initialTicketId={route.params?.ticketId}'));
+});
