@@ -1,4 +1,5 @@
 from io import BytesIO
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -85,8 +86,7 @@ def test_raw_http_body_limits_cover_multipart_overhead_and_respect_global_cap():
     assert request_body_limit({"method": "GET", "path": "/patients/12/media"}, global_limit) == global_limit
 
 
-@pytest.mark.asyncio
-async def test_asgi_body_counter_rejects_chunked_or_understated_multipart_body():
+def test_asgi_body_counter_rejects_chunked_or_understated_multipart_body():
     from app.upload_limits import MAX_PATIENT_MEDIA_FILE_BYTES
 
     sent = []
@@ -107,6 +107,8 @@ async def test_asgi_body_counter_rejects_chunked_or_understated_multipart_body()
         ],
     }
     middleware = RequestLimits(downstream, max_bytes=128 * 1024 * 1024)
-    with pytest.raises(HTTPException) as exc:
-        await middleware(scope, receive, send)
-    assert exc.value.status_code == 413
+    async def run():
+        with pytest.raises(HTTPException) as exc:
+            await middleware(scope, receive, send)
+        assert exc.value.status_code == 413
+    asyncio.run(run())
