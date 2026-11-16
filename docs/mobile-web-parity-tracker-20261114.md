@@ -366,3 +366,10 @@ Web-first comparison: `app/templates/voice_exam_panel.html` + `app/static/voice-
 Commits: `b952919` helper, `8c60646` review UI, `a8539cd` approval UI, `b96c1d5` regression suite, `d0ab2cf` payload assertion, `90b6574` test registration, `b0caa94` CommonJS test fix, `995974e` voice workflow evidence note. Four isolated helper tests passed; integration/source-contract test is registered but not yet run with the full mobile dependency tree. No full typecheck, beta suite, Android/iOS device test or clinical acceptance is claimed.
 
 The next gate remains execution of the full suite on a working runner and physical-device review. No main merge, production deploy, patient mutation or store publication.
+
+
+## Newly confirmed next voice gap — uncertain ASR retry (2026-11-16)
+
+Web/native endpoint comparison found a remaining reliability and cost issue. `mobile/src/nativeVoiceAudio.ts` uploads each retained clip without a stable segment request key. `app/mobile_api.py:mobile_voice_audio` streams the clip and calls `core.extract(..., transcription_only=True)`, then returns the transcript without a durable receipt/deduplication record. If Gemini completes but the response is lost, the native recorder correctly keeps the local clip and a retry can invoke transcription again; the caller cannot reconcile the first result and may append a duplicate segment.
+
+No quick client-only fix is safe: the server must be able to replay the exact result after a lost response, while transcript data is sensitive and raw audio must remain unpersisted. Next voice work should evaluate a short-lived, encrypted, owner+patient+segment-key+audio-digest receipt with strict TTL/size bounds, same-key/different-content rejection, cross-account isolation and process-death recovery. This is an identified open issue, not implemented or accepted.
