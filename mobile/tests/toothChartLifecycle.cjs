@@ -228,7 +228,7 @@ test('native tooth chart labels patient right and left and preserves web FDI qua
  const exactText=tree.root.findAllByType('Text').map(node=>flat(node.children));
  assert.equal(exactText.filter(value=>value==='Sağ').length,2,'each jaw must label the patient right side');
  assert.equal(exactText.filter(value=>value==='Sol').length,2,'each jaw must label the patient left side');
- const fdi=tree.root.findAllByType('Pressable').map(node=>node.props.accessibilityLabel).filter(value=>typeof value==='string'&&value.startsWith('Diş ')).map(value=>value.match(/^Diş (\\d+)/)?.[1]);
+ const fdi=tree.root.findAllByType('Pressable').map(node=>node.props.accessibilityLabel).filter(value=>typeof value==='string'&&value.startsWith('Diş ')).map(value=>value.match(/^Diş (\d+)/)?.[1]);
  assert.deepEqual(fdi,['18','17','16','15','14','13','12','11','21','22','23','24','25','26','27','28','48','47','46','45','44','43','42','41','31','32','33','34','35','36','37','38']);
  await renderer.act(async()=>tree.unmount());
 });
