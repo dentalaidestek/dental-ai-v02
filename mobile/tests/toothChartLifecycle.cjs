@@ -168,3 +168,55 @@ test('tooth chart treatment updates send the stored edit revision and a stable r
  assert.ok(!tree.root.findAllByType('Pressable').some(node=>node.props.accessibilityLabel==='Bekleyen Tedaviyi Doğrula'));
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('tooth chart clears a definitive validation rejection and permits a corrected retry',async()=>{
+ focused=true;lastEvent=null;appListeners=[];const storage=new Map(),calls=[];let first=true;
+ const api={
+  getPatient:async()=>patient(8),
+  createTreatment:async(...args)=>{
+   calls.push({args,stored:storage.has('dai.treatment.1.8')});
+   if(first){first=false;throw Object.assign(new Error('Synthetic validation rejection'),{status:422});}
+   return{ok:true,treatment_id:10,edit_revision:'e'.repeat(64),replayed:false};
+  }
+ };
+ const Chart=chartComponent(api,storage);let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel===label||node.findAllByType('Text').some(child=>flat(child.children).includes(label)));assert.ok(item,'missing control '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
+ await press('Diş 11, Sağlıklı');await press('Tedavi Geçmişi');
+ const input=tree.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Tedavi adı');assert.ok(input);
+ await renderer.act(async()=>input.props.onChangeText('Synthetic treatment'));
+ await press('Tedavi Kaydı Ekle');
+ assert.equal(calls.length,1);assert.ok(calls[0].stored);
+ assert.equal(storage.has('dai.treatment.1.8'),false,'definitive validation rejection must clear the pending request');
+ await press('Tedavi Kaydı Ekle');
+ assert.equal(calls.length,2,'clinician can retry after correcting a definitive rejection');
+ assert.notEqual(calls[0].args[3],calls[1].args[3],'a rejected intent is replaced with a new request key');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('tooth chart refuses to update a legacy treatment without a server revision',async()=>{
+ focused=true;lastEvent=null;appListeners=[];let updates=0;
+ const legacy={id:4,tooth_number:'11',treatment_name:'Legacy treatment',material:'',doctor_note:'',result:''};
+ const Chart=chartComponent({getPatient:async()=>({...patient(8),treatments:[legacy]}),updateTreatment:async()=>{updates++;return{ok:true,treatment_id:4,edit_revision:'f'.repeat(64),replayed:false}}});
+ let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel===label||node.findAllByType('Text').some(child=>flat(child.children).includes(label)));assert.ok(item,'missing control '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
+ await press('Diş 11, Sağlıklı');await press('Tedavi Geçmişi');await press('Düzenle');
+ assert.equal(updates,0,'update must not be sent without an edit revision');
+ assert.ok(flat(tree.toJSON()).includes('Tedavi sürümü alınamadı'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('pending treatment drafts are isolated by authenticated user and patient',async()=>{
+ focused=true;lastEvent=null;appListeners=[];const storage=new Map();
+ const {parseTreatmentMutationIntent}=require('../src/treatmentMutation.ts');
+ const candidate={userId:1,patientId:8,operation:'CREATE',treatmentId:null,requestKey:'synthetic-treatment-request-private-0001',expectedRevision:null,payload:{treatment_name:'Private synthetic draft',tooth_number:'11',treatment_date:'',material:'',doctor_note:'',result:''}};
+ const intent=parseTreatmentMutationIntent(JSON.stringify(candidate),1,8);
+ storage.set('dai.treatment.1.8',JSON.stringify(intent));
+ const Chart=chartComponent({getPatient:async()=>patient(8)},storage);let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-b',userId:2,patientId:8}));await flush()});
+ assert.equal(tree.root.findAllByType('Pressable').filter(node=>node.props.accessibilityLabel==='Bekleyen Tedaviyi Doğrula').length,0);
+ assert.equal(storage.has('dai.treatment.1.8'),true,'another account must neither read nor delete the prior account draft');
+ await renderer.act(async()=>tree.unmount());
+});
