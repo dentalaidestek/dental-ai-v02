@@ -41,7 +41,7 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
 export type SupportTicketStatus="OPEN"|"IN_PROGRESS"|"USER_REPLIED"|"ANSWERED"|"CLOSED";
 export type SupportTicket={id:number;subject:string;initial_message:string;status:SupportTicketStatus;created_at:string;updated_at:string;last_message?:string;unread_count:number;can_reply:boolean};
 export type SupportMessage={id:number;sender_role:"USER"|"ADMIN";message:string;created_at:string};
-export type SupportReport={id:number;case_id:number|null;reason:string;detail:string;status:string;created_at:string};
+export type SupportReport={id:number;case_id:number|null;reason:string;detail:string;status:string;created_at:string;ticket_id:number|null;unread_count:number};
 export type SupportConversationOption={id:number;other_display_name:string;status:string};
 const supportKey=()=>("support_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,18)).replace(/[^A-Za-z0-9_-]/g,"");
 export const getSupportTickets=async(t:string,before?:number)=>{if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz destek sayfa kimliği.");const r=await req<{items:SupportTicket[];total:number;has_more:boolean;next_before_id:number|null}>("/support/tickets?limit=50"+(before?"&before_id="+before:""),t);if(!Array.isArray(r.items)||r.items.some(x=>!Number.isSafeInteger(x.id)||x.id<=0||typeof x.subject!=="string"||!["OPEN","IN_PROGRESS","USER_REPLIED","ANSWERED","CLOSED"].includes(x.status))||(r.next_before_id!==null&&(!Number.isSafeInteger(r.next_before_id)||r.next_before_id<=0)))throw Error("Destek talepleri doğrulanamadı.");return r};
