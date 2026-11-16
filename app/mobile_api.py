@@ -20,7 +20,6 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field as RequestField
 from sqlmodel import Session, func, select
-from PIL import Image, ImageOps
 from app.clinical_media import sanitize_clinical_media_image
 from starlette.requests import Request
 from fastapi.responses import JSONResponse
