@@ -12308,7 +12308,7 @@ def create_analysis(
                 maximum_total=MAX_ANALYSIS_BATCH_BYTES,
             )
             if new_bytes + saved_bytes > MAX_ANALYSIS_BATCH_BYTES:
-                raise HTTPException(413, "Kayıtlı ve yeni görüntülerin toplamı en fazla 80 MiB olabilir.")
+                raise HTTPException(413, "Kayıtlı ve yeni görüntülerin toplamı en fazla 48 MiB olabilir.")
         except HTTPException as exc:
             return HTMLResponse(str(exc.detail), status_code=exc.status_code)
 
