@@ -8,8 +8,10 @@ mobile clients do not create a second authentication system.
 from datetime import datetime, timedelta
 from pathlib import Path
 import json
+import hmac
 import logging
 import os
+import re
 import shutil
 import time
 import uuid
@@ -54,6 +56,7 @@ from app.main import (
     _socket_case_authorized,
     expert_support_request_create, expert_support_message, study_ai_ask,
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, storage_delete, _record_patient_realtime_events,
+    _patient_edit_revision,
     _record_realtime_event, _publish_realtime_event, on_loop,
     _cancel_pending_program_reminders, _resolve_notifications, _record_program_realtime_event, _utcnow_naive,
     _ensure_email_verification_challenge, _verify_email_code,
@@ -751,6 +754,7 @@ class MobilePatientEdit(BaseModel):
     tc_kimlik_no: Optional[str] = None
     address: Optional[str] = None
     chief_complaint: Optional[str] = None
+    expected_revision: Optional[str] = None
 
 
 @router.put("/patients/{patient_id}")
@@ -761,6 +765,8 @@ def mobile_edit_patient(patient_id: int, payload: MobilePatientEdit, user: User 
         raise HTTPException(status_code=422, detail="Ad ve soyad zorunludur.")
     if phone and (not phone.isdigit() or len(phone) != 11 or not phone.startswith("05")):
         raise HTTPException(status_code=422, detail="Telefon 05 ile başlamalı ve 11 rakam olmalıdır.")
+    if payload.expected_revision is not None and not re.fullmatch(r"[0-9a-f]{64}", payload.expected_revision):
+        raise HTTPException(status_code=422, detail="Hasta kayıt sürümü geçersiz.")
     age = None
     if payload.birth_date:
         try:
@@ -772,14 +778,24 @@ def mobile_edit_patient(patient_id: int, payload: MobilePatientEdit, user: User 
         except ValueError:
             raise HTTPException(status_code=422, detail="Doğum tarihi geçersiz.")
     with Session(engine, expire_on_commit=False) as session:
-        patient = session.get(Patient, patient_id)
+        patient_query = select(Patient).where(Patient.id == patient_id)
+        if engine.dialect.name == "postgresql":
+            patient_query = patient_query.with_for_update()
+        patient = session.exec(patient_query).first()
         if not patient or patient.owner_user_id != user.id:
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        profile = session.exec(select(PatientProfile).where(PatientProfile.patient_id == patient_id)).first()
+        if payload.expected_revision is not None and not hmac.compare_digest(
+            _patient_edit_revision(patient, profile), payload.expected_revision
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Hasta bilgileri başka bir oturumda güncellendi. Güncel kaydı yükleyip değişikliklerinizi yeniden uygulayın.",
+            )
         patient.first_name, patient.last_name = first_name, last_name
         patient.phone, patient.birth_date, patient.age = phone, payload.birth_date or None, age
         patient.tc_kimlik_no = payload.tc_kimlik_no.strip() if payload.tc_kimlik_no else None
         patient.chief_complaint = payload.chief_complaint.strip() if payload.chief_complaint else None
-        profile = session.exec(select(PatientProfile).where(PatientProfile.patient_id == patient_id)).first()
         if not profile:
             profile = PatientProfile(patient_id=patient_id)
         profile.address = payload.address.strip() if payload.address else None
@@ -787,9 +803,10 @@ def mobile_edit_patient(patient_id: int, payload: MobilePatientEdit, user: User 
         session.add(profile)
         events = _record_patient_realtime_events(session, patient, "PATIENT_UPDATED", profile)
         session.commit()
+        edit_revision = _patient_edit_revision(patient, profile)
     for event in events:
         on_loop(_publish_realtime_event, event)
-    return {"ok": True, "patient": _patient_payload(patient)}
+    return {"ok": True, "patient": _patient_payload(patient), "edit_revision": edit_revision}
 
 
 @router.delete("/patients/{patient_id}")
@@ -937,6 +954,7 @@ def mobile_patient_detail(
         profile = session.exec(select(PatientProfile).where(PatientProfile.patient_id == patient_id)).first()
         return {
             "patient": {**_patient_payload(patient), "tc_kimlik_no": patient.tc_kimlik_no, "address": profile.address if profile else None},
+            "edit_revision": _patient_edit_revision(patient, profile),
             "teeth": [
                 {
                     "id": t.id,
