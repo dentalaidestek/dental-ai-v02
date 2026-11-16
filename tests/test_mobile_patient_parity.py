@@ -441,6 +441,9 @@ def test_web_analysis_selection_and_submission_share_four_image_limit(chat,monke
         session.commit()
 
     assert main.MAX_ANALYSIS_IMAGES == 4
+    profile=client.get('/patients/80')
+    assert profile.status_code==200,profile.text
+    assert 'const maxAnalysisImages = 4;' in profile.text
     accepted=client.get('/analysis/new/80?media_ids=801,802,803,804')
     assert accepted.status_code==200,accepted.text
     assert '4 kayıtlı görüntü analiz için seçildi' in accepted.text
