@@ -451,6 +451,9 @@ def test_web_analysis_selection_and_submission_share_four_image_limit(chat,monke
     assert accepted.status_code==200,accepted.text
     assert '4 kayıtlı görüntü analiz için seçildi' in accepted.text
     assert 'toplam en fazla 4 görüntü' in accepted.text
+    assert 'data-analysis-image-limit="4"' in accepted.text
+    assert 'data-existing-image-count="4"' in accepted.text
+    assert 'Kayıtlı görüntüler dahil bir analizde en fazla ' in accepted.text
 
     rejected=client.get('/analysis/new/80?media_ids=801,802,803,804,805')
     assert rejected.status_code==400
