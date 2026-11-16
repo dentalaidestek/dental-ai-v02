@@ -174,3 +174,44 @@ Regression additions:
 Latest commit: `e20f0b7645e50ac1b8d180eecfd5be804b59bfd1`. Latest-head Actions runs: Android #2459, Security recovery #1036, Admin security #920, Expert social #916; all concluded failure. Job records are exposed without runner step detail in the current response, so no TypeScript/Gradle/pytest pass is claimed. The previously observed runner-allocation/empty-step + BlobNotFound pattern remains unresolved; repository owner must inspect Actions runner/usage configuration.
 
 PR remains Draft. No main merge, production deployment, database migration execution, APK/IPA publication or live patient/support record mutation.
+
+
+## 2026-11-16 — Clinical media picker validation and gallery lifecycle
+
+Web-first source comparison was completed before the native changes:
+- `app/templates/patient_detail.html`: photo/radiograph upload, gallery preview, individual and bulk delete, existing-media selection.
+- `app/templates/analysis_new.html` and `app/main.py`: the web GET page can carry up to 12 selected archive IDs, but the canonical analysis POST rejects more than four total images.
+- `app/mobile_analysis_api.py`: the authenticated native analysis endpoint independently enforces at most four existing archive IDs and validates that every selected media row belongs to the same patient and authenticated owner.
+- `app/mobile_api.py`: patient detail continues to enforce patient ownership (ADMIN exception remains unchanged).
+
+The browser tool could not open the signed-in production site, so this pass used the branch's actual web templates, route handlers and API code rather than claiming a live authenticated browser walkthrough. The native four-image analysis cap was deliberately preserved: raising it to 12 would contradict both canonical create handlers.
+
+### Changes on this branch
+- `mobile/src/clinicalMediaPicker.ts`: rejects negative/NaN/infinite picker byte metadata and rejects a supported filename/source-URI extension disagreement before encryption or upload. The server still performs the authoritative image-byte/format validation.
+- `mobile/tests/clinicalMediaPicker.cjs`: ten focused regressions cover JPEG/PNG/WebP, Android opaque content URIs, unsupported formats, MIME/extension disagreement, malformed size metadata, 12 MB/file and 12-file limits, unsafe URIs and unsafe filenames.
+- `mobile/package.json`: includes the picker regressions in `npm run test:beta`.
+- `mobile/src/NativePatientMedia.tsx`: gallery data now refreshes when the patient screen gains focus and when the app returns to foreground. The initial mount no longer starts a duplicate gallery request. This is event-driven; no polling interval or extra backend endpoint was added.
+- `mobile/tests/patientMediaAccountSwitch.cjs`: adds a lifecycle regression for one initial load, no request on background, refresh on foreground, refresh on screen refocus, and listener cleanup on blur/unmount. Existing account/patient isolation tests remain in place.
+
+### Commits in this pass
+Starting branch head: `aa264af77749299fc5ee1fa66f740b05de5e7b05`
+
+- `189a8f1` Reject ambiguous clinical image picker metadata
+- `c14d408` Add clinical image picker validation regressions
+- `54886b9` Run clinical media picker regressions in beta suite
+- `cc150bf` Refresh clinical gallery on focus and foreground
+- `f90402f` Test clinical gallery focus and foreground refresh
+- `c5ce462` Disambiguate clinical media MIME regression fixture
+
+Current code head before this tracker update: `c5ce462a86e5d7ed170ceba597f3332b7d870b27`.
+
+### Verification actually performed
+- Isolated Node test run for `clinicalMediaPicker.cjs`: **10/10 passed**.
+- Strict isolated TypeScript check for `clinicalMediaPicker.ts` (`tsc --strict --noEmit --target ES2020 --module commonjs`): **passed**.
+- GitHub source-contract assertions against the branch: **11/11 passed**, including picker guards, test wiring, focus/foreground lifecycle, the web/native four-image backend contract, and patient ownership checks.
+- The full mobile `npm test`, full Android `tsc`, Expo export, Gradle/APK and full Python security suites were **not run** in this pass. The repository could not be cloned from this runtime; the isolated checks above are not substitutes for the full suites.
+
+### CI and release boundary
+At the starting head `aa264af`, Android typecheck/APK and Security recovery, Admin security and Expert social all failed with **zero workflow steps**; the step endpoint returned empty arrays, logs returned `BlobNotFound 404`, artifacts were empty and combined commit status had no entries. Therefore `npm ci`, `tsc`, Gradle and pytest did not start. This is a runner/execution-allocation failure, not evidence that source tests failed or passed. The exact repository billing/hosted-runner permission cause remains unexposed by the available GitHub records.
+
+PR #257 remains Draft/open. No main merge, production deploy, database migration, APK/IPA publication or live patient-record mutation was performed.
