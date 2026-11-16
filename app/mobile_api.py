@@ -22,7 +22,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field as RequestField
-from sqlmodel import Session, func, select, Field as SQLField
+from sqlmodel import SQLModel, Session, func, select, Field as SQLField
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
 from app.clinical_media import sanitize_clinical_media_image
