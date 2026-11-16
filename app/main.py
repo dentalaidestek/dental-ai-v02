@@ -29,6 +29,7 @@ from dental_rag.rag import (
     get_specialty_relevant_context,
 )
 from app.clinical_rag_router import route_clinical_case
+from app.clinical_media import sanitize_clinical_media_image
 from app.vision_llm_context import structured_vision_payload
 from app.modality_classifier import classify_dental_image
 from vision_service.tooth_evidence import build_tooth_evidence_package
@@ -10880,6 +10881,9 @@ def upload_patient_media(
 
             if not _patient_media_has_valid_signature(destination, extension):
                 raise ValueError("Seçilen dosyalardan biri geçerli bir JPG, PNG veya WEBP görüntüsü değil.")
+            # The browser upload path must apply the same orientation and
+            # metadata privacy rules as native uploads before durable storage.
+            sanitize_clinical_media_image(destination, extension, max_pixels=40_000_000)
             storage_persist_file(destination)
             pending_media.append(PatientMedia(
                 patient_id=patient_id,
