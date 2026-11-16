@@ -155,3 +155,22 @@ Starting HEAD `91abd3d`; twenty commits advanced the branch to `08bdf89` (code-b
 - Native queue is persisted before transfer in SecureStore; retries reconcile the same UUID receipt before any resend. Native upload now exposes actual multipart byte progress.
 - Regression coverage added for replay, owner isolation, retention, process-death reconciliation, stable-key retry, secure-store failure, and progress. Full local suites remain unrun because the private GitHub repository could not be cloned in this runtime; CI runner allocation is the current verification blocker.
 - Remaining media gap: a picker cache URI can be evicted by Android before a pending upload is resumed. If no server receipt exists, the original image must be selected again; no extra unencrypted copy is created.
+
+
+## 2026-11-16 — Native support request parity follow-up
+
+Web-first comparison repeated against `app/templates/support_request.html`, `app/templates/_support_status_regions.html`, `app/main.py` and the existing native support screen/API.
+
+Completed the three previously-open support items:
+- Optional expert-conversation association: native fetches eligible conversations from an authenticated endpoint, displays the same participant-aware choices, and sends `case_id`. Server independently verifies that the authenticated user is a case participant and that a message exists, or the requester has reached the web timeout eligibility. The linked case is included in the durable idempotency payload and the choice is persisted with the pending SecureStore intent. The other conversation participant is not given access to the support ticket.
+- “Bildirimlerim”: native now lists the authenticated user's moderation reports with status, case reference and date. Each report is associated with the canonical private `REPORT` support conversation (using the existing web helper that creates missing linked tickets); tapping a report opens the same paged conversation UI. Detail/read/reply endpoints allow `REPORT` tickets only after checking both ticket owner and the linked `UserReport.reporter_user_id`.
+- Pagination: support ticket list now uses descending ID cursor pages (50 per request); the existing 20-message backend cursor is now exposed by a “Daha eski mesajları yükle” action that prepends messages without replacing the current thread. Ticket history has a “Daha eski destek taleplerini yükle” action.
+
+Regression additions:
+- Python: eligible case listing and linking, report list + linked thread, cross-account report detail/reply denial, and ticket cursor non-overlap.
+- Node source-contract: case selection/persistence, report list/thread opening, ticket and message pagination. Wired into existing `test:beta` script.
+- GitHub source-level assertions: 12/12 core implementation checks passed after correcting one assertion to match the explicit participant-set check. These are not runtime tests.
+
+Latest commit: `e20f0b7645e50ac1b8d180eecfd5be804b59bfd1`. Latest-head Actions runs: Android #2459, Security recovery #1036, Admin security #920, Expert social #916; all concluded failure. Job records are exposed without runner step detail in the current response, so no TypeScript/Gradle/pytest pass is claimed. The previously observed runner-allocation/empty-step + BlobNotFound pattern remains unresolved; repository owner must inspect Actions runner/usage configuration.
+
+PR remains Draft. No main merge, production deployment, database migration execution, APK/IPA publication or live patient/support record mutation.
