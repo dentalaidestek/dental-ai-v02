@@ -43,6 +43,15 @@ test('mixed composer limits new picker slots by already selected saved media',as
  assert.equal(h.calls.length,1);assert.equal(h.calls[0].existingMediaIds.length,2);assert.equal(h.calls[0].images.length,2);
  await renderer.act(async()=>t.unmount());
 });
+test('four saved images disable additional native picker slots',async()=>{
+ const h=ui(),t=await mount(h,async()=>{},[31,32,33,34]);
+ assert.equal(button(t,'Galeriden Ekle').props.disabled,true);
+ assert.equal(button(t,'Kameradan Ekle').props.disabled,true);
+ assert.ok(text(t.toJSON()).includes('4 kayıtlı klinik görüntü seçildi'));
+ assert.ok(text(t.toJSON()).includes('4 / 4 görüntü'));
+ await renderer.act(async()=>t.unmount());
+});
+
 test('native multipart upload sends saved media IDs in the same request as new image bytes',async()=>{
  const exports={},parts=[];let xhr;
  class Form{append(key,value){parts.push([key,value])}}
