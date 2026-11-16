@@ -46,3 +46,13 @@ The file is already included in `mobile/package.json` under `test:beta`.
 The code and tests are committed to `feature/mobile-web-parity-20261110`; starting HEAD `91abd3d`, the branch advanced by 11 commits to `d3c6c5c`. They have **not** been reported green. Current-head Android PR #2335 (`43811247198`), Android push #2334 (`43811241117`), Android test APK #285 (`43811241121`), Security recovery #974 (`43811247103`), Admin security #858 (`43811247100`) and Expert social #854 (`43811247129`) all failed before steps. The raw job records show `runner_id=0`, empty runner name/group, `labels=[ubuntu-latest]`, `steps=[]`, and 2–3 second completion. All eight job-log downloads returned `BlobNotFound 404`. Consequently no `npm ci`, `tsc`, Node regression suite, pytest, Gradle build or device test ran. This confirms that GitHub did not assign a runner; the exact account/billing/hosted-runner entitlement cause remains outside the available repository records and needs repository-owner inspection.
 
 No main merge, live deployment, APK/IPA publication or real patient-record mutation was performed.
+
+## Web sheet dismissal parity — 2026-11-16
+
+A second web-first visual/interaction pass found that the canonical web page provides an explicit `Paneli kapat` control in the selected-tooth sheet (`closeSheet()` hides the sheet and removes the selected highlight). The native chart kept the selected detail card open until another tooth or dentition was chosen, so there was no direct equivalent on a narrow phone screen.
+
+Added an accessible `Diş panelini kapat` control to the native selected-tooth header. It collapses only the detail card and clears transient surface/note/editor selection; it does not write or delete clinical records. It is disabled while a tooth/surface/treatment mutation is in flight and while a durable pending treatment intent exists. The latter is deliberately stricter than the web sheet: hiding a pending SecureStore intent would make its explicit reconciliation action difficult to find and could encourage an unsafe duplicate write.
+
+Added component regressions for normal dismissal (the FDI tooth remains in the chart and becomes unselected) and for blocking dismissal while an uncertain treatment intent is stored. These are committed in `toothChartLifecycle.cjs`, already included by `npm run test:beta`.
+
+Validation boundary: no React Native renderer test, TypeScript compiler, Android build, screenshot or physical-device test has executed in this environment because the latest Actions jobs failed before any step. No CI pass is claimed.
