@@ -259,3 +259,26 @@ test('treatment date and name validation matches backend clinical contract',asyn
   assert.equal(bodies.length,2);
  }finally{global.fetch=original}
 });
+
+
+test('patient profile accepts only well-formed optional edit revisions',async()=>{
+ const revision='a'.repeat(64),original=global.fetch;
+ try{
+  global.fetch=async()=>reply({patient:{id:8},teeth:[],surfaces:[],treatments:[],media:[],edit_revision:revision});
+  assert.equal((await getPatient('token',8)).edit_revision,revision);
+  global.fetch=async()=>reply({patient:{id:8},teeth:[],surfaces:[],treatments:[],media:[],edit_revision:'not-a-revision'});
+  await assert.rejects(()=>getPatient('token',8),/beklenmeyen profil/);
+ }finally{global.fetch=original}
+});
+
+test('native patient edit sends the loaded revision and rejects malformed revisions before fetch',async()=>{
+ const {editPatient}=require('../src/api.ts'),revision='b'.repeat(64),original=global.fetch;
+ let body;
+ global.fetch=async(_url,init)=>{body=JSON.parse(init.body);return reply({ok:true,patient:{id:8},edit_revision:'c'.repeat(64)})};
+ try{
+  await editPatient('token',8,{first_name:'Synthetic',last_name:'Patient',expected_revision:revision});
+  assert.equal(body.expected_revision,revision);
+  global.fetch=()=>{throw Error('unexpected network call')};
+  await assert.rejects(()=>editPatient('token',8,{first_name:'Synthetic',last_name:'Patient',expected_revision:'bad'}),/kayıt sürümü/);
+ }finally{global.fetch=original}
+});
