@@ -149,7 +149,21 @@ test('pending parent note and busy state lock chart writes before the callback',
  await renderer.act(async()=>findPressable(t.root,'Klinik Bilgi').props.onPress());
  const save=findPressable(t.root,'Klinik Notu Kaydet');
  assert.equal(save.props.disabled,true);
+ assert.ok(t.root.findAllByType('TextInput').every(node=>node.props.editable===false));
+ assert.equal(findPressable(t.root,'36').props.disabled,true);
  assert.ok(text(t.toJSON()).includes('Bekleyen hekim notu ana klinik ekranda doğrulanmadan'));
  assert.equal(saved.length,0);
+ await renderer.act(async()=>t.unmount());
+});
+
+
+test('parent mutation lock disables treatment selection and prevents a duplicate submit',async()=>{
+ const Component=ui(async()=>({pending:false,findings:model.visionFindings({findings:[finding]},'PANORAMIC')})),calls=[];let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:14,assetId:4,parentBusy:true,onRunTreatmentAnalysis:async teeth=>{calls.push(teeth);return true},onClose(){}})));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ await renderer.act(async()=>findPressable(t.root,'Tedavi').props.onPress());
+ assert.equal(findPressable(t.root,'36').props.disabled,true);
+ assert.equal(findPressable(t.root,'Analiz Et').props.disabled,true);
+ assert.equal(calls.length,0);
  await renderer.act(async()=>t.unmount());
 });
