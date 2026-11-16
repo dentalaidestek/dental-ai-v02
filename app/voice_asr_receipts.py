@@ -298,12 +298,25 @@ def finish_receipt(session: Session, *, owner_id: int, patient_id: int,
     return True
 
 
-def expire_voice_asr_receipts(session: Session, *, now: datetime | None = None,
-                              limit: int = 100) -> dict:
-    """Clear encrypted results after 24h and retain only short-lived tombstones."""
+def expire_voice_asr_receipts(session: Session, *, patient_model=None,
+                              now: datetime | None = None, limit: int = 100) -> dict:
+    """Clear expired results and erase receipts whose patient no longer exists."""
     from sqlalchemy import delete, or_
 
     stamp = _stamp(now)
+    deleted = []
+    if patient_model is not None:
+        live_patient = select(patient_model.id).where(
+            patient_model.id == WorkJob.resource_id,
+            patient_model.owner_user_id == WorkJob.owner_user_id,
+        ).exists()
+        deleted = session.exec(select(WorkJob.id).where(
+            WorkJob.kind == KIND,
+            ~live_patient,
+        ).order_by(WorkJob.id).limit(limit)).all()
+        if deleted:
+            session.exec(delete(WorkJob).where(WorkJob.id.in_(deleted)))
+
     cutoff = stamp - RECEIPT_TTL
     completed = session.exec(select(WorkJob).where(
         WorkJob.kind == KIND,
@@ -339,4 +352,4 @@ def expire_voice_asr_receipts(session: Session, *, now: datetime | None = None,
     if prune_ids:
         session.exec(delete(WorkJob).where(WorkJob.id.in_(prune_ids)))
     session.flush()
-    return {"expired": len(completed), "stale": len(stale), "pruned": len(prune_ids)}
+    return {"deleted": len(deleted), "expired": len(completed), "stale": len(stale), "pruned": len(prune_ids)}
