@@ -74,7 +74,7 @@ test('rejects negative and non-finite picker byte counts',()=>{
 
 test('enforces the 12 MB per-image limit and 12-file picker limit',()=>{
  assert.equal(normalizeClinicalMediaAssets([asset({fileSize:CLINICAL_MEDIA_PICKER_MAX_BYTES})]).length,1);
- assert.throws(()=>normalizeClinicalMediaAssets([asset({fileSize:CLINICAL_MEDIA_PICKER_MAX_BYTES+1})]),/12 MB/);
+ assert.throws(()=>normalizeClinicalMediaAssets([asset({fileSize:CLINICAL_MEDIA_PICKER_MAX_BYTES+1})]),/12 MiB/);
  assert.equal(normalizeClinicalMediaAssets(Array.from({length:CLINICAL_MEDIA_PICKER_MAX_FILES},(_,i)=>asset({
   uri:`content://media/${i}`,fileName:null,mimeType:'image/jpeg'
  }))).length,CLINICAL_MEDIA_PICKER_MAX_FILES);
