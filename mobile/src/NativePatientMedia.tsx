@@ -23,7 +23,7 @@ const uploadKeyFor=(userId:number,patientId:number)=>`dai.patient-media.upload.$
 function parsePendingUpload(raw:string|null,userId:number,patientId:number):PendingUpload|null{
  if(!raw)return null;
  let value:any;try{value=JSON.parse(raw)}catch{throw Error('Bekleyen klinik görüntü taslağı okunamadı.')}
- if(!value||(value.version!==1&&value.version!==2&&value.version!==3)||value.userId!==userId||value.patientId!==patientId||!['PHOTO','RADIOGRAPH'].includes(value.mediaType)||!Array.isArray(value.files)||value.files.length<1||value.files.length>CLINICAL_MEDIA_PICKER_MAX_FILES||!Number.isFinite(value.updatedAt)||value.batchId!==undefined&&(typeof value.batchId!=='string'||!CLINICAL_MEDIA_BATCH_ID_PATTERN.test(value.batchId))||value.files.some((file:any)=>!file||typeof file.uri!=='string'||!file.uri||typeof file.name!=='string'||!file.name||typeof file.type!=='string'||!['image/jpeg','image/png','image/webp'].includes(file.type)||typeof file.requestKey!=='string'||!/^[A-Za-z0-9_-]{16,96}$/.test(file.requestKey)||file.encryptedUri!==undefined&&(typeof file.encryptedUri!=='string'||file.encryptedUri!==file.uri||!isClinicalMediaVaultUri(file.encryptedUri,userId,patientId)))||new Set(value.files.map((file:any)=>file.requestKey)).size!==value.files.length)
+ if(!value||(value.version!==1&&value.version!==2&&value.version!==3)||value.userId!==userId||value.patientId!==patientId||!['PHOTO','RADIOGRAPH'].includes(value.mediaType)||!Array.isArray(value.files)||value.files.length<1||value.files.length>CLINICAL_MEDIA_PICKER_MAX_FILES||!Number.isFinite(value.updatedAt)||value.batchId!==undefined&&(typeof value.batchId!=='string'||!CLINICAL_MEDIA_BATCH_ID_PATTERN.test(value.batchId))||value.files.some((file:any)=>!file||typeof file.uri!=='string'||!file.uri||typeof file.name!=='string'||!file.name||typeof file.type!=='string'||!['image/jpeg','image/png','image/webp'].includes(file.type)||typeof file.requestKey!=='string'||!/^[A-Za-z0-9_-]{16,96}$/.test(file.requestKey)||file.encryptedUri!==undefined&&(typeof file.encryptedUri!=='string'||file.encryptedUri!==file.uri||!isClinicalMediaVaultUri(file.encryptedUri,userId,patientId,'archive')))||new Set(value.files.map((file:any)=>file.requestKey)).size!==value.files.length)
   throw Error('Bekleyen klinik görüntü taslağı doğrulanamadı. Yeni yükleme başlatılmadı.');
  if((value.version===2||value.version===3)&&value.files.some((file:any)=>!file.encryptedUri))
   throw Error('Şifreli klinik görüntü taslağı eksik. Yeni yükleme başlatılmadı.');
@@ -104,8 +104,8 @@ async function upload(reconcile=false){
       remaining=remaining.map(item=>item.requestKey===file.requestKey?file:item);
       await savePending(remaining);if(!current())return;setPending(remaining);
      }
-     await validateClinicalMediaVaultFile(file.encryptedUri!,userId,patientId,12*1024*1024);
-     const tempUri=await decryptClinicalMediaFile(file.encryptedUri!,userId,patientId,file.name);
+     await validateClinicalMediaVaultFile(file.encryptedUri!,userId,patientId,12*1024*1024,'archive');
+     const tempUri=await decryptClinicalMediaFile(file.encryptedUri!,userId,patientId,file.name,'archive');
      try{
       await uploadPatientMedia(token,patientId,{uri:tempUri,name:file.name,type:file.type},undefined,mediaType,file.requestKey,pendingBatchId,value=>{if(current())setByteProgress(value)});
      }finally{await deleteClinicalMediaTemp(tempUri).catch(()=>{});}
