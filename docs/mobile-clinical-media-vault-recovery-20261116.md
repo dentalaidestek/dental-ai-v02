@@ -36,3 +36,10 @@ The tests are registered through the existing `mobile/tests/clinicalMediaVault.c
 - Android/iOS physical-device tests are still required for `file://` and opaque `content://` metadata behavior, app termination at each crash window, and low-storage conditions.
 - Full `npm ci`, `npm run typecheck`, `npm run test:beta`, Python security regressions and APK build remain blocked until GitHub Actions allocates a runner.
 - No schema change, production deploy, main merge, APK/IPA publication, provider change or patient-record mutation was made.
+
+
+## Vault purpose isolation follow-up
+
+A second cross-module review found that archive and AI-analysis drafts share the same encrypted-vault utility but have different SecureStore intent keys. A broad patient-directory cleanup could therefore mistake an in-progress AI-analysis image for an orphaned gallery upload. Closed this by separating new files into `archive/` and `analysis/` subdirectories under the same user/patient scope. The URI validator accepts only the legacy root layout or these two explicit purpose directories. Archive cleanup scans only `archive/`; it preserves analysis drafts and all legacy root-level files. New archive and analysis encryption callers now declare their purpose.
+
+Legacy root-level encrypted files are intentionally not swept by the new archive cleanup. This avoids guessing which older app intent owns them; they remain readable/deletable through the backward-compatible URI validator and can be cleaned only by their owning receipt workflow.
