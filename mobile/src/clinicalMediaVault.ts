@@ -73,7 +73,19 @@ export async function encryptClinicalMediaFile(sourceUri:string,userId:number,pa
   const stageUri=cache+STAGE_PREFIX+Crypto.randomUUID()+'.bin';
   let destination='';
   try{
-    try{await FS.copyAsync({from:sourceUri,to:stageUri);}catch{throw new ClinicalMediaVaultError('SOURCE_MISSING','Seçilen klinik görüntü artık cihazda bulunmuyor. Bekleyen taslağı sunucu fişleriyle kontrol edip görseli yeniden seçin.');}
+    // Reject known oversized picker sources before copying plaintext into cache.
+    // Some Android content providers cannot stat opaque URIs; those fall back
+    // to the staged-file check below, which remains authoritative.
+    try{
+      const sourceInfo=await FS.getInfoAsync(sourceUri);
+      if(sourceInfo.exists&&Number.isFinite(sourceInfo.size)){
+        if(sourceInfo.size<1)throw new ClinicalMediaVaultError('SOURCE_MISSING','Seçilen klinik görüntü artık cihazda bulunmuyor. Yeniden seçin.');
+        if(sourceInfo.size>maxBytes)throw new ClinicalMediaVaultError('TOO_LARGE','Klinik görüntü dosyası izin verilen boyutu aşıyor.');
+      }
+    }catch(error){
+      if(error instanceof ClinicalMediaVaultError)throw error;
+    }
+    try{await FS.copyAsync({from:sourceUri,to:stageUri});}catch{throw new ClinicalMediaVaultError('SOURCE_MISSING','Seçilen klinik görüntü artık cihazda bulunmuyor. Bekleyen taslağı sunucu fişleriyle kontrol edip görseli yeniden seçin.');}
     const info=await FS.getInfoAsync(stageUri);
     if(!info.exists||!Number.isFinite(info.size)||info.size<1)
       throw new ClinicalMediaVaultError('SOURCE_MISSING','Seçilen klinik görüntü artık cihazda bulunmuyor. Yeniden seçin.');
