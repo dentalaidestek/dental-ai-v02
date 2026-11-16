@@ -10639,6 +10639,28 @@ def patient_realtime_snapshot(request: Request, patient_id: int):
         return {"ok": True, "patient": _patient_realtime_snapshot(patient, profile, include_private=include_private)}
 
 
+def _patient_edit_revision(patient: Patient, profile: Optional[PatientProfile]) -> str:
+    """Opaque optimistic-concurrency token for editable patient identity fields.
+
+    This is not an authorization credential. Ownership is always checked separately.
+    Including PatientProfile.address keeps web and native edits on one revision.
+    """
+    values = {
+        "patient_id": int(patient.id or 0),
+        "owner_user_id": int(patient.owner_user_id or 0),
+        "first_name": patient.first_name or "",
+        "last_name": patient.last_name or "",
+        "phone": patient.phone or "",
+        "birth_date": patient.birth_date or "",
+        "age": patient.age,
+        "tc_kimlik_no": patient.tc_kimlik_no or "",
+        "chief_complaint": patient.chief_complaint or "",
+        "address": profile.address if profile and profile.address else "",
+    }
+    canonical = json.dumps(values, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(b"dental-ai-patient-edit-v1:" + canonical).hexdigest()
+
+
 @app.post("/patients/{patient_id}/edit")
 @offload
 def edit_patient(
@@ -10651,6 +10673,7 @@ def edit_patient(
     tc_kimlik_no: Optional[str] = Form(None),
     address: Optional[str] = Form(None),
     chief_complaint: Optional[str] = Form(None),
+    expected_revision: Optional[str] = Form(None),
 ):
     user = get_current_user(request)
     if not user:
@@ -10669,10 +10692,22 @@ def edit_patient(
             calculated_age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
         except ValueError:
             return HTMLResponse("Doğum tarihi geçersiz.", status_code=400)
+    expected_revision = (expected_revision or "").strip() or None
+    if expected_revision and not re.fullmatch(r"[0-9a-f]{64}", expected_revision):
+        return HTMLResponse("Hasta kayıt sürümü geçersiz. Sayfayı yenileyin.", status_code=400)
     with Session(engine, expire_on_commit=False) as s:
-        patient = _owned_patient(s, user, patient_id)
-        if not patient:
+        patient_query = select(Patient).where(Patient.id == patient_id)
+        if s.get_bind().dialect.name == "postgresql":
+            patient_query = patient_query.with_for_update()
+        patient = s.exec(patient_query).first()
+        if not patient or (user.role != "ADMIN" and patient.owner_user_id != user.id):
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+        profile = s.exec(select(PatientProfile).where(PatientProfile.patient_id == patient.id)).first()
+        if expected_revision and not hmac.compare_digest(_patient_edit_revision(patient, profile), expected_revision):
+            return HTMLResponse(
+                "Hasta bilgileri başka bir oturumda güncellendi. Güncel kaydı yükleyip değişikliklerinizi yeniden uygulayın.",
+                status_code=409,
+            )
         patient.first_name = first_name
         patient.last_name = last_name
         patient.birth_date = birth_date or None
@@ -10680,7 +10715,6 @@ def edit_patient(
         patient.phone = phone
         patient.tc_kimlik_no = tc_kimlik_no.strip() if tc_kimlik_no else None
         patient.chief_complaint = chief_complaint.strip() if chief_complaint else None
-        profile = s.exec(select(PatientProfile).where(PatientProfile.patient_id == patient.id)).first()
         if not profile:
             profile = PatientProfile(patient_id=patient.id)
         profile.address = address.strip() if address else None
@@ -10783,6 +10817,7 @@ def patient_detail(request: Request, patient_id: int):
             context={
                 "patient": patient,
                 "patient_profile": patient_profile,
+                "patient_edit_revision": _patient_edit_revision(patient, patient_profile),
                 "analyses": analyses,
                 "voice_review_ids": voice_review_ids,
                 "treatments": treatments,
