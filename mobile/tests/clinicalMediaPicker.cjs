@@ -99,3 +99,12 @@ test('fails closed when neither URI, filename nor MIME identifies a supported fo
   mimeType:null
  })]),/türü belirlenemedi/);
 });
+
+
+test('enforces a 96 MiB aggregate archive picker budget using reported actual sizes',()=>{
+ const count=8;
+ const accepted=Array.from({length:count},(_,i)=>asset({uri:`content://media/${i}`,fileName:null,mimeType:'image/jpeg',fileSize:CLINICAL_MEDIA_PICKER_MAX_BYTES}));
+ assert.equal(normalizeClinicalMediaAssets(accepted).length,8);
+ const rejected=[...accepted,asset({uri:'content://media/extra',fileName:null,mimeType:'image/jpeg',fileSize:1})];
+ assert.throws(()=>normalizeClinicalMediaAssets(rejected),/toplam boyut en fazla 96 MiB/);
+});
