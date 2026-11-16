@@ -478,3 +478,15 @@ Regressions added for panoramic/bitewing inclusion, intraoral/unknown exclusion 
 - A security-workflow audit found that the new `app/voice_asr_receipts.py` implementation and `tests/test_voice_asr_receipts.py` regression file were missing from both the `security-recovery.yml` pull-request path filter and the security pytest command. Added both paths and added the receipt suite to the command so future changes to the encrypted/idempotent ASR receipt actually run in the security gate.
 - Latest code/workflow head at this checkpoint: `5d574b38e2cfd6dd0e4d053a39d596a9de91ff70`. Security recovery run `43957084568`, job `133614369015`, failed with an empty step list; log download returned `BlobNotFound 404`. Therefore the newly wired pytest command did not execute. Android run `43957084397` and Voice run `43957084377` were still queued at the time of this note; their outcomes must be checked again before reporting.
 - Full repository typecheck, beta suite, backend pytest, PostgreSQL concurrent receipt test, APK build, physical Android/iOS viewer screenshots and 60k capacity acceptance remain open. No main merge, production deploy, APK/IPA publication or patient-record mutation.
+
+
+### Final CI result after ASR security-gate wiring — 2026-11-16
+
+Code-bearing head: `5d574b38e2cfd6dd0e4d053a39d596a9de91ff70`; the branch subsequently received tracker-only head `366252b38c053d5241c01e2d19497879609b9ab3`.
+
+- Android run `43957084397`: typecheck job `133614367751`, beta-APK job `133614366918`.
+- Security recovery run `43957084568`: job `133614369015`.
+- Voice examination run `43957084377`: job `133614368291`.
+- All inspected jobs completed failure with empty step arrays; all three log downloads returned `BlobNotFound 404`. Combined status checks are empty. `npm ci`, TypeScript, Node beta tests, Gradle and pytest did not start. The security workflow now includes the ASR receipt test, but that test has not executed yet.
+
+This confirms a pre-step GitHub Actions execution/runner problem, not a failing assertion or compiler diagnostic. The exact owner-level hosted-runner/account/billing cause is not exposed by the available repository records. The repository owner must inspect Actions runner availability and usage/billing. Do not report CI green.
