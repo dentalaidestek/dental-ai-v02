@@ -505,9 +505,9 @@ def test_patient_archive_accepts_twelve_images_and_rejects_thirteen(chat,monkeyp
         assert len(session.exec(select(main.PatientMedia).where(main.PatientMedia.patient_id==81)).all())==12
 
 
-def _post_patient_media_batch_file(client, raw, request_key, batch_id, filename='synthetic.png'):
+def _post_patient_media_batch_file(client, raw, request_key, batch_id, filename='synthetic.png', patient_id=8):
     return client.post(
-        '/api/mobile/v1/patients/8/media',
+        f'/api/mobile/v1/patients/{patient_id}/media',
         data={'request_key': request_key, 'batch_id': batch_id, 'media_type': 'PHOTO'},
         files={'file': (filename, raw, 'image/png')},
     )
@@ -615,3 +615,45 @@ def test_mobile_patient_media_batch_identity_is_required_before_file_processing(
     )
     assert response.status_code == 422
     assert processed == []
+
+
+def test_mobile_patient_media_batch_quota_is_scoped_to_owner_and_patient(chat, monkeypatch, tmp_path):
+    from app import mobile_api
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, 'engine', engine)
+    monkeypatch.setattr(mobile_api, 'storage_persist_file', lambda path: None)
+    monkeypatch.chdir(tmp_path)
+    raw = io.BytesIO()
+    Image.new('RGB', (8, 8), 'white').save(raw, format='PNG')
+    payload = raw.getvalue()
+    monkeypatch.setattr(
+        mobile_api, '_copy_validated_image',
+        lambda upload, destination, maximum: (destination.write_bytes(payload) and 10 * 1024 * 1024),
+    )
+    with Session(engine) as session:
+        session.add_all([
+            main.Patient(id=8, anonymous_id='SYNTHETIC-SCOPE-8', owner_user_id=1),
+            main.Patient(id=9, anonymous_id='SYNTHETIC-SCOPE-9', owner_user_id=1),
+            main.Patient(id=10, anonymous_id='SYNTHETIC-SCOPE-10', owner_user_id=2),
+        ])
+        session.commit()
+
+    batch_id = 'synthetic-shared-batch-0001'
+    for patient_id, token in [(8, 'token'), (9, 'token'), (10, 'token2')]:
+        client.headers['Authorization'] = 'Bearer ' + token
+        for index in range(9):
+            response = _post_patient_media_batch_file(
+                client, payload, f'synthetic-scope-{patient_id}-{index:02d}-key',
+                batch_id, patient_id=patient_id,
+            )
+            assert response.status_code == 200, (patient_id, index, response.text)
+
+    with Session(engine) as session:
+        for patient_id in (8, 9, 10):
+            assert len(session.exec(select(main.PatientMedia).where(
+                main.PatientMedia.patient_id == patient_id,
+            )).all()) == 9
+        assert len(session.exec(select(WorkJob).where(
+            WorkJob.kind == 'PATIENT_MEDIA_RECEIPT',
+            WorkJob.result_ref == batch_id,
+        )).all()) == 27
