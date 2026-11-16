@@ -89,9 +89,11 @@ export default function NativePatientProfile({token,userId,patientId,actions}:{t
    if(!current())return;
    const status=(e as {status?:number})?.status,message=e instanceof Error?e.message:'Tedavi kaydı doğrulanamadı.';
    if(status===409&&message.includes('Tedavi başka bir oturumda güncellendi')){
-    await treatmentStore.deleteItemAsync(treatmentKey);setPendingTreatment(null);setTreatmentOpen(false);setEditingTreatment(null);setEditingTreatmentRevision(null);setTreatment(blankTreatment);setUncertain(false);await load();setMutationError('Tedavi başka bir oturumda güncellendi. Güncel geçmiş yüklendi; yeniden düzenleyin.');
+    try{await treatmentStore.deleteItemAsync(treatmentKey)}catch{setTreatmentIntentBlocked(true);setMutationError('Tedavi sürüm çakışması bulundu ancak güvenli taslak temizlenemedi. Yeni işlem başlatmayın; aynı taslağı doğrulamak için ekranı yeniden açın.');return}
+    setPendingTreatment(null);setTreatmentOpen(false);setEditingTreatment(null);setEditingTreatmentRevision(null);setTreatment(blankTreatment);setUncertain(false);await load();setMutationError('Tedavi başka bir oturumda güncellendi. Güncel geçmiş yüklendi; yeniden düzenleyin.');
    }else if([400,403,404,422].includes(Number(status))){
-    await treatmentStore.deleteItemAsync(treatmentKey);setPendingTreatment(null);setUncertain(false);setMutationError(message+' Bilgileri düzeltip yeniden deneyin.');
+    try{await treatmentStore.deleteItemAsync(treatmentKey)}catch{setTreatmentIntentBlocked(true);setMutationError('Sunucu isteği reddetti ancak güvenli taslak temizlenemedi. Yeni işlem başlatmayın; ekranı yeniden açıp kaydı doğrulayın.');return}
+    setPendingTreatment(null);setUncertain(false);setMutationError(message+' Bilgileri düzeltip yeniden deneyin.');
    }else{
     setUncertain(sent&&mutationMayHaveReachedServer(e));
     setMutationError(message+(sent?' Aynı işlem anahtarı güvenli taslakta korundu; tekrar göndermek yerine aynı kaydı doğrulayın.':' Güvenli taslak kaydedilemedi; sunucuya istek gönderilmedi.'));
