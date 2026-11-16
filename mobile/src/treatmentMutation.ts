@@ -28,8 +28,9 @@ function validDate(value: string) {
   if (!match) return false;
   const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
   if (year < 1 || month < 1 || month > 12 || day < 1) return false;
-  const date = new Date(Date.UTC(year, month, 0));
-  return day <= date.getUTCDate();
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= days[month - 1];
 }
 
 export function treatmentMutationStorageKey(userId: number, patientId: number) {
