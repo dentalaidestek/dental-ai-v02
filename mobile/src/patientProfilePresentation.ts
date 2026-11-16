@@ -63,3 +63,22 @@ export function patientProfileInitials(firstName?: string | null, lastName?: str
 export function patientProfileAgeLabel(age?: number | null): string {
   return age === null || age === undefined ? 'Hasta kaydı' : `${age} yaş`;
 }
+
+export type PatientProfileEditValues = Readonly<{
+  first_name?: string | null;
+  last_name?: string | null;
+  phone?: string | null;
+}>;
+
+/** Match the native patient-edit form to the web form and canonical API contract. */
+export function patientProfileEditError(values: PatientProfileEditValues): string | null {
+  const firstName = typeof values.first_name === 'string' ? values.first_name.trim() : '';
+  const lastName = typeof values.last_name === 'string' ? values.last_name.trim() : '';
+  const phone = typeof values.phone === 'string' ? values.phone.trim() : '';
+
+  if (!firstName || !lastName) return 'Ad ve soyad zorunludur.';
+  if (phone && !/^05[0-9]{9}$/.test(phone)) {
+    return 'Telefon numarası 05 ile başlamalı ve toplam 11 rakam olmalıdır.';
+  }
+  return null;
+}
