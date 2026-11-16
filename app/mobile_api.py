@@ -22,7 +22,8 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field as RequestField
-from sqlmodel import Session, func, select
+from sqlmodel import Session, func, select, Field as SQLField
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
 from app.clinical_media import sanitize_clinical_media_image
 from app.work_jobs import WorkJob
@@ -54,13 +55,14 @@ from app.main import (
     _run_analysis_vision,
     _run_preliminary_ai,
     classify_dental_image,
-    AdminNotice, StudyCourse, StudyMaterial, StudyChatMessage,
+    AdminNotice, SupportTicket, SupportTicketMessage, SupportTicketReadState, StudyCourse, StudyMaterial, StudyChatMessage,
     ConsultationCase, ConsultationMessage, ConsultationInboxState, ExpertProfile, E2EEDeviceKey,
     _socket_case_authorized,
     expert_support_request_create, expert_support_message, study_ai_ask,
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, storage_delete, _record_patient_realtime_events,
     _patient_edit_revision,
     _record_realtime_event, _publish_realtime_event, on_loop,
+    _support_user_can_reply, _support_unread_count, _mark_support_read,
     _cancel_pending_program_reminders, _resolve_notifications, _record_program_realtime_event, _utcnow_naive,
     _ensure_email_verification_challenge, _verify_email_code,
 )
@@ -1496,6 +1498,172 @@ async def mobile_send_consultation_message(case_id:int,payload:MobileMessage,tok
     if hasattr(response,"status_code") and response.status_code>=400:
         raise HTTPException(status_code=response.status_code,detail=data.get("error","Mesaj gönderilemedi."))
     return data
+
+class MobileSupportMutationReceipt(SQLModel, table=True):
+    """Durable per-user idempotency receipt for native support mutations."""
+    receipt_key: str = SQLField(primary_key=True, max_length=180)
+    user_id: int = SQLField(index=True)
+    operation: str
+    payload_hash: str
+    ticket_id: int = SQLField(index=True)
+    message_id: Optional[int] = None
+    created_at: datetime = SQLField(default_factory=datetime.utcnow, index=True)
+
+
+class MobileSupportCreate(BaseModel):
+    subject: str
+    message: str
+    request_key: str
+
+
+class MobileSupportReply(BaseModel):
+    message: str
+    request_key: str
+
+
+def _support_receipt_key(user_id: int, operation: str, request_key: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{16,96}", request_key or ""):
+        raise HTTPException(status_code=422, detail="Geçersiz destek işlem anahtarı.")
+    return hashlib.sha256(f"{user_id}:{operation}:{request_key}".encode()).hexdigest()
+
+
+def _support_mutation_replay(session: Session, key: str, user_id: int, operation: str, payload_hash: str):
+    receipt = session.get(MobileSupportMutationReceipt, key)
+    if not receipt:
+        return None
+    if receipt.user_id != user_id or receipt.operation != operation or not hmac.compare_digest(receipt.payload_hash, payload_hash):
+        raise HTTPException(status_code=409, detail="Bu işlem anahtarı farklı bir destek işlemi için kullanılmış.")
+    return receipt
+
+
+@router.get("/support/tickets")
+def mobile_support_tickets(token: str = Depends(_mobile_access_token), user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        tickets = session.exec(select(SupportTicket).where(
+            SupportTicket.user_id == user.id, SupportTicket.source_type == "SUPPORT"
+        ).order_by(SupportTicket.updated_at.desc(), SupportTicket.id.desc()).limit(100)).all()
+        items = []
+        for ticket in tickets:
+            latest = session.exec(select(SupportTicketMessage).where(
+                SupportTicketMessage.ticket_id == ticket.id
+            ).order_by(SupportTicketMessage.id.desc()).limit(1)).first()
+            items.append({
+                "id": ticket.id, "subject": ticket.subject, "initial_message": ticket.message,
+                "status": ticket.status, "created_at": ticket.created_at.isoformat(),
+                "updated_at": ticket.updated_at.isoformat(),
+                "last_message": latest.message if latest else ticket.message,
+                "unread_count": _support_unread_count(session, ticket.id, "USER"),
+                "can_reply": _support_user_can_reply(session, ticket),
+            })
+        return {"items": items, "total": len(items)}
+
+
+@router.post("/support/tickets")
+def mobile_support_create(payload: MobileSupportCreate, token: str = Depends(_mobile_access_token), user: User = Depends(_mobile_user)):
+    subject = payload.subject.strip()
+    message = payload.message.strip()
+    if not subject or len(subject) > 160 or not message or len(message) > 4000:
+        raise HTTPException(status_code=422, detail="Konu (1–160) ve açıklama (1–4000 karakter) zorunludur.")
+    key = _support_receipt_key(user.id, "CREATE", payload.request_key)
+    digest = hashlib.sha256(json.dumps({"subject": subject, "message": message}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    with Session(engine, expire_on_commit=False) as session:
+        replay = _support_mutation_replay(session, key, user.id, "CREATE", digest)
+        if replay:
+            return {"ok": True, "ticket_id": replay.ticket_id, "status": "REPLAYED", "replayed": True}
+        ticket = SupportTicket(user_id=user.id, subject=subject, message=message, source_type="SUPPORT")
+        session.add(ticket)
+        session.flush()
+        session.add(MobileSupportMutationReceipt(receipt_key=key, user_id=user.id, operation="CREATE", payload_hash=digest, ticket_id=ticket.id))
+        admins = session.exec(select(User).where(User.role == "ADMIN", User.is_active == True)).all()
+        events = [_record_realtime_event(session, admin.id, "SUPPORT_TICKET_CREATED", "support_ticket", ticket.id,
+            {"ticket_id": ticket.id, "user_id": user.id, "subject": ticket.subject, "status": "OPEN", "requires_fragment": True}) for admin in admins]
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            replay = _support_mutation_replay(session, key, user.id, "CREATE", digest)
+            if replay:
+                return {"ok": True, "ticket_id": replay.ticket_id, "status": "REPLAYED", "replayed": True}
+            raise HTTPException(status_code=409, detail="Destek talebi sonucu doğrulanamadı; aynı işlem anahtarıyla tekrar deneyin.")
+    for event in events:
+        on_loop(_publish_realtime_event, event)
+    return {"ok": True, "ticket_id": ticket.id, "status": ticket.status, "replayed": False}
+
+
+@router.get("/support/tickets/{ticket_id}")
+def mobile_support_ticket_detail(ticket_id: int, before_id: Optional[int] = None, token: str = Depends(_mobile_access_token), user: User = Depends(_mobile_user)):
+    if ticket_id <= 0 or (before_id is not None and before_id <= 0):
+        raise HTTPException(status_code=422, detail="Geçersiz destek talebi veya sayfa kimliği.")
+    with Session(engine, expire_on_commit=False) as session:
+        ticket = session.get(SupportTicket, ticket_id)
+        if not ticket or ticket.user_id != user.id or ticket.source_type != "SUPPORT":
+            raise HTTPException(status_code=404, detail="Destek talebi bulunamadı.")
+        query = select(SupportTicketMessage).where(SupportTicketMessage.ticket_id == ticket.id)
+        if before_id is not None:
+            query = query.where(SupportTicketMessage.id < before_id)
+        rows = session.exec(query.order_by(SupportTicketMessage.id.desc()).limit(21)).all()
+        has_more = len(rows) > 20
+        rows = list(reversed(rows[:20]))
+        return {
+            "ticket": {"id": ticket.id, "subject": ticket.subject, "initial_message": ticket.message,
+                "status": ticket.status, "created_at": ticket.created_at.isoformat(),
+                "updated_at": ticket.updated_at.isoformat(), "can_reply": _support_user_can_reply(session, ticket)},
+            "messages": [{"id": m.id, "sender_role": m.sender_role, "message": m.message, "created_at": m.created_at.isoformat()} for m in rows],
+            "has_more": has_more, "next_before_id": rows[0].id if has_more and rows else None,
+            "unread_count": _support_unread_count(session, ticket.id, "USER"),
+        }
+
+
+@router.post("/support/tickets/{ticket_id}/read")
+def mobile_support_ticket_read(ticket_id: int, through_message_id: Optional[int] = None, token: str = Depends(_mobile_access_token), user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        ticket = session.get(SupportTicket, ticket_id)
+        if not ticket or ticket.user_id != user.id or ticket.source_type != "SUPPORT":
+            raise HTTPException(status_code=404, detail="Destek talebi bulunamadı.")
+        remaining = _mark_support_read(session, ticket.id, "USER", through_message_id)
+        session.commit()
+        return {"ok": True, "ticket_id": ticket_id, "unread_count": remaining}
+
+
+@router.post("/support/tickets/{ticket_id}/reply")
+def mobile_support_ticket_reply(ticket_id: int, payload: MobileSupportReply, token: str = Depends(_mobile_access_token), user: User = Depends(_mobile_user)):
+    message = payload.message.strip()
+    if not message or len(message) > 4000:
+        raise HTTPException(status_code=422, detail="Yanıt 1–4000 karakter olmalıdır.")
+    key = _support_receipt_key(user.id, f"REPLY:{ticket_id}", payload.request_key)
+    digest = hashlib.sha256(message.encode()).hexdigest()
+    events = []
+    with Session(engine, expire_on_commit=False) as session:
+        replay = _support_mutation_replay(session, key, user.id, f"REPLY:{ticket_id}", digest)
+        if replay:
+            return {"ok": True, "ticket_id": ticket_id, "message_id": replay.message_id, "status": "REPLAYED", "replayed": True}
+        ticket = session.exec(select(SupportTicket).where(SupportTicket.id == ticket_id).with_for_update()).first()
+        if not ticket or ticket.user_id != user.id or ticket.source_type != "SUPPORT":
+            raise HTTPException(status_code=404, detail="Destek talebi bulunamadı.")
+        if ticket.status == "CLOSED" or not _support_user_can_reply(session, ticket):
+            raise HTTPException(status_code=409, detail="Destek ekibinin yeni yanıtını bekleyin veya yeni bir talep oluşturun.")
+        row = SupportTicketMessage(ticket_id=ticket.id, sender_user_id=user.id, sender_role="USER", message=message)
+        session.add(row)
+        session.flush()
+        ticket.status = "USER_REPLIED"
+        ticket.updated_at = datetime.utcnow()
+        session.add(ticket)
+        session.add(MobileSupportMutationReceipt(receipt_key=key, user_id=user.id, operation=f"REPLY:{ticket_id}", payload_hash=digest, ticket_id=ticket.id, message_id=row.id))
+        admins = session.exec(select(User).where(User.role == "ADMIN", User.is_active == True)).all()
+        events = [_record_realtime_event(session, admin.id, "SUPPORT_MESSAGE_CREATED", "support_ticket_message", row.id,
+            {"ticket_id": ticket.id, "message_id": row.id, "sender_role": "USER", "status": ticket.status}) for admin in admins]
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            replay = _support_mutation_replay(session, key, user.id, f"REPLY:{ticket_id}", digest)
+            if replay:
+                return {"ok": True, "ticket_id": ticket_id, "message_id": replay.message_id, "status": "REPLAYED", "replayed": True}
+            raise HTTPException(status_code=409, detail="Yanıt sonucu doğrulanamadı; aynı işlem anahtarıyla tekrar deneyin.")
+    for event in events:
+        on_loop(_publish_realtime_event, event)
+    return {"ok": True, "ticket_id": ticket_id, "message_id": row.id, "status": "USER_REPLIED", "replayed": False}
+
 
 class MobileAcademicAsk(BaseModel):
     message:str
