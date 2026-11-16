@@ -65,7 +65,7 @@ function Home({token,user}:{token:string;user:User}){const nav:any=useNavigation
 {["DOCTOR","ADMIN"].includes(String(user.role||"").toUpperCase())&&<VisualFeature title="Sesli Muayene" description="Hasta seç, görüşmeyi başlat ve muayene özetini kontrol et." asset="voice_exam.webp" tint="#F1F5FD" onPress={()=>nav.navigate("VoiceExam")} photo/>}
 <VisualFeature title="Hastalar" description="Hasta kayıtlarını yönetin, yeni hasta ekleyin." asset="patients_clinic.webp" tint="#EDF8F5" onPress={()=>nav.navigate("Patients")}/>
 <VisualFeature title="Dental AI ile Analiz" description="Röntgen ve klinik görüntüleri yapay zeka ile analiz edin." asset="ai_xray.webp" tint="#EEF4FD" onPress={()=>nav.navigate("AI")}/>
-<VisualFeature title="Diş Şeması" description="Etkileşimli diş şeması ile kayıt ve planlama yapın. Hasta seçin." asset="tooth_chart.webp" tint="#F2F4FF" onPress={()=>nav.navigate("Patients")}/>
+<VisualFeature title="Diş Şeması" description="Etkileşimli diş şeması ile kayıt ve planlama yapın. Hasta seçin." asset="tooth_chart.webp" tint="#F2F4FF" onPress={()=>nav.navigate("Patients",{screen:"ToothChartBrowser"})}/>
 <VisualFeature title="Uzmandan Destek Al" description="Vakanız için doğrulanmış bir uzmandan ikinci görüş alın." asset="expert_consult.webp" tint="#F3F6FC" onPress={()=>nav.navigate("ExpertDirectory")} photo/>
 <VisualFeature title="Dental Akış" description="Uzmanları takip et, mesleki paylaşımları keşfet." asset="dental_flow.webp?v=20261109-1" tint="#F7F2F9" onPress={()=>nav.navigate("DentalFlow")} photo/>
   </View>
