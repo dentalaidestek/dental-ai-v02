@@ -113,3 +113,11 @@ test('orphan cleanup leaves files untouched when scoped directory listing fails'
  assert.equal(await h.api.cleanupOrphanedClinicalMediaVaultFiles(7,8,[]),0);
  assert.equal(h.files.has(orphan),true);
 });
+
+
+test('native patient media reconciles vault files from the durable pending intent',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.ok(source.includes('cleanupOrphanedClinicalMediaVaultFiles'));
+ assert.ok(source.includes('saved?.files.flatMap(file=>file.encryptedUri?[file.encryptedUri]:[])??[]'));
+ assert.ok(source.includes('await cleanupOrphanedClinicalMediaVaultFiles(userId,patientId,files.flatMap(file=>file.encryptedUri?[file.encryptedUri]:[]))'));
+});
