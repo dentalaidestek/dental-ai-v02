@@ -657,3 +657,34 @@ def test_mobile_patient_media_batch_quota_is_scoped_to_owner_and_patient(chat, m
             WorkJob.kind == 'PATIENT_MEDIA_RECEIPT',
             WorkJob.result_ref == batch_id,
         )).all()) == 27
+
+
+def test_mobile_patient_media_batch_fails_closed_on_malformed_receipt(chat, monkeypatch, tmp_path):
+    from app import mobile_api
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, 'engine', engine)
+    monkeypatch.setattr(mobile_api, 'storage_persist_file', lambda path: None)
+    monkeypatch.setattr(
+        mobile_api, '_copy_validated_image',
+        lambda upload, destination, maximum: (destination.write_bytes(b'valid-test-image') and 100),
+    )
+    monkeypatch.chdir(tmp_path)
+    batch_id = 'synthetic-malformed-batch-0001'
+    with Session(engine) as session:
+        session.add(main.Patient(id=8, anonymous_id='SYNTHETIC-MALFORMED-BATCH', owner_user_id=1))
+        session.add(WorkJob(
+            owner_user_id=1, resource_id=8, resource_type='PATIENT',
+            kind='PATIENT_MEDIA_RECEIPT', source_hash='synthetic-malformed',
+            dedupe_key='synthetic-malformed-receipt-key', result_ref=batch_id,
+            payload_json='[]', status='DONE',
+        ))
+        session.commit()
+
+    response = _post_patient_media_batch_file(
+        client, b'payload', 'synthetic-malformed-new-request-0001', batch_id,
+    )
+    assert response.status_code == 409, response.text
+    with Session(engine) as session:
+        assert session.exec(select(main.PatientMedia).where(
+            main.PatientMedia.patient_id == 8,
+        )).all() == []
