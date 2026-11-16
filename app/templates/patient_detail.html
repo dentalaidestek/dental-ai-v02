@@ -159,7 +159,7 @@
                 <div class="patient-media-toolbar patient-media-toolbar-modal">
                     <div class="patient-media-selection-status">
                         <strong id="patientMediaSelectedCount">0 seçili</strong>
-                        <button type="button" id="patientMediaSelectAll" class="patient-media-link-button">Tümünü Seç</button>
+                        <button type="button" id="patientMediaSelectAll" class="patient-media-link-button">İlk 4'ü Seç</button>
                     </div>
                     <div class="patient-media-toolbar-actions">
                         <button type="button" id="patientMediaAnalyzeSelected" class="patient-media-batch-analyze" disabled>Seçilenleri AI ile Analiz Et</button>
@@ -469,7 +469,7 @@ document.addEventListener("keydown", function(event) {
         if (countLabel) countLabel.textContent = ids.length + " seçili · analiz sınırı " + maxAnalysisImages;
         if (analyzeButton) analyzeButton.disabled = ids.length === 0;
         const selectedTarget = Math.min(checkboxes.length, maxAnalysisImages);
-        if (selectAllButton) selectAllButton.textContent = ids.length === selectedTarget && selectedTarget ? "Seçimi Kaldır" : "Tümünü Seç";
+        if (selectAllButton) selectAllButton.textContent = ids.length === selectedTarget && selectedTarget ? "Seçimi Kaldır" : "İlk " + maxAnalysisImages + " Görseli Seç";
     }
 
     checkboxes.forEach(function (box) {
