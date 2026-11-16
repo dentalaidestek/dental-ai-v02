@@ -442,3 +442,15 @@ Commits: `2b8224d` helper; `9fd799e` mobile upload/replay integration; `28c20fc`
 At the starting code HEAD for this pass, `8e3505767e64d61133d323fbba8e337033676836`, Android run `43949158750` and Security recovery `43949158751` failed before a runner step. Rerun attempt 2 created Android jobs `133590671393` / `133590671776` and Security job `133590693258`; each had `runner_id=0`, blank runner name, `steps=[]`, and log downloads returned `BlobNotFound 404`. No npm install, tsc, Gradle or pytest step ran. The workflow definitions use `ubuntu-latest`; the available records do not expose the repository/account-level hosted-runner or billing cause. Do not treat this as a source compiler/test failure.
 
 No main merge, production deploy, APK/IPA publication or patient-data mutation. Next: configure the dedicated secret before any deployment, get GitHub-hosted runner allocation restored, then run the committed Python/security and Android suites and perform physical Android/iOS upload/recovery/visual acceptance.
+
+### CI after clinical-media privacy changes
+
+The code commit that triggered the final verification for this pass was `2b64d14723349d7847ff5762c79155132fb37f66` (the branch tracker-only commits followed it). Current PR runs for that code head:
+
+- Android `43952904636`: typecheck job `133599818758`; beta-APK job `133599818293`.
+- Security recovery `43952904610`: job `133599818459`.
+- Admin security `43952904639`: job `133599817894`.
+- Expert social `43952904559`: job `133599817063`.
+- Voice examination `43952904546`: job `133599818446`.
+
+The raw GitHub jobs endpoint confirms every job has `runner_id=0`, empty `runner_name`, `labels=[ubuntu-latest]`, `steps=[]`, and a two-to-three-second start-to-failure interval. Android typecheck, Android APK, Security recovery, Admin security, Expert social and Voice all failed before any workflow step. Job-log downloads for typecheck/security/voice return Azure `BlobNotFound 404`; combined commit status is empty. No npm install, tsc, Gradle, Node regression, pytest or provider test ran. The workflow YAML uses standard `ubuntu-latest`; the available GitHub API does not expose the owner/account-level runner quota, billing or hosted-runner entitlement required to fix this externally. No source-level compiler/test failure has been established.
