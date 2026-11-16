@@ -318,3 +318,30 @@ test('native tooth detail panel can be closed like the web sheet without changin
  assert.equal(tree.root.findAllByType('TextInput').filter(node=>node.props.accessibilityLabel==='Diş notları').length,0);
  await renderer.act(async()=>tree.unmount());
 });
+
+test('pending treatment intent prevents closing the selected tooth panel',async()=>{
+ focused=true;lastEvent=null;appListeners=[];const storage=new Map();
+ const Chart=chartComponent({
+  getPatient:async()=>patient(8),
+  createTreatment:async()=>{throw Object.assign(new Error('Synthetic uncertain response'),{status:503})}
+ },storage);
+ let tree;
+ const press=async(label)=>{
+  const item=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel===label||node.findAllByType('Text').some(child=>flat(child.children).includes(label)));
+  assert.ok(item,'missing control '+label);
+  await renderer.act(async()=>item.props.onPress());
+ };
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
+ await press('Diş 11, Sağlıklı');
+ await press('Tedavi Geçmişi');
+ const input=tree.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Tedavi adı');
+ assert.ok(input);
+ await renderer.act(async()=>input.props.onChangeText('Synthetic treatment'));
+ await press('Tedavi Kaydı Ekle');
+ await renderer.act(async()=>{await flush();await flush()});
+ assert.ok(storage.has('dai.treatment.1.8'),'uncertain treatment intent must remain durable');
+ const close=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş panelini kapat');
+ assert.ok(close);
+ assert.equal(close.props.disabled,true,'a pending durable intent must not be hidden behind a closed tooth panel');
+ await renderer.act(async()=>tree.unmount());
+});
