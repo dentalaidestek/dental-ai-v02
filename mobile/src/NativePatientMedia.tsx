@@ -14,6 +14,7 @@ import {cleanupOrphanedClinicalMediaVaultFiles,cleanupStaleClinicalMediaTemps,de
 import {useRealtime} from './realtime';
 import {CLINICAL_MEDIA_PICKER_MAX_FILES,normalizeClinicalMediaAssets} from './clinicalMediaPicker';
 import {CLINICAL_MEDIA_BATCH_ID_PATTERN,ensureClinicalMediaBatchId} from './clinicalMediaBatch';
+import {classifyClinicalMediaUploadFailure} from './clinicalMediaRecovery';
 import {ANALYSIS_MAX_IMAGES} from './analysisApi';
 import {CLINICAL_MEDIA_MAX_BATCH_BYTES,CLINICAL_MEDIA_MAX_FILE_BYTES} from './uploadLimits';
 
@@ -122,11 +123,17 @@ async function upload(reconcile=false){
   }catch(e){
    if(current()){
     const code=(e as {code?:string})?.code;
-    const localFailure=['SOURCE_MISSING','VAULT_MISSING','KEY_MISSING','KEY_INVALID','AUTH_FAILED','INVALID_VAULT'].includes(String(code||''));
     const status=(e as {status?:number})?.status;
-    const definiteRejection=typeof status==='number'&&[400,413,422,403,404].includes(status);
-    setUncertain(!localFailure&&!definiteRejection);
-    setError((e instanceof Error?e.message:'Yükleme tamamlanamadı.')+(localFailure?' Sunucuya yeni dosya gönderilmedi; bekleyen taslağı ve sunucu fişini kontrol edip eksik görüntüyü yeniden seçebilirsiniz.':definiteRejection?' Sunucu yeni kaydı kabul etmedi. Yükleme grubunu temizleyip daha küçük bir grup seçebilirsiniz.':' Aynı işlem anahtarları güvenli taslakta korundu; devam ettiğinizde sunucu fişleri kontrol edilerek eksik dosyalar yüklenir.'));
+    const failure=classifyClinicalMediaUploadFailure(status,code);
+    setUncertain(failure==='UNCERTAIN');
+    const recovery=failure==='LOCAL'
+     ?' Sunucuya yeni dosya gönderilmedi; bekleyen taslağı ve sunucu fişini kontrol edip eksik görüntüyü yeniden seçebilirsiniz.'
+     :failure==='CONFIGURATION'
+     ?' Sunucu klinik görüntü kurtarma anahtarını yapılandırmamış; bu istek dosyayı kabul etmeden reddedildi. Şifreli taslak cihazda korunuyor. Sunucu ayarı düzelene kadar taslağı silmeyin veya yeni grup oluşturmayın.'
+     :failure==='REJECTED'
+     ?' Sunucu yeni kaydı kabul etmedi. Yükleme grubunu temizleyip daha küçük bir grup seçebilirsiniz.'
+     :' Aynı işlem anahtarları güvenli taslakta korundu; devam ettiğinizde sunucu fişleri kontrol edilerek eksik dosyalar yüklenir.';
+    setError((e instanceof Error?e.message:'Yükleme tamamlanamadı.')+recovery);
     void loader.current();
    }
   }finally{if(current()){mutation.current=false;setBusy(false)}}
