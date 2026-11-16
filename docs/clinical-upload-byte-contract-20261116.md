@@ -24,7 +24,7 @@ The former web 25 MiB and native 15 MiB mismatch is resolved downward to 15 MiB.
 
 - Backend regression file: `tests/test_upload_limits.py`.
 - Native regressions: `mobile/tests/uploadLimits.cjs`, `mobile/tests/clinicalMediaPicker.cjs`, `mobile/tests/clinicalMediaBatch.cjs` and the extended `mobile/tests/session.cjs`.
-- Cross-request server quota regressions: `tests/test_mobile_patient_parity.py` (`mobile_patient_media_batch`).
+- Cross-request server quota regressions: `tests/test_mobile_patient_parity.py` (`mobile_patient_media_batch`), including byte/count limits, retry replay, owner/patient isolation, missing batch identity and malformed-receipt fail-closed behavior.
 - Run backend tests with `pytest -q tests/test_upload_limits.py tests/test_mobile_patient_parity.py -k 'mobile_patient_media_batch or native_uploads_return_confirmed_success'`.
 - Run native tests with `cd mobile && npm run typecheck && node --test tests/uploadLimits.cjs tests/clinicalMediaPicker.cjs tests/clinicalMediaBatch.cjs tests/session.cjs`.
 - CI/runner results must be checked against the final branch HEAD; no test is considered passed merely because it was committed.
