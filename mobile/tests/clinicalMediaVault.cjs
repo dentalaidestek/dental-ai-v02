@@ -133,6 +133,9 @@ test('vault URI validation accepts only the legacy root or known archive/analysi
  const analysis=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024,'analysis');
  assert.equal(await h.api.isClinicalMediaVaultUri(archive,7,8),true);
  assert.equal(await h.api.isClinicalMediaVaultUri(analysis,7,8),true);
+ assert.equal(await h.api.isClinicalMediaVaultUri(archive,7,8,'archive'),true);
+ assert.equal(await h.api.isClinicalMediaVaultUri(analysis,7,8,'archive'),false);
+ assert.equal(await h.api.isClinicalMediaVaultUri(analysis,7,8,'analysis'),true);
  assert.equal(await h.api.isClinicalMediaVaultUri('file:///documents/dai-clinical-vault/7/8/unknown/file.dai',7,8),false);
 });
 
@@ -142,4 +145,30 @@ test('native upload callers use isolated archive and analysis purposes',()=>{
  assert.ok(gallery.includes("CLINICAL_MEDIA_MAX_FILE_BYTES,'archive'"));
  assert.ok(gallery.includes("12*1024*1024,'archive'"));
  assert.ok(analysis.includes("ANALYSIS_MAX_IMAGE_BYTES,'analysis'"));
+});
+
+
+test('vault validation and decryption reject cross-purpose archive and analysis references',async()=>{
+ const h=harness(),sourceUri=addSource(h);
+ const archive=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024,'archive');
+ const analysis=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024,'analysis');
+ const legacy=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024);
+ await h.api.validateClinicalMediaVaultFile(archive,7,8,1024,'archive');
+ await h.api.validateClinicalMediaVaultFile(analysis,7,8,1024,'analysis');
+ await h.api.validateClinicalMediaVaultFile(legacy,7,8,1024,'archive');
+ await h.api.validateClinicalMediaVaultFile(legacy,7,8,1024,'analysis');
+ await assert.rejects(()=>h.api.validateClinicalMediaVaultFile(analysis,7,8,1024,'archive'),/yolu doğrulanamadı/);
+ await assert.rejects(()=>h.api.decryptClinicalMediaFile(analysis,7,8,'synthetic.png','archive'),/yolu doğrulanamadı/);
+ const temp=await h.api.decryptClinicalMediaFile(analysis,7,8,'synthetic.png','analysis');
+ await h.api.deleteClinicalMediaTemp(temp);
+});
+
+test('gallery and analysis consumers validate and decrypt only their own vault purpose',()=>{
+ const gallery=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ const analysis=fs.readFileSync(require.resolve('../src/nativeAnalysisFiles.ts'),'utf8');
+ assert.ok(gallery.includes("isClinicalMediaVaultUri(file.encryptedUri,userId,patientId,'archive')"));
+ assert.ok(gallery.includes("validateClinicalMediaVaultFile(file.encryptedUri!,userId,patientId,12*1024*1024,'archive')"));
+ assert.ok(gallery.includes("decryptClinicalMediaFile(file.encryptedUri!,userId,patientId,file.name,'archive')"));
+ assert.ok(analysis.includes("validateClinicalMediaVaultFile(image.encryptedUri,userId,patientId,ANALYSIS_MAX_IMAGE_BYTES,'analysis')"));
+ assert.ok(analysis.includes("decryptClinicalMediaFile(image.encryptedUri,userId,patientId,image.name,'analysis')"));
 });
