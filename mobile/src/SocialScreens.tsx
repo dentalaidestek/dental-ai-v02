@@ -10,6 +10,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -860,6 +861,15 @@ function PostCard({
       setBusy(false);
     }
   };
+  async function sharePost() {
+    if (post.status !== "PUBLISHED") return;
+    try {
+      const url = api.socialPostUrl(post.author_id, post.id);
+      await Share.share({ message: url, url });
+    } catch (e) {
+      setError(message(e));
+    }
+  }
   async function toggleFollow() {
     if (followLock.current || busy) return;
     followLock.current = true;
@@ -968,7 +978,8 @@ function PostCard({
       <View style={s.row}>
         <Pressable
           accessibilityRole="button"
-          disabled={busy}
+          accessibilityLabel={post.liked ? "Beğenmekten vazgeç" : "Beğen"}
+          disabled={busy || post.status !== "PUBLISHED"}
           onPress={() =>
             void mutate(async () => ({
               ...post,
@@ -980,8 +991,25 @@ function PostCard({
             {post.liked ? "♥" : "♡"} {post.like_count}
           </Text>
         </Pressable>
-        <Pressable onPress={onComments}>
-          <Text style={s.action}>Yorumlar · {post.comment_count}</Text>
+        {!post.comments_closed ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Yorumlar ${post.comment_count}`}
+            disabled={busy || post.status !== "PUBLISHED"}
+            onPress={onComments}
+          >
+            <Text style={s.action}>Yorumlar · {post.comment_count}</Text>
+          </Pressable>
+        ) : (
+          <Text style={s.meta}>Yorumlar kapalı</Text>
+        )}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Gönderi bağlantısını paylaş"
+          disabled={busy || post.status !== "PUBLISHED"}
+          onPress={() => void sharePost()}
+        >
+          <Text style={s.action}>Bağlantı</Text>
         </Pressable>
       </View>
       {post.status === "PUBLISHED" && (
