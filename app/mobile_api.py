@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import time
+import threading
 import uuid
 from collections import deque
 from typing import Optional
@@ -77,6 +78,8 @@ MOBILE_MAX_ANALYSIS_BYTES = MAX_ANALYSIS_IMAGE_BYTES
 MOBILE_MAX_PATIENT_MEDIA_BYTES = MAX_PATIENT_MEDIA_FILE_BYTES
 _PATIENT_MEDIA_REQUEST_KEY = re.compile(r"^[A-Za-z0-9_-]{16,96}$")
 _PATIENT_MEDIA_BATCH_ID = re.compile(r"^[A-Za-z0-9_-]{16,96}$")
+# Bound in-memory audio buffering and provider work per web process.
+_mobile_voice_audio_slots = threading.BoundedSemaphore(2)
 LOGIN_RATE_WINDOW_SECONDS = LOGIN_WINDOW_SECONDS
 LOGIN_RATE_MAX_FAILURES = LOGIN_MAX_FAILURES
 
@@ -2169,30 +2172,132 @@ def mobile_voice_finalize(patient_id: int, payload: MobileVoiceFinalRequest, use
 
 @router.post("/patients/{patient_id}/voice-exam/audio")
 async def mobile_voice_audio(request: Request, patient_id: int, user: User = Depends(_mobile_user)):
-    """Transcribe one bounded native recording. Audio is never stored here."""
+    """Transcribe one bounded clip with encrypted, owner-scoped idempotency."""
     from app.voice_exam import core
+    from app.voice_asr_receipts import (
+        ReceiptConflict, ReceiptCorrupt, ReceiptKeyUnavailable, audio_content_digest,
+        complete_receipt, encryption_key, finish_receipt, receipt_dedupe_key,
+        reserve_receipt,
+    )
     from starlette.concurrency import run_in_threadpool
+
+    def reply(status: int, code: str, detail: str):
+        return JSONResponse(
+            {"ok": False, "code": code, "detail": detail},
+            status_code=status,
+            headers={"Cache-Control": "private, no-store"},
+        )
+
     if not core.enabled():
-        raise HTTPException(status_code=503, detail="Sesli muayene etkin değil.")
+        return reply(503, "VOICE_ASR_NOT_READY", "Sesli muayene etkin değil.")
     if request.headers.get("x-voice-consent") != "yes":
-        raise HTTPException(status_code=400, detail="Ses aktarımı için onay gerekli.")
-    revision = await run_in_threadpool(_mobile_voice_patient, user, patient_id)
-    # Reject oversized bodies without buffering unbounded user audio.
-    max_bytes = core.MAX_AUDIO
-    chunks = []
-    size = 0
-    async for chunk in request.stream():
-        size += len(chunk)
-        if size > max_bytes:
-            raise HTTPException(status_code=413, detail="Ses kaydı çok büyük.")
-        chunks.append(chunk)
-    data = b"".join(chunks)
+        return reply(400, "VOICE_ASR_CONSENT_REQUIRED", "Ses aktarımı için onay gerekli.")
+    request_key = request.headers.get("x-voice-request-key", "")
     try:
-        mime = core.validate_audio(data, request.headers.get("content-type", ""))
-        result = await run_in_threadpool(core.extract, data=data, mime=mime, transcription_only=True)
-        return {"ok": True, "revision": revision, "transcript": result["transcript"]}
-    except core.VoiceError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        receipt_dedupe_key(user.id, patient_id, request_key)
+        key = encryption_key()
+    except ValueError:
+        return reply(422, "VOICE_ASR_INVALID_KEY", "Ses bölümü işlem anahtarı geçersiz.")
+    except ReceiptKeyUnavailable:
+        return reply(503, "VOICE_ASR_NOT_READY", "Şifreli ses kurtarma anahtarı yapılandırılmamış.")
+
+    revision = await run_in_threadpool(_mobile_voice_patient, user, patient_id)
+    max_bytes = core.MAX_AUDIO
+    content_length = request.headers.get("content-length", "")
+    if content_length.isdigit() and int(content_length) > max_bytes:
+        return reply(413, "VOICE_ASR_TOO_LARGE", "Ses kaydı çok büyük.")
+    if not _mobile_voice_audio_slots.acquire(blocking=False):
+        return reply(429, "VOICE_ASR_RETRYABLE", "Ses aktarımı yoğun. Yerel kaydı koruyup aynı bölümle tekrar deneyin.")
+
+    data = bytearray()
+    try:
+        size = 0
+        audio_hash = hashlib.sha256()
+        async for chunk in request.stream():
+            if not chunk:
+                continue
+            size += len(chunk)
+            if size > max_bytes:
+                return reply(413, "VOICE_ASR_TOO_LARGE", "Ses kaydı çok büyük.")
+            data.extend(chunk)
+            audio_hash.update(chunk)
+
+        try:
+            mime = core.validate_audio(data, request.headers.get("content-type", ""))
+            digest = audio_content_digest(mime, audio_hash.digest())
+        except (core.VoiceError, ValueError):
+            return reply(422, "VOICE_ASR_INVALID_AUDIO", "Ses dosyasının biçimi veya boyutu doğrulanamadı.")
+
+        try:
+            with Session(engine, expire_on_commit=False) as session:
+                state = reserve_receipt(
+                    session, owner_id=user.id, patient_id=patient_id,
+                    request_key=request_key, digest=digest, key=key,
+                )
+                session.commit()
+        except ReceiptConflict:
+            return reply(409, "VOICE_ASR_KEY_REUSED", "Bu ses bölümünün işlem anahtarı farklı içerikle kullanılmış.")
+        except ReceiptCorrupt:
+            return reply(409, "VOICE_ASR_RECEIPT_INVALID", "Şifreli ses sonucu doğrulanamadı; kayıt korunuyor.")
+
+        if state["state"] == "REPLAY":
+            return JSONResponse(
+                {"ok": True, "revision": state["revision"], "transcript": state["transcript"], "replayed": True},
+                headers={"Cache-Control": "private, no-store"},
+            )
+        if state["state"] == "PROCESSING":
+            return reply(409, "VOICE_ASR_IN_PROGRESS", "Aynı ses bölümü hâlâ işleniyor. Kaydı koruyup biraz sonra tekrar deneyin.")
+        if state["state"] == "EXPIRED":
+            return reply(410, "VOICE_ASR_EXPIRED", "Ses sonucu kurtarma süresini aştı. Yeni deneme ayrı bir AI çağrısı oluşturur.")
+        if state["state"] != "CLAIMED":
+            return reply(409, "VOICE_ASR_OUTCOME_UNKNOWN", "Önceki ses isteğinin sonucu kesinleşmedi. Aynı anahtarla ikinci AI çağrısı yapılmadı.")
+
+        lease_token = state["lease_token"]
+        try:
+            result = await run_in_threadpool(
+                core.extract, data=data, mime=mime, transcription_only=True
+            )
+            transcript = result.get("transcript") if isinstance(result, dict) else None
+            if not isinstance(transcript, str) or not transcript.strip() or len(transcript) > 18000:
+                raise ValueError("Invalid transcription response.")
+        except core.VoiceBusy:
+            with Session(engine, expire_on_commit=False) as session:
+                finish_receipt(session, owner_id=user.id, patient_id=patient_id,
+                    request_key=request_key, digest=digest, lease_token=lease_token, retryable=True)
+                session.commit()
+            return reply(429, "VOICE_ASR_RETRYABLE", "Ses çözümleme yoğun. Aynı yerel ses bölümüyle daha sonra tekrar deneyin.")
+        except core.VoiceConfigurationError:
+            with Session(engine, expire_on_commit=False) as session:
+                finish_receipt(session, owner_id=user.id, patient_id=patient_id,
+                    request_key=request_key, digest=digest, lease_token=lease_token, retryable=True)
+                session.commit()
+            return reply(503, "VOICE_ASR_NOT_READY", "Ses çözümleme yapılandırması hazır değil. Yerel kayıt korundu.")
+        except Exception:
+            with Session(engine, expire_on_commit=False) as session:
+                finish_receipt(session, owner_id=user.id, patient_id=patient_id,
+                    request_key=request_key, digest=digest, lease_token=lease_token, retryable=False)
+                session.commit()
+            logging.getLogger(__name__).warning("mobile voice ASR outcome is unknown")
+            return reply(502, "VOICE_ASR_OUTCOME_UNKNOWN", "Ses sonucu doğrulanamadı. Aynı anahtarla ikinci AI çağrısı yapılmadı; yerel kayıt korundu.")
+        finally:
+            data.clear()
+
+        with Session(engine, expire_on_commit=False) as session:
+            saved = complete_receipt(
+                session, owner_id=user.id, patient_id=patient_id,
+                request_key=request_key, digest=digest, lease_token=lease_token,
+                key=key, transcript=transcript, revision=revision,
+            )
+            session.commit()
+        if not saved:
+            return reply(409, "VOICE_ASR_OUTCOME_UNKNOWN", "Ses sonucu güvenli biçimde kaydedilemedi. Aynı anahtarla ikinci AI çağrısı yapılmadı; yerel kayıt korundu.")
+        return JSONResponse(
+            {"ok": True, "revision": revision, "transcript": transcript, "replayed": False},
+            headers={"Cache-Control": "private, no-store"},
+        )
+    finally:
+        data.clear()
+        _mobile_voice_audio_slots.release()
 
 
 # Native adapters reuse the existing web consultation rules; no second case lifecycle.
