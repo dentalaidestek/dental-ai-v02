@@ -52,7 +52,9 @@ test('malformed or oversized identifiers never become navigation params',()=>{
 
 test('notification screen resolves the web route before marking it read',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../src/ModernScreens.tsx'),'utf8');
- const open=source.split('async function open(item:any){')[1].split('\n  }')[0];
+ const start=source.indexOf('async function open(item:any){');
+ const end=source.indexOf('\n }',start);
+ const open=source.slice(start,end);
  assert.ok(open.indexOf('resolveNativeNotificationTarget(item.target_url)')>=0);
  assert.ok(open.indexOf('target.kind==="unsupported"')<open.indexOf('markNotificationRead(token,item.id)'));
  assert.ok(open.includes('Bu bildirimin hedef sayfası henüz mobil uygulamada bulunmuyor'));
