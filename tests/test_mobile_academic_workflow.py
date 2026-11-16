@@ -100,3 +100,33 @@ def test_native_academic_learning_and_clear_preserve_web_ownership(chat):
     client.headers['Authorization']='Bearer token1'
     assert client.delete(path+'/timeline').status_code==200
     assert client.get(path+'/timeline').json()['items']==[]
+
+
+
+def test_native_academic_run_cancel_is_owner_course_scoped_and_idempotent(chat,monkeypatch):
+    from app import academic_study_runs
+    client,engine=chat;course(engine);course(engine,ident=2)
+    monkeypatch.setattr(main,'course_v2_ready',lambda *a,**kw:True)
+    monkeypatch.setattr(academic_study_runs,'wake',lambda *a,**kw:None)
+    path='/api/mobile/v1/academic/courses/1/runs'
+    created=client.post(path,json={'message':'Synthetic cancellable question','request_key':'synthetic-cancel-key-0001'})
+    assert created.status_code==202,created.text
+    ident=created.json()['run']['id'];cancel_path=path+f'/{ident}/cancel'
+
+    client.headers['Authorization']='Bearer token2'
+    foreign=client.post(cancel_path)
+    assert foreign.status_code==404
+
+    client.headers['Authorization']='Bearer token1'
+    cross_course=client.post(f'/api/mobile/v1/academic/courses/2/runs/{ident}/cancel')
+    assert cross_course.status_code==404
+    still_queued=client.get(path+f'/{ident}')
+    assert still_queued.status_code==200 and still_queued.json()['run']['status']=='QUEUED'
+
+    cancelled=client.post(cancel_path)
+    assert cancelled.status_code==200,cancelled.text
+    assert cancelled.headers['cache-control']=='private, no-store'
+    assert cancelled.json()['run']['status']=='CANCELLED'
+    assert cancelled.json()['run']['partial']==''
+    repeated=client.post(cancel_path)
+    assert repeated.status_code==200 and repeated.json()['run']['status']=='CANCELLED'
