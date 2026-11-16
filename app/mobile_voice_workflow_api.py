@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
-from app.voice_exam import ApplyInput, apply_review
+from app.voice_exam import ApplyInput, apply_review, reviewed_history_payload
 from app.mobile_api import _mobile_access_token, _mobile_request
 from app.mobile_account_api import _account_user
 
@@ -61,6 +61,32 @@ def _create_anonymous_voice_patient(user_id: int, request_key: str):
         web.on_loop(web._publish_realtime_event, event)
     return result, created
 
+
+
+def _load_native_reviewed_history(user_id: int, patient_id: int):
+    """Use the same approved-only history query as the authenticated web page."""
+    from app import main as web
+
+    with Session(web.engine) as session:
+        user = session.get(web.User, user_id)
+        if not user or not user.is_active or user.role not in {"DOCTOR", "ADMIN"}:
+            raise HTTPException(status_code=401, detail="Oturum geçersiz veya süresi dolmuş.")
+        return reviewed_history_payload(session, web, user, patient_id)
+
+
+@router.get("/patients/{patient_id}/voice-exam/history")
+async def get_native_reviewed_history(
+    patient_id: int,
+    response: Response,
+    token: str = Depends(_mobile_access_token),
+    user=Depends(_account_user),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization"
+    result = await run_in_threadpool(_load_native_reviewed_history, user.id, patient_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Hasta bulunamadı veya erişim izni yok.")
+    return result
 
 @router.post("/voice-exam/anonymous", status_code=201)
 async def create_anonymous_voice_patient(
