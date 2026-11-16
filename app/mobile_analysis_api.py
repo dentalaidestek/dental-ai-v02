@@ -1,6 +1,6 @@
 """Native Dental AI API using the production storage and durable work queue."""
 from pathlib import Path
-from PIL import Image
+from app.clinical_media import sanitize_clinical_media_image
 import json
 import hashlib
 import re
@@ -60,21 +60,20 @@ def _copy_validated_analysis_image(upload: UploadFile, destination: Path) -> Non
                 if total > MOBILE_MAX_ANALYSIS_BYTES:
                     raise HTTPException(status_code=413, detail="Görüntü dosyası çok büyük.")
                 out.write(chunk)
-        with Image.open(destination) as image:
-            width, height = image.size
-            if width <= 0 or height <= 0 or width * height > MOBILE_MAX_ANALYSIS_PIXELS:
-                raise HTTPException(status_code=422, detail="Görüntü çözünürlüğü çok büyük.")
-            expected_format = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP"}.get(destination.suffix.lower())
-            if image.format != expected_format:
-                raise HTTPException(status_code=422, detail="Görüntü içeriği dosya türüyle eşleşmiyor.")
-            image.verify()
+        sanitize_clinical_media_image(
+            destination,
+            destination.suffix.lower(),
+            MOBILE_MAX_ANALYSIS_PIXELS,
+        )
     except HTTPException:
         destination.unlink(missing_ok=True)
         raise
+    except ValueError as exc:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         destination.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail="Geçersiz veya bozuk görüntü dosyası.") from exc
-
 
 def _parse_existing_media_ids(raw):
     if raw is None or not raw.strip():
@@ -89,35 +88,37 @@ def _parse_existing_media_ids(raw):
 
 
 def _copy_validated_existing_analysis_image(source: Path, destination: Path) -> None:
-    allowed={".jpg":"JPEG",".jpeg":"JPEG",".png":"PNG",".webp":"WEBP"}
-    extension=source.suffix.lower()
+    allowed = {".jpg", ".jpeg", ".png", ".webp"}
+    extension = source.suffix.lower()
     if extension not in allowed or not source.is_file():
-        raise HTTPException(404,"Seçilen klinik görüntü dosyası bulunamadı.")
+        raise HTTPException(404, "Seçilen klinik görüntü dosyası bulunamadı.")
     try:
-        total=0
+        total = 0
         with source.open("rb") as incoming, destination.open("wb") as outgoing:
             while True:
-                chunk=incoming.read(1024*1024)
+                chunk = incoming.read(1024 * 1024)
                 if not chunk:
                     break
-                total+=len(chunk)
-                if total>MOBILE_MAX_ANALYSIS_BYTES:
-                    raise HTTPException(413,"Kayıtlı klinik görüntü çok büyük.")
+                total += len(chunk)
+                if total > MOBILE_MAX_ANALYSIS_BYTES:
+                    raise HTTPException(413, "Kayıtlı klinik görüntü çok büyük.")
                 outgoing.write(chunk)
-        with Image.open(destination) as image:
-            width,height=image.size
-            if width<=0 or height<=0 or width*height>MOBILE_MAX_ANALYSIS_PIXELS:
-                raise HTTPException(422,"Kayıtlı klinik görüntünün çözünürlüğü çok büyük.")
-            if image.format!=allowed[extension]:
-                raise HTTPException(422,"Kayıtlı klinik görüntünün içeriği dosya türüyle eşleşmiyor.")
-            image.verify()
+        # Sanitize the analysis copy even when an older archived object predates
+        # the shared gallery-upload sanitizer.
+        sanitize_clinical_media_image(
+            destination,
+            extension,
+            MOBILE_MAX_ANALYSIS_PIXELS,
+        )
     except HTTPException:
         destination.unlink(missing_ok=True)
         raise
+    except ValueError as exc:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(422, "Kayıtlı klinik görüntü okunamadı veya bozuk.") from exc
     except Exception as exc:
         destination.unlink(missing_ok=True)
-        raise HTTPException(422,"Kayıtlı klinik görüntü okunamadı veya bozuk.") from exc
-
+        raise HTTPException(422, "Kayıtlı klinik görüntü okunamadı veya bozuk.") from exc
 
 def _access(session: Session, user: User, analysis_id: int):
     analysis = session.get(Analysis, analysis_id)
