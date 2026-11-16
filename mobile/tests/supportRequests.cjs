@@ -20,7 +20,7 @@ test('native support screen implements status filters, empty state and retryable
  for(const label of ['Destek Taleplerim','Yeni destek talebi','Geçmiş talepler','Yanıtınızı bekliyor','Destek ekibinin yeni yanıtı bekleniyor'])
   assert.ok(screen.includes(label),label);
  assert.ok(screen.includes('createKey||'));
- assert.ok(screen.includes('replyKey||'));
+ assert.ok(screen.includes('replyKey||'));\n assert.ok(screen.includes('SecureStore.setItemAsync(\"dai.support.create.pending\"'));\n assert.ok(screen.includes('SecureStore.setItemAsync(\"dai.support.reply.pending.\"+selected'));\n assert.ok(screen.includes('SecureStore.getItemAsync(\"dai.support.create.pending\"'));
  assert.ok(screen.includes('finally{setSending(false)}'));
 });
 
