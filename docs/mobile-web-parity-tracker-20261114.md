@@ -318,3 +318,19 @@ Next: resolve hosted-runner allocation at repository/account level so the commit
 Compared the web result/viewer note handlers and native clinical review. The web handler appends exact text to `clinical_notes` without a request receipt, while native previously kept its uncertain-note lock only in component state. Added bounded account/analysis/FDI-scoped note intent validation, SecureStore persistence before POST, exact-line reconciliation against the canonical workspace after process restart, and explicit server-check-before-retry UI. An already-committed note clears locally without resubmission; an absent note retains the exact draft and blocks edits/automatic retries until the clinician explicitly checks and confirms retry.
 
 Commits: `d0bdfb8`, `64f9b50`, `3499ed2`, `32ebf33`, `bcc3403`. Node regressions cover uncertain write persistence, server-present/server-absent restore, retry gating, FDI/account scoping and canonical line format. They are committed, not executed. This does not provide server-side idempotency across independent devices; a durable server receipt and concurrent PostgreSQL regression remain required. No main merge, deploy or app publication.
+
+## 2026-11-16 — Patient profile form validation follow-up
+
+Web-first flow checked: `app/templates/patient_detail.html` → `POST /patients/{id}/edit`; native counterpart: `NativePatientProfile` → `editPatient` → `PUT /api/mobile/v1/patients/{id}`. The web and canonical mobile backend both require first/last name and accept an optional phone only when it matches `05[0-9]{9}`. Native had the backend rule but no matching client preflight and an oversized 2,000-character TextInput limit.
+
+Added the shared pure validator, native 11-character phone cap and pre-network rejection. T.C. identity validation was deliberately not strengthened beyond the web's existing max-length contract. Renderer and helper regressions cover the validation matrix, no request on invalid input, valid request payload and expected-revision preservation.
+
+Commits in this pass: `d14b720`, `93e87fe`, `750534f`, `56c0e05`, `f0d902f`. The test file is already part of `npm run test:beta`; no package script change was necessary.
+
+### Latest CI root-cause check
+
+At starting HEAD `a50e861eb572084788ada4cc2bb81546f7eb30aa`, latest PR runs were Android `43922638450`, Security recovery `43922638514`, Admin security `43922638623`, and Expert social `43922638505`. Android typecheck job `133493654462` and security job `133493654917` completed failure with no step records; both log downloads returned Azure `BlobNotFound 404`. The combined commit status was empty. Thus npm install, `tsc`, Node tests, Gradle and pytest never started. The repeated `runner_id=0` / blank runner / empty-step signature from earlier runs is consistent with hosted-runner allocation failing before workflow execution. Repository code and the available GitHub Actions records do not expose the account billing/hosted-runner entitlement needed to fix that administrative cause. It is not evidence of a source-level TypeScript or security assertion failure, and no CI pass is claimed.
+
+No workflow was weakened or redirected to an untrusted runner to mask this blocker. No main merge, production deploy, migration, APK/IPA publication or patient-data mutation. The new profile tests are committed but await a functioning Actions runner (or an owner-run checkout).
+
+Next code pass remains web-first and follows the requested module order: tooth-chart screen/interaction comparison, then clinical-media recovery and AI image-analysis/result parity. Android/iOS device appearance and 60,000-user load acceptance remain open.
