@@ -218,34 +218,46 @@ def final_review(request: Request, patient_id: int, payload: FinalInput):
         return _reply({'ok': False, 'error': str(exc)}, 422)
 
 
+def reviewed_history_payload(session, main, user, patient_id, fingerprint=None):
+    """Return only fields from completed, clinician-approved voice examinations."""
+    from app.work_jobs import WorkJob
+
+    patient = _owned(session, main, user, patient_id)
+    if not patient:
+        return None
+    fingerprint = fingerprint or _fingerprint(session, main, patient)
+    labels = {'family_history': 'Aile sağlık öyküsü', 'materials': 'Konuşulan materyaller', 'dental_history': 'Önceki diş tedavileri', 'oral_habits': 'Ağız bakımı ve alışkanlıklar', 'medical_history': 'Sistemik hastalık / hasta beyanı', 'medications': 'İlaç / hasta beyanı',
+              'allergies': 'Alerji / hasta beyanı'}
+    fields = {}
+    # Join prevents scanning the entire patient archive and excludes non-voice records.
+    rows = session.exec(select(main.Analysis).join(WorkJob, WorkJob.resource_id == main.Analysis.id)
+        .where(main.Analysis.patient_id == patient_id, WorkJob.owner_user_id == user.id,
+               WorkJob.resource_type == 'ANALYSIS', WorkJob.kind == 'VOICE_REVIEW', WorkJob.status == 'DONE')
+        .order_by(main.Analysis.id.desc()).limit(12)).all()
+    for row in rows:
+        for paragraph in (row.clinical_notes or '').split('\\n\\n'):
+            for name, label in labels.items():
+                prefix = label + ': '
+                if name not in fields and paragraph.startswith(prefix):
+                    value = paragraph[len(prefix):].strip()
+                    if value and len(value) <= 3000:
+                        fields[name] = {'value': value, 'quote': value, 'analysis_id': row.id}
+    return {'ok': True, 'revision': fingerprint, 'fields': fields,
+        'notice': 'Önceki hekim onaylı sesli muayene kayıtlarıdır. Güncel kullanım veya hastalık durumu olarak kabul etmeden hastayla doğrulayın.'}
+
+
 @router.get('/patients/{patient_id}/voice-exam/history')
 def reviewed_history(request: Request, patient_id: int):
     """Only explicitly saved voice clinical fields, never arbitrary notes or raw audio."""
     from app import main
-    from app.work_jobs import WorkJob
     user, fingerprint, error = _access(request, patient_id)
     if error is not None:
         return error
-    labels = {'family_history': 'Aile sağlık öyküsü', 'materials': 'Konuşulan materyaller', 'dental_history': 'Önceki diş tedavileri', 'oral_habits': 'Ağız bakımı ve alışkanlıklar', 'medical_history': 'Sistemik hastalık / hasta beyanı', 'medications': 'İlaç / hasta beyanı',
-              'allergies': 'Alerji / hasta beyanı'}
-    fields = {}
     with Session(main.engine) as session:
-        # Join prevents scanning the entire patient archive and excludes non-voice records.
-        rows = session.exec(select(main.Analysis).join(WorkJob, WorkJob.resource_id == main.Analysis.id)
-            .where(main.Analysis.patient_id == patient_id, WorkJob.owner_user_id == user.id,
-                   WorkJob.resource_type == 'ANALYSIS', WorkJob.kind == 'VOICE_REVIEW', WorkJob.status == 'DONE')
-            .order_by(main.Analysis.id.desc()).limit(12)).all()
-        for row in rows:
-            for paragraph in (row.clinical_notes or '').split('\n\n'):
-                for name, label in labels.items():
-                    prefix = label + ': '
-                    if name not in fields and paragraph.startswith(prefix):
-                        value = paragraph[len(prefix):].strip()
-                        if value and len(value) <= 3000:
-                            fields[name] = {'value': value, 'quote': value, 'analysis_id': row.id}
-    return _reply({'ok': True, 'revision': fingerprint, 'fields': fields,
-        'notice': 'Önceki hekim onaylı sesli muayene kayıtlarıdır. Güncel kullanım veya hastalık durumu olarak kabul etmeden hastayla doğrulayın.'})
-
+        result = reviewed_history_payload(session, main, user, patient_id, fingerprint)
+    if result is None:
+        return _reply({'ok': False}, 404)
+    return _reply(result)
 
 @router.post('/patients/{patient_id}/voice-exam/clinical')
 def clinical_review(request: Request, patient_id: int, payload: ClinicalInput):
