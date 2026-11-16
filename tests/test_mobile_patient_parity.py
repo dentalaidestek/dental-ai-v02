@@ -441,9 +441,12 @@ def test_web_analysis_selection_and_submission_share_four_image_limit(chat,monke
         session.commit()
 
     assert main.MAX_ANALYSIS_IMAGES == 4
+    assert main.MAX_PATIENT_MEDIA_UPLOAD_FILES == 12
     profile=client.get('/patients/80')
     assert profile.status_code==200,profile.text
     assert 'const maxAnalysisImages = 4;' in profile.text
+    assert 'const maxPatientMediaUploadFiles = 12;' in profile.text
+    assert 'Klinik arşive tek seferde en fazla 12 görüntü' in profile.text
     accepted=client.get('/analysis/new/80?media_ids=801,802,803,804')
     assert accepted.status_code==200,accepted.text
     assert '4 kayıtlı görüntü analiz için seçildi' in accepted.text
@@ -464,3 +467,31 @@ def test_web_analysis_selection_and_submission_share_four_image_limit(chat,monke
     assert 'toplam en fazla 4' in submitted.text
     with Session(engine) as session:
         assert not session.exec(select(main.Analysis).where(main.Analysis.patient_id==80)).all()
+
+
+def test_patient_archive_accepts_twelve_images_and_rejects_thirteen(chat,monkeypatch,tmp_path):
+    client,engine=chat
+    client.cookies.set(main.SESSION_COOKIE,'token1')
+    upload_dir=tmp_path/'patient-media-uploads'
+    upload_dir.mkdir(parents=True,exist_ok=True)
+    monkeypatch.setattr(main,'UPLOAD_DIR',upload_dir)
+    monkeypatch.setattr(main,'storage_persist_file',lambda _path:None)
+    monkeypatch.setattr(main,'storage_delete',lambda _path:None)
+    monkeypatch.setattr(main,'sanitize_clinical_media_image',lambda *_args,**_kwargs:None)
+    with Session(engine) as session:
+        session.add(main.Patient(id=81,anonymous_id='SYNTHETIC-ARCHIVE-BATCH',owner_user_id=1))
+        session.commit()
+    raw=io.BytesIO()
+    Image.new('RGB',(8,8),'white').save(raw,format='PNG')
+    payload=raw.getvalue()
+    twelve=[('files',(f'archive-{index}.png',payload,'image/png')) for index in range(12)]
+    accepted=client.post('/patients/81/media',data={'media_type':'PHOTO'},files=twelve,follow_redirects=False)
+    assert accepted.status_code==303,accepted.text
+    with Session(engine) as session:
+        assert len(session.exec(select(main.PatientMedia).where(main.PatientMedia.patient_id==81)).all())==12
+    thirteen=[('files',(f'archive-over-{index}.png',payload,'image/png')) for index in range(13)]
+    rejected=client.post('/patients/81/media',data={'media_type':'PHOTO'},files=thirteen,follow_redirects=False)
+    assert rejected.status_code==400
+    assert 'en fazla 12 görüntü' in rejected.text
+    with Session(engine) as session:
+        assert len(session.exec(select(main.PatientMedia).where(main.PatientMedia.patient_id==81)).all())==12
