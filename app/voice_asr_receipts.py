@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -59,10 +60,12 @@ def receipt_dedupe_key(owner_id: int, patient_id: int, request_key: str) -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
-def audio_content_digest(mime: str, audio_digest: bytes) -> str:
-    if not isinstance(mime, str) or not mime or not isinstance(audio_digest, bytes) or len(audio_digest) != 32:
+def audio_content_digest(mime: str, audio_digest: bytes, key: bytes) -> str:
+    if (not isinstance(mime, str) or not mime or not isinstance(audio_digest, bytes) or
+            len(audio_digest) != 32 or not isinstance(key, bytes) or len(key) != 32):
         raise ValueError("Invalid voice audio digest.")
-    return hashlib.sha256(mime.encode("ascii") + b"\0" + audio_digest).hexdigest()
+    # Keyed fingerprint prevents offline matching of known recordings from DB dumps.
+    return hmac.new(key, mime.encode("ascii") + b"\0" + audio_digest, hashlib.sha256).hexdigest()
 
 
 def _stamp(value: datetime | None = None) -> datetime:
