@@ -93,13 +93,20 @@ function validateTreatmentTarget(patientId:number,payload:TreatmentPayload,treat
  if(payload.tooth_number&&(!validFdiTooth(payload.tooth_number)))
   throw new Error("Geçersiz FDI diş numarası.");
 }
+async function treatmentMutationRequest(path:string,token:string,body:Record<string,unknown>):Promise<TreatmentMutationResult>{
+ const result=await request<TreatmentMutationResult>(path,token,{method:path.endsWith("/treatments")?"POST":"PUT",body:JSON.stringify(body)});
+ if(!result||result.ok!==true||!Number.isSafeInteger(result.treatment_id)||result.treatment_id<1||
+    typeof result.edit_revision!=="string"||!/^[a-f0-9]{64}$/.test(result.edit_revision)||typeof result.replayed!=="boolean")
+  throw new ApiError(502,"Tedavi işlem fişi doğrulanamadı. Aynı güvenli taslak korunuyor.");
+ return result;
+}
 export function createTreatment(token:string,patientId:number,payload:TreatmentPayload,requestKey:string){
  validateTreatmentTarget(patientId,payload,undefined,requestKey);
- return request<TreatmentMutationResult>(`/patients/${patientId}/treatments`,token,{method:"POST",body:JSON.stringify({...payload,request_key:requestKey})});
+ return treatmentMutationRequest(`/patients/${patientId}/treatments`,token,{...payload,request_key:requestKey});
 }
 export function updateTreatment(token:string,patientId:number,treatmentId:number,payload:TreatmentPayload,requestKey:string,expectedRevision:string){
  validateTreatmentTarget(patientId,payload,treatmentId,requestKey,expectedRevision);
- return request<TreatmentMutationResult>(`/patients/${patientId}/treatments/${treatmentId}`,token,{method:"PUT",body:JSON.stringify({...payload,request_key:requestKey,expected_revision:expectedRevision})});
+ return treatmentMutationRequest(`/patients/${patientId}/treatments/${treatmentId}`,token,{...payload,request_key:requestKey,expected_revision:expectedRevision});
 }
 export function deletePatient(token:string,id:number){return request<{ok:boolean;patient_id:number}>(`/patients/${id}`,token,{method:"DELETE"});}
 export function editPatient(token:string,id:number,payload:{first_name:string;last_name:string;phone?:string;birth_date?:string;tc_kimlik_no?:string;address?:string;chief_complaint?:string;expected_revision?:string}){
