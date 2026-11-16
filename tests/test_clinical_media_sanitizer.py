@@ -1,4 +1,5 @@
 from pathlib import Path
+import io
 
 import pytest
 from PIL import Image
@@ -89,6 +90,17 @@ def test_web_and_native_upload_routes_use_the_same_sanitizer_before_persistence(
     assert "sanitize_clinical_media_image(destination, extension" in web_upload
     assert web_upload.index("sanitize_clinical_media_image(") < web_upload.index("storage_persist_file(")
 
+    guest_analysis = main_source.split("def create_guest_analysis", 1)[1].split(
+        '@app.post("/analysis/new/{patient_id}")', 1
+    )[0]
+    patient_analysis = main_source.split("def create_analysis", 1)[1].split(
+        "ADMIN_CENTER_PATH", 1
+    )[0]
+    assert "sanitize_clinical_media_image(destination, extension" in guest_analysis
+    assert "sanitize_clinical_media_image(destination, source_ext" in patient_analysis
+    assert patient_analysis.index("sanitize_clinical_media_image(destination, source_ext") < patient_analysis.index("storage_persist_file(destination)")
+    assert patient_analysis.index("sanitize_clinical_media_image(destination, extension") < patient_analysis.index("storage_persist_file(destination)")
+
     mobile_source = (ROOT / "app/mobile_api.py").read_text(encoding="utf-8")
     copy_block = mobile_source.split("def _copy_validated_image", 1)[1].split(
         "class LoginRequest", 1
@@ -98,3 +110,37 @@ def test_web_and_native_upload_routes_use_the_same_sanitizer_before_persistence(
         'def _mobile_access_token', 1
     )[0]
     assert "_copy_validated_image(image, destination, MOBILE_MAX_IMAGE_BYTES)" in upload_block
+
+
+def test_native_new_analysis_upload_is_sanitized_before_inference(tmp_path):
+    from app.mobile_analysis_api import _copy_validated_analysis_image
+
+    raw = io.BytesIO()
+    exif = Image.Exif()
+    exif[315] = "Synthetic clinical device"
+    Image.new("RGB", (18, 9), "white").save(raw, format="JPEG", exif=exif)
+    upload = __import__("fastapi").UploadFile(filename="clinical.jpg", file=io.BytesIO(raw.getvalue()))
+    destination = tmp_path / "analysis.jpg"
+
+    _copy_validated_analysis_image(upload, destination)
+
+    with Image.open(destination) as clean:
+        assert clean.size == (18, 9)
+        assert not dict(clean.getexif())
+
+
+def test_native_analysis_of_legacy_gallery_media_sanitizes_only_the_copy(tmp_path):
+    from app.mobile_analysis_api import _copy_validated_existing_analysis_image
+
+    source = tmp_path / "legacy.jpg"
+    exif = Image.Exif()
+    exif[315] = "Legacy synthetic device"
+    Image.new("RGB", (18, 9), "white").save(source, format="JPEG", exif=exif)
+    destination = tmp_path / "analysis-copy.jpg"
+
+    _copy_validated_existing_analysis_image(source, destination)
+
+    with Image.open(source) as archived:
+        assert archived.getexif().get(315) == "Legacy synthetic device"
+    with Image.open(destination) as analyzed:
+        assert not dict(analyzed.getexif())
