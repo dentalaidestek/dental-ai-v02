@@ -191,17 +191,20 @@ export const uploadPatientMedia=async(
  file:{uri:string;name:string;type:string},
  toothNumber?:string,
  mediaType:"PHOTO"|"RADIOGRAPH"="PHOTO",
- requestKey?:string,
+ requestKey:string,
+ batchId:string,
  onProgress?:(progress:PatientMediaUploadProgress)=>void,
 ):Promise<PatientMediaUploadResult>=>{
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw new Error("Geçersiz hasta kimliği.");
  if(!file?.uri||!file.name||!file.type)throw new Error("Geçerli bir klinik görüntü seçin.");
  if(!["PHOTO","RADIOGRAPH"].includes(mediaType))throw new Error("Geçersiz görüntü türü.");
- if(requestKey!==undefined&&!/^[A-Za-z0-9_-]{16,96}$/.test(requestKey))throw new Error("Geçersiz klinik görüntü işlem anahtarı.");
+ if(!/^[A-Za-z0-9_-]{16,96}$/.test(requestKey))throw new Error("Geçersiz klinik görüntü işlem anahtarı.");
+ if(!/^[A-Za-z0-9_-]{16,96}$/.test(batchId))throw new Error("Geçersiz klinik görüntü yükleme grubu.");
  if(toothNumber!==undefined&&!validFdiTooth(toothNumber))throw new Error("Geçersiz FDI diş numarası.");
  const body=new FormData();
  body.append("media_type",mediaType);
- if(requestKey)body.append("request_key",requestKey);
+ body.append("request_key",requestKey);
+ body.append("batch_id",batchId);
  body.append("file",{uri:file.uri,name:file.name,type:file.type} as any);
  if(toothNumber)body.append("tooth_number",toothNumber);
  return await new Promise<PatientMediaUploadResult>((resolve,reject)=>{
