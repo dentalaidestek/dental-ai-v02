@@ -40,3 +40,11 @@ Legacy receipts that are never replayed or status-checked retain their previous 
 - Android/iOS physical-device upload, camera, process-death, large-file, offline/reconnect and gallery screenshot acceptance remain open.
 
 No merge to main, production deployment, APK/IPA publication or patient-record mutation occurred.
+
+## Follow-up recovery-state correction
+
+A review of the native gallery's error handling found one more UX/state defect introduced by the new explicit 503 configuration gate: `NativePatientMedia` treated every 503 like an ambiguous network result. For this route, the missing-key 503 is returned before the upload body is persisted, so the UI must not claim that the server may already have saved the file.
+
+Added `clinicalMediaRecovery.ts` to classify local vault failures, known configuration rejection, definite validation/ownership rejection and genuinely ambiguous transport/provider/server outcomes separately. A missing-key 503 now clears the ambiguous state, explains that the encrypted local draft is preserved and tells the clinician not to delete it or create a new batch until server configuration is fixed. 409/429/5xx/timeout remain uncertain and still require receipt reconciliation.
+
+Commits: `a897a46` classifier, `fb67566` native recovery-state integration, `e3f374a` regressions, `04413be` beta-suite registration. Four isolated Node classifier tests passed. The full five-test committed file, full beta suite and Android typecheck remain unexecuted because the GitHub runner has not allocated.
