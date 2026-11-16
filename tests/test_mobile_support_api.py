@@ -85,6 +85,18 @@ def test_mobile_support_requests_are_private_and_idempotent(monkeypatch, tmp_pat
         })
         assert blocked_turn.status_code == 409
 
+        closed = client.post(
+            f"{main.ADMIN_CENTER_PATH}/support/{ticket_id}",
+            data={"status": "CLOSED"},
+            cookies={main.SESSION_COOKIE: tokens[2]},
+            headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+        )
+        assert closed.status_code == 200
+        closed_reply = client.post(f"/api/mobile/v1/support/tickets/{ticket_id}/reply", headers=h1, json={
+            "message": "Kapalı talebe yanıt", "request_key": "support_reply_key_0003"
+        })
+        assert closed_reply.status_code == 409
+
         assert client.post(f"/api/mobile/v1/support/tickets/{ticket_id}/read?through_message_id={replied.json()['message_id']}", headers=h1).status_code == 200
 
     with Session(engine) as session:
@@ -108,5 +120,5 @@ def test_support_receipt_schema_has_serialized_production_upgrade():
     migration = (Path(__file__).resolve().parents[1] / "app" / "migrate.py").read_text(encoding="utf-8")
     assert "REVISION = 13" in migration
     assert "def _upgrade_support_receipts_schema(main):" in migration
-    assert "MobileSupportMutationReceipt.__table__.create(connection, checkfirst=True)" in migration
+    assert migration.count("MobileSupportMutationReceipt.__table__.create(connection, checkfirst=True)") >= 2
     assert "if _upgrade_support_receipts_schema(main):" in migration
