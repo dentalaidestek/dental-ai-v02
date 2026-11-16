@@ -303,13 +303,20 @@ def collect_garbage(engine):
         session.commit()
 
 
-def _migrate_legacy_patient_media_receipts(session: Session, key: bytes, limit: int = 100) -> int:
-    """Key old upload fingerprints in bounded batches; no image reads or AI work."""
+def _migrate_legacy_patient_media_receipts(
+    session: Session, key: bytes, patient_model, limit: int = 100,
+) -> int:
+    """Key live-patient upload fingerprints in bounded batches; no image reads or AI work."""
     from app.patient_media_receipts import PatientMediaReceiptCorrupt, upgrade_legacy_receipt
 
+    live_patient = select(patient_model.id).where(
+        patient_model.id == WorkJob.resource_id,
+        patient_model.owner_user_id == WorkJob.owner_user_id,
+    ).exists()
     statement = select(WorkJob).where(
         WorkJob.kind == "PATIENT_MEDIA_RECEIPT",
         WorkJob.status == "DONE",
+        live_patient,
         ~WorkJob.payload_json.contains('"fingerprint_version"'),
         or_(WorkJob.error_code == None, WorkJob.error_code != "FINGERPRINT_MIGRATION_INVALID"),
     ).order_by(WorkJob.id).limit(max(1, min(int(limit), 100)))
@@ -353,7 +360,7 @@ def prune_history(engine):
             except PatientMediaReceiptKeyUnavailable:
                 media_key = None
             if media_key is not None:
-                _migrate_legacy_patient_media_receipts(session, media_key, limit=100)
+                _migrate_legacy_patient_media_receipts(session, media_key, Patient, limit=100)
         ids = session.exec(select(WorkJob.id).where(
             WorkJob.status.in_(["DONE", "CANCELLED", "FAILED"]),
             WorkJob.updated_at < now() - timedelta(days=30),
