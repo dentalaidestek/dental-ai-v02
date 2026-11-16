@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import secrets
+import time
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -58,6 +59,19 @@ class WorkCapacity(RuntimeError):
 
 
 current_job: ContextVar[WorkJob | None] = ContextVar("dental_work_job", default=None)
+
+# Voice receipt expiry is bounded and needs only minute-level precision. The
+# worker calls prune_history on every queue poll, so throttle this maintenance.
+_voice_receipt_prune_last = 0.0
+
+
+def _voice_receipt_prune_due() -> bool:
+    global _voice_receipt_prune_last
+    stamp = time.monotonic()
+    if stamp - _voice_receipt_prune_last < 300:
+        return False
+    _voice_receipt_prune_last = stamp
+    return True
 
 
 @lru_cache(maxsize=1)
@@ -300,7 +314,8 @@ def prune_history(engine):
     live_treatment_receipt=and_(WorkJob.kind=='TREATMENT_RECEIPT',WorkJob.resource_type=='PATIENT',select(Patient.id).where(Patient.id==WorkJob.resource_id).exists())
     live_patient_media_receipt=and_(WorkJob.kind=='PATIENT_MEDIA_RECEIPT',WorkJob.resource_type=='PATIENT',select(Patient.id).where(Patient.id==WorkJob.resource_id).exists())
     with Session(engine) as session:
-        expire_voice_asr_receipts(session, limit=100)
+        if _voice_receipt_prune_due():
+            expire_voice_asr_receipts(session, limit=100)
         ids = session.exec(select(WorkJob.id).where(
             WorkJob.status.in_(["DONE", "CANCELLED", "FAILED"]),
             WorkJob.updated_at < now() - timedelta(days=30),
