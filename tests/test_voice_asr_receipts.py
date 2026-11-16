@@ -30,6 +30,11 @@ class User(ReceiptTestModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
 
 
+class Patient(ReceiptTestModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    owner_user_id: int
+
+
 @pytest.fixture
 def receipt_db(monkeypatch):
     monkeypatch.setattr(receipts, "WorkJob", WorkJob)
@@ -40,7 +45,11 @@ def receipt_db(monkeypatch):
     )
     ReceiptTestModel.metadata.create_all(engine)
     with Session(engine) as session:
-        session.add_all([User(id=1), User(id=2)])
+        session.add_all([
+            User(id=1), User(id=2),
+            Patient(id=10, owner_user_id=1), Patient(id=11, owner_user_id=1),
+            Patient(id=12, owner_user_id=2),
+        ])
         session.commit()
     yield engine
     engine.dispose()
@@ -240,7 +249,7 @@ def test_expiry_worker_clears_old_ciphertext_stale_leases_and_prunes_tombstones(
     with Session(receipt_db) as session:
         counts = receipts.expire_voice_asr_receipts(session, now=STAMP, limit=100)
         session.commit()
-        assert counts == {"expired": 1, "stale": 1, "pruned": 1}
+        assert counts == {"deleted": 0, "expired": 1, "stale": 1, "pruned": 1}
         rows = session.exec(select(WorkJob).order_by(WorkJob.dedupe_key)).all()
         assert [(row.dedupe_key, row.status) for row in rows] == [
             ("1" * 64, "EXPIRED"), ("2" * 64, "FAILED")
@@ -275,3 +284,21 @@ def test_missing_gemini_configuration_is_typed_before_provider_call(monkeypatch)
     monkeypatch.setenv("VOICE_EXAM_GEMINI_MODEL", "gemini-test")
     with pytest.raises(core.VoiceConfigurationError):
         core.extract(data=b"bounded-audio", mime="audio/webm", transcription_only=True)
+
+
+def test_patient_deletion_erases_encrypted_voice_receipt_immediately(receipt_db):
+    with Session(receipt_db) as session:
+        session.add(WorkJob(
+            owner_user_id=1, resource_id=999, resource_type="PATIENT",
+            kind=receipts.KIND, source_hash="a" * 64, dedupe_key="9" * 64,
+            payload_json="encrypted-transcript", status="DONE",
+            created_at=STAMP, updated_at=STAMP,
+        ))
+        session.commit()
+    with Session(receipt_db) as session:
+        counts = receipts.expire_voice_asr_receipts(
+            session, patient_model=Patient, now=STAMP + timedelta(minutes=5), limit=100
+        )
+        session.commit()
+        assert counts["deleted"] == 1
+        assert session.exec(select(WorkJob)).all() == []
