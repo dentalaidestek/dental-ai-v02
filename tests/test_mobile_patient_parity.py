@@ -287,3 +287,97 @@ def test_treatment_receipts_are_not_pruned_while_patient_exists(chat):
         assert session.exec(select(WorkJob).where(
             WorkJob.kind == "TREATMENT_RECEIPT", WorkJob.resource_id == 83,
         )).first() is not None
+
+
+
+def test_mobile_patient_media_upload_receipt_replays_once_and_is_owner_scoped(chat, monkeypatch, tmp_path):
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    monkeypatch.setattr(mobile_api, "storage_persist_file", lambda path: persisted.append(str(path)))
+    monkeypatch.setattr(mobile_api, "storage_delete", lambda path: None)
+    monkeypatch.setattr(mobile_api, "_publish_realtime_event", async_publish)
+    monkeypatch.chdir(tmp_path)
+    persisted = []
+    async def async_publish(_event):
+        return None
+
+    with Session(engine) as session:
+        session.add(main.Patient(id=84, anonymous_id="SYNTHETIC-MEDIA-RECEIPT", owner_user_id=1))
+        session.commit()
+
+    raw = io.BytesIO()
+    Image.new("RGB", (16, 12), (10, 20, 30)).save(raw, format="PNG")
+    payload = raw.getvalue()
+    key = "synthetic-media-upload-0001"
+    first = client.post("/api/mobile/v1/patients/84/media", data={
+        "media_type": "PHOTO", "request_key": key,
+    }, files={"file": ("synthetic.png", payload, "image/png")})
+    assert first.status_code == 200, first.text
+    assert first.json()["replayed"] is False
+
+    replay = client.post("/api/mobile/v1/patients/84/media", data={
+        "media_type": "PHOTO", "request_key": key,
+    }, files={"file": ("synthetic.png", payload, "image/png")})
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["replayed"] is True
+    assert replay.json()["media"]["id"] == first.json()["media"]["id"]
+    assert len(persisted) == 1, "replayed upload must not persist a second object"
+
+    status = client.get(f"/api/mobile/v1/patients/84/media/uploads/{key}")
+    assert status.status_code == 200, status.text
+    assert status.json()["found"] is True
+    assert status.json()["media"]["id"] == first.json()["media"]["id"]
+
+    changed = io.BytesIO()
+    Image.new("RGB", (16, 12), (30, 20, 10)).save(changed, format="PNG")
+    conflict = client.post("/api/mobile/v1/patients/84/media", data={
+        "media_type": "PHOTO", "request_key": key,
+    }, files={"file": ("synthetic.png", changed.getvalue(), "image/png")})
+    assert conflict.status_code == 409
+
+    client.headers["Authorization"] = "Bearer token2"
+    assert client.get(f"/api/mobile/v1/patients/84/media/uploads/{key}").status_code == 404
+    assert client.post("/api/mobile/v1/patients/84/media", data={
+        "media_type": "PHOTO", "request_key": key,
+    }, files={"file": ("synthetic.png", payload, "image/png")}).status_code == 404
+
+    with Session(engine) as session:
+        media = session.exec(select(main.PatientMedia).where(main.PatientMedia.patient_id == 84)).all()
+        receipts = session.exec(select(WorkJob).where(
+            WorkJob.kind == "PATIENT_MEDIA_RECEIPT",
+            WorkJob.resource_id == 84,
+        )).all()
+        assert len(media) == 1
+        assert len(receipts) == 1
+        session.delete(media[0])
+        session.commit()
+
+    client.headers["Authorization"] = "Bearer token1"
+    deleted_replay = client.post("/api/mobile/v1/patients/84/media", data={
+        "media_type": "PHOTO", "request_key": key,
+    }, files={"file": ("synthetic.png", payload, "image/png")})
+    assert deleted_replay.status_code == 409, "a deleted upload receipt must not resurrect the image"
+
+
+def test_patient_media_receipts_are_not_pruned_while_patient_exists(chat):
+    client, engine = chat
+    with Session(engine) as session:
+        session.add(main.Patient(id=85, anonymous_id="SYNTHETIC-MEDIA-RETENTION", owner_user_id=1))
+        session.add(WorkJob(
+            owner_user_id=1,
+            resource_id=85,
+            resource_type="PATIENT",
+            kind="PATIENT_MEDIA_RECEIPT",
+            source_hash="a" * 64,
+            dedupe_key="b" * 64,
+            payload_json='{"patient_id":85,"media_id":850}',
+            status="DONE",
+            updated_at=datetime(2000, 1, 1),
+        ))
+        session.commit()
+    prune_history(engine)
+    with Session(engine) as session:
+        assert session.exec(select(WorkJob).where(
+            WorkJob.kind == "PATIENT_MEDIA_RECEIPT",
+            WorkJob.resource_id == 85,
+        )).first() is not None

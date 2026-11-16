@@ -297,12 +297,14 @@ def prune_history(engine):
     # create a second analysis or treatment.
     live_upload_receipt=and_(WorkJob.kind=='UPLOAD_RECEIPT',WorkJob.resource_type=='ANALYSIS',select(Analysis.id).where(Analysis.id==WorkJob.resource_id).exists())
     live_treatment_receipt=and_(WorkJob.kind=='TREATMENT_RECEIPT',WorkJob.resource_type=='PATIENT',select(Patient.id).where(Patient.id==WorkJob.resource_id).exists())
+    live_patient_media_receipt=and_(WorkJob.kind=='PATIENT_MEDIA_RECEIPT',WorkJob.resource_type=='PATIENT',select(Patient.id).where(Patient.id==WorkJob.resource_id).exists())
     with Session(engine) as session:
         ids = session.exec(select(WorkJob.id).where(
             WorkJob.status.in_(["DONE", "CANCELLED", "FAILED"]),
             WorkJob.updated_at < now() - timedelta(days=30),
             ~live_upload_receipt,
             ~live_treatment_receipt,
+            ~live_patient_media_receipt,
         ).order_by(WorkJob.id).limit(100)).all()
         if ids:
             session.exec(delete(WorkJob).where(WorkJob.id.in_(ids)))

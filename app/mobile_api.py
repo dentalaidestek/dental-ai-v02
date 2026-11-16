@@ -1479,7 +1479,7 @@ async def mobile_patient_media_upload(
     image = image or file
     if not image or not image.filename:
         raise HTTPException(status_code=422, detail="Görüntü seçin.")
-    original_name = Path(image.filename).name
+    original_name = Path(image.filename).name[:255]
     ext = Path(original_name).suffix.lower()
     if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
         raise HTTPException(status_code=422, detail="Desteklenmeyen görüntü formatı.")
@@ -1506,8 +1506,8 @@ async def mobile_patient_media_upload(
                     session.rollback()
                     destination.unlink(missing_ok=True)
                     return existing
-            storage_persist_file(destination)
             persisted = True
+            storage_persist_file(destination)
             media = PatientMedia(
                 patient_id=patient_id,
                 owner_user_id=user.id,
