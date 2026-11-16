@@ -59,7 +59,7 @@ export function normalizeAnalysisImages(images:Array<{uri:string;name?:string;ty
 export async function createAnalysis(token:string,payload:{patientId:number;toothNumber?:string;clinicalNotes?:string;images:Array<{uri:string;name?:string;type?:string}>}){
   if(!Number.isSafeInteger(payload?.patientId)||payload.patientId<=0||!Array.isArray(payload.images)||!payload.images.length||payload.images.some(image=>!image||typeof image.uri!=="string"||!image.uri.trim()))throw Error("Analiz için geçerli hasta ve en az bir klinik görüntü seçin.");
   // Match the canonical mobile API's 1–4-image contract before any upload.
-  if(payload.images.length>4)throw Error("Bir analiz için en fazla 4 klinik görüntü yüklenebilir.");
+  if(payload.images.length>ANALYSIS_MAX_IMAGES)throw Error(`Bir analiz için en fazla ${ANALYSIS_MAX_IMAGES} klinik görüntü yüklenebilir.`);
   const normalizedImages=normalizeAnalysisImages(payload.images);
   const form=new FormData();
   form.append("patient_id",String(payload.patientId));
