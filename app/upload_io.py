@@ -4,7 +4,6 @@ from starlette.exceptions import HTTPException
 
 from app.upload_limits import (
     MAX_ANALYSIS_IMAGE_BYTES,
-    MAX_PATIENT_MEDIA_FILE_BYTES,
 )
 
 
