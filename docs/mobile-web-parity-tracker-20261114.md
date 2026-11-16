@@ -344,3 +344,16 @@ Commits: `af96bf1` (native close action), `b501e8b` (normal dismissal regression
 Latest code-head CI recheck: Android run `43927164752` (typecheck job `133509569657`, beta-APK job `133509570297`), Security recovery `43927164668` / job `133509571306`, Admin security `43927164241` / job `133509567447`, and Expert social `43927164467` / job `133509570706` all concluded failure. Typecheck and security job-step queries returned empty arrays; all five log downloads returned `BlobNotFound 404`; combined commit status was empty. No npm install, repository tsc, Node regression, Gradle or pytest step started. This is a pre-runner execution failure, not a reported assertion/compiler diagnostic. Separately, the changed patient-profile presentation helper was copied from the committed source into an isolated check: strict TypeScript compile passed and nine validation assertions passed. This does not substitute for the React Native renderer suite or full project typecheck. No full checkout/dependency tree, Expo export, Gradle build or device screenshot test is available here.
 
 No main merge, production deployment, schema change, APK/IPA publication or patient-data mutation. Next: continue issue #258 in order with voice-exam functional parity; then finish remaining tooth-chart surface/history behavior, clinical-media and AI image-analysis parity, program/appointments, Dental Akış, academic AI, expert support, account/notifications and 60,000-user load acceptance.
+
+
+## 2026-11-16 — native prior voice-history parity
+
+Web references checked first: `app/templates/voice_exam_panel.html`, `app/static/voice-exam.js` history handlers, and `app/voice_exam.py` history route. Native previously lacked the web “Önceki bilgiler” read/confirm/add flow.
+
+The web query is now shared through `reviewed_history_payload`; the mobile GET adapter uses the same completed `VOICE_REVIEW` records, patient-owner check, field allowlist and 12-record bound. The mobile response is `private, no-store`, varies by Authorization and excludes raw audio/transcript. Native displays the prior approved fields with their source analysis ID, requires a separate patient-confirmation action before adding them to the draft, and leaves final field selection unchecked. Current-vs-prior conflicts remain visible as uncertainty; history retrieval never writes to the patient chart.
+
+Tests added: native API request/provenance validation, native confirmation/conflict UI flow, and backend owner/completed-job/non-voice archive isolation. Commits: `4a714ad`, `21023b1`, `cb12383`, `058593c`, `cdcaa14`, `e138111`, `5166a77`, `97af24f`.
+
+The tests are committed but were not run here. Latest Actions still report runner allocation failure (`runner_id=0`, no executed steps, job log `BlobNotFound 404`); do not treat this as a compiler/test result. No main merge, production deploy, schema migration, APK/IPA publication or patient-record mutation.
+
+Next module after this voice-history parity increment: remaining tooth-chart surface/history parity, then clinical-media and AI image-analysis result parity. Voice microphone/device acceptance and provider accuracy still require real Android/iOS devices.
