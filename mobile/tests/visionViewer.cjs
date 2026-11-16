@@ -23,3 +23,20 @@ test('pending vision polling backs off exponentially and does not schedule overl
  assert.equal(calls,2);
  await renderer.act(async()=>t.unmount());
 });
+
+
+test('native viewer switches between authorized assets using web modality labels without a new asset-list request',async()=>{
+ const Component=ui(async()=>({pending:false,findings:[]})),selected=[];
+ const assets=[{id:4,name:'bitewing.png',image_type:'BITEWING'},{id:5,name:'intraoral.png',image_type:'INTRAORAL_PHOTO'}];
+ let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:12,assetId:4,assets,onSelectAsset:id=>selected.push(id),onClose(){}})));
+ const rendered=text(t.toJSON());
+ assert.ok(rendered.includes('Analiz #12 · Bitewing · Görüntü #4'));
+ assert.ok(rendered.includes('1 · Bitewing'));
+ assert.ok(rendered.includes('2 · Ağız içi'));
+ const next=t.root.findAllByType('Pressable').find(node=>text(node).includes('2 · Ağız içi'));
+ assert.ok(next);
+ await renderer.act(async()=>next.props.onPress());
+ assert.deepEqual(selected,[5]);
+ await renderer.act(async()=>t.unmount());
+});
