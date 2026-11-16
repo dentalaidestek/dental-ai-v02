@@ -6,7 +6,7 @@ import {usePreventRemove} from '@react-navigation/native';
 import React,{useCallback,useEffect,useMemo,useRef,useState} from "react";
 import {ActivityIndicator,Alert,Linking,Pressable,ScrollView,Text,TextInput,View} from "react-native";
 import {getPatient,getPatients,Patient} from "./api";
-import {createAnonymousVoicePatient,extractVoice,finalizeVoice,VoiceExtraction} from "./voiceApi";
+import {createAnonymousVoicePatient,extractVoice,finalizeVoice,getVoiceHistory,VoiceExtraction,VoiceHistoryField} from "./voiceApi";
 import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import {chunkedDraftStore} from "./socialDraft";
@@ -32,6 +32,20 @@ function ResultSection({name,items}:{name:string;items:unknown}){
  </View>;
 }
 
+
+function mergeVoiceHistory(result:VoiceExtraction,history:Record<string,VoiceHistoryField>):VoiceExtraction{
+ const fields={...(result.review.fields||{})};
+ const conflicts:string[]=[];
+ for(const [name,item] of Object.entries(history)){
+  const current=fields[name];
+  if(!current)fields[name]={value:item.value,quote:item.quote,origin:"history"};
+  else if(current.value.trim()!==item.value.trim())conflicts.push((fieldLabels[name]||name)+": önceki kayıt — "+item.value+"; bu görüşme — "+current.value);
+ }
+ const prior=result.review.uncertainties||String(result.review.uncertain||"").split(" · ").filter(Boolean);
+ const uncertainties=Array.from(new Set([...prior,...conflicts].map(value=>value.trim()).filter(Boolean))).slice(-8);
+ return {...result,review:{...result.review,fields,uncertainties,uncertain:uncertainties.join(" · ")}};
+}
+
 function ReviewRemovableSection({name,items,onRemove,disabled}:{name:string;items:unknown[]|undefined;onRemove:(index:number)=>void;disabled:boolean}){
  const [expanded,setExpanded]=useState(false);
  const rows=Array.isArray(items)?items:[];
@@ -52,13 +66,14 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  const [audioBusy,setAudioBusy]=useState(false),[deviceCheckBusy,setDeviceCheckBusy]=useState(false),[applyBusy,setApplyBusy]=useState(false),[audioSession,setAudioSession]=useState({started:false,finished:false});
  const [privacyExpanded,setPrivacyExpanded]=useState(false),[processing,setProcessing]=useState(false),[editingFields,setEditingFields]=useState(false),[review,setReview]=useState<VoiceExtraction|null>(null),[finalResult,setFinalResult]=useState<Record<string,unknown>|null>(null),[clinicalError,setClinicalError]=useState(""),[stage,setStage]=useState<"select"|"exam">("select"),[consent,setConsent]=useState(false),[transcript,setTranscript]=useState(""),[creatingAnonymous,setCreatingAnonymous]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<Patient|null>(null);
  const [extractionProgress,setExtractionProgress]=useState("");
+ const [historyFields,setHistoryFields]=useState<Record<string,VoiceHistoryField>>({}),[historyNotice,setHistoryNotice]=useState(""),[historyError,setHistoryError]=useState(""),[historyLoading,setHistoryLoading]=useState(false),[historyConfirmed,setHistoryConfirmed]=useState(false),[historyApplied,setHistoryApplied]=useState(false);
  const extractionStore=useMemo(()=>chunkedDraftStore(SecureStore,Crypto.randomUUID,512),[]);
  usePreventRemove(processing||audioBusy||deviceCheckBusy||applyBusy,()=>Alert.alert("İşlem sürüyor","Muayene veya kayıt tamamlanana kadar bekleyin."));
  const [lastRemoved,setLastRemoved]=useState<{key:"teeth"|"literature_topics"|"source_requests"|"communication"|"decision_barriers"|"follow_up_questions";index:number;item:unknown}|null>(null);
  const processingLock=useRef(false),processingOwner=useRef(0),generation=useRef(0),scope=useRef(token+":"+(selected?.id||0)),anonymousLock=useRef<string|null>(null),startAfterSelection=useRef(false),accountScope=useRef(token+":"+(userId||0));
  const forceFreshExtraction=useRef(false);
  scope.current=token+":"+(selected?.id||0);accountScope.current=token+":"+(userId||0);
- useEffect(()=>{const enterExam=startAfterSelection.current;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("");setTranscript("");setConsent(false);setStage(enterExam?"exam":"select")},[token,selected?.id]);
+ useEffect(()=>{const enterExam=startAfterSelection.current;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("");setTranscript("");setConsent(false);setHistoryFields({});setHistoryNotice("");setHistoryError("");setHistoryLoading(false);setHistoryConfirmed(false);setHistoryApplied(false);setStage(enterExam?"exam":"select")},[token,selected?.id]);
  useEffect(()=>{setCreatingAnonymous(false);setSelected(null);setAudioBusy(false);setApplyBusy(false)},[token]);
  useEffect(()=>{let active=true;if(initialPatientId){void getPatient(token,initialPatientId).then(r=>{if(active)setSelected(r.patient)}).catch(()=>{if(active)setError("Seçili hasta bulunamadı veya erişim izni yok.")})}return()=>{active=false}},[token,initialPatientId]);
  async function createAnonymousPatient(){
@@ -76,6 +91,23 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    startAfterSelection.current=true;setSelected(result.patient);
   }catch(e){if(accountScope.current===requestScope)setError(e instanceof Error?e.message:"Yeni hasta oluşturulamadı. Aynı istek güvenle tekrar denenebilir.");}
   finally{if(anonymousLock.current===requestScope)anonymousLock.current=null;if(accountScope.current===requestScope)setCreatingAnonymous(false);}
+ }
+ async function loadPreviousVoiceHistory(){
+  if(!selected||historyLoading||processingLock.current||audioBusy||deviceCheckBusy||applyBusy||audioSession.started&&!audioSession.finished)return;
+  const requestScope=scope.current,patientId=selected.id;setHistoryLoading(true);setHistoryError("");
+  try{
+   const result=await getVoiceHistory(token,patientId);
+   if(requestScope!==scope.current)return;
+   setHistoryFields(result.fields);setHistoryNotice(result.notice);setHistoryConfirmed(false);setHistoryApplied(false);
+   if(!Object.keys(result.fields).length)setHistoryNotice(result.notice+" Aktarılabilecek önceki alan bulunamadı; hasta arşivinin diğer bölümlerini ayrıca kontrol edin.");
+  }catch(e){if(requestScope===scope.current)setHistoryError(e instanceof Error?e.message:"Önceki hekim onaylı bilgiler getirilemedi.");}
+  finally{if(requestScope===scope.current)setHistoryLoading(false);}
+ }
+ function applyPreviousVoiceHistory(){
+  if(!historyConfirmed){setHistoryError("Önceki bilgileri hastayla doğruladığınızı işaretleyin.");return;}
+  if(!Object.keys(historyFields).length||historyApplied)return;
+  setHistoryApplied(true);setHistoryError("");
+  if(review){setReview(mergeVoiceHistory(review,historyFields));setFinalResult(null);setClinicalError("");}
  }
  async function processText(completeText?:string){
   const text=completeText??transcript;
@@ -107,7 +139,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
     }
    });
    if(request!==generation.current||currentScope!==scope.current)return;
-   setReview(result);setLastRemoved(null);setEditingFields(false);setFinalResult(null);
+   setReview(historyApplied?mergeVoiceHistory(result,historyFields):result);setLastRemoved(null);setEditingFields(false);setFinalResult(null);
    setExtractionProgress(`\u2713 ${chunks.length} bölüm tamamlandı. Tüm görüşme tek klinik değerlendirme için hazır.`);
   }catch(e){
    if(request===generation.current&&currentScope===scope.current){
@@ -164,6 +196,29 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    <Text style={{fontSize:17,fontWeight:"800",color:navy}}>Muayene hazırlığı</Text>
    <Text style={{color:muted,marginTop:8}}>Hazırlık · Metin · Klinik değerlendirme · Hekim onayı</Text>
    <NativeVoiceDeviceCheck disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onBusyChange={setDeviceCheckBusy}/>
+   <View style={{marginTop:14,paddingTop:14,borderTopWidth:1,borderTopColor:line}}>
+    <Text style={{fontWeight:"800",color:navy}}>Önceki hekim onaylı bilgiler</Text>
+    <Text style={{color:muted,lineHeight:20,marginTop:6}}>Yalnızca önceki sesli muayenede hekim tarafından kaydedilen hastalık, ilaç ve alerji beyanları getirilir. Güncel olduklarını hastayla doğrulamadan kullanmayın.</Text>
+    <Pressable accessibilityRole="button" disabled={historyLoading||processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>void loadPreviousVoiceHistory()} style={{marginTop:10,padding:12,borderRadius:10,backgroundColor:"#E8F0FF",alignItems:"center"}}>
+     <Text style={{color:"#1769AA",fontWeight:"800"}}>{historyLoading?"Önceki kayıtlar getiriliyor…":"Önceki kayıtları göster"}</Text>
+    </Pressable>
+    {!!historyNotice&&<Text style={{color:muted,lineHeight:20,marginTop:9}}>{historyNotice}</Text>}
+    {Object.entries(historyFields).map(([name,item])=><View key={name} style={{paddingVertical:8,borderBottomWidth:1,borderBottomColor:line}}>
+     <Text style={{fontWeight:"700",color:navy}}>{fieldLabels[name]||name.replace(/_/g," ")}</Text>
+     <Text selectable style={{color:muted,marginTop:3}}>{item.value} · Önceki muayene #{item.analysis_id}</Text>
+    </View>)}
+    {!!historyError&&<Text accessibilityRole="alert" style={{color:"#B42318",marginTop:9}}>{historyError}</Text>}
+    {Object.keys(historyFields).length>0&&!historyApplied&&<>
+     <Pressable accessibilityRole="checkbox" accessibilityState={{checked:historyConfirmed,disabled:processing||audioBusy||deviceCheckBusy||applyBusy}} disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>setHistoryConfirmed(v=>!v)} style={{flexDirection:"row",alignItems:"center",gap:9,paddingVertical:10}}>
+      <Text style={{fontSize:20,color:navy}}>{historyConfirmed?"☑":"☐"}</Text>
+      <Text style={{color:navy,flex:1}}>Bu bilgileri hastayla doğruladım.</Text>
+     </Pressable>
+     <Pressable accessibilityRole="button" disabled={!historyConfirmed||processing||audioBusy||deviceCheckBusy||applyBusy} onPress={applyPreviousVoiceHistory} style={{padding:13,borderRadius:10,backgroundColor:historyConfirmed?"#071B35":"#9BA7B7",alignItems:"center"}}>
+      <Text style={{color:"white",fontWeight:"800"}}>Doğruladığım bilgileri muayeneye ekle</Text>
+     </Pressable>
+    </>}
+    {historyApplied&&<Text style={{color:"#1769AA",marginTop:9}}>Doğruladığınız bilgiler muayene taslağına eklendi. Önceki ve güncel beyanlar çelişiyorsa ayrıca gösterilir; hiçbir alan otomatik kaydedilmez.</Text>}
+   </View>
    <Pressable accessibilityRole="checkbox" accessibilityState={{checked:consent,disabled:processing||audioBusy||deviceCheckBusy||applyBusy}} disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>{if(consent){generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("")}setConsent(v=>!v)}} style={{flexDirection:"row",alignItems:"flex-start",gap:10,marginTop:18}}>
     <Text style={{fontSize:21,color:navy}}>{consent?"☑":"☐"}</Text><Text style={{flex:1,color:navy,lineHeight:21}}>Hastayı bilgilendirdim. Sesimin yazıya çevrilmesine ve muayene bittiğinde metnin klinik yapay zekâ hizmetiyle değerlendirilmesine onay veriyorum.</Text>
    </Pressable>
