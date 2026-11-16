@@ -27,6 +27,7 @@ export const createRun=async(t:string,c:number,intent:RunIntent)=>validateRun(aw
 export const receipt=async(t:string,c:number,key:string)=>validateRun(await request<{run:Run|null}>(coursePath(c)+'/runs/receipt?request_key='+encodeURIComponent(key),t),true);
 export const activeRun=async(t:string,c:number)=>validateRun(await request<{run:Run|null}>(coursePath(c)+'/runs/active',t),true);
 export const runStatus=async(t:string,c:number,r:number)=>validateRun(await request<{run:Run}>(coursePath(c)+'/runs/'+id(r),t));
+export const cancelRun=async(t:string,c:number,r:number)=>validateRun(await write<{run:Run}>(t,coursePath(c)+'/runs/'+id(r)+'/cancel','POST'));
 export const answer=(t:string,c:number,m:number,number:number,choice:string)=>write<{quiz:Quiz}>(t,coursePath(c)+`/quizzes/${id(m)}/answers`,'POST',{number,choice});
 export const feedback=(t:string,c:number,m:number,vote:string)=>write(t,coursePath(c)+`/messages/${id(m)}/feedback`,'POST',{vote});
 export function academicFilePath(course:number,path:string){const base=coursePath(course),native='/api/mobile/v1'+base;if(new RegExp('^'+native+'/(?:materials/[1-9][0-9]*/file|messages/[1-9][0-9]*/pdf(?:\\?part=[0-9]+)?)$').test(path))return path;const match=new RegExp('^/notes/courses/'+id(course)+'/ai/messages/([1-9][0-9]*)/pdf(\\?part=[0-9]+)?$').exec(path);if(match)return native+'/messages/'+match[1]+'/pdf'+(match[2]||'');throw Error('Bu dosya dersin yetkili dosya yolu değil.');}
