@@ -58,3 +58,26 @@ def test_local_ocr_renders_only_requested_pdf_page(tmp_path):
     assert "Ortodonti" in result.text
     assert "Angle" in result.text
     assert result.visual_only is False
+
+
+def test_higher_confidence_empty_or_partial_retry_cannot_erase_page_text():
+    from app.study_local_ocr import _prefer_ocr_retry
+    page='Soru 14. Çenelerin açma hareketi? A) Şık B) Şık\n'*30
+    assert not _prefer_ocr_retry(page,51,'',95)
+    assert not _prefer_ocr_retry(page,62,'14. Son soru A) Şık',91)
+    assert _prefer_ocr_retry(page,51,page.replace('Şık','Seçenek'),80)
+
+
+def test_failed_quality_retry_preserves_weak_search_text_and_marks_it_unreliable(monkeypatch):
+    from types import SimpleNamespace
+    import app.study_local_ocr as module
+    page='18. Pubertal büyüme atılımı\n19. El bilek kemikleri\n'*20
+    monkeypatch.setattr(module,'_render_pdf_page',lambda *a,**k:Image.new('L',(200,300),255))
+    monkeypatch.setattr(module,'_orientation_candidate',lambda im:im.copy())
+    monkeypatch.setattr(module,'_deskew_image',lambda im:im.copy())
+    monkeypatch.setattr(module,'_detect_page_layout',lambda im:SimpleNamespace(kind='single_block',psm=6))
+    monkeypatch.setattr(module,'_recognize_layout',lambda *a,**k:(page,51))
+    monkeypatch.setattr(module,'_recognize',lambda *a,**k:('',95))
+    result=module.ocr_material_page(Path('synthetic.pdf'),mime_type='application/pdf',page_number=4)
+    assert result.text==page.strip() and result.confidence==51
+    assert result.retried and result.visual_only
