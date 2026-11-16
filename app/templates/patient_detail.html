@@ -457,7 +457,7 @@ document.addEventListener("keydown", function(event) {
     const countLabel = document.getElementById("patientMediaSelectedCount");
     const analyzeButton = document.getElementById("patientMediaAnalyzeSelected");
     const selectAllButton = document.getElementById("patientMediaSelectAll");
-    const maxAnalysisImages = {{ analysis_image_limit|default(4) }};
+    const maxAnalysisImages = {{ analysis_image_limit }};
     if (!checkboxes.length) return;
 
     function selectedIds() {
