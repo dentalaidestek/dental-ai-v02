@@ -218,3 +218,52 @@ def test_mixed_media_materialization_validation_classification_and_persistence_u
     response=_post_mixed(c,raw,"31","synthetic-worker-pool-001")
     assert response.status_code==200,response.text
     assert {"_upload_digest","storage_ensure_local","_copy_validated_existing_analysis_image","_copy_validated_analysis_image","classify_dental_image","storage_persist_file"}.issubset(set(calls))
+
+def post_clinical_only(c,key="synthetic-clinical-only-001",patient="8",tooth="36",note="Synthetic clinical-only context"):
+    return c.post("/api/mobile/v1/analyses",data={
+        "patient_id":patient,
+        "request_key":key,
+        "tooth_number":tooth,
+        "clinical_notes":note,
+    })
+
+
+def test_clinical_only_analysis_uses_preliminary_job_and_idempotent_receipt(chat,monkeypatch,tmp_path):
+    c,engine,_=setup(chat,monkeypatch,tmp_path)
+    first=post_clinical_only(c)
+    assert first.status_code==200,first.text
+    again=post_clinical_only(c)
+    assert again.status_code==200
+    assert again.json()["analysis_id"]==first.json()["analysis_id"]
+    changed=post_clinical_only(c,note="Changed synthetic clinical context")
+    assert changed.status_code==409
+
+    with Session(engine) as s:
+        analyses=s.exec(select(main.Analysis)).all()
+        assets=s.exec(select(main.ImageAsset)).all()
+        preliminary=s.exec(select(work_jobs.WorkJob).where(work_jobs.WorkJob.kind=="PRELIMINARY")).all()
+        vision=s.exec(select(work_jobs.WorkJob).where(work_jobs.WorkJob.kind=="VISION")).all()
+        receipts=s.exec(select(work_jobs.WorkJob).where(work_jobs.WorkJob.kind=="UPLOAD_RECEIPT")).all()
+        assert len(analyses)==1 and analyses[0].patient_id==8
+        assert analyses[0].tooth_number=="36"
+        assert analyses[0].clinical_notes=="Synthetic clinical-only context"
+        assert analyses[0].status=="AI_ANALYZING"
+        assert assets==[]
+        assert len(preliminary)==1 and vision==[] and len(receipts)==1
+        assert json.loads(receipts[0].payload_json)["job_id"]==preliminary[0].id
+
+    receipt=c.get("/api/mobile/v1/analyses/uploads/receipt?patient_id=8&request_key=synthetic-clinical-only-001")
+    assert receipt.status_code==200
+    assert receipt.json()["receipt"]["analysis_id"]==first.json()["analysis_id"]
+    assert receipt.json()["receipt"]["job_id"]==first.json()["job_id"]
+
+
+def test_clinical_only_analysis_rejects_empty_context_before_allocating_records(chat,monkeypatch,tmp_path):
+    c,engine,_=setup(chat,monkeypatch,tmp_path)
+    response=post_clinical_only(c,key="synthetic-empty-context-001",tooth="",note="")
+    assert response.status_code==422
+    with Session(engine) as s:
+        assert s.exec(select(main.Analysis)).all()==[]
+        assert s.exec(select(main.ImageAsset)).all()==[]
+        assert s.exec(select(work_jobs.WorkJob)).all()==[]
+
