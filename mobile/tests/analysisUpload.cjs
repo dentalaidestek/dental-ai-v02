@@ -115,3 +115,16 @@ test('clinical-only multipart request sends no synthetic empty image part',async
  assert.equal(parts.find(part=>part[0]==='request_key')[1],clinical.requestKey);
 });
 
+
+
+test('native analysis UI and durable intent share the four-image admission boundary',()=>{
+ const api=require('../src/analysisUpload.ts');
+ const {ANALYSIS_MAX_IMAGES}=require('../src/analysisApi.ts');
+ assert.equal(ANALYSIS_MAX_IMAGES,4);
+ const fourSaved={...intent,images:[],existingMediaIds:[31,32,33,34]};
+ assert.doesNotThrow(()=>api.parseUploadIntent(JSON.stringify(fourSaved),1,8));
+ const fiveSaved={...fourSaved,existingMediaIds:[31,32,33,34,35]};
+ assert.throws(()=>api.parseUploadIntent(JSON.stringify(fiveSaved),1,8),/en fazla 4/);
+ const savedPlusNew={...intent,existingMediaIds:[31,32,33,34]};
+ assert.throws(()=>api.parseUploadIntent(JSON.stringify(savedPlusNew),1,8),/toplamı en fazla 4/);
+});
