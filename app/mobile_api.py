@@ -2224,7 +2224,7 @@ async def mobile_voice_audio(request: Request, patient_id: int, user: User = Dep
 
         try:
             mime = core.validate_audio(data, request.headers.get("content-type", ""))
-            digest = audio_content_digest(mime, audio_hash.digest())
+            digest = audio_content_digest(mime, audio_hash.digest(), key)
         except (core.VoiceError, ValueError):
             return reply(422, "VOICE_ASR_INVALID_AUDIO", "Ses dosyasının biçimi veya boyutu doğrulanamadı.")
 
