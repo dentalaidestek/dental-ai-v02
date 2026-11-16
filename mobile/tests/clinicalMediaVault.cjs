@@ -47,7 +47,7 @@ test('encrypted media is bound to the owning user and patient scope',async()=>{
 });
 test('tampered ciphertext fails authentication and never returns plaintext',async()=>{
  const h=harness(),sourceUri=addSource(h),encrypted=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024);
- const file=h.files.get(encrypted),chars=file.data.split('');chars[chars.length-1]=chars[chars.length-1]==='0'?'1':'0';file.data=chars.join('');h.files.set(encrypted,file);
+ const file=h.files.get(encrypted),chars=file.data.split('');chars[8]=chars[8]==='A'?'B':'A';file.data=chars.join('');h.files.set(encrypted,file);
  await assert.rejects(()=>h.api.decryptClinicalMediaFile(encrypted,7,8,'synthetic.png'),/şifresi doğrulanamadı/);
 });
 test('file size is checked before encryption and temporary staging is removed on failure',async()=>{
