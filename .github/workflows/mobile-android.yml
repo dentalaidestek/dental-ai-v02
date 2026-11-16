@@ -15,6 +15,7 @@ on:
       - 'app/mobile_modern_api_v3.py'
       - 'app/main.py'
       - 'app/expert_social_api.py'
+      - 'app/expert_social_relationships.py'
       - '.github/workflows/mobile-android.yml'
   workflow_dispatch:
 
