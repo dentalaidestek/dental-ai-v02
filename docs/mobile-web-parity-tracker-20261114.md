@@ -239,3 +239,28 @@ Web reference checked before implementation: `support_request.html`, `_support_s
 - Added native route, support-screen contract, backend notification-target and web-template regressions.
 
 Validation boundary: source-contract edits and Git object creation are complete; full mobile Node/TypeScript, Python support lifecycle, Android build and security suites still require a GitHub Actions runner. The latest pre-change CI jobs all failed with `runner_id=0`, empty runner names and `steps=[]`; no compiler, Gradle or pytest step started. No green CI is claimed.
+
+
+## 2026-11-16 — Native patient-profile visual and action parity
+
+Web-first source review: `app/templates/patient_detail.html` was compared with `mobile/src/NativePatientProfile.tsx` and `mobile/tests/patientProfileUI.cjs`. The web profile's order is retained: patient identity/complaint, expert consultation, four quick actions (tooth chart, AI analysis, appointment, treatment), collapsible patient information, clinical media, analysis history and treatment history. The public site could not be rendered in the browser tool in this run, so this is a template/handler-level comparison rather than a physical screenshot acceptance.
+
+Changes on `feature/mobile-web-parity-20261110`:
+- Added a pure, typed patient-profile presentation model for the four web-ordered quick actions and identity labels.
+- Patient names with missing/blank fields now show a safe `İsimsiz Hasta` label; initials have a deterministic fallback; age zero remains visible as `0 yaş`.
+- Replaced the plain text consultation action with an accessible navy CTA and gave the chief complaint its own readable summary panel.
+- Replaced plain text action buttons with a responsive two-column native tile grid, retaining the exact existing navigation/mutation callbacks. Every tile has a screen-reader label/hint and at least a 44-point touch target. The treatment tile still opens the existing durable treatment-intent editor; no new API or clinical mutation was introduced.
+- Added regression coverage for the presentation helper, action ordering, accessible targets, callback wiring, unnamed patient fallback and age zero. Existing account-scope, optimistic-write and treatment-recovery tests remain in the same test file.
+
+Commits created in this pass:
+- `patientProfilePresentation.ts` — typed presentation data and safe identity formatting.
+- `bc6ac019` — profile identity, complaint and consultation CTA.
+- `b589916a` — web-ordered native quick-action tiles.
+- `f017e942` — profile presentation/action regression coverage.
+- This tracker update records the evidence and limits for the pass.
+
+Executed validation: isolated strict TypeScript compile of the new presentation helper passed; seven isolated runtime assertions passed. Repository React Native renderer tests, full `npm run typecheck`, `npm test`, Android Gradle/APK and Python security suites were not run in this environment; React Native/Expo dependencies and the full checkout are unavailable here.
+
+CI root-cause evidence before this pass (code HEAD `31d8c7c`): Android run `43866434958` had typecheck job `133296063956` and APK job `133296063558`; Security recovery run `43866434947` had job `133296064194`; Admin security run `43866434983` had job `133296064492`; Expert social run `43866434981` had job `133296063796`. All five jobs returned `steps=[]`; log downloads were empty and no compiler, Gradle or pytest step started. This is a pre-step runner-allocation/execution failure, not a TypeScript diagnostic or a failing security assertion. The exact hosted-runner/account/billing setting remains inaccessible through the repository code API and needs repository-owner inspection.
+
+PR #257 remains open/Draft. No main merge, production deploy, APK/IPA publication, database migration or live patient-data mutation occurred. Next module after this patient-profile pass: tooth-chart visual comparison on real Android/iOS widths, then the remaining clinical-media upload recovery acceptance.
