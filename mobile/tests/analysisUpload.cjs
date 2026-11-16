@@ -77,8 +77,11 @@ test('clinical-only intent requires real clinical context and is eligible withou
  assert.equal(api.canStartAnalysis('',clinical.clinicalNotes,[],[]),true);
  assert.equal(api.canStartAnalysis('36','',[],[]),true);
  assert.equal(api.canStartAnalysis('','',[],[]),false);
+ assert.equal(api.canStartAnalysis(' , , ','',[],[]),false);
  const empty={...clinical,clinicalNotes:''};
  assert.throws(()=>api.parseUploadIntent(JSON.stringify(empty),1,8),/Görüntü olmadan/);
+ const separators={...empty,toothNumber:' , , '};
+ assert.throws(()=>api.parseUploadIntent(JSON.stringify(separators),1,8),/Görüntü olmadan/);
 });
 
 test('native composer submits clinical-only preliminary analysis without placeholder image',async()=>{
