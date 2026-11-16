@@ -56,7 +56,12 @@ test('native tooth chart opens the web-selected permanent tooth with its saved s
  assert.ok(selected,'web latest-analysis tooth must be opened automatically');
  assert.equal(selected.props.accessibilityState.selected,true);
  assert.ok(flat(tree.toJSON()).includes('Diş 36'));
- assert.ok(flat(tree.toJSON()).includes('Üst Sol Birinci Molar'));
+ assert.ok(flat(tree.toJSON()).includes('Alt Sol Birinci Molar'));
+ const notesTab=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children)==='Notlar'));
+ assert.ok(notesTab);
+ await renderer.act(async()=>notesTab.props.onPress());
+ const clinicalNote=tree.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Diş notları');
+ assert.equal(clinicalNote.props.value,'Saved clinical Note');
  await renderer.act(async()=>tree.unmount());
 });
 
@@ -81,7 +86,7 @@ test('a delayed initial-focus response never overrides a tooth selected by the c
  assert.ok(tooth);
  await renderer.act(async()=>tooth.props.onPress());
  await renderer.act(async()=>{focus.resolve('36');await flush()});
- const selected=tree.root.findAllByType('Pressable').filter(node=>node.props.accessibilityState?.selected===true);
+ const selected=tree.root.findAllByType('Pressable').filter(node=>node.props.accessibilityState?.selected===true&&String(node.props.accessibilityLabel||'').startsWith('Diş '));
  assert.equal(selected.length,1);
  assert.equal(selected[0].props.accessibilityLabel,'Diş 11, Sağlıklı');
  await renderer.act(async()=>tree.unmount());
