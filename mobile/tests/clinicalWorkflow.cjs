@@ -3,7 +3,7 @@ global.IS_REACT_ACT_ENVIRONMENT=true;
 const compile=f=>ts.transpileModule(fs.readFileSync(require.resolve(f),'utf8'),{fileName:f,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.React}}).outputText;
 const text=n=>typeof n==='string'?n:!n?'':(n.children||[]).map(text).join('');
 const button=(t,label)=>t.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(c=>text(c)===label));
-const revision='a'.repeat(64),base={analysis_id:1,patient_id:8,status:'AI_ANALYZED',revision,result:{status:'INITIAL',most_likely:'Synthetic likely condition',findings:['Synthetic string finding'],treatment_options:['Synthetic treatment'],treatment_cautions:['Synthetic caution'],recommended_evaluation:['Synthetic clinical exam'],uncertainty:'Synthetic uncertainty',questions:[{question:'Synthetic question?',type:'TEXT'}]},assets:[],clinical_notes:null,tooth_number:null,job:null};
+const revision='a'.repeat(64),base={analysis_id:1,patient_id:8,patient_anonymous_id:'SYNTHETIC-008',status:'AI_ANALYZED',revision,result:{status:'INITIAL',most_likely:'Synthetic likely condition',findings:['Synthetic string finding'],treatment_options:['Synthetic treatment'],treatment_cautions:['Synthetic caution'],recommended_evaluation:['Synthetic clinical exam'],uncertainty:'Synthetic uncertainty',questions:[{question:'Synthetic question?',type:'TEXT'}]},assets:[],clinical_notes:null,tooth_number:null,job:null};
 function api(request=async()=>({})){const exports={};vm.runInNewContext(compile('../src/clinicalApi.ts'),{exports,Error,require:()=>({request})});return exports}
 function harness(overrides={},saved){const exports={},storage=new Map(),calls=[],a=api();if(saved)storage.set('dai.clinical.final.1.1',JSON.stringify(saved));const secure={getItemAsync:async k=>storage.get(k)||null,setItemAsync:async(k,v)=>storage.set(k,v),deleteItemAsync:async k=>storage.delete(k)},native={StyleSheet:{create:x=>x},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
  const endpoint={...a,getClinical:async()=>base,submitClinical:async(_t,intent)=>{calls.push(intent);return{ok:true,job:{id:7,kind:'FINAL',status:'QUEUED'}}},saveClinicalNote:async()=>({ok:true}),...overrides};
@@ -36,8 +36,9 @@ test('tooth chart toggle names its destination and clears selections hidden by t
 
 test('clinical result does not expose the raw internal patient database id',async()=>{
  const h=harness(),t=await open(h),rendered=text(t.toJSON());
- assert.ok(rendered.includes('Hasta kaydı'));
+ assert.ok(rendered.includes('SYNTHETIC-008'));
  assert.ok(!rendered.includes('Hasta #8'));
+ assert.ok(!rendered.includes('Hasta kaydı'));
  await renderer.act(async()=>t.unmount());
 });
 
@@ -58,4 +59,14 @@ test('clinical workspace rejects malformed job state instead of exposing unsafe 
  const valid=api(async()=>({...base,job:{id:7,kind:'FINAL',status:'FAILED',retryable:true}}));
  const result=await valid.getClinical('A',1);
  assert.equal(result.job.retryable,true);
+});
+
+
+test('clinical workspace requires a non-empty anonymous patient label',async()=>{
+ const missing=api(async()=>{const value={...base};delete value.patient_anonymous_id;return value});
+ await assert.rejects(()=>missing.getClinical('A',1),/Klinik sonuç doğrulanamadı/);
+ const empty=api(async()=>({...base,patient_anonymous_id:'  '}));
+ await assert.rejects(()=>empty.getClinical('A',1),/Klinik sonuç doğrulanamadı/);
+ const valid=api(async()=>({...base,patient_anonymous_id:'SYNTHETIC-008'}));
+ assert.equal((await valid.getClinical('A',1)).patient_anonymous_id,'SYNTHETIC-008');
 });
