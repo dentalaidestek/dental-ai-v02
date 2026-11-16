@@ -10821,6 +10821,7 @@ def patient_detail(request: Request, patient_id: int):
             context={
                 "patient": patient,
                 "analysis_image_limit": MAX_ANALYSIS_IMAGES,
+                "patient_media_upload_limit": MAX_PATIENT_MEDIA_UPLOAD_FILES,
                 "patient_profile": patient_profile,
                 "patient_edit_revision": _patient_edit_revision(patient, patient_profile),
                 "analyses": analyses,
@@ -10832,7 +10833,8 @@ def patient_detail(request: Request, patient_id: int):
         )
 
 
-MAX_ANALYSIS_IMAGES = 4  # Shared web/native admission limit; gallery storage has its own 12-file batch limit.
+MAX_PATIENT_MEDIA_UPLOAD_FILES = 12  # Archive batch upload limit; distinct from per-analysis admission.
+MAX_ANALYSIS_IMAGES = 4  # Shared web/native admission limit for saved plus newly uploaded images.
 
 
 def _patient_media_has_valid_signature(path: Path, extension: str) -> bool:
@@ -10888,8 +10890,8 @@ def upload_patient_media(
     max_bytes = 12 * 1024 * 1024
     saved_paths: list[Path] = []
     selected_files = [upload for upload in files if upload and upload.filename]
-    if len(selected_files) > 12:
-        return HTMLResponse("Tek seferde en fazla 12 görüntü yükleyebilirsiniz.", status_code=400)
+    if len(selected_files) > MAX_PATIENT_MEDIA_UPLOAD_FILES:
+        return HTMLResponse(f"Tek seferde en fazla {MAX_PATIENT_MEDIA_UPLOAD_FILES} görüntü yükleyebilirsiniz.", status_code=400)
 
     try:
         with Session(engine, expire_on_commit=False) as auth_session:
