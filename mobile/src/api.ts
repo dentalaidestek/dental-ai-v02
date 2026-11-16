@@ -152,6 +152,16 @@ function validateToothTarget(patientId:number,toothNumber:string){
 }
 const validToothStatuses=new Set<ToothStatusCode>(["HEALTHY","CARIES","FILLING","CROWN","ROOT_CANAL","EXTRACTED","IMPLANT","OTHER"]);
 const validToothSurfaces=new Set<ToothSurfaceCode>(["OCCLUSAL","INCISAL","MESIAL","DISTAL","BUCCAL","LINGUAL"]);
+
+export type ToothChartFocus={latest_analysis_tooth:string|null};
+export async function getToothChartFocus(token:string,patientId:number):Promise<string|null>{
+ if(!Number.isSafeInteger(patientId)||patientId<=0)throw new Error("Geçersiz hasta kimliği.");
+ const result=await request<ToothChartFocus>(`/patients/${patientId}/tooth-chart/focus`,token);
+ if(!result||!Object.prototype.hasOwnProperty.call(result,"latest_analysis_tooth")||
+    (result.latest_analysis_tooth!==null&&(typeof result.latest_analysis_tooth!=="string"||!validFdiTooth(result.latest_analysis_tooth))))
+  throw new ApiError(502,"Diş şeması başlangıç dişi doğrulanamadı.");
+ return result.latest_analysis_tooth;
+}
 function validateToothPayload(payload:{status:ToothStatusCode;note?:string;surface?:ToothSurfaceCode;surfaces?:ToothSurfaceCode[]}){
  if(!payload||!validToothStatuses.has(payload.status))throw new Error("Geçersiz diş durumu.");
  if(payload.surface!==undefined&&!validToothSurfaces.has(payload.surface))throw new Error("Geçersiz diş yüzeyi.");
