@@ -176,3 +176,37 @@ test('voice entry deletes a stale secure extraction checkpoint before retry afte
  assert.equal(calls.length,2);assert.equal(calls[1][3].resume,undefined);assert.equal(secure.has('dai.voice.extraction.1.8'),false);
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('native voice history is loaded privately, requires patient confirmation, and preserves conflicts',async()=>{
+ const exports={},secure=new Map(),historyCalls=[],extractCalls=[];
+ const native={StyleSheet:{create:x=>x},Alert:{alert(){}},Linking:{openURL:async()=>{}},...Object.fromEntries(['ActivityIndicator','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
+ const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/VoiceExamEntry.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
+ vm.runInNewContext(code,{exports,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{usePreventRemove(){}}:n==='expo-secure-store'?{getItemAsync:async key=>secure.get(key)||null,setItemAsync:async(key,value)=>secure.set(key,value),deleteItemAsync:async key=>secure.delete(key)}:n==='expo-crypto'?{randomUUID:()=> 'voice-history-checkpoint',CryptoDigestAlgorithm:{SHA256:'SHA-256'},digestStringAsync:async()=> 'a'.repeat(64)}:n==='./socialDraft'?require('../src/socialDraft.ts'):n==='./voiceSession'?require('../src/voiceSession.ts'):n==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'Synthetic patient',first_name:'Synthetic',last_name:'Patient'}})}:n==='./voiceApi'?{
+  getVoiceHistory:async(token,patientId)=>{historyCalls.push({token,patientId});return{ok:true,revision:'b'.repeat(64),notice:'Önceki hekim onaylı kayıtlar; hastayla doğrulayın.',fields:{medical_history:{value:'Astım beyanı',quote:'Önceki kayıt',analysis_id:17},medications:{value:'Düzenli ilaç beyanı',quote:'Önceki kayıt',analysis_id:17}}}},
+  extractVoice:async(token,patientId,transcript)=>{extractCalls.push({token,patientId,transcript});return{ok:true,revision:'c'.repeat(64),review:{fields:{medical_history:{value:'Bu görüşmede astım olmadığını söyledi',quote:'Güncel beyan'}},teeth:[],communication:[],decision_barriers:[],follow_up_questions:[],literature_topics:[],source_requests:[],uncertain:''}}}
+}:{default:n.slice(2)}});
+ let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(exports.default,{token:'A',userId:1,initialPatientId:8})));
+ await renderer.act(async()=>{await new Promise(resolve=>setImmediate(resolve))});
+ await renderer.act(async()=>button(tree,'Muayeneye Devam Et').props.onPress());
+ await renderer.act(async()=>{button(tree,'Önceki kayıtları göster').props.onPress();await new Promise(resolve=>setImmediate(resolve))});
+ assert.deepEqual(historyCalls,[{token:'A',patientId:8}]);
+ assert.ok(text(tree.toJSON()).includes('Astım beyanı'));
+ const historyCheck=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='checkbox'&&text(node).includes('Bu bilgileri hastayla doğruladım.'));
+ assert.ok(historyCheck);
+ await renderer.act(async()=>historyCheck.props.onPress());
+ await renderer.act(async()=>button(tree,'Doğruladığım bilgileri muayeneye ekle').props.onPress());
+ const consentCheck=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='checkbox'&&text(node).includes('Hastayı bilgilendirdim.'));
+ assert.ok(consentCheck);
+ await renderer.act(async()=>consentCheck.props.onPress());
+ const recorder=tree.root.findByType('NativeVoiceRecorder');
+ await renderer.act(async()=>{recorder.props.onTranscript('Güncel sentetik muayene metni');recorder.props.onFinished('Güncel sentetik muayene metni');await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(extractCalls.length,1);
+ const rendered=text(tree.toJSON());
+ assert.ok(rendered.includes('Düzenli ilaç beyanı'));
+ assert.ok(rendered.includes('Bu görüşmede astım olmadığını söyledi'));
+ assert.ok(rendered.includes('önceki kayıt'));
+ assert.ok(rendered.includes('Önceki ve güncel beyanlar çelişiyorsa ayrıca gösterilir'));
+ await renderer.act(async()=>tree.unmount());
+});
