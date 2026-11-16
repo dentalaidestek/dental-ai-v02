@@ -17,6 +17,7 @@ def setup(chat,monkeypatch,tmp_path):
 def test_clinical_strings_questions_and_owner(chat,monkeypatch,tmp_path):
     c,_,_=setup(chat,monkeypatch,tmp_path);r=c.get('/api/mobile/v1/analyses/1/clinical');assert r.status_code==200,r.text
     assert r.json()['result']['findings']==RESULT['findings'] and r.json()['result']['questions']==RESULT['questions']
+    assert r.json()['patient_anonymous_id']=='SYNTHETIC'
     assert len(r.json()['revision'])==64 and r.headers['cache-control']=='private, no-store'
     c.headers['Authorization']='Bearer token2';assert c.get('/api/mobile/v1/analyses/1/clinical').status_code==404
 
