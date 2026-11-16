@@ -62,7 +62,7 @@ from app.main import (
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, storage_delete, _record_patient_realtime_events,
     _patient_edit_revision,
     _record_realtime_event, _publish_realtime_event, on_loop,
-    _support_user_can_reply, _support_unread_count, _mark_support_read, UserReport,
+    _support_user_can_reply, _support_unread_count, _mark_support_read, UserReport, _ensure_report_support_tickets,
     _cancel_pending_program_reminders, _resolve_notifications, _record_program_realtime_event, _utcnow_naive,
     _ensure_email_verification_challenge, _verify_email_code,
 )
@@ -1720,7 +1720,12 @@ def mobile_support_tickets(before_id: Optional[int] = Query(None, ge=1), limit: 
 def mobile_support_reports(token: str = Depends(_mobile_access_token), user: User = Depends(_mobile_user)):
     with Session(engine, expire_on_commit=False) as session:
         reports = session.exec(select(UserReport).where(UserReport.reporter_user_id == user.id).order_by(UserReport.id.desc()).limit(100)).all()
-        return {"items": [{"id": r.id, "case_id": r.case_id, "reason": r.reason, "detail": r.detail or "", "status": r.status, "created_at": r.created_at.isoformat()} for r in reports], "total": len(reports)}
+        linked = _ensure_report_support_tickets(session, reports)
+        items = []
+        for report in reports:
+            ticket = linked.get(report.id)
+            items.append({"id": report.id, "case_id": report.case_id, "reason": report.reason, "detail": report.detail or "", "status": report.status, "created_at": report.created_at.isoformat(), "ticket_id": ticket.id if ticket else None, "unread_count": _support_unread_count(session, ticket.id, "USER") if ticket else 0})
+        return {"items": items, "total": len(items)}
 
 
 @router.get("/support/conversation-options")
@@ -1782,13 +1787,24 @@ def mobile_support_create(payload: MobileSupportCreate, token: str = Depends(_mo
     return {"ok": True, "ticket_id": ticket.id, "status": ticket.status, "replayed": False}
 
 
+def _mobile_support_ticket_owned(session: Session, ticket: SupportTicket, user_id: int) -> bool:
+    if ticket.user_id != user_id:
+        return False
+    if ticket.source_type == "SUPPORT":
+        return True
+    if ticket.source_type == "REPORT" and ticket.source_id is not None:
+        report = session.get(UserReport, ticket.source_id)
+        return bool(report and report.reporter_user_id == user_id)
+    return False
+
+
 @router.get("/support/tickets/{ticket_id}")
 def mobile_support_ticket_detail(ticket_id: int, before_id: Optional[int] = None, token: str = Depends(_mobile_access_token), user: User = Depends(_mobile_user)):
     if ticket_id <= 0 or (before_id is not None and before_id <= 0):
         raise HTTPException(status_code=422, detail="Geçersiz destek talebi veya sayfa kimliği.")
     with Session(engine, expire_on_commit=False) as session:
         ticket = session.get(SupportTicket, ticket_id)
-        if not ticket or ticket.user_id != user.id or ticket.source_type != "SUPPORT":
+        if not ticket or not _mobile_support_ticket_owned(session, ticket, user.id):
             raise HTTPException(status_code=404, detail="Destek talebi bulunamadı.")
         query = select(SupportTicketMessage).where(SupportTicketMessage.ticket_id == ticket.id)
         if before_id is not None:
