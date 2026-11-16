@@ -100,3 +100,13 @@ def test_mobile_support_requests_are_private_and_idempotent(monkeypatch, tmp_pat
         ("ADMIN", "Destek ekibi yanıtı"), ("USER", "Teşekkürler")
     ]
     assert len(receipts) == 2
+
+
+
+def test_support_receipt_schema_has_serialized_production_upgrade():
+    from pathlib import Path
+    migration = (Path(__file__).resolve().parents[1] / "app" / "migrate.py").read_text(encoding="utf-8")
+    assert "REVISION = 13" in migration
+    assert "def _upgrade_support_receipts_schema(main):" in migration
+    assert "MobileSupportMutationReceipt.__table__.create(connection, checkfirst=True)" in migration
+    assert "if _upgrade_support_receipts_schema(main):" in migration
