@@ -137,3 +137,10 @@ test('native analysis UI and durable intent share the four-image admission bound
  const savedPlusNew={...intent,existingMediaIds:[31,32,33,34]};
  assert.throws(()=>api.parseUploadIntent(JSON.stringify(savedPlusNew),1,8),/toplamı en fazla 4/);
 });
+
+
+test('legacy native analysis API rejects five images before upload',async()=>{
+ const api=require('../src/analysisApi.ts');
+ const images=Array.from({length:5},(_,index)=>({uri:'file:///cache/analysis-'+index+'.png',name:'analysis-'+index+'.png',type:'image/png'}));
+ await assert.rejects(api.createAnalysis('synthetic-token',{patientId:8,images}),/en fazla 4 klinik görüntü/);
+});
