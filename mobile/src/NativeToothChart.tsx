@@ -114,6 +114,7 @@ export default function NativeToothChart({token,userId,patientId}:{token:string;
  // Keep FDI quadrants together on every screen width; never wrap 16 teeth into arbitrary rows.
  const row=(numbers:string[],label:string)=><View style={{marginTop:16}}>
   <Text style={{fontSize:14,fontWeight:"800",color:"#102033",marginBottom:10,textAlign:"center"}}>{label}</Text>
+  <View style={{flexDirection:"row",justifyContent:"space-between",paddingHorizontal:4,marginBottom:6}}><Text accessibilityLabel="Hastanın sağ tarafı" style={{fontSize:11,fontWeight:"700",color:"#718096"}}>Sağ</Text><Text accessibilityLabel="Hastanın sol tarafı" style={{fontSize:11,fontWeight:"700",color:"#718096"}}>Sol</Text></View>
   <View style={{flexDirection:"row",gap:5}}>
    {[numbers.slice(0,numbers.length/2),numbers.slice(numbers.length/2)].map((quadrant,index)=>
     <View key={index} style={{flex:1,flexDirection:"row",gap:3,justifyContent:index===0?"flex-end":"flex-start"}}>
