@@ -70,3 +70,11 @@ test('clinical workspace requires a non-empty anonymous patient label',async()=>
  const valid=api(async()=>({...base,patient_anonymous_id:'SYNTHETIC-008'}));
  assert.equal((await valid.getClinical('A',1)).patient_anonymous_id,'SYNTHETIC-008');
 });
+
+
+test('NEEDS_INFO status explains the clinical information gap like the web result screen',async()=>{
+ const h=harness({getClinical:async()=>({...base,result:{status:'NEEDS_INFO',most_likely:'',questions:[]}})}),t=await open(h),rendered=text(t.toJSON());
+ assert.ok(rendered.includes('Kritik klinik bilgiler gerekiyor'));
+ assert.ok(rendered.includes('tedavi güvenliğini değiştirebilecek eksik bilgileri'));
+ await renderer.act(async()=>t.unmount());
+});
