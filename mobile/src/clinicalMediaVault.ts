@@ -57,7 +57,7 @@ async function loadKey(userId:number,patientId:number,create:boolean):Promise<Ui
   await SecureStore.setItemAsync(name,bytesToHex(key),{keychainAccessible:SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY});
   return key;
 }
-export function isClinicalMediaVaultUri(uri:string,userId?:number,patientId?:number):boolean{
+export function isClinicalMediaVaultUri(uri:string,userId?:number,patientId?:number,purpose?:'archive'|'analysis'):boolean{
   if(typeof uri!=='string'||!FS.documentDirectory)return false;
   const root=FS.documentDirectory+VAULT_ROOT;
   if(!uri.startsWith(root)||uri.includes('..')||!uri.endsWith('.dai'))return false;
@@ -66,6 +66,7 @@ export function isClinicalMediaVaultUri(uri:string,userId?:number,patientId?:num
   const legacy=relative.length===3&&/^[A-Za-z0-9_-]{16,96}\.dai$/.test(relative[2]);
   const purposeScoped=relative.length===4&&['archive','analysis'].includes(relative[2])&&/^[A-Za-z0-9_-]{16,96}\.dai$/.test(relative[3]);
   if(!legacy&&!purposeScoped)return false;
+  if(purposeScoped&&purpose!==undefined&&relative[2]!==purpose)return false;
   return (userId===undefined||Number(relative[0])===userId)&&(patientId===undefined||Number(relative[1])===patientId);
 }
 export async function encryptClinicalMediaFile(sourceUri:string,userId:number,patientId:number,maxBytes:number,purpose?:'archive'|'analysis'):Promise<string>{
@@ -114,18 +115,18 @@ export async function encryptClinicalMediaFile(sourceUri:string,userId:number,pa
     await FS.deleteAsync(stageUri,{idempotent:true}).catch(()=>{});
   }
 }
-export async function validateClinicalMediaVaultFile(uri:string,userId:number,patientId:number,maxBytes:number):Promise<void>{
+export async function validateClinicalMediaVaultFile(uri:string,userId:number,patientId:number,maxBytes:number,purpose?:'archive'|'analysis'):Promise<void>{
   validScope(userId,patientId);
-  if(!isClinicalMediaVaultUri(uri,userId,patientId))
+  if(!isClinicalMediaVaultUri(uri,userId,patientId,purpose))
     throw new ClinicalMediaVaultError('INVALID_VAULT','Klinik görüntü güvenli dosya yolu doğrulanamadı.');
   const info=await FS.getInfoAsync(uri);
   if(!info.exists||!Number.isFinite(info.size)||info.size<41||info.size>maxBytes+40)
     throw new ClinicalMediaVaultError('VAULT_MISSING','Şifreli klinik görüntü bulunamadı veya bozuk. Taslağı doğrulayın.');
   await loadKey(userId,patientId,false);
 }
-export async function decryptClinicalMediaFile(uri:string,userId:number,patientId:number,name:string):Promise<string>{
+export async function decryptClinicalMediaFile(uri:string,userId:number,patientId:number,name:string,purpose?:'archive'|'analysis'):Promise<string>{
   validScope(userId,patientId);
-  if(!isClinicalMediaVaultUri(uri,userId,patientId))
+  if(!isClinicalMediaVaultUri(uri,userId,patientId,purpose))
     throw new ClinicalMediaVaultError('INVALID_VAULT','Klinik görüntü güvenli dosya yolu doğrulanamadı.');
   const info=await FS.getInfoAsync(uri);
   if(!info.exists||!Number.isFinite(info.size)||info.size<41)
