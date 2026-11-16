@@ -1846,7 +1846,7 @@ def mobile_support_ticket_reply(ticket_id: int, payload: MobileSupportReply, tok
         if replay:
             return {"ok": True, "ticket_id": ticket_id, "message_id": replay.message_id, "status": "REPLAYED", "replayed": True}
         ticket = session.exec(select(SupportTicket).where(SupportTicket.id == ticket_id).with_for_update()).first()
-        if not ticket or ticket.user_id != user.id or ticket.source_type != "SUPPORT":
+        if not ticket or not _mobile_support_ticket_owned(session, ticket, user.id):
             raise HTTPException(status_code=404, detail="Destek talebi bulunamadı.")
         if ticket.status == "CLOSED" or not _support_user_can_reply(session, ticket):
             raise HTTPException(status_code=409, detail="Destek ekibinin yeni yanıtını bekleyin veya yeni bir talep oluşturun.")
