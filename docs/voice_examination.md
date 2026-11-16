@@ -211,7 +211,7 @@ phase progression. Main and production remain untouched.
 
 The native binary audio endpoint requires the X-Voice-Request-Key header, using the
 persisted SecureStore segment ID. The server scopes its receipt to authenticated owner,
-patient and segment key, and hashes the canonical MIME plus streamed audio bytes.
+patient and segment key, and computes a keyed HMAC fingerprint over canonical MIME plus streamed audio bytes. The database cannot be used for offline known-recording matching without the dedicated receipt key.
 Reusing a key with different audio is rejected with HTTP 409 before Gemini is
 called. A completed result is replayed from the receipt; the same request does not
 invoke Gemini again.
@@ -227,8 +227,10 @@ to source control. Rotate it only after the 24-hour result TTL and seven-day
 tombstone window have elapsed, otherwise outstanding receipts cannot be decrypted.
 
 Encrypted transcripts are replayable for 24 hours. The worker's bounded history
-pruner clears the ciphertext after that window and keeps a key tombstone for up
-to seven days. A live PROCESSING receipt returns an in-progress response. If its
+pruner clears the ciphertext after that window, removes receipts whose patient no
+longer exists or is no longer owned by the receipt owner, and keeps a key tombstone
+for up to seven days. Cleanup runs at most once every five minutes and processes
+at most 100 rows per pass. A live PROCESSING receipt returns an in-progress response. If its
 lease expires without a committed result, the receipt becomes terminal
 OUTCOME_UNKNOWN; the server does not automatically call Gemini again because
 the previous provider call may already have completed. The native app preserves
