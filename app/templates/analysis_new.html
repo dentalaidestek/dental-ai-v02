@@ -10,7 +10,7 @@
         </div>
     </div>
 
-    <form method="post" enctype="multipart/form-data" class="card form analysis-compact-form">
+    <form method="post" enctype="multipart/form-data" class="card form analysis-compact-form" data-analysis-image-limit="{{ analysis_image_limit|default(4) }}" data-existing-image-count="{{ selected_media|length }}">
         {% if selected_media %}
         <input type="hidden" name="existing_media_ids" value="{{ selected_media_ids }}">
         <div class="analysis-selected-media analysis-selected-media-multi">
@@ -18,10 +18,10 @@
                 {% for media in selected_media %}
                 <img src="/patients/{{ patient.id }}/media/{{ media.id }}/file" alt="Seçilen klinik görüntü">
                 {% endfor %}
-                {% if selected_media|length > 4 %}<span class="analysis-selected-media-more">+{{ selected_media|length - 4 }}</span>{% endif %}
+                {% if selected_media|length > analysis_image_limit|default(4) %}<span class="analysis-selected-media-more">+{{ selected_media|length - (analysis_image_limit|default(4)) }}</span>{% endif %}
             </div>
             <div>
-                <strong>{{ selected_media|length }} kayıtlı görüntü analiz için seçildi</strong>
+                <strong>{{ selected_media|length }} / {{ analysis_image_limit|default(4) }} görüntü analiz için seçildi</strong>
                 <span>Bu görüntüler analize dahil edilecek. Klinik bilgileri görüntü ekranındaki Klinik Bilgi sekmesinden ekleyebilirsiniz.</span>
             </div>
         </div>
@@ -58,6 +58,29 @@
         <button type="submit" class="analysis-submit-button">🔬 Analizi Başlat</button>
     </form>
 
+    <script>
+    (function () {
+        const form = document.querySelector(".analysis-compact-form");
+        if (!form) return;
+        const limit = Number(form.dataset.analysisImageLimit);
+        const existingCount = Number(form.dataset.existingImageCount);
+        const fileInput = form.querySelector('input[name="images"]');
+        if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(existingCount) || existingCount < 0) return;
+        function totalSelected() {
+            return existingCount + (fileInput && fileInput.files ? fileInput.files.length : 0);
+        }
+        function rejectExcess() {
+            if (totalSelected() <= limit) return false;
+            if (fileInput) fileInput.value = "";
+            window.alert("Kayıtlı görüntüler dahil bir analizde en fazla " + limit + " görüntü kullanabilirsiniz.");
+            return true;
+        }
+        if (fileInput) fileInput.addEventListener("change", rejectExcess);
+        form.addEventListener("submit", function (event) {
+            if (rejectExcess()) event.preventDefault();
+        });
+    })();
+    </script>
     <div class="analysis-safety-note">🤖 AI mevcut klinik bilgi ve görüntüyü birlikte değerlendirir; kritik bilgi eksikse yalnızca gerekli soruları gösterir.</div>
 </div>
 {% endblock %}
