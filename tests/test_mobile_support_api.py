@@ -163,7 +163,9 @@ def test_mobile_support_case_link_reports_and_ticket_cursor_paging(monkeypatch, 
         assert isinstance(report_ticket_id, int)
         report_detail = client.get(f"/api/mobile/v1/support/tickets/{report_ticket_id}", headers=headers)
         assert report_detail.status_code == 200
-        assert client.get(f"/api/mobile/v1/support/tickets/{report_ticket_id}", headers={"Authorization": "Bearer " + other_token}).status_code == 404
+        other_headers = {"Authorization": "Bearer " + other_token}
+        assert client.get(f"/api/mobile/v1/support/tickets/{report_ticket_id}", headers=other_headers).status_code == 404
+        assert client.post(f"/api/mobile/v1/support/tickets/{report_ticket_id}/reply", headers=other_headers, json={"message": "Yetkisiz bildirim yanıtı", "request_key": "report_reply_key_0001"}).status_code == 404
         created = client.post("/api/mobile/v1/support/tickets", headers=headers, json={
             "subject": "Vaka ile ilgili", "message": "Destek açıklaması",
             "request_key": "support_case_link_key_01", "case_id": case_id,
