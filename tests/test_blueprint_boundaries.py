@@ -303,15 +303,25 @@ def test_realtime_listener_delivers_late_lower_id_and_resync(database, monkeypat
 
 @pytest.mark.parametrize('guest', [False, True])
 def test_upload_queues_atomically_and_closes_db_for_storage(database, monkeypatch, tmp_path, guest):
+    import io
     from fastapi.testclient import TestClient
+    from PIL import Image
     engine, ids = database
     with Session(engine) as s:
         user = s.get(main.User, ids.user)
+    raw = io.BytesIO()
+    exif = Image.Exif()
+    exif[315] = 'Synthetic dental device'
+    Image.new('RGB', (8, 8), 'white').save(raw, format='JPEG', exif=exif)
+    image_bytes = raw.getvalue()
     monkeypatch.setattr(main, 'get_current_user', lambda request: user)
     monkeypatch.setattr(main, 'UPLOAD_DIR', tmp_path)
     def persist(path, **kwargs):
         assert engine.pool.checkedout() == 0
-        assert Path(path).read_bytes() == b'synthetic image'
+        with Image.open(path) as clean:
+            assert clean.format == 'JPEG'
+            assert clean.size == (8, 8)
+            assert not dict(clean.getexif())
         return str(path)
     monkeypatch.setattr(main, 'storage_persist_file', persist)
     def classify(path):
@@ -320,7 +330,7 @@ def test_upload_queues_atomically_and_closes_db_for_storage(database, monkeypatc
     monkeypatch.setattr(main, 'classify_dental_image', classify)
     client = TestClient(main.app)
     url = '/analysis/guest/new' if guest else f'/analysis/new/{ids.patient}'
-    response = client.post(url, files={'images': ('example.jpg', b'synthetic image', 'image/jpeg')}, follow_redirects=False)
+    response = client.post(url, files={'images': ('example.jpg', image_bytes, 'image/jpeg')}, follow_redirects=False)
     assert response.status_code == 303
     with Session(engine) as s:
         jobs = s.exec(select(work_jobs.WorkJob)).all()
