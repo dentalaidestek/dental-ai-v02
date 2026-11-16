@@ -26,6 +26,7 @@ from sqlmodel import SQLModel, Session, func, select, Field as SQLField
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
 from app.clinical_media import sanitize_clinical_media_image
+from app.upload_limits import MAX_PATIENT_MEDIA_FILE_BYTES, MAX_ANALYSIS_IMAGE_BYTES, MAX_ANALYSIS_BATCH_BYTES
 from app.work_jobs import WorkJob
 from starlette.requests import Request
 from fastapi.responses import JSONResponse
@@ -71,8 +72,9 @@ router = APIRouter(prefix="/api/mobile/v1", tags=["mobile"])
 bearer = HTTPBearer(auto_error=False)
 MOBILE_MAX_IMAGE_BYTES = max(1, int(os.getenv("MOBILE_MAX_IMAGE_BYTES", str(15 * 1024 * 1024))))
 MOBILE_MAX_IMAGE_PIXELS = max(1, int(os.getenv("MOBILE_MAX_IMAGE_PIXELS", "40000000")))
-MOBILE_MAX_ANALYSIS_BYTES = max(1, int(os.getenv("MOBILE_MAX_ANALYSIS_BYTES", str(15 * 1024 * 1024))))
-MOBILE_MAX_PATIENT_MEDIA_BYTES = min(MOBILE_MAX_IMAGE_BYTES, 12 * 1024 * 1024)
+# These two values are protocol constants shared with web and native clients.
+MOBILE_MAX_ANALYSIS_BYTES = MAX_ANALYSIS_IMAGE_BYTES
+MOBILE_MAX_PATIENT_MEDIA_BYTES = MAX_PATIENT_MEDIA_FILE_BYTES
 _PATIENT_MEDIA_REQUEST_KEY = re.compile(r"^[A-Za-z0-9_-]{16,96}$")
 LOGIN_RATE_WINDOW_SECONDS = LOGIN_WINDOW_SECONDS
 LOGIN_RATE_MAX_FAILURES = LOGIN_MAX_FAILURES
@@ -1492,8 +1494,14 @@ async def mobile_patient_media_upload(
     digest = None
     try:
         _copy_validated_image(image, destination, MOBILE_MAX_PATIENT_MEDIA_BYTES)
-        file_hash = hashlib.sha256(destination.read_bytes()).hexdigest()
-        digest = _patient_media_payload_hash(file_hash, media_type, tooth, normalized_note, original_name) if receipt_key else None
+        file_digest = hashlib.sha256()
+        with destination.open("rb") as saved_file:
+            while True:
+                chunk = saved_file.read(1024 * 1024)
+                if not chunk:
+                    break
+                file_digest.update(chunk)
+        digest = _patient_media_payload_hash(file_digest.hexdigest(), media_type, tooth, normalized_note, original_name) if receipt_key else None
         with Session(engine, expire_on_commit=False) as session:
             patient = session.exec(select(Patient).where(
                 Patient.id == patient_id, Patient.owner_user_id == user.id
