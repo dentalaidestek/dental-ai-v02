@@ -73,5 +73,5 @@ test('native recorder retries the same segment key and only creates a new key af
  assert.match(source,/Önceki isteğin sonucu belirsiz/);
  assert.match(source,/Yeni deneme ayrı bir Gemini çağrısı oluşturabilir/);
  assert.match(source,/item\.id===segment\.id\?\{...item,id:Crypto\.randomUUID\(\),ready:true\}:item/);
- assert.match(source,/await persist\(next\);\s*setIndeterminateSegmentId\(null\);\s*setError\(''\);\s*await drain\(\)/);
+ assert.match(source,/await store\.setItemAsync\(key,JSON\.stringify\(saved\)\);\s*draft\.current=saved;\s*if\(mounted\.current\)setView\(saved\);\s*setIndeterminateSegmentId\(null\);\s*setError\(''\);\s*await drain\(\)/);
 });
