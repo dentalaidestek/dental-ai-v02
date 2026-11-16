@@ -155,11 +155,10 @@ def test_mobile_patient_edit_revision_rejects_stale_web_or_device_overwrites(cha
     })
     assert malformed.status_code == 422, malformed.text
 
+    from sqlmodel import select
     with Session(engine) as session:
         patient = session.get(main.Patient, 8)
-        profile = session.get(main.PatientProfile, session.exec(
-            __import__("sqlmodel").select(main.PatientProfile).where(main.PatientProfile.patient_id == 8)
-        ).first().id)
+        profile = session.exec(select(main.PatientProfile).where(main.PatientProfile.patient_id == 8)).first()
         assert patient.first_name == "Current"
         assert patient.chief_complaint == "Updated complaint"
         assert profile.address == "Updated address"
