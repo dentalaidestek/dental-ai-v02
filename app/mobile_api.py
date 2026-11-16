@@ -1127,6 +1127,41 @@ def mobile_patient_detail(
         }
 
 
+@router.get("/patients/{patient_id}/tooth-chart/focus")
+def mobile_patient_tooth_chart_focus(
+    patient_id: int,
+    user: User = Depends(_mobile_user),
+):
+    """Return the same latest-analysis tooth that the web chart opens initially.
+
+    Kept separate from patient detail so ordinary profile reads do not pay for
+    this chart-only query.
+    """
+    valid_tooth_numbers = (
+        "18", "17", "16", "15", "14", "13", "12", "11",
+        "21", "22", "23", "24", "25", "26", "27", "28",
+        "48", "47", "46", "45", "44", "43", "42", "41",
+        "31", "32", "33", "34", "35", "36", "37", "38",
+        "55", "54", "53", "52", "51", "61", "62", "63", "64", "65",
+        "85", "84", "83", "82", "81", "71", "72", "73", "74", "75",
+    )
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        if not patient or patient.owner_user_id != user.id:
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        latest_tooth = session.exec(
+            select(Analysis.tooth_number)
+            .where(
+                Analysis.patient_id == patient_id,
+                Analysis.status.in_(["AI_ANALYZED", "AI_FINAL", "VISION_READY"]),
+                Analysis.tooth_number.in_(valid_tooth_numbers),
+            )
+            .order_by(Analysis.created_at.desc(), Analysis.id.desc())
+            .limit(1)
+        ).first()
+        return {"latest_analysis_tooth": latest_tooth}
+
+
 # Native feature adapters. These reuse the production handlers where possible.
 def _mobile_request(token: str, method: str = "POST", path: str = "/api/mobile/v1") -> Request:
     return Request({
