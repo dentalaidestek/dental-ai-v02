@@ -1,5 +1,8 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),React=require('react'),renderer=require('react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
+const presentationExports={};
+const presentationCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/patientProfilePresentation.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+vm.runInNewContext(presentationCode,{exports:presentationExports});
 function component(api,file='NativePatientProfile',storage=new Map()){
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/'+file+'.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const intentExports={};
@@ -9,15 +12,54 @@ function component(api,file='NativePatientProfile',storage=new Map()){
  let sequence=0;
  const native={StyleSheet:{create:s=>s},AppState:{addEventListener:()=>({remove(){}})},Platform:{OS:'android'},Alert:{alert(){}},...Object.fromEntries(['Modal','ActivityIndicator','KeyboardAvoidingView','Pressable','RefreshControl','ScrollView','Text','TextInput','View'].map(s=>[s,s]))},exports={};
  const endpoints={getPatient:async()=>patient(8),createTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),updateTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),...api};
- vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:{default:'Child'}});
+ vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:name==='./patientProfilePresentation'?presentationExports:{default:'Child'}});
  const Original=exports.default;
  const Wrapped=props=>React.createElement(Original,{userId:1,...props});
  Wrapped.storage=storage;
  return Wrapped;
 }
 const actions=Object.fromEntries(['chart','analysis','appointment','expert','voice','analysisResult','deleted'].map(k=>[k,()=>{}]));
-const patient=id=>({patient:{id,first_name:'Synthetic'+id,last_name:'Test',anonymous_id:'SYN-'+id,chief_complaint:'Complaint'},edit_revision:'a'.repeat(64),teeth:[],surfaces:[],treatments:[{id:1,treatment_name:'Root canal',material:'Synthetic material',result:'Synthetic result',doctor_note:'Synthetic note',edit_revision:'c'.repeat(64)}],media:[]});
+const patient=id=>({patient:{id,first_name:'Synthetic'+id,last_name:'Test',anonymous_id:'SYN-'+id,chief_complaint:'Complaint',age:0},edit_revision:'a'.repeat(64),teeth:[],surfaces:[],treatments:[{id:1,treatment_name:'Root canal',material:'Synthetic material',result:'Synthetic result',doctor_note:'Synthetic note',edit_revision:'c'.repeat(64)}],media:[]});
 const text=node=>typeof node==='string'?node:Array.isArray(node)?node.map(text).join(''):node?.children?node.children.map(text).join(''):'';
+test('presentation model preserves zero age, safe identity fallbacks, and web action order',()=>{
+ assert.equal(presentationExports.patientProfileName(' Ada ',' Kaya '),'Ada Kaya');
+ assert.equal(presentationExports.patientProfileName(null,'  '),'İsimsiz Hasta');
+ assert.equal(presentationExports.patientProfileInitials('Ada','Kaya'),'AK');
+ assert.equal(presentationExports.patientProfileInitials(null,null),'H');
+ assert.equal(presentationExports.patientProfileAgeLabel(0),'0 yaş');
+ assert.equal(presentationExports.patientProfileAgeLabel(null),'Hasta kaydı');
+ assert.deepEqual(presentationExports.patientProfileQuickActions().map(item=>item.key),['chart','analysis','appointment','treatment']);
+});
+test('patient profile quick-action tiles are accessible and retain their native actions',async()=>{
+ const calls=[];
+ const routed={...actions,chart:()=>calls.push('chart'),analysis:()=>calls.push('analysis'),appointment:()=>calls.push('appointment')};
+ const Profile=component({getPatient:async()=>patient(8)});let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions:routed}))});
+ const expected=['Diş Şeması','AI Analiz','Randevu','Tedavi'];
+ const tiles=tree.root.findAllByType('Pressable').filter(node=>expected.includes(node.props.accessibilityLabel));
+ assert.deepEqual(tiles.map(node=>node.props.accessibilityLabel),expected,'quick actions must preserve the web patient-detail order');
+ for(const tile of tiles){
+  assert.equal(tile.props.accessibilityRole,'button');
+  assert.ok(tile.props.accessibilityHint);
+  assert.equal(tile.props.disabled,false);
+  const styles=Array.isArray(tile.props.style)?tile.props.style.flat(Infinity):[tile.props.style];
+  assert.ok(styles.some(style=>style&&style.minHeight>=44),'every action tile must retain a 44pt touch target');
+ }
+ for(const tile of tiles.slice(0,3))await renderer.act(async()=>tile.props.onPress());
+ assert.deepEqual(calls,['chart','analysis','appointment']);
+ await renderer.act(async()=>tiles[3].props.onPress());
+ assert.ok(text(tree.toJSON()).includes('Yeni tedavi kaydı'),'treatment tile must open the existing treatment editor');
+ await renderer.act(async()=>tree.unmount());
+});
+test('profile identity displays an unnamed fallback and does not hide age zero',async()=>{
+ const base=patient(10);base.patient.first_name=null;base.patient.last_name=null;
+ const Profile=component({getPatient:async()=>base});let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:10,actions}))});
+ const content=text(tree.toJSON());
+ assert.ok(content.includes('İsimsiz Hasta'));
+ assert.ok(content.includes('0 yaş'));
+ await renderer.act(async()=>tree.unmount());
+});
 test('profile follows web section order, expands patient info, and preserves complete treatment details',async()=>{
  const Profile=component({getPatient:async()=>patient(8)});let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
