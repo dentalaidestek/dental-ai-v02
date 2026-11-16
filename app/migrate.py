@@ -9,7 +9,7 @@ from sqlalchemy import text, inspect
 
 logger = logging.getLogger(__name__)
 
-REVISION = 12
+REVISION = 13
 
 
 def require_schema(engine,*,require_study=False):
@@ -100,6 +100,33 @@ def _upgrade_recent_schema(main):
         main._backfill_legacy_deadline_jobs_if_needed(bind=connection)
         connection.execute(text('UPDATE dental_schema_revision SET version=:version WHERE id=1'), {'version': REVISION})
     logger.warning('migration.recent complete revision=%s', REVISION)
+    return True
+
+
+def _upgrade_support_receipts_schema(main):
+    """Add durable idempotency receipts for native support-ticket mutations."""
+    if main.engine.dialect.name != 'postgresql':
+        return False
+    with main.engine.begin() as connection:
+        connection.execute(text("SET LOCAL lock_timeout = '5s'"))
+        connection.execute(text("SET LOCAL statement_timeout = '60s'"))
+        if not inspect(connection).has_table('dental_schema_revision'):
+            return False
+        revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
+        if revision == REVISION:
+            return True
+        if revision != 12:
+            return False
+        connection.execute(text('SELECT pg_advisory_xact_lock(71048233)'))
+        revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
+        if revision == REVISION:
+            return True
+        if revision != 12:
+            raise RuntimeError('Schema changed during support receipt migration')
+        from app.mobile_api import MobileSupportMutationReceipt
+        MobileSupportMutationReceipt.__table__.create(connection, checkfirst=True)
+        connection.execute(text('UPDATE dental_schema_revision SET version=:version WHERE id=1'), {'version': REVISION})
+    logger.warning('migration.support_receipts complete revision=%s', REVISION)
     return True
 
 
