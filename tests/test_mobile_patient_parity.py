@@ -422,3 +422,41 @@ def test_mobile_patient_media_preserves_extension_and_enforces_web_validation(ch
         "media_type": "PHOTO", "request_key": "synthetic-media-over-limit-0001",
     }, files={"file": ("synthetic.png", raw.getvalue(), "image/png")})
     assert oversized.status_code == 413
+
+
+def test_web_analysis_selection_and_submission_share_four_image_limit(chat,monkeypatch,tmp_path):
+    client,engine=chat
+    main.UPLOAD_DIR.mkdir(parents=True,exist_ok=True)
+    image=tmp_path/'synthetic-analysis-limit.png'
+    Image.new('RGB',(8,8),'white').save(image)
+    with Session(engine) as session:
+        session.add(main.Patient(id=80,anonymous_id='SYNTHETIC-LIMIT',owner_user_id=1))
+        for media_id in range(801,806):
+            session.add(main.PatientMedia(
+                id=media_id,patient_id=80,owner_user_id=1,
+                original_filename=f'{media_id}.png',stored_filename=f'{media_id}.png',
+                file_path=str(image),media_type='RADIOGRAPH',
+            ))
+        session.commit()
+
+    assert main.MAX_ANALYSIS_IMAGES == 4
+    accepted=client.get('/analysis/new/80?media_ids=801,802,803,804')
+    assert accepted.status_code==200,accepted.text
+    assert '4 kayıtlı görüntü analiz için seçildi' in accepted.text
+    assert 'toplam en fazla 4 görüntü' in accepted.text
+
+    rejected=client.get('/analysis/new/80?media_ids=801,802,803,804,805')
+    assert rejected.status_code==400
+    assert 'en fazla 4 kayıtlı görüntü' in rejected.text
+
+    raw=io.BytesIO()
+    Image.new('RGB',(8,8),'white').save(raw,format='PNG')
+    submitted=client.post(
+        '/analysis/new/80',
+        data={'existing_media_ids':'801,802,803,804'},
+        files=[('images',('extra.png',raw.getvalue(),'image/png'))],
+    )
+    assert submitted.status_code==400
+    assert 'toplam en fazla 4' in submitted.text
+    with Session(engine) as session:
+        assert not session.exec(select(main.Analysis).where(main.Analysis.patient_id==80)).all()
