@@ -36,3 +36,17 @@ The tests are registered in the existing `test:beta` and viewer test files. They
 At HEAD `ffb422ca101b5419296961745a65cc3a15ed059e`, GitHub Actions runs fail in 2–3 seconds with empty `steps`, `runner_id: 0`, empty `runner_name`, and no downloadable job log (`BlobNotFound`). The Android typecheck/APK and regression commands therefore did not start. This is runner provisioning/assignment evidence, not a TypeScript or test assertion failure. The exact account/billing/hosted-runner cause is not exposed by these records.
 
 No main merge, production deploy, database migration, or APK/IPA publication was performed.
+
+
+## Follow-up native clinical review parity — 2026-11-16
+
+A second web-flow inspection found additional clinical-result gaps and unsafe display metadata:
+
+- The native clinical result previously displayed the internal numeric patient database ID. The mobile clinical API now returns the patient's anonymous ID and the UI displays that label instead; no patient name, phone or national ID is added.
+- The result UI now explains `NEEDS_INFO` in the same clinical terms as the web result screen and labels `READY`, `INITIAL`, `FINAL`, and `AI_ANALYZING` explicitly.
+- Dentition switching now names its destination ("Süt Dişlerine Geç" / "Kalıcı Dişlere Geç") and clears selections hidden by the other dentition, preventing a stale, invisible FDI selection from being submitted.
+- Clinical workspace parsing validates the anonymous patient label, asset count and unique positive asset IDs, safe asset names/types, exact same-analysis relative asset URLs, nullable clinical fields, and job kind/status/retryability before rendering or enabling retry.
+- Added native regressions for dentition switching/selection clearing, internal patient-ID non-disclosure, `NEEDS_INFO` guidance, malformed/duplicate asset metadata, asset URL binding, anonymous patient label validation and malformed job states.
+- Added backend API regression asserting the anonymous patient label is returned.
+
+These tests are committed but remain unexecuted because Actions jobs continue to fail before runner assignment. At HEAD `96b0a49`, Android typecheck/APK jobs (runs `43921092862`, `43921092960`) ended with empty steps, `runner_id: 0`, and blank runner names. The security and regression workflows at the preceding code commit show the same signature. No source test or TypeScript compiler actually ran.
