@@ -386,8 +386,8 @@ page flow; the native adapter had no durable receipt after its Gemini call.
 Changes:
 - NativeVoiceRecorder now sends its persisted SecureStore segment UUID as
   X-Voice-Request-Key. A retry of the same retained clip reuses the same key.
-- The backend hashes canonical MIME plus streamed audio bytes and scopes the
-  receipt by authenticated owner, patient and segment key. Same key/different
+- The backend computes a keyed HMAC fingerprint over canonical MIME plus streamed audio
+  bytes and scopes the receipt by authenticated owner, patient and segment key. Same key/different
   bytes is rejected with 409 before Gemini.
 - The existing WorkJob table is reused without a schema migration. The only
   stored result is an AES-GCM encrypted transcript plus patient revision; raw
@@ -403,7 +403,9 @@ Changes:
   The new key is written to SecureStore before the in-memory draft is changed.
 - The encrypted result expires after 24 hours. A bounded worker cleanup clears
   ciphertext and retains tombstones for seven days; cleanup is throttled to
-  five-minute intervals and processes at most 100 receipts per pass.
+  five-minute intervals and processes at most 100 receipts per pass. Receipts
+  whose patient no longer exists or is no longer owned by the receipt owner are
+  removed during the same bounded cleanup.
 - render.yaml declares VOICE_ASR_RECEIPT_KEY as a secret. It must be set to a
   32-byte random value encoded as 64 hex characters before native audio uploads
   can be deployed. Missing configuration fails closed with HTTP 503.
@@ -424,5 +426,5 @@ Verification performed in this workspace:
   assertion. The repository cannot repair runner provisioning through a code
   patch. Full project CI and Python regression execution remain required.
 
-Latest branch HEAD at this tracker update: c6b8a8a12256977e9b9c29eb88ff9d4702f3853f (19 commits since starting HEAD 9dadd0c). No main merge,
+Implementation commits now end at 2c4507fd2fec4aace8602239e50318963db06889 (27 commits since starting HEAD 9dadd0c); this tracker update follows. No main merge,
 production deployment, APK/IPA release or patient-record mutation occurred.
