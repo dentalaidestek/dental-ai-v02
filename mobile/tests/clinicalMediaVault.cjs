@@ -68,3 +68,22 @@ test('vault deletion rejects paths outside its dedicated encrypted directory',as
  const h=harness();
  await assert.rejects(()=>h.api.deleteClinicalMediaVaultFile('file:///documents/private-patient.jpg'),/Dental AI güvenli/);
 });
+
+
+test('rejects oversized picker sources before copying plaintext into cache staging',async()=>{
+ const h=harness(),sourceUri=addSource(h,'file:///photos/oversized.png',Buffer.alloc(2048,7));
+ let copies=0;const originalCopy=h.fsApi.copyAsync;
+ h.fsApi.copyAsync=async value=>{copies++;return originalCopy(value)};
+ await assert.rejects(()=>h.api.encryptClinicalMediaFile(sourceUri,7,8,1024),/boyutu/);
+ assert.equal(copies,0,'known oversized source must be rejected before a cache copy');
+ assert.equal([...h.files.keys()].some(uri=>uri.includes('dai-clinical-stage-')),false);
+});
+
+test('falls back to staged-byte validation when an Android content provider cannot stat its source',async()=>{
+ const h=harness(),sourceUri=addSource(h,'content://media/opaque/42',Buffer.from('small synthetic image'));
+ const originalInfo=h.fsApi.getInfoAsync;
+ h.fsApi.getInfoAsync=async uri=>uri===sourceUri?{exists:false,size:0}:originalInfo(uri);
+ const encrypted=await h.api.encryptClinicalMediaFile(sourceUri,7,8,1024);
+ assert.equal(h.files.has(encrypted),true);
+ assert.equal([...h.files.keys()].some(uri=>uri.includes('dai-clinical-stage-')),false);
+});
