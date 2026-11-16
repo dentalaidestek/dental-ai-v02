@@ -270,8 +270,41 @@ test('Dental Flow rejects successful empty or non-object API responses',async()=
    await assert.rejects(()=>api.getFeed('token','discover'),error=>error.status===502);
   }
   global.fetch=async()=>new Response(JSON.stringify({items:[],next_cursor:null}),{status:200});
-  assert.deepEqual(await api.getFeed('token','discover'),{items:[],next_cursor:null});
+  const page=await api.getFeed('token','discover');
+  assert.deepEqual(page.items,[]);
+  assert.deepEqual(page.specialties,['Endodonti','Ortodonti','Pedodonti','Periodontoloji','Protetik Diş Tedavisi','Restoratif Diş Tedavisi','Ağız, Diş ve Çene Cerrahisi','Ağız, Diş ve Çene Radyolojisi']);
  }finally{global.fetch=original}
+});
+
+test('Dental Flow specialty filters encode Turkish labels and accept server taxonomy',async()=>{
+ const original=global.fetch,calls=[];
+ try{
+  global.fetch=async(url)=>{calls.push(url);return new Response(JSON.stringify({items:[],next_cursor:null,specialties:['Endodonti','Ağız, Diş ve Çene Cerrahisi']}),{status:200})};
+  const selected='Ağız, Diş ve Çene Cerrahisi';
+  const page=await api.getFeed('token','discover',undefined,selected);
+  assert.ok(calls[0].includes('specialty='+encodeURIComponent(selected)));
+  assert.deepEqual(page.specialties,['Endodonti',selected]);
+ }finally{global.fetch=original}
+});
+
+test('Dental Flow supports old feed responses and rejects malformed or stale taxonomy',async()=>{
+ const original=global.fetch;
+ try{
+  global.fetch=async()=>new Response(JSON.stringify({items:[],next_cursor:null}),{status:200});
+  const fallback=await api.getFeed('token','following');
+  assert.equal(fallback.specialties.length,8);
+  global.fetch=async()=>new Response(JSON.stringify({items:[],next_cursor:null,specialties:['Endodonti','Endodonti']}),{status:200});
+  await assert.rejects(()=>api.getFeed('token','discover'),error=>error.status===502);
+  global.fetch=async()=>new Response(JSON.stringify({items:[],next_cursor:null,specialties:['Endodonti']}),{status:200});
+  await assert.rejects(()=>api.getFeed('token','discover',undefined,'Ortodonti'),error=>error.status===422);
+ }finally{global.fetch=original}
+});
+
+test('Dental Flow share URLs use only validated positive record identifiers',()=>{
+ assert.equal(api.socialPostUrl(7,42),'https://dentalai.tr/expert-support/expert/7?post=42');
+ for(const [author,post] of [[0,1],[1,0],[-1,2],[1,1.5],[NaN,2],[1,Infinity]]){
+  assert.throws(()=>api.socialPostUrl(author,post),/Geçersiz gönderi bağlantısı/);
+ }
 });
 
 test('Dental Flow translates network failures into actionable API errors',async()=>{
