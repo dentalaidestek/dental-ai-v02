@@ -4,7 +4,7 @@ const API_BASE = "https://dentalai.tr/api/mobile/v1";
 export type User={id:number;username:string;email?:string|null;display_name:string;role:string;is_active:boolean;email_verified_at?:string|null;professional_title?:string|null;specialty?:string|null;university?:string|null};
 export type Patient={id:number;tc_kimlik_no?:string|null;address?:string|null;anonymous_id:string;first_name?:string|null;last_name?:string|null;phone?:string|null;birth_date?:string|null;age?:number|null;chief_complaint?:string|null;created_at?:string};
 export type Dashboard={user:User;stats:{patient_count:number;analysis_count:number;upcoming_event_count:number};recent_patients:Patient[];upcoming_events:Array<{id:number;event_type:string;title:string;start_at:string;end_at?:string|null;patient_id?:number|null;location?:string|null;status:string}>};
-export type PatientDetail={patient:Patient;edit_revision?:string;teeth:Array<{id:number;tooth_number:string;status:string;note?:string|null}>;surfaces:Array<{id:number;tooth_number:string;surface:string;status:string;note?:string|null}>;treatments:Array<{id:number;tooth_number?:string|null;treatment_name:string;treatment_date?:string|null;material?:string|null;doctor_note?:string|null;result?:string|null}>;media:Array<{id:number;original_filename:string;file_path:string;media_type:string;tooth_number?:string|null;note?:string|null;uploaded_at?:string}>};
+export type PatientDetail={patient:Patient;edit_revision?:string;teeth:Array<{id:number;tooth_number:string;status:string;note?:string|null}>;surfaces:Array<{id:number;tooth_number:string;surface:string;status:string;note?:string|null}>;treatments:Array<{id:number;tooth_number?:string|null;treatment_name:string;treatment_date?:string|null;material?:string|null;doctor_note?:string|null;result?:string|null;edit_revision?:string}>;media:Array<{id:number;original_filename:string;file_path:string;media_type:string;tooth_number?:string|null;note?:string|null;uploaded_at?:string}>};
 
 export class ApiError extends Error {
  readonly status:number;
@@ -69,20 +69,23 @@ export async function getPatient(token:string,id:number){
     !Array.isArray(result.teeth)||!Array.isArray(result.surfaces)||!Array.isArray(result.treatments)||!Array.isArray(result.media)||
     result.teeth.some(t=>!t||!validFdiTooth(t.tooth_number)||!validToothStatuses.has(t.status as ToothStatusCode))||
     result.surfaces.some(s=>!s||!validFdiTooth(s.tooth_number)||!validToothSurfaces.has(s.surface as ToothSurfaceCode)||!validToothStatuses.has(s.status as ToothStatusCode))||
-    result.treatments.some(t=>!t||!Number.isSafeInteger(t.id)||t.id<=0||typeof t.treatment_name!=="string"||(t.tooth_number!=null&&!validFdiTooth(t.tooth_number)))||
+    result.treatments.some(t=>!t||!Number.isSafeInteger(t.id)||t.id<=0||typeof t.treatment_name!=="string"||(t.tooth_number!=null&&!validFdiTooth(t.tooth_number))||(t.edit_revision!==undefined&&(typeof t.edit_revision!=="string"||!/^[a-f0-9]{64}$/.test(t.edit_revision))))||
     result.media.some(m=>!m||!Number.isSafeInteger(m.id)||m.id<=0||typeof m.original_filename!=="string"||(m.tooth_number!=null&&!validFdiTooth(m.tooth_number))))
   throw Error("Hasta sunucusundan beklenmeyen profil alındı. Yeniden deneyin.");
  return result;
 }
-type TreatmentPayload={treatment_name:string;tooth_number?:string;treatment_date?:string;material?:string;doctor_note?:string;result?:string};
-function validateTreatmentTarget(patientId:number,payload:TreatmentPayload,treatmentId?:number){
+export type TreatmentPayload={treatment_name:string;tooth_number?:string;treatment_date?:string;material?:string;doctor_note?:string;result?:string};
+export type TreatmentMutationResult={ok:boolean;treatment_id:number;edit_revision:string;replayed:boolean};
+function validateTreatmentTarget(patientId:number,payload:TreatmentPayload,treatmentId:number|undefined,requestKey:string,expectedRevision?:string){
  if(!Number.isSafeInteger(patientId)||patientId<=0||(treatmentId!==undefined&&(!Number.isSafeInteger(treatmentId)||treatmentId<=0)))
   throw new Error("Geçersiz hasta veya tedavi kimliği.");
  if(!payload||typeof payload.treatment_name!=="string"||!payload.treatment_name.trim())
   throw new Error("Tedavi adı zorunludur.");
  if(payload.treatment_name.trim().length>200)throw new Error("Tedavi adı en fazla 200 karakter olabilir.");
+ if(!/^[A-Za-z0-9_-]{16,80}$/.test(requestKey))throw new Error("Geçersiz tedavi işlem anahtarı.");
+ if(expectedRevision!==undefined&&!/^[a-f0-9]{64}$/.test(expectedRevision))throw new Error("Tedavi kayıt sürümü geçersiz.");
  if(payload.treatment_date){
-  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(payload.treatment_date);
+  const m=/^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(payload.treatment_date);
   const y=m?Number(m[1]):0,month=m?Number(m[2]):0,day=m?Number(m[3]):0;
   const valid=!!m&&y>=1&&month>=1&&month<=12&&day>=1&&day<=new Date(Date.UTC(y,month,0)).getUTCDate();
   if(!valid)throw new Error("Tedavi tarihi YYYY-AA-GG biçiminde geçerli bir tarih olmalıdır.");
@@ -90,13 +93,13 @@ function validateTreatmentTarget(patientId:number,payload:TreatmentPayload,treat
  if(payload.tooth_number&&(!validFdiTooth(payload.tooth_number)))
   throw new Error("Geçersiz FDI diş numarası.");
 }
-export function createTreatment(token:string,patientId:number,payload:TreatmentPayload){
- validateTreatmentTarget(patientId,payload);
- return request<{ok:boolean;treatment_id:number}>(`/patients/${patientId}/treatments`,token,{method:"POST",body:JSON.stringify(payload)});
+export function createTreatment(token:string,patientId:number,payload:TreatmentPayload,requestKey:string){
+ validateTreatmentTarget(patientId,payload,undefined,requestKey);
+ return request<TreatmentMutationResult>(`/patients/${patientId}/treatments`,token,{method:"POST",body:JSON.stringify({...payload,request_key:requestKey})});
 }
-export function updateTreatment(token:string,patientId:number,treatmentId:number,payload:TreatmentPayload){
- validateTreatmentTarget(patientId,payload,treatmentId);
- return request<{ok:boolean;treatment_id:number}>(`/patients/${patientId}/treatments/${treatmentId}`,token,{method:"PUT",body:JSON.stringify(payload)});
+export function updateTreatment(token:string,patientId:number,treatmentId:number,payload:TreatmentPayload,requestKey:string,expectedRevision:string){
+ validateTreatmentTarget(patientId,payload,treatmentId,requestKey,expectedRevision);
+ return request<TreatmentMutationResult>(`/patients/${patientId}/treatments/${treatmentId}`,token,{method:"PUT",body:JSON.stringify({...payload,request_key:requestKey,expected_revision:expectedRevision})});
 }
 export function deletePatient(token:string,id:number){return request<{ok:boolean;patient_id:number}>(`/patients/${id}`,token,{method:"DELETE"});}
 export function editPatient(token:string,id:number,payload:{first_name:string;last_name:string;phone?:string;birth_date?:string;tc_kimlik_no?:string;address?:string;chief_complaint?:string;expected_revision?:string}){
