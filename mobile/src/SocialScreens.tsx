@@ -820,24 +820,30 @@ function Comments({
 
 function PostCard({
   token,
+  userId,
   post,
   onUpdate,
   onComments,
   onProfile,
   onImage,
   onEdit,
+  onFollow,
 }: {
   token: string;
+  userId: number;
   post: api.SocialPost;
   onUpdate: (p: api.SocialPost | null) => void;
   onComments: () => void;
   onProfile: () => void;
   onImage: (url: string) => void;
   onEdit: () => void;
+  onFollow: (authorId: number, followed: boolean) => void;
 }) {
   const [busy, setBusy] = useState(false),
+    [followBusy, setFollowBusy] = useState(false),
     [error, setError] = useState(""),
-    lock = useRef(false);
+    lock = useRef(false),
+    followLock = useRef(false);
   const mutate = async (fn: () => Promise<api.SocialPost | null>) => {
     if (lock.current) return;
     lock.current = true;
@@ -852,6 +858,25 @@ function PostCard({
       setBusy(false);
     }
   };
+  async function toggleFollow() {
+    if (followLock.current || busy) return;
+    followLock.current = true;
+    setFollowBusy(true);
+    setError("");
+    try {
+      const result = await api.setFollow(
+        token,
+        post.author_id,
+        !post.author_followed,
+      );
+      onFollow(post.author_id, result.following_by_viewer);
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      followLock.current = false;
+      setFollowBusy(false);
+    }
+  }
   const [menuOpen, setMenuOpen] = useState(false);
   const menu = () => setMenuOpen(true);
   const choose = (action: () => void) => {
@@ -884,9 +909,25 @@ function PostCard({
             </Text>
           </View>
         </Pressable>
+        {post.author_id !== userId &&
+          typeof post.author_followed === "boolean" &&
+          post.status === "PUBLISHED" && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={post.author_followed ? "Takipten çık" : "Takip et"}
+              accessibilityState={{ selected: post.author_followed }}
+              disabled={busy || followBusy}
+              onPress={() => void toggleFollow()}
+              style={s.followButton}
+            >
+              <Text style={s.followButtonText}>
+                {followBusy ? "…" : post.author_followed ? "Takip ediliyor" : "Takip et"}
+              </Text>
+            </Pressable>
+          )}
         <Pressable
           accessibilityLabel="Gönderi işlemleri"
-          disabled={busy}
+          disabled={busy || followBusy}
           onPress={menu}
         >
           <Text style={s.action}>•••</Text>
@@ -1065,6 +1106,14 @@ export function DentalFlow({
     pages.setItems((v) =>
       p ? v.map((x) => (x.id === id ? p : x)) : v.filter((x) => x.id !== id),
     );
+  const updateFollow = (authorId: number, followed: boolean) =>
+    pages.setItems((v) =>
+      mode === "following" && !followed
+        ? v.filter((x) => x.author_id !== authorId)
+        : v.map((x) =>
+            x.author_id === authorId ? { ...x, author_followed: followed } : x,
+          ),
+    );
   useEffect(() => {
     const request = ++profileGeneration.current;
     setStats(null);
@@ -1224,7 +1273,9 @@ export function DentalFlow({
         renderItem={({ item }) => (
           <PostCard
             token={token}
+            userId={user.id}
             post={item}
+            onFollow={updateFollow}
             onUpdate={(p) => update(p, item.id)}
             onComments={() => setComments(item)}
             onProfile={() => profile(item.author_id, item.author_name)}
@@ -1416,6 +1467,14 @@ const s = StyleSheet.create({
   filterChipSelected: { backgroundColor: C.navy, borderColor: C.navy },
   filterChipText: { fontSize: 12, fontWeight: "700", color: C.navy },
   filterChipTextSelected: { color: "white" },
+  followButton: {
+    borderWidth: 1,
+    borderColor: C.line,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  followButtonText: { color: C.navy, fontSize: 12, fontWeight: "800" },
   input: {
     padding: 12,
     borderWidth: 1,
