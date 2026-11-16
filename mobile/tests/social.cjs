@@ -300,6 +300,15 @@ test('Dental Flow supports old feed responses and rejects malformed or stale tax
  }finally{global.fetch=original}
 });
 
+test('Dental Flow cursor pages preserve a server-only selected specialty without resetting filters',async()=>{
+ const original=global.fetch;
+ try{
+  global.fetch=async()=>new Response(JSON.stringify({items:[],next_cursor:null}),{status:200});
+  const page=await api.getFeed('token','discover',55,'Restoratif Diş Tedavisi - Özel');
+  assert.equal(page.items.length,0);
+ }finally{global.fetch=original}
+});
+
 test('Dental Flow share URLs use only validated positive record identifiers',()=>{
  assert.equal(api.socialPostUrl(7,42),'https://dentalai.tr/expert-support/expert/7?post=42');
  for(const [author,post] of [[0,1],[1,0],[-1,2],[1,1.5],[NaN,2],[1,Infinity]]){

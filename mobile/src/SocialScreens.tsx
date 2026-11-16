@@ -1143,7 +1143,7 @@ export function DentalFlow({
         return { items: p.items, next_before: p.next_cursor };
       }
       const p = await api.getFeed(token, mode, before, selectedSpecialty);
-      setSpecialties(p.specialties);
+      if (before === undefined) setSpecialties(p.specialties);
       return { items: p.items, next_before: p.next_cursor };
     },
     false,

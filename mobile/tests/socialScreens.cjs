@@ -48,6 +48,7 @@ test('Dental Flow native filters use the web taxonomy and reset the paged scope'
  const feed=source.slice(source.indexOf('export function DentalFlow('),source.indexOf('const s = StyleSheet.create'));
  assert.match(feed,/api\.getFeed\(token, mode, before, selectedSpecialty\)/);
  assert.ok(feed.includes('selectedSpecialty}'));
+ assert.ok(feed.includes('if (before === undefined) setSpecialties(p.specialties)'));
  assert.ok(feed.includes('Branş filtresi:'));
  assert.match(feed,/specialties\.map\(\(specialty\)/);
  assert.match(feed,/navigation\.navigate\("ExpertDirectory"\)/);

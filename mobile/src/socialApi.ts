@@ -160,7 +160,11 @@ export const getFeed = async (
     SocialPage<SocialPost> & { specialties?: unknown }
   >(t, `/feed/${mode}?${params.join("&")}`);
   const specialties = normalizeSocialSpecialties(page.specialties);
-  if (specialty && !specialties.includes(specialty)) {
+  if (
+    specialty &&
+    page.specialties !== undefined &&
+    !specialties.includes(specialty)
+  ) {
     throw new ApiError(
       422,
       "Seçilen branş artık mevcut değil. Tümü filtresini seçin.",
