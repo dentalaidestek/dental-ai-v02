@@ -7,7 +7,7 @@ function component(api,file='NativePatientProfile'){
  return exports.default;
 }
 const actions=Object.fromEntries(['chart','analysis','appointment','expert','voice','analysisResult','deleted'].map(k=>[k,()=>{}]));
-const patient=id=>({patient:{id,first_name:'Synthetic'+id,last_name:'Test',anonymous_id:'SYN-'+id,chief_complaint:'Complaint'},teeth:[],surfaces:[],treatments:[{id:1,treatment_name:'Root canal',material:'Synthetic material',result:'Synthetic result',doctor_note:'Synthetic note'}],media:[]});
+const patient=id=>({patient:{id,first_name:'Synthetic'+id,last_name:'Test',anonymous_id:'SYN-'+id,chief_complaint:'Complaint'},edit_revision:'a'.repeat(64),teeth:[],surfaces:[],treatments:[{id:1,treatment_name:'Root canal',material:'Synthetic material',result:'Synthetic result',doctor_note:'Synthetic note'}],media:[]});
 const text=node=>typeof node==='string'?node:Array.isArray(node)?node.map(text).join(''):node?.children?node.children.map(text).join(''):'';
 test('profile follows web section order, expands patient info, and preserves complete treatment details',async()=>{
  const Profile=component({getPatient:async()=>patient(8)});let tree;
@@ -102,5 +102,31 @@ test('uncertain treatment creation requires manual history verification before r
  await press('Tedaviyi Kaydet');
  assert.ok(text(tree.toJSON()).includes('Tekrar göndermeden önce geçmişi kontrol edin.'));
  await press('Tedaviyi Kaydet');assert.equal(calls,1,'uncertain treatment write must not duplicate');
+ await renderer.act(async()=>tree.unmount());
+});
+
+
+test('stale patient revision preserves the draft until the clinician explicitly reloads current data',async()=>{
+ let reads=0,attempted;
+ const latest={...patient(8),edit_revision:'b'.repeat(64),patient:{...patient(8).patient,first_name:'Latest'}};
+ const Profile=component({
+  getPatient:async()=>reads++===0?patient(8):latest,
+  editPatient:async(_token,_id,payload)=>{attempted=payload;throw Object.assign(new Error('Hasta bilgileri başka bir oturumda güncellendi.'),{status:409})}
+ });
+ let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ await press('Hasta Bilgileri');
+ const first=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad');
+ await renderer.act(async()=>first.props.onChangeText('Draft'));
+ await press('Değişiklikleri Kaydet');
+ assert.equal(attempted.expected_revision,'a'.repeat(64));
+ assert.ok(text(tree.toJSON()).includes('başka bir oturumda güncellendi'));
+ assert.ok(text(tree.toJSON()).includes('Güncel hasta bilgilerini yükle'));
+ await press('Güncel hasta bilgilerini yükle');
+ const refreshed=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad');
+ assert.equal(refreshed.props.value,'Latest');
+ assert.ok(text(tree.toJSON()).includes('Güncel hasta bilgileri yüklendi'));
+ assert.ok(!text(tree.toJSON()).includes('Güncel hasta bilgilerini yükle'));
  await renderer.act(async()=>tree.unmount());
 });
