@@ -264,3 +264,28 @@ Executed validation: isolated strict TypeScript compile of the new presentation 
 CI root-cause evidence before this pass (code HEAD `31d8c7c`): Android run `43866434958` had typecheck job `133296063956` and APK job `133296063558`; Security recovery run `43866434947` had job `133296064194`; Admin security run `43866434983` had job `133296064492`; Expert social run `43866434981` had job `133296063796`. All five jobs returned `steps=[]`; log downloads were empty and no compiler, Gradle or pytest step started. This is a pre-step runner-allocation/execution failure, not a TypeScript diagnostic or a failing security assertion. The exact hosted-runner/account/billing setting remains inaccessible through the repository code API and needs repository-owner inspection.
 
 PR #257 remains open/Draft. No main merge, production deploy, APK/IPA publication, database migration or live patient-data mutation occurred. Next module after this patient-profile pass: tooth-chart visual comparison on real Android/iOS widths, then the remaining clinical-media upload recovery acceptance.
+
+
+## 2026-11-16 — native clinical-media batch quota parity
+
+Web-first review was performed before changing the native upload path: app/templates/patient_detail.html posts the selected archive as one multipart request to /patients/{patient_id}/media; that handler validates the 12-file / 96 MiB batch before saving. The mobile flow intentionally uploads files sequentially to /api/mobile/v1/patients/{patient_id}/media, but the server previously enforced only the per-request/per-file limit. The native picker alone enforced 96 MiB, so a client that did not preserve the original selection boundary could exceed the intended single-batch aggregate across requests.
+
+Changes on feature/mobile-web-parity-20261110:
+
+- The native multipart contract now requires both a stable per-file request_key and a batch_id.
+- The batch ID is stored in the SecureStore pending intent, survives retries/app restarts, and is added once to legacy pending drafts when they are reopened. The encrypted file payloads, per-file request keys and patient/account scope remain unchanged.
+- The backend copy helper returns the original streamed byte count (before Pillow re-encoding). Each committed patient-media receipt stores that byte count and opaque batch ID in existing WorkJob result_ref/payload_json; no new table or migration was added.
+- Under the owned patient row lock, the server sums only receipts for the same authenticated owner, patient and batch ID, then enforces the 12-file / 96 MiB aggregate before object persistence. Existing per-file receipts are checked first, so an exact retry does not consume quota twice. Malformed batch receipts fail closed.
+- HTTP 413/422/400/403/404 responses are treated as definite rejections in the native screen, allowing the user to clear or split a rejected pending group instead of being stuck in the ambiguous-retry state.
+- The native API test now asserts that the batch ID is actually sent. Added helper tests for stable/migrated batch identity and Python regressions for aggregate bytes across requests, exact receipt replay, file count, required batch metadata, and owner/patient isolation.
+- Distinct batch IDs are distinct archive submissions. This change enforces the 12-file / 96 MiB limit for each declared submission; it does not introduce a per-patient/day storage quota.
+
+Commits in this pass (14 after the prior profile HEAD):
+
+89e4719, 1a65f7a, 102aee6, 4fe85ef, f01e035, a10eacd, be80f5d, 92a7c4e, 57e0255, 68b3e84, 9605eaf, 2b0f9c6, 837cc27, dd7e19e.
+
+Validation status: source-level contract review confirms that the batch ID is persisted and sent, server receipt lookup precedes quota admission, owner/patient/batch scoping is present, and quota admission precedes object persistence. The new Python and Node regressions are committed and registered in mobile/package.json, but they have **not** been executed locally in this environment. No claim of a passing full Android typecheck or full test suite is made.
+
+CI was rechecked at final HEAD dd7e19e942a7789903a062baaf4c12689da84223. The Android typecheck/APK, Security recovery, Admin security and Expert social runs all started and failed within 1–2 seconds with runner_id=0, empty runner_name, steps=[], and no artifacts. Job-log downloads return Azure BlobNotFound 404. The same pre-step signature was present at the earlier profile HEAD. Therefore no TypeScript compiler, Gradle, pytest or security assertion has run; this is a hosted-runner allocation/execution failure, not evidence of a code-level test failure. The repository API does not expose the account-level hosted-runner/billing setting needed to identify the final administrative cause.
+
+PR #257 remains open/Draft. No main merge, production deploy, APK/IPA publication, migration, or live patient-data mutation occurred. Next blocker: repository owner must restore GitHub-hosted runner allocation so the committed backend/native regressions and Android typecheck can actually execute. After that, continue web-first tooth-chart visual parity and real-device clinical-media recovery acceptance.
