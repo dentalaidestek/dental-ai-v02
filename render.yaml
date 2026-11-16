@@ -80,6 +80,8 @@ services:
         sync: false
       - key: VOICE_ASR_RECEIPT_KEY
         sync: false
+      - key: PATIENT_MEDIA_RECEIPT_KEY
+        sync: false
       - key: COHERE_API_KEY
         sync: false
       - key: GROQ_API_KEY
