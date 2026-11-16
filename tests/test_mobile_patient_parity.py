@@ -108,3 +108,61 @@ def test_native_analysis_rejects_mixed_supported_and_unsupported_uploads(chat, m
     with Session(engine) as session:
         assert session.exec(select(main.Analysis).where(main.Analysis.patient_id == 8)).all() == []
         assert session.exec(select(main.ImageAsset)).all() == []
+
+
+
+def test_mobile_patient_edit_revision_rejects_stale_web_or_device_overwrites(chat):
+    from pathlib import Path
+
+    client, engine = chat
+    with Session(engine) as session:
+        session.add(main.Patient(
+            id=8, anonymous_id="SYNTHETIC-REVISION", owner_user_id=1,
+            first_name="Initial", last_name="Patient", phone="05550000000",
+            chief_complaint="Initial complaint",
+        ))
+        session.add(main.PatientProfile(patient_id=8, address="Initial address"))
+        session.commit()
+
+    snapshot = client.get("/api/mobile/v1/patients/8")
+    assert snapshot.status_code == 200, snapshot.text
+    revision = snapshot.json()["edit_revision"]
+    assert len(revision) == 64 and all(char in "0123456789abcdef" for char in revision)
+
+    current_payload = {
+        "first_name": "Current",
+        "last_name": "Patient",
+        "phone": "05550000000",
+        "birth_date": "",
+        "tc_kimlik_no": "",
+        "address": "Updated address",
+        "chief_complaint": "Updated complaint",
+        "expected_revision": revision,
+    }
+    updated = client.put("/api/mobile/v1/patients/8", json=current_payload)
+    assert updated.status_code == 200, updated.text
+    next_revision = updated.json()["edit_revision"]
+    assert next_revision != revision
+
+    stale = client.put("/api/mobile/v1/patients/8", json={
+        **current_payload,
+        "first_name": "Stale overwrite",
+    })
+    assert stale.status_code == 409, stale.text
+    malformed = client.put("/api/mobile/v1/patients/8", json={
+        **current_payload,
+        "expected_revision": "not-a-revision",
+    })
+    assert malformed.status_code == 422, malformed.text
+
+    with Session(engine) as session:
+        patient = session.get(main.Patient, 8)
+        profile = session.get(main.PatientProfile, session.exec(
+            __import__("sqlmodel").select(main.PatientProfile).where(main.PatientProfile.patient_id == 8)
+        ).first().id)
+        assert patient.first_name == "Current"
+        assert patient.chief_complaint == "Updated complaint"
+        assert profile.address == "Updated address"
+
+    template = Path("app/templates/patient_detail.html").read_text(encoding="utf-8")
+    assert 'name="expected_revision" value="{{ patient_edit_revision }}"' in template
