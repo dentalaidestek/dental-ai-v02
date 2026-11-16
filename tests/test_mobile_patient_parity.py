@@ -523,7 +523,7 @@ def test_mobile_patient_media_batch_enforces_aggregate_bytes_across_requests_and
     raw = io.BytesIO()
     Image.new('RGB', (8, 8), 'white').save(raw, format='PNG')
     payload = raw.getvalue()
-    sizes = [10 * 1024 * 1024] * 9 + [7 * 1024 * 1024]
+    sizes = [10 * 1024 * 1024] * 9 + [7 * 1024 * 1024, 10 * 1024 * 1024]
 
     def copy_with_declared_stream_size(upload, destination, maximum):
         destination.write_bytes(payload)
