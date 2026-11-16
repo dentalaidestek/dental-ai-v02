@@ -99,7 +99,7 @@ export default function NativeToothChart({token,userId,patientId}:{token:string;
    }else if([403,404].includes(Number(status))){
     try{await treatmentStore.deleteItemAsync(treatmentKey);}
     catch{setTreatmentIntentBlocked(true);setErr("Sunucu isteği reddetti ancak güvenli taslak temizlenemedi. Yeni işlem başlatmayın; ekranı yeniden açıp kaydı doğrulayın.");return;}
-    setPendingTreatment(null);setTreatmentUncertain(false);setEditingTreatment(null);setEditingTreatmentRevision(null);
+    setPendingTreatment(null);setTreatmentUncertain(false);setEditingTreatment(null);setEditingTreatmentRevision(null);setTreatmentName("");setTreatmentDate("");setTreatmentMaterial("");setTreatmentNote("");setTreatmentResult("");
     setErr(message+" Güncel tedavi geçmişini yenileyin.");
    }else{
     setTreatmentUncertain(sent);
