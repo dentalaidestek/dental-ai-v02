@@ -54,7 +54,7 @@ Compared the web voice entry template and routes (voice_exam_entry.html, voice_e
 
 Latest CI for code head 8512983: Android run #1986 (43750224085), security recovery #802 (43750224083), admin security #686 (43750224092), expert social #682 (43750224158). Each job reports an empty step list; logs return BlobNotFound 404. Re-running the preceding failed runs also reproduced the empty-step failure. This does not establish a TypeScript or Python test failure. New code tests are not yet executed; do not mark the module or CI complete.
 
- 
+
 ## Native self-erasure parity — 2026-11-15
 
 Compared `app/templates/account.html` and `app/main.py:delete_own_account` with `mobile/src/NativeAccount.tsx` and `app/mobile_account_api.py`. The web account has a guarded self-delete action (typed username + current password, ADMIN excluded); native account had only logout and did not expose the same action.
