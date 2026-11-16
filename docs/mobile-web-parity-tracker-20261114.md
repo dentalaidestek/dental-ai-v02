@@ -334,3 +334,13 @@ At starting HEAD `a50e861eb572084788ada4cc2bb81546f7eb30aa`, latest PR runs were
 No workflow was weakened or redirected to an untrusted runner to mask this blocker. No main merge, production deploy, migration, APK/IPA publication or patient-data mutation. The new profile tests are committed but await a functioning Actions runner (or an owner-run checkout).
 
 Next code pass remains web-first and follows the requested module order: tooth-chart screen/interaction comparison, then clinical-media recovery and AI image-analysis/result parity. Android/iOS device appearance and 60,000-user load acceptance remain open.
+
+## 2026-11-16 — Tooth-chart close-panel parity
+
+Reviewed the canonical `app/templates/tooth_chart.html` before editing. The web chart's selected-tooth sheet has an explicit close button; native previously left the detail card open until another tooth or dentition was selected. Added the accessible native close control and a guarded dismissal handler. Normal dismissal clears only transient selection/editor state and preserves the FDI tooth and all persisted clinical data. Dismissal is disabled during writes or while a durable treatment intent is pending, so the clinician cannot hide the only reconciliation path for an uncertain mutation.
+
+Commits: `af96bf1` (native close action), `b501e8b` (normal dismissal regression), `01ec19d` (pending-intent safety regression), `63b3d8b` (tooth-chart evidence note). This tracker update is the fifth commit in the tooth-panel follow-up. Both tests are part of the existing `test:beta` command.
+
+The latest-head CI runs at the preceding code head still need to be rechecked after this pass; earlier current-head jobs demonstrated the same empty-step / `BlobNotFound 404` runner-allocation failure. No local full checkout or React Native dependency tree is available, so renderer tests, strict TypeScript, Expo export, Gradle and device screenshots are not claimed as executed.
+
+No main merge, production deployment, schema change, APK/IPA publication or patient-data mutation. Next: continue the user's requested web-first order with the remaining tooth-chart surface/history behavior, then clinical-media and AI image-analysis parity; afterward voice, appointments, Dental Akış, academic AI, expert support, account/notifications and 60,000-user load acceptance.
