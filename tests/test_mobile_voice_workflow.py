@@ -103,3 +103,61 @@ def test_native_anonymous_voice_patient_is_private_owned_and_idempotent(chat,mon
     with Session(engine) as session:
         assert session.get(main.Patient,other.json()['patient']['id']).owner_user_id==2
     assert client.post(path,json={'request_key':'not-a-valid-key'}).status_code==422
+
+
+def test_native_voice_history_returns_only_owned_completed_voice_approvals(chat,monkeypatch):
+    client,engine=setup(chat,monkeypatch)
+    with Session(engine) as session:
+        approved=main.Analysis(
+            patient_id=8,
+            status='DRAFT',
+            clinical_notes='Sistemik hastalık / hasta beyanı: Astım\\n\\nİlaç / hasta beyanı: Düzenli sentetik ilaç\\n\\nAlerji / hasta beyanı: Penisilin beyanı',
+        )
+        session.add(approved);session.flush()
+        session.add(WorkJob(
+            owner_user_id=1,resource_id=approved.id,resource_type='ANALYSIS',
+            kind='VOICE_REVIEW',status='DONE',source_hash='a'*64,
+            dedupe_key='voice-review:1:history-approved',payload_json='{}',result_ref=str(approved.id),
+        ))
+        non_voice=main.Analysis(patient_id=8,status='DRAFT',clinical_notes='Sistemik hastalık / hasta beyanı: Must not leak')
+        session.add(non_voice);session.flush()
+        session.add(WorkJob(
+            owner_user_id=1,resource_id=non_voice.id,resource_type='ANALYSIS',
+            kind='IMAGE_ANALYSIS',status='DONE',source_hash='b'*64,
+            dedupe_key='image-analysis:history-excluded',payload_json='{}',result_ref=str(non_voice.id),
+        ))
+        other_owner=main.Analysis(patient_id=8,status='DRAFT',clinical_notes='İlaç / hasta beyanı: Other owner secret')
+        session.add(other_owner);session.flush()
+        session.add(WorkJob(
+            owner_user_id=2,resource_id=other_owner.id,resource_type='ANALYSIS',
+            kind='VOICE_REVIEW',status='DONE',source_hash='c'*64,
+            dedupe_key='voice-review:2:history-excluded',payload_json='{}',result_ref=str(other_owner.id),
+        ))
+        unfinished=main.Analysis(patient_id=8,status='DRAFT',clinical_notes='Alerji / hasta beyanı: Not completed')
+        session.add(unfinished);session.flush()
+        session.add(WorkJob(
+            owner_user_id=1,resource_id=unfinished.id,resource_type='ANALYSIS',
+            kind='VOICE_REVIEW',status='RUNNING',source_hash='d'*64,
+            dedupe_key='voice-review:1:history-unfinished',payload_json='{}',result_ref=str(unfinished.id),
+        ))
+        session.commit()
+
+    response=client.get('/api/mobile/v1/patients/8/voice-exam/history')
+    assert response.status_code==200,response.text
+    assert response.headers['cache-control']=='private, no-store'
+    assert response.headers['vary']=='Authorization'
+    body=response.json()
+    assert body['ok'] is True
+    assert len(body['revision'])==64
+    assert set(body['fields'])=={'medical_history','medications','allergies'}
+    assert body['fields']['medical_history']['value']=='Astım'
+    assert body['fields']['medications']['analysis_id']==approved.id
+    assert 'Must not leak' not in response.text
+    assert 'Other owner secret' not in response.text
+    assert 'Not completed' not in response.text
+    assert 'transcript' not in body and 'audio' not in body
+
+    client.headers['Authorization']='Bearer token2'
+    assert client.get('/api/mobile/v1/patients/8/voice-exam/history').status_code==404
+    client.headers['Authorization']='Bearer token1'
+    assert client.get('/api/mobile/v1/patients/9/voice-exam/history').status_code==404
