@@ -5,6 +5,7 @@ import pytest
 from starlette.exceptions import HTTPException
 
 from app.upload_io import copy_image, upload_size, validate_path_batch, validate_upload_batch
+from app.request_limits import request_body_limit
 from app.upload_limits import (
     MAX_ANALYSIS_BATCH_BYTES,
     MAX_ANALYSIS_IMAGE_BYTES,
@@ -68,3 +69,17 @@ def test_bounded_copy_removes_partial_destination_on_overflow(tmp_path: Path):
         copy_image(BytesIO(b"x" * 9), destination, maximum=8)
     assert exc.value.status_code == 413
     assert not destination.exists()
+
+
+def test_raw_http_body_limits_cover_multipart_overhead_and_respect_global_cap():
+    global_limit = 128 * 1024 * 1024
+    archive = request_body_limit({"method": "POST", "path": "/patients/12/media"}, global_limit)
+    analysis = request_body_limit({"method": "POST", "path": "/analysis/new/12"}, global_limit)
+    mobile_analysis = request_body_limit({"method": "POST", "path": "/api/mobile/v1/analyses"}, global_limit)
+    mobile_archive = request_body_limit({"method": "POST", "path": "/api/mobile/v1/patients/12/media"}, global_limit)
+    assert archive == MAX_PATIENT_MEDIA_BATCH_BYTES + 256 * 1024
+    assert analysis == MAX_ANALYSIS_BATCH_BYTES + 256 * 1024
+    assert mobile_analysis == analysis
+    assert mobile_archive == MAX_PATIENT_MEDIA_FILE_BYTES + 256 * 1024
+    assert request_body_limit({"method": "POST", "path": "/analysis/new/12"}, 32 * 1024 * 1024) == 32 * 1024 * 1024
+    assert request_body_limit({"method": "GET", "path": "/patients/12/media"}, global_limit) == global_limit
