@@ -7,12 +7,12 @@ import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import {chunkedDraftStore} from './socialDraft';
 import {addVoiceElapsed,appendVoiceSegment,formatVoiceElapsed,newVoiceDraft,parseVoiceDraft,VoiceDraft,voiceDraftKey} from './voiceSession';
-import {transcribeNativeRecording} from './nativeVoiceAudio';
+import {transcribeNativeRecording,VoiceAsrError} from './nativeVoiceAudio';
 export default function NativeVoiceRecorder({token,userId,patientId,consent,value,disabled=false,onTranscript,onFinished,onBusyChanged,onSessionState}:{token:string;userId:number;patientId:number;consent:boolean;value:string;disabled?:boolean;onTranscript:(text:string)=>void;onFinished:(text:string)=>void;onBusyChanged?:(busy:boolean)=>void;onSessionState?:(state:{started:boolean;finished:boolean})=>void}){
  const options={...RecordingPresets.HIGH_QUALITY,numberOfChannels:1,bitRate:64000,android:{...RecordingPresets.HIGH_QUALITY.android,maxFileSize:8*1024*1024}},recorder=useAudioRecorder(options),status=useAudioRecorderState(recorder,250);
  const store=useMemo(()=>chunkedDraftStore(SecureStore,Crypto.randomUUID,300),[]),key=voiceDraftKey(userId,patientId),draft=useRef<VoiceDraft>(newVoiceDraft(userId,patientId)),mounted=useRef(true),wanted=useRef(false),active=useRef<string|null>(null),timer=useRef<ReturnType<typeof setTimeout>|null>(null),gate=useRef(false),cutting=useRef<Promise<void>|null>(null),draining=useRef<Promise<void>|null>(null),controller=useRef<AbortController|null>(null),lastInput=useRef(value),wasRecording=useRef(false);
  const transcriptCallback=useRef(onTranscript),finishCallback=useRef(onFinished);transcriptCallback.current=onTranscript;finishCallback.current=onFinished;
- const [view,setView]=useState(draft.current),[ready,setReady]=useState(false),[recording,setRecording]=useState(false),[elapsedMs,setElapsedMs]=useState(0),[working,setWorking]=useState(false),[transcribing,setTranscribing]=useState(false),[error,setError]=useState(''),[storageBlocked,setStorageBlocked]=useState(false);
+ const [view,setView]=useState(draft.current),[ready,setReady]=useState(false),[recording,setRecording]=useState(false),[elapsedMs,setElapsedMs]=useState(0),[working,setWorking]=useState(false),[transcribing,setTranscribing]=useState(false),[error,setError]=useState(''),[storageBlocked,setStorageBlocked]=useState(false),[indeterminateSegmentId,setIndeterminateSegmentId]=useState<string|null>(null);
  const chunkStartedAt=useRef<number|null>(null);
  const focused=useIsFocused(),focus=useRef(focused);focus.current=focused;
  const occupied=recording||working||transcribing;
@@ -24,7 +24,63 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
  async function removeFile(uri:string){if(FileSystem.cacheDirectory&&uri.startsWith(FileSystem.cacheDirectory))await FileSystem.deleteAsync(uri,{idempotent:true}).catch(()=>{});}
  useEffect(()=>{mounted.current=true;void(async()=>{try{const raw=await store.getItemAsync(key),saved=parseVoiceDraft(raw,userId,patientId,0);if(saved&&Date.now()-saved.updatedAt>86400000){for(const s of saved.segments)await removeFile(s.uri);await store.deleteItemAsync(key)}else if(saved){draft.current=saved;if(mounted.current){setView(saved);setElapsedMs(saved.elapsedMs||0);transcriptCallback.current(saved.transcript);if(saved.segments.length)setError('Bekleyen ses kaydı bulundu. Tekrar kaydetmeden önce yazıya çevirin veya taslağı temizleyin.')}}}catch(e){if(mounted.current){setStorageBlocked(true);setError(e instanceof Error?e.message:'Muayene taslağı alınamadı.')}}finally{if(mounted.current)setReady(true)}})();return()=>{mounted.current=false;wanted.current=false;if(timer.current)clearTimeout(timer.current);controller.current?.abort();if(active.current){const id=active.current,startedAt=chunkStartedAt.current;active.current=null;chunkStartedAt.current=null;void recorder.stop().then(()=>{const elapsed=startedAt===null?draft.current:addVoiceElapsed(draft.current,startedAt,Date.now());return persist({...elapsed,segments:elapsed.segments.map(s=>s.id===id?{...s,ready:true}:s)})}).catch(()=>{})}}},[key]);
  useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(ready&&!storageBlocked&&value!==draft.current.transcript){void persist({...draft.current,transcript:value,ended:false}).catch(()=>{if(mounted.current)setError('Metin bu cihazda saklanamadı. Ekrandan ayrılmadan önce bağlantıyı ve cihazı kontrol edin.')})}},[value,ready,storageBlocked]);
- function drain():Promise<void>{if(draining.current)return draining.current;const work=(async()=>{if(mounted.current)setTranscribing(true);try{while(mounted.current&&AppState.currentState==='active'&&draft.current.segments.some(s=>s.ready)){const segment=draft.current.segments.find(s=>s.ready)!;controller.current=new AbortController();const result=await transcribeNativeRecording(token,patientId,segment.uri,controller.current.signal);if(!mounted.current)return;const next=appendVoiceSegment(draft.current,segment.id,result.transcript);await persist(next);if(!mounted.current)return;transcriptCallback.current(draft.current.transcript);await removeFile(segment.uri)}}catch(e){wanted.current=false;try{await cut()}catch{}if(mounted.current)setError(e instanceof Error?e.message:'Ses yazıya çevrilemedi. Yerel kayıt korundu.')}finally{controller.current=null;if(mounted.current)setTranscribing(false)}})();draining.current=work;void work.finally(()=>{if(draining.current===work)draining.current=null});return work;}
+ function drain():Promise<void>{
+  if(draining.current)return draining.current;
+  const work=(async()=>{
+   if(mounted.current)setTranscribing(true);
+   let failedSegmentId:string|null=null;
+   try{
+    while(mounted.current&&AppState.currentState==='active'&&draft.current.segments.some(s=>s.ready)){
+     const segment=draft.current.segments.find(s=>s.ready)!;
+     failedSegmentId=segment.id;
+     controller.current=new AbortController();
+     const result=await transcribeNativeRecording(token,patientId,segment.uri,segment.id,controller.current.signal);
+     if(!mounted.current)return;
+     const next=appendVoiceSegment(draft.current,segment.id,result.transcript);
+     await persist(next);
+     if(!mounted.current)return;
+     setIndeterminateSegmentId(null);
+     transcriptCallback.current(draft.current.transcript);
+     await removeFile(segment.uri);
+     failedSegmentId=null;
+    }
+   }catch(e){
+    wanted.current=false;
+    try{await cut()}catch{}
+    if(mounted.current){
+     if(e instanceof VoiceAsrError&&
+        (e.code==='VOICE_ASR_OUTCOME_UNKNOWN'||e.code==='VOICE_ASR_EXPIRED'))
+      setIndeterminateSegmentId(failedSegmentId);
+     setError(e instanceof Error?e.message:'Ses yazıya çevrilemedi. Yerel kayıt korundu.');
+    }
+   }finally{
+    controller.current=null;
+    if(mounted.current)setTranscribing(false);
+   }
+  })();
+  draining.current=work;
+  void work.finally(()=>{if(draining.current===work)draining.current=null});
+  return work;
+ }
+ function retryWithNewKey(){
+  const segment=draft.current.segments.find(s=>s.id===indeterminateSegmentId&&s.ready);
+  if(!segment)return;
+  Alert.alert(
+   'Yeni ses çözümleme denemesi',
+   'Önceki isteğin sonucu belirsiz. Yeni anahtar aynı ses dosyasını yeniden Gemini’ye gönderir; ek bir AI çağrısı ve ücret oluşturabilir. Yalnızca açık onay verirsen devam eder.',
+   [
+    {text:'Vazgeç',style:'cancel'},
+    {text:'Yeni deneme',style:'destructive',onPress:()=>void(async()=>{
+     const next={...draft.current,segments:draft.current.segments.map(item=>
+      item.id===segment.id?{...item,id:Crypto.randomUUID(),ready:true}:item)};
+     await persist(next);
+     setIndeterminateSegmentId(null);
+     setError('');
+     await drain();
+    })().catch(()=>setError('Yeni deneme anahtarı güvenli biçimde kaydedilemedi. Yerel ses korunuyor.'))}
+   ]
+  );
+ }
  async function startChunk(){if(!wanted.current||!mounted.current||!focus.current)return;if(draft.current.segments.length>=5){wanted.current=false;setError('Bekleyen sesler işleniyor. Kayıtlar yazıya çevrildikten sonra devam edin.');setRecording(false);return;}await recorder.prepareToRecordAsync(options);const uri=recorder.uri;if(!uri)throw Error('Mikrofon kayıt dosyası oluşturulamadı.');const id=Crypto.randomUUID();active.current=id;await persist({...draft.current,ended:false,audioStarted:true,segments:[...draft.current.segments,{id,uri,ready:false}]});if(!wanted.current||!mounted.current||AppState.currentState!=='active'||!focus.current)return;recorder.record();chunkStartedAt.current=Date.now();setElapsedMs(draft.current.elapsedMs||0);setRecording(true);timer.current=setTimeout(()=>void rotate(),15000);}
  function cut():Promise<void>{if(cutting.current)return cutting.current;const work=(async()=>{if(timer.current){clearTimeout(timer.current);timer.current=null}const id=active.current;if(!id)return;const startedAt=chunkStartedAt.current;active.current=null;wasRecording.current=false;await recorder.stop();chunkStartedAt.current=null;const elapsed=startedAt===null?draft.current:addVoiceElapsed(draft.current,startedAt,Date.now());const next={...elapsed,segments:elapsed.segments.map(s=>s.id===id?{...s,ready:true}:s)};await persist(next);if(mounted.current)setElapsedMs(next.elapsedMs||0);if(!wanted.current)await setAudioModeAsync({allowsRecording:false});if(mounted.current)setRecording(false)})();cutting.current=work;void work.finally(()=>{if(cutting.current===work)cutting.current=null}).catch(()=>{});return work;}
  async function rotate(){if(gate.current||!wanted.current)return;gate.current=true;try{await cut();if(wanted.current)await startChunk();void drain()}catch(e){wanted.current=false;if(mounted.current){setRecording(false);setError(e instanceof Error?e.message:'Mikrofon kesildi; yerel kayıtları kontrol edin.')}}finally{gate.current=false}}
@@ -34,8 +90,8 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
  useEffect(()=>{if(!focused&&wanted.current)void pause(true)},[focused]);
  useEffect(()=>{const listener=AppState.addEventListener('change',state=>{if(state!=='active'&&wanted.current)void pause(true)});return()=>listener.remove()},[]);
  useEffect(()=>{if(status.isRecording)wasRecording.current=true;else if(wasRecording.current&&wanted.current&&active.current){wanted.current=false;void pause(true);setError('Mikrofon kaydı kesildi. Ses dosyasını ve mikrofon bağlantısını kontrol edin.')}if(status.mediaServicesDidReset&&wanted.current){wanted.current=false;void pause(true)}},[status.isRecording,status.mediaServicesDidReset]);
- async function clear(){if(occupied||disabled)return;try{for(const segment of draft.current.segments)await removeFile(segment.uri);await store.deleteItemAsync(key);draft.current=newVoiceDraft(userId,patientId);setView(draft.current);setElapsedMs(0);setStorageBlocked(false);transcriptCallback.current('');setError('')}catch{setError('Taslak tamamen temizlenemedi. Yeniden deneyin.')}}
+ async function clear(){if(occupied||disabled)return;try{for(const segment of draft.current.segments)await removeFile(segment.uri);await store.deleteItemAsync(key);draft.current=newVoiceDraft(userId,patientId);setView(draft.current);setElapsedMs(0);setStorageBlocked(false);setIndeterminateSegmentId(null);transcriptCallback.current('');setError('')}catch{setError('Taslak tamamen temizlenemedi. Yeniden deneyin.')}}
  const button=(label:string,action:()=>void,blocked=false)=><Pressable accessibilityRole="button" disabled={blocked||storageBlocked||disabled||!consent||!ready} onPress={action} style={[s.button,(blocked||disabled||!consent||!ready)&&{opacity:.4}]}><Text style={s.action}>{label}</Text></Pressable>;
- return <View style={s.card}><Text style={s.title}>Canlı Muayene Kaydı</Text><Text accessibilityLiveRegion="polite" style={s.meta}>{recording?'● Mikrofon açık':transcribing?'Konuşma yazıya çevriliyor…':view.ended?'Muayene bitirildi':'Mikrofon kapalı'} · {formatVoiceElapsed(elapsedMs)}</Text><Text style={s.meta}>Dinlerken yalnızca konuşma metni hazırlanır. Klinik çıkarım muayeneyi bitirdiğinizde başlar. Ses kısa parçalar hâlinde işlenir; metin cihazda güvenli depoda tutulur. Bekleyen sesler uygulamanın özel dosya alanındadır. 24 saatten eski taslak, bu muayene yeniden açıldığında temizlenir.</Text>{!ready&&<ActivityIndicator/>}{recording?button('Duraklat',()=>void pause(),working):button(view.transcript?'Devam Et':'Muayeneyi Başlat',()=>void start(),occupied||view.segments.length>0)}{button('Muayeneyi Bitir',()=>void finish(),working||!recording&&!view.transcript&&!view.segments.length)}{view.segments.length>0&&!recording&&button('Bekleyen Sesleri Yazıya Çevir',()=>{setError('');void(async()=>{await persist({...draft.current,segments:draft.current.segments.map(s=>({...s,ready:true}))});await drain()})().catch(()=>setError('Ses taslağı güncellenemedi.'))},occupied)}<Pressable accessibilityRole="button" disabled={occupied||disabled||!ready} onPress={()=>Alert.alert('Muayene taslağı silinsin mi?','Bu cihazdaki metin ve bekleyen sesler temizlenir. Hasta dosyasına kaydedilen onaylı bilgiler bu işlemle silinmez.',[{text:'Vazgeç',style:'cancel'},{text:'Sil',style:'destructive',onPress:()=>void clear()}])} style={s.button}><Text style={s.action}>Taslağı ve Yerel Sesleri Sil</Text></Pressable>{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}</View>;
+ return <View style={s.card}><Text style={s.title}>Canlı Muayene Kaydı</Text><Text accessibilityLiveRegion="polite" style={s.meta}>{recording?'● Mikrofon açık':transcribing?'Konuşma yazıya çevriliyor…':view.ended?'Muayene bitirildi':'Mikrofon kapalı'} · {formatVoiceElapsed(elapsedMs)}</Text><Text style={s.meta}>Dinlerken yalnızca konuşma metni hazırlanır. Klinik çıkarım muayeneyi bitirdiğinizde başlar. Ses kısa parçalar hâlinde işlenir; metin cihazda güvenli depoda tutulur. Bekleyen sesler uygulamanın özel dosya alanındadır. 24 saatten eski taslak, bu muayene yeniden açıldığında temizlenir.</Text>{!ready&&<ActivityIndicator/>}{recording?button('Duraklat',()=>void pause(),working):button(view.transcript?'Devam Et':'Muayeneyi Başlat',()=>void start(),occupied||view.segments.length>0)}{button('Muayeneyi Bitir',()=>void finish(),working||!recording&&!view.transcript&&!view.segments.length)}{view.segments.length>0&&!recording&&button('Bekleyen Sesleri Yazıya Çevir',()=>{setError('');void(async()=>{await persist({...draft.current,segments:draft.current.segments.map(s=>({...s,ready:true}))});await drain()})().catch(()=>setError('Ses taslağı güncellenemedi.'))},occupied)}{indeterminateSegmentId&&<View style={s.retryNotice}><Text style={s.retryText}>Önceki isteğin sonucu kesinleşmedi. Aynı anahtarla ikinci AI çağrısı yapılmaz. Yeni deneme ayrı bir Gemini çağrısı oluşturabilir.</Text>{button('Yeni anahtarla yeniden dene',retryWithNewKey,occupied)}</View>}<Pressable accessibilityRole="button" disabled={occupied||disabled||!ready} onPress={()=>Alert.alert('Muayene taslağı silinsin mi?','Bu cihazdaki metin ve bekleyen sesler temizlenir. Hasta dosyasına kaydedilen onaylı bilgiler bu işlemle silinmez.',[{text:'Vazgeç',style:'cancel'},{text:'Sil',style:'destructive',onPress:()=>void clear()}])} style={s.button}><Text style={s.action}>Taslağı ve Yerel Sesleri Sil</Text></Pressable>{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}</View>;
 }
-const s=StyleSheet.create({card:{marginTop:14,padding:14,borderWidth:1,borderColor:'#E1E7EF',borderRadius:13,gap:10},title:{fontSize:17,fontWeight:'800',color:'#071B35'},meta:{color:'#63748A',lineHeight:21},button:{padding:13,minHeight:44,borderRadius:10,backgroundColor:'#E8F0FF'},action:{color:'#1769AA',fontWeight:'800',textAlign:'center'},error:{color:'#B42318',lineHeight:21}});
+const s=StyleSheet.create({card:{marginTop:14,padding:14,borderWidth:1,borderColor:'#E1E7EF',borderRadius:13,gap:10},title:{fontSize:17,fontWeight:'800',color:'#071B35'},meta:{color:'#63748A',lineHeight:21},retryNotice:{padding:10,borderRadius:10,backgroundColor:'#FFF7E8',gap:8},retryText:{color:'#8A4B0F',lineHeight:20},button:{padding:13,minHeight:44,borderRadius:10,backgroundColor:'#E8F0FF'},action:{color:'#1769AA',fontWeight:'800',textAlign:'center'},error:{color:'#B42318',lineHeight:21}});
