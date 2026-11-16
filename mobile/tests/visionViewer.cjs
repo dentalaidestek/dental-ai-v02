@@ -125,6 +125,31 @@ test('treatment tab renders the canonical result and only offers retry for retry
  await renderer.act(async()=>findPressable(t.root,'Tedavi').props.onPress());
  assert.ok(text(t.toJSON()).includes('Restorasyon değerlendirmesi'));
  assert.ok(text(t.toJSON()).includes('Klinik muayene ile doğrulanmalı.'));
- assert.ok(findPressable(t.root,'Analiz Et'));
+ assert.equal(findPressable(t.root,'Analiz Et'),undefined,'completed treatment must not expose a second paid analysis action');
+ await renderer.act(async()=>t.unmount());
+});
+
+
+test('failed retryable clinical job exposes retry instead of a duplicate new treatment request',async()=>{
+ const Component=ui(async()=>({pending:false,findings:[]})),retries=[];let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:12,assetId:4,clinicalJob:{id:88,kind:'VISION',status:'FAILED',retryable:true},onRunTreatmentAnalysis:async()=>{throw Error('must not start a new analysis')},onRetryTreatmentAnalysis:async()=>{retries.push(88);return true},onClose(){}})));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ await renderer.act(async()=>findPressable(t.root,'Tedavi').props.onPress());
+ assert.ok(findPressable(t.root,'Analiz tamamlanamadı — yeniden dene'));
+ assert.equal(findPressable(t.root,'Analiz Et'),undefined);
+ await renderer.act(async()=>findPressable(t.root,'Analiz tamamlanamadı — yeniden dene').props.onPress());
+ assert.deepEqual(retries,[88]);
+ await renderer.act(async()=>t.unmount());
+});
+
+test('pending parent note and busy state lock chart writes before the callback',async()=>{
+ const Component=ui(async()=>({pending:false,findings:[]})),saved=[];let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:13,assetId:4,notePending:true,parentBusy:false,onSaveClinicalNote:async value=>{saved.push(value);return true},onClose(){}})));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ await renderer.act(async()=>findPressable(t.root,'Klinik Bilgi').props.onPress());
+ const save=findPressable(t.root,'Klinik Notu Kaydet');
+ assert.equal(save.props.disabled,true);
+ assert.ok(text(t.toJSON()).includes('Bekleyen hekim notu ana klinik ekranda doğrulanmadan'));
+ assert.equal(saved.length,0);
  await renderer.act(async()=>t.unmount());
 });
