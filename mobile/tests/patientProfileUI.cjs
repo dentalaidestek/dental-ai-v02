@@ -228,3 +228,33 @@ test('patient profile edit validation matches the web form and mobile API contra
  }
  assert.equal(validate({first_name:'Ada',last_name:'Kaya',phone:'   '}),null);
 });
+
+test('invalid native patient phone is blocked before mutation and valid Turkish mobile number saves',async()=>{
+ const writes=[];
+ const Profile=component({
+  getPatient:async()=>patient(8),
+  editPatient:async(_token,_id,payload)=>{writes.push(payload);return {ok:true,patient:patient(8).patient,edit_revision:'b'.repeat(64)}}
+ });
+ let tree;
+ const press=async(label)=>{
+  const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));
+  assert.ok(item,'missing '+label);
+  await renderer.act(async()=>item.props.onPress());
+ };
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ await press('Hasta Bilgileri');
+ let phone=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Telefon');
+ assert.ok(phone);
+ assert.equal(phone.props.maxLength,11,'native phone field must mirror the web form length');
+ await renderer.act(async()=>phone.props.onChangeText('0512345678'));
+ await press('Değişiklikleri Kaydet');
+ assert.equal(writes.length,0,'invalid phone must not reach the mobile API');
+ assert.ok(text(tree.toJSON()).includes('Telefon numarası 05 ile başlamalı'));
+ phone=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Telefon');
+ await renderer.act(async()=>phone.props.onChangeText('05123456789'));
+ await press('Değişiklikleri Kaydet');
+ assert.equal(writes.length,1);
+ assert.equal(writes[0].phone,'05123456789');
+ assert.equal(writes[0].expected_revision,'a'.repeat(64));
+ await renderer.act(async()=>tree.unmount());
+});
