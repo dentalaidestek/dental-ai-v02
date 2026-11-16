@@ -54,3 +54,14 @@ This does not establish whole-app web parity. The remaining first-prompt work in
 Patient workflow still needs physical Android/iOS acceptance, durable upload/analysis receipts, protected clinical image metadata verification across every upload path, simultaneous-edit conflict behavior and pixel-level design review. In particular, the current direct analysis-image validation path has not been certified for EXIF removal; patient-gallery uploads use the existing sanitizer. General Program remains incomplete even though the patient → appointment form now has native date/time inputs.
 
 These backend adapters are source-only until a separately authorized deployment. A source commit does not update an installed APK. CI status is recorded on PR #257 and issue #258 after pushing; local passing tests do not imply remote CI passed.
+
+
+## 2026-11-16 — Tooth chart patient context and lifecycle refresh
+
+Re-read the current web `patient_detail.html` and `tooth_chart.html` before changing the native chart. The web chart header identifies the patient by name and age; the native chart previously showed only the generic subtitle “Hasta diş kayıtları”. Added the same patient-specific name/age context above the native FDI chart, including a valid zero-year age and a safe fallback for incomplete names.
+
+A second gap was stale chart state after returning from another screen or foregrounding the app. The native chart loaded on mount and realtime updates, but did not refresh on screen focus or app resume. It now refreshes the currently owned patient when focused again, when the app returns to active, and for patient/tooth realtime events. Refresh responses are sequence-guarded so an older request cannot overwrite a newer one. Refresh updates server-backed chart data without resetting the selected tooth or unsaved note/surface/treatment form state. Account/patient scope changes invalidate pending refreshes.
+
+Regression coverage added to `mobile/tests/toothChartLifecycle.cjs` and included in `npm run test:beta`: patient identity formatting (including age zero), native header identity, focus/foreground refresh preserving an unsaved tooth note, payload.patient_id event routing, and out-of-order refresh response rejection.
+
+The tests are committed but have not been executed in this environment because the repository cannot be cloned here (GitHub DNS resolution fails) and the current Actions jobs fail before runner steps. No typecheck, Android build, or device acceptance is claimed for this change.
