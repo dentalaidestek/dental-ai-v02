@@ -82,3 +82,22 @@ Re-read the web patient information form and canonical `/patients/{id}/edit` han
 Regression sources added/updated: `tests/test_mobile_patient_parity.py`, `mobile/tests/patientApi.cjs`, and `mobile/tests/patientProfileUI.cjs`. They cover revision shape, successful revision advancement, stale-write 409 without overwriting the current record, malformed revision rejection, native request serialization and explicit conflict reload.
 
 These tests are committed but not executed in a complete checkout. The current GitHub Actions jobs again failed before any step; no TypeScript, pytest or Android build result is claimed. Physical two-account web/native conflict acceptance remains open. Treatment-create/update receipts and uncertain delete reconciliation are still separate outstanding work.
+
+## 2026-11-16 — Native patient-edit phone validation parity
+
+Web-first comparison was completed before the native change. The web patient form in `app/templates/patient_detail.html` marks first/last name as required and constrains phone input to `05[0-9]{9}`. The web edit handler and the canonical mobile patient API both independently reject a non-empty phone unless it is exactly 11 digits beginning with `05`.
+
+The native profile already had the same server-side rule, but its phone TextInput exposed a 2,000-character limit and relied on a phone keyboard only. Invalid or pasted text therefore travelled to the API and returned a server validation error instead of being caught at the form boundary.
+
+Branch-only correction:
+- Added a pure patient-edit validator matching the required name and optional Turkish mobile-phone contract.
+- Native phone input now has the same 11-character cap and blocks invalid values before any network mutation.
+- Kept server-side validation and patient revision conflict handling unchanged; the client check is not an authorization or integrity boundary.
+- Did not invent a T.C. identity checksum rule because the web form does not enforce one.
+- Added helper and renderer regressions for empty/valid/invalid phone values, 11-character input limit, zero API writes on invalid input, and successful submission with the loaded patient revision.
+
+Commits: `d14b720`, `93e87fe`, `750534f`, `56c0e05` (implementation and regressions); documentation follows in the current branch.
+
+Validation limit: the new tests are registered through the existing `patientProfileUI.cjs` entry in `npm run test:beta`, but the repository suite has not executed in this environment. Latest Android typecheck and security jobs again failed before runner assignment: job records contain no executed steps and log downloads return `BlobNotFound 404`. This does not establish a TypeScript or pytest failure. No green CI is claimed.
+
+No main merge, production deployment, database migration, APK/IPA publication or patient-data mutation.
