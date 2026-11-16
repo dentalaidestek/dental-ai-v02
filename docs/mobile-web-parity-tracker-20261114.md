@@ -357,3 +357,12 @@ Tests added: native API request/provenance validation, native confirmation/confl
 The tests are committed but were not run here. Latest Actions still report runner allocation failure (`runner_id=0`, no executed steps, job log `BlobNotFound 404`); do not treat this as a compiler/test result. No main merge, production deploy, schema migration, APK/IPA publication or patient-record mutation.
 
 Next module after this voice-history parity increment: remaining tooth-chart surface/history parity, then clinical-media and AI image-analysis result parity. Voice microphone/device acceptance and provider accuracy still require real Android/iOS devices.
+
+
+## Latest continuation — voice evidence visibility (2026-11-16)
+
+Web-first comparison: `app/templates/voice_exam_panel.html` + `app/static/voice-exam.js` render an expandable supporting quote for every extracted field and distinguish prior approved history. Native previously showed only the extracted value in both the review and final approval checklist. Added a shared native evidence presenter and displayed the exact bounded quote, history/current provenance, missing-evidence warning and clinician-edited marker in both stages; tooth selections show their supporting quote too. Field quotes remain display-only and are not added to the patient profile payload. No provider/API/schema/automatic-write changes.
+
+Commits: `b952919` helper, `8c60646` review UI, `a8539cd` approval UI, `b96c1d5` regression suite, `d0ab2cf` payload assertion, `90b6574` test registration, `b0caa94` CommonJS test fix, `995974e` voice workflow evidence note. Four isolated helper tests passed; integration/source-contract test is registered but not yet run with the full mobile dependency tree. No full typecheck, beta suite, Android/iOS device test or clinical acceptance is claimed.
+
+The next gate remains execution of the full suite on a working runner and physical-device review. No main merge, production deploy, patient mutation or store publication.
