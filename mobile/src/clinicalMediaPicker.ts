@@ -43,9 +43,13 @@ export function normalizeClinicalMediaAssets(
         !/^(?:file|content):\/\//i.test(asset.uri) || /[\x00-\x1f]/.test(asset.uri) || asset.uri.includes('..')) {
       throw new Error('Klinik görüntü kaynağı geçersiz. Görüntüyü yeniden seçin.');
     }
-    if (typeof asset.fileSize === 'number' && Number.isFinite(asset.fileSize) &&
-        asset.fileSize > CLINICAL_MEDIA_PICKER_MAX_BYTES) {
-      throw new Error('Her klinik görüntü en fazla 12 MB olabilir.');
+    if (typeof asset.fileSize === 'number') {
+      if (!Number.isFinite(asset.fileSize) || asset.fileSize < 0) {
+        throw new Error('Klinik görüntü boyutu geçersiz. Görüntüyü yeniden seçin.');
+      }
+      if (asset.fileSize > CLINICAL_MEDIA_PICKER_MAX_BYTES) {
+        throw new Error('Her klinik görüntü en fazla 12 MB olabilir.');
+      }
     }
 
     const declaredMime = typeof asset.mimeType === 'string' ? asset.mimeType.trim().toLowerCase() : '';
@@ -63,6 +67,13 @@ export function normalizeClinicalMediaAssets(
     const uriExtension = uriPath.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase() || '';
     if (nameExtension && !Object.prototype.hasOwnProperty.call(MIME_BY_EXTENSION, nameExtension)) {
       throw new Error('Klinik görüntü dosya uzantısı desteklenmiyor.');
+    }
+    // When both sources expose a supported extension, disagreement is
+    // ambiguous: do not guess which name describes the bytes being uploaded.
+    if (nameExtension && uriExtension &&
+        Object.prototype.hasOwnProperty.call(MIME_BY_EXTENSION, uriExtension) &&
+        nameExtension !== uriExtension) {
+      throw new Error('Dosya adı ve cihaz kaynağının uzantısı eşleşmiyor. Görüntüyü yeniden seçin.');
     }
 
     const extension = nameExtension ||
