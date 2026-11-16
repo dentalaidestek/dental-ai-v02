@@ -12,7 +12,7 @@ export type NativeNotificationTarget =
   | { kind: "navigate"; route: NativeNotificationRoute };
 
 function positiveId(raw: string): number | null {
-  if (!/^\\d{1,15}$/.test(raw)) return null;
+  if (!/^\d{1,15}$/.test(raw)) return null;
   const id = Number(raw);
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
@@ -23,18 +23,18 @@ export function resolveNativeNotificationTarget(value: unknown): NativeNotificat
   if (typeof value !== "string") return { kind: "unsupported", path: "" };
   const raw = value.trim();
   if (!raw) return { kind: "none" };
-  if (!raw.startsWith("/") || raw.startsWith("//") || /[\\\\\\u0000-\\u001f\\u007f]/.test(raw)) {
+  if (!raw.startsWith("/") || raw.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(raw)) {
     return { kind: "unsupported", path: "" };
   }
   const separator = raw.search(/[?#]/);
-  const path = (separator < 0 ? raw : raw.slice(0, separator)).replace(/\\/+$/, "") || "/";
+  const path = (separator < 0 ? raw : raw.slice(0, separator)).replace(/\/+$/, "") || "/";
 
-  const caseMatch = path.match(/^\\/(?:expert-support\\/cases|expert\\/consultations|consultations|cases)\\/(\\d+)(?:\\/messages)?$/);
+  const caseMatch = path.match(/^\/(?:expert-support\/cases|expert\/consultations|consultations|cases)\/(\d+)(?:\/messages)?$/);
   if (caseMatch) {
     const id = positiveId(caseMatch[1]);
     return id ? { kind: "navigate", route: { screen: "ConsultationChat", params: { id } } } : { kind: "unsupported", path };
   }
-  const patientMatch = path.match(/^\\/patients\\/(\\d+)(?:\\/.*)?$/);
+  const patientMatch = path.match(/^\/patients\/(\d+)(?:\/.*)?$/);
   if (patientMatch) {
     const id = positiveId(patientMatch[1]);
     return id ? { kind: "navigate", route: { screen: "Patients", params: { screen: "PatientDetail", params: { id } } } } : { kind: "unsupported", path };
