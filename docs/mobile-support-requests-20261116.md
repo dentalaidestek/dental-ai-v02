@@ -29,7 +29,7 @@ API routes under `/api/mobile/v1/support/tickets`:
 - POST read cursor
 - POST reply (authenticated; closed/turn rules match web)
 
-A durable `MobileSupportMutationReceipt` records per-user create/reply idempotency keys and payload hashes. Reusing a key with identical content returns the original ticket/message; reusing it with different content returns HTTP 409. Reply uses a row lock and the existing web `_support_user_can_reply` rule. The mobile client persists pending draft content and its idempotency key in SecureStore so a lost response/app restart can retry the same mutation.
+A durable `MobileSupportMutationReceipt` table (schema revision 13) records per-user create/reply idempotency keys and payload hashes. Reusing a key with identical content returns the original ticket/message; reusing it with different content returns HTTP 409. Reply uses a row lock and the existing web `_support_user_can_reply` rule. The mobile client persists pending draft content and its idempotency key in SecureStore so a lost response/app restart can retry the same mutation.
 
 Native screen: `mobile/src/NativeSupportRequests.tsx`; reachable from the home quick actions and the native navigation stack. `/support-request` notification targets now resolve to that actual screen.
 
@@ -49,6 +49,8 @@ Native screen: `mobile/src/NativeSupportRequests.tsx`; reachable from the home q
 - `mobile/tests/supportRequests.cjs`: API/UI/security source contracts and durable draft behavior.
 - `mobile/tests/notificationTargets.cjs`: `/support-request` native route.
 - `mobile/package.json`: support regression added to `test:beta`.
+
+Production PostgreSQL requires `python -m app.migrate` to advance schema revision 12 to 13 and create the receipt table. Older supported revisions 10/11 create the receipt table in the same serialized upgrade path. SQLite/local initialization creates it through SQLModel metadata. This migration is code only; it has not been run against production.
 
 No claim of passing pytest, TypeScript, Expo or device tests: the connected GitHub Actions runs have not been associated with the latest content-API commits, and this environment did not execute the repository test commands.
 
