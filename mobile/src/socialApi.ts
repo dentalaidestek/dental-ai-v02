@@ -30,6 +30,7 @@ export type SocialPost = {
   author_photo?: string;
   author_specialty?: string;
   author_followed?: boolean;
+  author_support_available?: boolean;
   text: string;
   status: string;
   version: number;

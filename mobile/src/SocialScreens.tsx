@@ -828,6 +828,7 @@ function PostCard({
   onImage,
   onEdit,
   onFollow,
+  onSupport,
 }: {
   token: string;
   userId: number;
@@ -838,6 +839,7 @@ function PostCard({
   onImage: (url: string) => void;
   onEdit: () => void;
   onFollow: (authorId: number, followed: boolean) => void;
+  onSupport: () => void;
 }) {
   const [busy, setBusy] = useState(false),
     [followBusy, setFollowBusy] = useState(false),
@@ -982,6 +984,23 @@ function PostCard({
           <Text style={s.action}>Yorumlar · {post.comment_count}</Text>
         </Pressable>
       </View>
+      {post.status === "PUBLISHED" && (
+        <View style={s.row}>
+          <Pressable accessibilityRole="button" onPress={onProfile}>
+            <Text style={s.action}>Uzman profili</Text>
+          </Pressable>
+          {post.author_id !== userId &&
+            post.author_support_available === true && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Uzmandan Destek Al"
+                onPress={onSupport}
+              >
+                <Text style={s.action}>Uzmandan Destek Al</Text>
+              </Pressable>
+            )}
+        </View>
+      )}
       <Text style={s.error}>{error}</Text>
       {menuOpen && (
         <Sheet title="Gönderi işlemleri" onClose={() => setMenuOpen(false)}>
@@ -1276,6 +1295,14 @@ export function DentalFlow({
             userId={user.id}
             post={item}
             onFollow={updateFollow}
+            onSupport={() =>
+              navigation.navigate("NewConsultation", {
+                expert: {
+                  user_id: item.author_id,
+                  display_name: item.author_name,
+                },
+              })
+            }
             onUpdate={(p) => update(p, item.id)}
             onComments={() => setComments(item)}
             onProfile={() => profile(item.author_id, item.author_name)}
