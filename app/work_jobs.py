@@ -303,64 +303,19 @@ def collect_garbage(engine):
         session.commit()
 
 
-def _migrate_legacy_patient_media_receipts(
-    session: Session, key: bytes, patient_model, limit: int = 100,
-) -> int:
-    """Key live-patient upload fingerprints in bounded batches; no image reads or AI work."""
-    from app.patient_media_receipts import PatientMediaReceiptCorrupt, upgrade_legacy_receipt
-
-    live_patient = select(patient_model.id).where(
-        patient_model.id == WorkJob.resource_id,
-        patient_model.owner_user_id == WorkJob.owner_user_id,
-    ).exists()
-    statement = select(WorkJob).where(
-        WorkJob.kind == "PATIENT_MEDIA_RECEIPT",
-        WorkJob.status == "DONE",
-        live_patient,
-        ~WorkJob.payload_json.contains('"fingerprint_version"'),
-        or_(WorkJob.error_code == None, WorkJob.error_code != "FINGERPRINT_MIGRATION_INVALID"),
-    ).order_by(WorkJob.id).limit(max(1, min(int(limit), 100)))
-    if session.get_bind().dialect.name == "postgresql":
-        statement = statement.with_for_update(skip_locked=True)
-    rows = session.exec(statement).all()
-    migrated = 0
-    for row in rows:
-        try:
-            changed = upgrade_legacy_receipt(
-                row, digest=None, legacy_digest=None, key=key,
-                owner_id=row.owner_user_id, patient_id=row.resource_id,
-            )
-        except PatientMediaReceiptCorrupt:
-            # Keep the receipt and fail closed. Do not repeatedly scan a corrupt row.
-            row.error_code = "FINGERPRINT_MIGRATION_INVALID"
-        else:
-            if changed:
-                migrated += 1
-            row.error_code = None
-        session.add(row)
-    return migrated
-
-
 def prune_history(engine):
     from sqlalchemy import delete
     from app.main import Analysis, Patient
     from app.voice_asr_receipts import expire_voice_asr_receipts
-    from app.patient_media_receipts import encryption_key as patient_media_encryption_key, PatientMediaReceiptKeyUnavailable
     # Upload and treatment receipts remain authoritative while their parent
-    # resource exists. Voice results expire after 24h; legacy media fingerprints
-    # are converted to keyed, owner/patient-scoped HMACs in bounded batches.
+    # resource exists. Voice ASR receipts have their own 24h encrypted-result
+    # TTL and seven-day tombstone retention; no raw audio is stored.
     live_upload_receipt=and_(WorkJob.kind=='UPLOAD_RECEIPT',WorkJob.resource_type=='ANALYSIS',select(Analysis.id).where(Analysis.id==WorkJob.resource_id).exists())
     live_treatment_receipt=and_(WorkJob.kind=='TREATMENT_RECEIPT',WorkJob.resource_type=='PATIENT',select(Patient.id).where(Patient.id==WorkJob.resource_id).exists())
     live_patient_media_receipt=and_(WorkJob.kind=='PATIENT_MEDIA_RECEIPT',WorkJob.resource_type=='PATIENT',select(Patient.id).where(Patient.id==WorkJob.resource_id).exists())
     with Session(engine) as session:
         if _voice_receipt_prune_due():
             expire_voice_asr_receipts(session, patient_model=Patient, limit=100)
-            try:
-                media_key = patient_media_encryption_key()
-            except PatientMediaReceiptKeyUnavailable:
-                media_key = None
-            if media_key is not None:
-                _migrate_legacy_patient_media_receipts(session, media_key, Patient, limit=100)
         ids = session.exec(select(WorkJob.id).where(
             WorkJob.status.in_(["DONE", "CANCELLED", "FAILED"]),
             WorkJob.updated_at < now() - timedelta(days=30),
