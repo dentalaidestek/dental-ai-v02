@@ -189,8 +189,12 @@ async def create_mobile_analysis(
     if any(not image or not image.filename for image in images):
         raise HTTPException(status_code=422, detail="Her klinik görüntünün dosya adı bulunmalıdır.")
     valid = images
-    if not 1 <= len(selected_media_ids)+len(valid) <= 4:
-        raise HTTPException(status_code=422, detail="Kayıtlı ve yeni görüntülerin toplamı 1 ile 4 arasında olmalıdır.")
+    media_count=len(selected_media_ids)+len(valid)
+    has_clinical_context=bool((tooth_number or "").strip() or (clinical_notes or "").strip())
+    if media_count>4:
+        raise HTTPException(status_code=422, detail="Kayıtlı ve yeni görüntülerin toplamı en fazla 4 olabilir.")
+    if media_count==0 and not has_clinical_context:
+        raise HTTPException(status_code=422, detail="Görüntü olmadan analiz başlatmak için diş numarası veya klinik bilgi girin.")
     allowed = {".jpg", ".jpeg", ".png", ".webp"}
     if any(Path(Path(image.filename).name).suffix.lower() not in allowed for image in valid):
         raise HTTPException(status_code=422, detail="Yalnızca JPEG, PNG veya WebP görüntüler yüklenebilir.")
@@ -277,7 +281,9 @@ async def create_mobile_analysis(
             session.add_all(assets)
             session.flush()
             # Reserve canonical queue capacity before any storage publication.
-            job=_enqueue_work(session,'VISION','ANALYSIS',analysis.id)
+            # Match the canonical web handler: image-backed work uses VISION;
+            # clinical-context-only work uses the preliminary analysis queue.
+            job=_enqueue_work(session,'VISION' if assets else 'PRELIMINARY','ANALYSIS',analysis.id)
             for temporary,destination in staged:
                 shutil.move(str(temporary),str(destination))
                 await run_in_threadpool(storage_persist_file,destination)
