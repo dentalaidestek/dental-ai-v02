@@ -8,7 +8,7 @@ const path=(analysis:number)=>'/analyses/'+id(analysis);
 export async function getClinical(token:string,analysis:number){
  const r=await request<ClinicalWorkspace>(path(analysis)+'/clinical',token);
  const assets=Array.isArray(r?.assets)?r.assets:[];
- const validAssets=assets.length<=4&&new Set(assets.map(x=>x?.id)).size===assets.length&&assets.every(x=>x&&Number.isSafeInteger(x.id)&&x.id>0&&typeof x.name==='string'&&x.name.length<=255&&typeof x.image_type==='string'&&x.image_type.length<=40&&typeof x.has_vision==='boolean'&&typeof x.url==='string'&&x.url.length<=512);
+ const validAssets=assets.length<=4&&new Set(assets.map(x=>x?.id)).size===assets.length&&assets.every(x=>x&&Number.isSafeInteger(x.id)&&x.id>0&&typeof x.name==='string'&&x.name.length<=255&&typeof x.image_type==='string'&&x.image_type.length<=40&&typeof x.has_vision==='boolean'&&typeof x.url==='string'&&x.url===`/api/mobile/v1/analyses/${analysis}/assets/${x.id}`);
  const job=r?.job;
  const validJob=job===null||!!job&&Number.isSafeInteger(job.id)&&job.id>0&&['VISION','PRELIMINARY','FINAL'].includes(job.kind)&&typeof job.status==='string'&&job.status.length>0&&job.status.length<=40&&typeof job.retryable==='boolean';
  if(!r||r.analysis_id!==analysis||!Number.isSafeInteger(r.patient_id)||r.patient_id<1||typeof r.patient_anonymous_id!=='string'||!r.patient_anonymous_id.trim()||r.patient_anonymous_id.length>80||!validAssets||!/^([0-9a-f]{64})$/.test(r.revision)||typeof r.status!=='string'||typeof r.clinical_notes!=='string'&&r.clinical_notes!==null||typeof r.tooth_number!=='string'&&r.tooth_number!==null||!validJob||r.result!==null&&(!r.result||typeof r.result!=='object'||typeof r.result.status!=='string'))throw Error('Klinik sonuç doğrulanamadı.');
