@@ -454,3 +454,9 @@ The code commit that triggered the final verification for this pass was `2b64d14
 - Voice examination `43952904546`: job `133599818446`.
 
 The raw GitHub jobs endpoint confirms every job has `runner_id=0`, empty `runner_name`, `labels=[ubuntu-latest]`, `steps=[]`, and a two-to-three-second start-to-failure interval. Android typecheck, Android APK, Security recovery, Admin security, Expert social and Voice all failed before any workflow step. Job-log downloads for typecheck/security/voice return Azure `BlobNotFound 404`; combined commit status is empty. No npm install, tsc, Gradle, Node regression, pytest or provider test ran. The workflow YAML uses standard `ubuntu-latest`; the available GitHub API does not expose the owner/account-level runner quota, billing or hosted-runner entitlement required to fix this externally. No source-level compiler/test failure has been established.
+
+### Native clinical-media recovery-state correction
+
+A follow-up web/backend/native error-path review found that the newly explicit missing-key 503 was still classified by the native gallery as an ambiguous upload. The route returns this 503 before reading/persisting the file, so the UI must not imply that the server may already have committed it. Added `clinicalMediaRecovery.ts` and updated `NativePatientMedia`: 503 is now a known configuration rejection, the encrypted local draft remains intact, and the user is told not to delete it or create a new batch until the server key is configured. 409/429/5xx/timeouts remain uncertain and continue to require receipt reconciliation.
+
+Commits: `a897a46`, `fb67566`, `e3f374a`, `04413be`. Four isolated Node classifier tests passed; the committed fifth UI/source assertion and full beta/typecheck suite remain unexecuted. No main merge or deploy.
