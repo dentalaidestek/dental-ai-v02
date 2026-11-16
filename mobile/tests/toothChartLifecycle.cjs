@@ -77,6 +77,23 @@ test('native tooth chart switches to primary dentition for a web-selected primar
  await renderer.act(async()=>tree.unmount());
 });
 
+
+test('a manual dentition toggle is not overridden by a late initial-focus response',async()=>{
+ focused=true;lastEvent=null;appListeners=[];const focus=deferred();
+ const Chart=chartComponent({getPatient:async()=>patient(8),getToothChartFocus:()=>focus.promise});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
+ const primaryToggle=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children)==='Süt Dişleri'));
+ assert.ok(primaryToggle);
+ await renderer.act(async()=>primaryToggle.props.onPress());
+ await renderer.act(async()=>{focus.resolve('36');await flush()});
+ const currentPrimaryToggle=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children)==='Süt Dişleri'));
+ assert.equal(currentPrimaryToggle.props.accessibilityState.selected,true);
+ const selectedTeeth=tree.root.findAllByType('Pressable').filter(node=>node.props.accessibilityState?.selected===true&&String(node.props.accessibilityLabel||'').startsWith('Diş '));
+ assert.equal(selectedTeeth.length,0,'manual dentition choice must win over the delayed web focus');
+ await renderer.act(async()=>tree.unmount());
+});
+
 test('a delayed initial-focus response never overrides a tooth selected by the clinician',async()=>{
  focused=true;lastEvent=null;appListeners=[];const focus=deferred();
  const Chart=chartComponent({getPatient:async()=>patient(8),getToothChartFocus:()=>focus.promise});
