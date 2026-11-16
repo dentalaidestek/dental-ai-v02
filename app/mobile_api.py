@@ -1481,6 +1481,8 @@ def _patient_media_batch_usage(session: Session, user: User, patient_id: int,
     for receipt in receipts:
         try:
             payload = json.loads(receipt.payload_json or "{}")
+            if not isinstance(payload, dict):
+                raise ValueError("invalid patient media batch payload")
             file_bytes = payload.get("file_bytes")
             if (payload.get("batch_id") != batch_id or
                     payload.get("patient_id") != patient_id or
