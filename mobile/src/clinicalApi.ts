@@ -3,6 +3,18 @@ export type ClinicalJob={id:number;kind:'VISION'|'PRELIMINARY'|'FINAL';status:st
 export type ClinicalResult={status:string;most_likely?:string;findings?:unknown[];treatment_options?:string[];treatment_cautions?:string[];preferred_approach?:string;differential?:string[];recommended_evaluation?:string[];uncertainty?:string;preliminary_assessment?:string;questions?:Array<{question:string;type:string}>};
 export type ClinicalWorkspace={analysis_id:number;patient_id:number;patient_anonymous_id:string;status:string;clinical_notes:string|null;tooth_number:string|null;revision:string;result:ClinicalResult|null;job:ClinicalJob|null;assets:Array<{id:number;name:string;image_type:string;has_vision:boolean;url:string}>};
 export type ClinicalIntent={user:number;analysis:number;revision:string;answers:Record<string,string>};
+export type ClinicalNoteIntent={user:number;analysis:number;note:string;finding:string;tooth:string};
+export const clinicalNoteIntentKey=(user:number,analysis:number)=>`dai.clinical.note.${id(user)}.${id(analysis)}`;
+export function parseClinicalNoteIntent(raw:string,user:number,analysis:number):ClinicalNoteIntent{
+ const value=JSON.parse(raw);
+ if(!value||value.user!==user||value.analysis!==analysis||typeof value.note!=='string'||value.note.length>2000||typeof value.finding!=='string'||value.finding.length>500||typeof value.tooth!=='string'||value.tooth.length>2||value.tooth!==''&&!/^(?:[1-4][1-8]|[5-8][1-5])$/.test(value.tooth)||!value.note.trim()&&!value.finding.trim())throw Error('Bekleyen hekim notu doğrulanamadı. Analiz notlarını kontrol edin.');
+ return {user,analysis,note:value.note,finding:value.finding,tooth:value.tooth};
+}
+export function clinicalNoteLine(value:ClinicalNoteIntent){
+ const prefix=value.tooth?`[Diş ${value.tooth}] `:'';
+ return value.finding?prefix+'Manuel bulgu: '+value.finding+(value.note?' — '+value.note:''):prefix+value.note;
+}
+
 const id=(value:number)=>{if(!Number.isSafeInteger(value)||value<1)throw Error('Geçersiz analiz kimliği.');return value};
 const path=(analysis:number)=>'/analyses/'+id(analysis);
 export async function getClinical(token:string,analysis:number){
