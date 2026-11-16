@@ -38,6 +38,16 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
   init.signal?.removeEventListener("abort",abort);
  }
 }
+export type SupportTicketStatus="OPEN"|"IN_PROGRESS"|"USER_REPLIED"|"ANSWERED"|"CLOSED";
+export type SupportTicket={id:number;subject:string;initial_message:string;status:SupportTicketStatus;created_at:string;updated_at:string;last_message?:string;unread_count:number;can_reply:boolean};
+export type SupportMessage={id:number;sender_role:"USER"|"ADMIN";message:string;created_at:string};
+const supportKey=()=>("support_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,18)).replace(/[^A-Za-z0-9_-]/g,"");
+export const getSupportTickets=async(t:string)=>{const r=await req<{items:SupportTicket[];total:number}>("/support/tickets",t);if(!Array.isArray(r.items)||r.items.some(x=>!Number.isSafeInteger(x.id)||x.id<=0||typeof x.subject!=="string"||!["OPEN","IN_PROGRESS","USER_REPLIED","ANSWERED","CLOSED"].includes(x.status)))throw Error("Destek talepleri doğrulanamadı.");return r};
+export const createSupportTicket=(t:string,subject:string,message:string,key=supportKey())=>{if(!subject.trim()||subject.trim().length>160||!message.trim()||message.trim().length>4000)throw Error("Konu ve açıklama alanlarını kontrol edin.");return req<{ok:boolean;ticket_id:number;status:string;replayed:boolean}>("/support/tickets",t,{method:"POST",body:JSON.stringify({subject:subject.trim(),message:message.trim(),request_key:key})})};
+export const getSupportTicket=async(t:string,id:number,before?:number)=>{if(!Number.isSafeInteger(id)||id<=0||(before!==undefined&&(!Number.isSafeInteger(before)||before<=0)))throw Error("Geçersiz destek talebi.");const r=await req<{ticket:SupportTicket;messages:SupportMessage[];has_more:boolean;next_before_id:number|null;unread_count:number}>("/support/tickets/"+id+(before?("?before_id="+before):""),t);if(r.ticket?.id!==id||!Array.isArray(r.messages)||r.messages.some(m=>!Number.isSafeInteger(m.id)||typeof m.message!=="string"))throw Error("Destek konuşması doğrulanamadı.");return r};
+export const markSupportTicketRead=(t:string,id:number,through?:number)=>req<{ok:boolean;unread_count:number}>("/support/tickets/"+id+"/read"+(through?("?through_message_id="+through):""),t,{method:"POST"});
+export const replySupportTicket=(t:string,id:number,message:string,key=supportKey())=>{if(!Number.isSafeInteger(id)||id<=0||!message.trim()||message.trim().length>4000)throw Error("Yanıt alanını kontrol edin.");return req<{ok:boolean;ticket_id:number;message_id:number;status:string;replayed:boolean}>("/support/tickets/"+id+"/reply",t,{method:"POST",body:JSON.stringify({message:message.trim(),request_key:key})})};
+
 export type Notice={id:number;title:string;message:string;notice_type:string;target_url?:string|null;read_at?:string|null;created_at:string};
 export type Expert={user_id:number;display_name:string;specialty:string;academic_title?:string|null;institution?:string|null;bio?:string|null;availability:string;consultation_price:number;rating_avg?:number|null;review_count:number};
 export type Consultation={id:number;other_user_id:number;other_display_name:string;specialty:string;tooth_region?:string|null;status:string;question:string;requested_at:string;last_message?:string|null;last_message_at?:string|null;messages_deleted_at?:string|null;unread_count:number};
