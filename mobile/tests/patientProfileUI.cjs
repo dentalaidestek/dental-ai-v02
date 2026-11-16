@@ -101,19 +101,38 @@ test('treatment validation 422 does not trap the clinician in uncertain state',a
  await renderer.act(async()=>tree.unmount());
 });
 
-test('uncertain treatment creation requires manual history verification before retry',async()=>{
- let calls=0;const Profile=component({getPatient:async()=>patient(8),createTreatment:async()=>{calls++;throw Object.assign(new Error('Sunucu yanıtı belirsiz'),{status:503})}});let tree;
- const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+test('uncertain treatment creation survives remount and reuses the exact secure request key',async()=>{
+ const storage=new Map(),calls=[];let first=true;
+ const make=()=>component({
+  getPatient:async()=>patient(8),
+  createTreatment:async(_token,_id,payload,requestKey)=>{
+   calls.push({payload,requestKey,stored:storage.has('dai.treatment.1.8')});
+   if(first){first=false;throw Object.assign(new Error('Sunucu yanıtı belirsiz'),{status:503})}
+   return {ok:true,treatment_id:9,edit_revision:'d'.repeat(64),replayed:true};
+  }
+ },'NativePatientProfile',storage);
+ const press=async(tree,label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ let tree,Profile=make();
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
- await press('Yeni Tedavi');
- const input=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Tedavi adı *');
+ await press(tree,'Yeni Tedavi');
+ const input=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Tedavi adı *');assert.ok(input);
  await renderer.act(async()=>input.props.onChangeText('Synthetic treatment'));
- await press('Tedaviyi Kaydet');
- assert.ok(text(tree.toJSON()).includes('Tekrar göndermeden önce geçmişi kontrol edin.'));
- await press('Tedaviyi Kaydet');assert.equal(calls,1,'uncertain treatment write must not duplicate');
+ await press(tree,'Tedaviyi Kaydet');
+ assert.ok(storage.has('dai.treatment.1.8'),'intent must be encrypted and persisted before network mutation');
+ assert.ok(calls[0].stored,'server request must never precede durable intent storage');
+ assert.ok(text(tree.toJSON()).includes('Aynı işlem anahtarı güvenli taslakta korundu'));
+ await renderer.act(async()=>tree.unmount());
+
+ Profile=make();
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ assert.ok(text(tree.toJSON()).includes('Bekleyen Tedaviyi Doğrula'));
+ await press(tree,'Bekleyen Tedaviyi Doğrula');
+ assert.equal(calls.length,2);
+ assert.equal(calls[0].requestKey,calls[1].requestKey,'restart must reuse the original request key');
+ assert.ok(calls[1].stored);
+ assert.ok(!storage.has('dai.treatment.1.8'),'confirmed receipt clears the secure intent');
  await renderer.act(async()=>tree.unmount());
 });
-
 
 test('stale patient revision preserves the draft until the clinician explicitly reloads current data',async()=>{
  let reads=0,attempted;
