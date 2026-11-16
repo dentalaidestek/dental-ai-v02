@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 from datetime import datetime
 from PIL import Image
 import io
+import json
 
 def test_patient_history_filters_tooth_and_marks_only_confirmed_voice_reviews(chat,monkeypatch):
     client,engine=chat;monkeypatch.setattr(mobile_analysis_api,'engine',engine)
@@ -70,7 +71,7 @@ def test_native_uploads_return_confirmed_success_after_persistence(chat,monkeypa
     with Session(engine) as s:
         s.add(main.Patient(id=8,anonymous_id='SYNTHETIC-UPLOAD',owner_user_id=1));s.commit()
     raw=io.BytesIO();Image.new('RGB',(8,8),'white').save(raw,format='PNG')
-    response=client.post('/api/mobile/v1/patients/8/media',files={'file':('synthetic.png',raw.getvalue(),'image/png')})
+    response=client.post('/api/mobile/v1/patients/8/media',data={'request_key':'synthetic-media-request-0001','batch_id':'synthetic-media-batch-0001','media_type':'PHOTO'},files={'file':('synthetic.png',raw.getvalue(),'image/png')})
     assert response.status_code==200,response.text
     assert response.json()['media']['id']>0
     response=client.post('/api/mobile/v1/analyses',data={'patient_id':'8'},files={'images':('synthetic.png',raw.getvalue(),'image/png')})
@@ -502,3 +503,115 @@ def test_patient_archive_accepts_twelve_images_and_rejects_thirteen(chat,monkeyp
     assert 'en fazla 12 görüntü' in rejected.text
     with Session(engine) as session:
         assert len(session.exec(select(main.PatientMedia).where(main.PatientMedia.patient_id==81)).all())==12
+
+
+def _post_patient_media_batch_file(client, raw, request_key, batch_id, filename='synthetic.png'):
+    return client.post(
+        '/api/mobile/v1/patients/8/media',
+        data={'request_key': request_key, 'batch_id': batch_id, 'media_type': 'PHOTO'},
+        files={'file': (filename, raw, 'image/png')},
+    )
+
+
+def test_mobile_patient_media_batch_enforces_aggregate_bytes_across_requests_and_replays(chat, monkeypatch, tmp_path):
+    from app import mobile_api
+    from app.upload_limits import MAX_PATIENT_MEDIA_BATCH_BYTES
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, 'engine', engine)
+    monkeypatch.setattr(mobile_api, 'storage_persist_file', lambda path: None)
+    monkeypatch.chdir(tmp_path)
+    raw = io.BytesIO()
+    Image.new('RGB', (8, 8), 'white').save(raw, format='PNG')
+    payload = raw.getvalue()
+    sizes = [10 * 1024 * 1024] * 9 + [7 * 1024 * 1024]
+
+    def copy_with_declared_stream_size(upload, destination, maximum):
+        destination.write_bytes(payload)
+        return sizes.pop(0)
+
+    monkeypatch.setattr(mobile_api, '_copy_validated_image', copy_with_declared_stream_size)
+    with Session(engine) as session:
+        session.add(main.Patient(id=8, anonymous_id='SYNTHETIC-BATCH', owner_user_id=1))
+        session.commit()
+
+    batch_id = 'synthetic-clinical-batch-0001'
+    for index in range(8):
+        response = _post_patient_media_batch_file(
+            client, payload, f'synthetic-media-request-{index:04d}', batch_id,
+        )
+        assert response.status_code == 200, response.text
+
+    replay = _post_patient_media_batch_file(
+        client, payload, 'synthetic-media-request-0000', batch_id,
+    )
+    assert replay.status_code == 200 and replay.json()['replayed'] is True
+
+    ninth = _post_patient_media_batch_file(
+        client, payload, 'synthetic-media-request-0008', batch_id,
+    )
+    assert ninth.status_code == 200, ninth.text
+
+    overflow = _post_patient_media_batch_file(
+        client, payload, 'synthetic-media-request-0009', batch_id,
+    )
+    assert overflow.status_code == 413, overflow.text
+
+    with Session(engine) as session:
+        media = session.exec(select(main.PatientMedia).where(main.PatientMedia.patient_id == 8)).all()
+        receipts = session.exec(select(WorkJob).where(
+            WorkJob.kind == 'PATIENT_MEDIA_RECEIPT',
+            WorkJob.resource_type == 'PATIENT',
+            WorkJob.resource_id == 8,
+            WorkJob.result_ref == batch_id,
+        )).all()
+        assert len(media) == 9
+        assert len(receipts) == 9
+        assert sum(json.loads(row.payload_json)['file_bytes'] for row in receipts) == 87 * 1024 * 1024
+        assert sum(json.loads(row.payload_json)['file_bytes'] for row in receipts) <= MAX_PATIENT_MEDIA_BATCH_BYTES
+
+
+def test_mobile_patient_media_batch_enforces_file_count_across_sequential_requests(chat, monkeypatch, tmp_path):
+    from app import mobile_api
+    from app.upload_limits import MAX_PATIENT_MEDIA_FILES
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, 'engine', engine)
+    monkeypatch.setattr(mobile_api, 'storage_persist_file', lambda path: None)
+    monkeypatch.setattr(mobile_api, '_copy_validated_image', lambda upload, destination, maximum: (destination.write_bytes(b'valid-test-image') or 1024))
+    monkeypatch.chdir(tmp_path)
+    with Session(engine) as session:
+        session.add(main.Patient(id=8, anonymous_id='SYNTHETIC-BATCH-COUNT', owner_user_id=1))
+        session.commit()
+
+    batch_id = 'synthetic-clinical-batch-count-0001'
+    for index in range(MAX_PATIENT_MEDIA_FILES):
+        response = _post_patient_media_batch_file(
+            client, b'not-used-by-stub', f'synthetic-media-count-{index:04d}', batch_id,
+        )
+        assert response.status_code == 200, response.text
+
+    rejected = _post_patient_media_batch_file(
+        client, b'not-used-by-stub', 'synthetic-media-count-0012', batch_id,
+    )
+    assert rejected.status_code == 413, rejected.text
+    with Session(engine) as session:
+        assert len(session.exec(select(main.PatientMedia).where(main.PatientMedia.patient_id == 8)).all()) == MAX_PATIENT_MEDIA_FILES
+
+
+def test_mobile_patient_media_batch_identity_is_required_before_file_processing(chat, monkeypatch, tmp_path):
+    from app import mobile_api
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, 'engine', engine)
+    processed = []
+    monkeypatch.setattr(mobile_api, '_copy_validated_image', lambda *args: processed.append(True))
+    monkeypatch.chdir(tmp_path)
+    with Session(engine) as session:
+        session.add(main.Patient(id=8, anonymous_id='SYNTHETIC-BATCH-REQUIRED', owner_user_id=1))
+        session.commit()
+
+    response = client.post(
+        '/api/mobile/v1/patients/8/media',
+        data={'request_key': 'synthetic-media-request-0001'},
+        files={'file': ('synthetic.png', b'payload', 'image/png')},
+    )
+    assert response.status_code == 422
+    assert processed == []
