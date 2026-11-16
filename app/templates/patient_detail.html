@@ -57,6 +57,7 @@
             <span class="patient-details-arrow" aria-hidden="true">⌄</span>
         </summary>
         <form class="patient-info-edit-form" method="post" action="/patients/{{ patient.id }}/edit">
+            <input type="hidden" name="expected_revision" value="{{ patient_edit_revision }}">
             <div class="patient-info-grid">
                 <label class="patient-info-item">
                     <span>Ad</span>
