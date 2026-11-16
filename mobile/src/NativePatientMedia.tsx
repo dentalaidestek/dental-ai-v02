@@ -2,6 +2,7 @@ import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {ActivityIndicator,Alert,AppState,FlatList,Image,Modal,Pressable,ScrollView,Text,TextInput,View} from 'react-native';
 import {useIsFocused} from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
+import * as FS from 'expo-file-system/legacy';
 import {getPatientMediaUpload,uploadPatientMedia} from './api';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
@@ -12,6 +13,7 @@ import {cleanupStaleClinicalMediaTemps,deleteClinicalMediaTemp,deleteClinicalMed
 import {useRealtime} from './realtime';
 import {CLINICAL_MEDIA_PICKER_MAX_FILES,normalizeClinicalMediaAssets} from './clinicalMediaPicker';
 import {ANALYSIS_MAX_IMAGES} from './analysisApi';
+import {CLINICAL_MEDIA_MAX_BATCH_BYTES,CLINICAL_MEDIA_MAX_FILE_BYTES} from './uploadLimits';
 
 type Picked={uri:string;encryptedUri?:string;previewUri?:string;name:string;type:string;requestKey:string};
 type PendingUpload={version:1|2;userId:number;patientId:number;mediaType:'PHOTO'|'RADIOGRAPH';files:Picked[];updatedAt:number};
@@ -52,11 +54,16 @@ export default function NativePatientMedia({token,userId,patientId,onAnalysis}:{
    if(!result.assets.length||result.assets.length>CLINICAL_MEDIA_PICKER_MAX_FILES)throw Error(`Tek seferde en fazla ${CLINICAL_MEDIA_PICKER_MAX_FILES} klinik görüntü seçebilirsiniz.`);
    const rawFiles:Picked[]=normalizeClinicalMediaAssets(result.assets).map(asset=>({...asset,requestKey:Crypto.randomUUID()}));
    mutation.current=true;setBusy(true);setError('');setProgress('Görüntüler cihazda şifreleniyor…');
-   const encrypted:Picked[]=[];
+   const encrypted:Picked[]=[];let batchBytes=0;
    try{
     for(const file of rawFiles){
-     const encryptedUri=await encryptClinicalMediaFile(file.uri,userId,patientId,12*1024*1024);
+     const encryptedUri=await encryptClinicalMediaFile(file.uri,userId,patientId,CLINICAL_MEDIA_MAX_FILE_BYTES);
      encrypted.push({...file,uri:encryptedUri,encryptedUri,previewUri:file.uri});
+     const encryptedInfo=await FS.getInfoAsync(encryptedUri);
+     const plainBytes=encryptedInfo.exists&&Number.isFinite(encryptedInfo.size)?encryptedInfo.size-40:0;
+     if(plainBytes<1||plainBytes>CLINICAL_MEDIA_MAX_FILE_BYTES)throw Error('Klinik görüntünün gerçek boyutu doğrulanamadı veya 12 MiB sınırını aşıyor.');
+     batchBytes+=plainBytes;
+     if(batchBytes>CLINICAL_MEDIA_MAX_BATCH_BYTES)throw Error('Tek klinik arşiv yüklemesinde toplam boyut en fazla 96 MiB olabilir.');
      if(!current()||picker!==pickerGeneration.current){await Promise.all(encrypted.map(item=>deleteClinicalMediaVaultFile(item.encryptedUri!).catch(()=>{})));return;}
     }
     const intent:PendingUpload={version:2,userId,patientId,mediaType:type,files:encrypted,updatedAt:Date.now()};
