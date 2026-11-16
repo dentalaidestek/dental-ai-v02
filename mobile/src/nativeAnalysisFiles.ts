@@ -12,7 +12,7 @@ export async function cacheAnalysisImages(images:Array<{uri:string;name?:string;
     for(const image of normalized){
       const info=await FS.getInfoAsync(image.uri);
       if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>ANALYSIS_MAX_IMAGE_BYTES)
-        throw Error('Her klinik görüntü en fazla 15 MB olmalı.');
+        throw Error('Her klinik görüntü en fazla 15 MiB olmalı.');
       totalBytes+=info.size;
       if(totalBytes>ANALYSIS_MAX_BATCH_BYTES)throw Error('Bir analizde yeni görüntülerin toplamı en fazla 48 MiB olabilir.');
       const encryptedUri=await encryptClinicalMediaFile(image.uri,userId,patientId,ANALYSIS_MAX_IMAGE_BYTES);
