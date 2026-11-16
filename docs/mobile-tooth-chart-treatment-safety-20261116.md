@@ -14,6 +14,10 @@ The shared mobile API deliberately requires:
 
 This is a concrete source-level Android typecheck defect discovered even though the latest GitHub jobs had not reached the compiler.
 
+## Visual parity follow-up
+
+The web tooth-chart template also labels the patient's right and left sides on each jaw card (`.jaw-side.left/right`). The native chart previously relied on tooth numbers alone. Added visible and screen-reader-labelled `Sağ` / `Sol` markers to both jaw rows while preserving the web FDI order (patient right on the left half, patient left on the right half). A sixth `toothChartLifecycle.cjs` regression now asserts both jaw-side labels and the full 32-tooth FDI sequence. This is source-level component coverage only; no screenshot or physical-device layout test has run.
+
 ## Changes on the PR branch
 
 - `mobile/App.tsx` passes the authenticated `userId` into `NativeToothChart`.
@@ -27,12 +31,13 @@ No new endpoint, provider call, database table, polling loop or clinical-data lo
 
 ## Regression coverage added
 
-Five cases were added to `mobile/tests/toothChartLifecycle.cjs`:
+Six cases were added to `mobile/tests/toothChartLifecycle.cjs`:
 1. Store the create intent before the request and reuse the exact request key after remount.
 2. Send the selected treatment's edit revision with the update request.
 3. Clear a definitive 422 intent and allow a corrected retry with a new key.
 4. Refuse to update a legacy treatment that has no valid server revision.
 5. Do not read or delete another authenticated user's pending treatment draft.
+6. Render patient-side labels and preserve the web's complete 32-tooth FDI quadrant order.
 
 The file is already included in `mobile/package.json` under `test:beta`.
 
