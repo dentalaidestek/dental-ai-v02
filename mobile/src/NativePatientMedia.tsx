@@ -9,6 +9,7 @@ import {deleteAllPatientMedia,deleteMedia,getMedia} from './modernApi';
 import NativeAnalysisUpload from './NativeAnalysisUpload';
 import {cleanupStaleClinicalMediaTemps,deleteClinicalMediaTemp,deleteClinicalMediaVaultFile,decryptClinicalMediaFile,encryptClinicalMediaFile,isClinicalMediaVaultUri,validateClinicalMediaVaultFile} from './clinicalMediaVault';
 import {useRealtime} from './realtime';
+import {normalizeClinicalMediaAssets} from './clinicalMediaPicker';
 
 type Picked={uri:string;encryptedUri?:string;previewUri?:string;name:string;type:string;requestKey:string};
 type PendingUpload={version:1|2;userId:number;patientId:number;mediaType:'PHOTO'|'RADIOGRAPH';files:Picked[];updatedAt:number};
@@ -46,9 +47,7 @@ export default function NativePatientMedia({token,userId,patientId,onAnalysis}:{
    const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsMultipleSelection:true,quality:.9,selectionLimit:12});
    if(!current()||picker!==pickerGeneration.current||mutation.current||uncertain||result.canceled)return;
    if(!result.assets.length||result.assets.length>12)throw Error('Tek seferde en fazla 12 klinik görüntü seçebilirsiniz.');
-   const rawFiles:Picked[]=result.assets.map((asset,i)=>({uri:asset.uri,name:asset.fileName||('klinik-'+i+'.jpg'),type:asset.mimeType||'image/jpeg',requestKey:Crypto.randomUUID()}));
-   if(result.assets.some(asset=>(asset.fileSize||0)>12*1024*1024)||rawFiles.some(file=>!['image/jpeg','image/png','image/webp'].includes(file.type)))
-    throw Error('JPG, PNG veya WEBP seçin; web ile aynı şekilde her görüntü en fazla 12 MB olabilir.');
+   const rawFiles:Picked[]=normalizeClinicalMediaAssets(result.assets).map(asset=>({...asset,requestKey:Crypto.randomUUID()}));
    mutation.current=true;setBusy(true);setError('');setProgress('Görüntüler cihazda şifreleniyor…');
    const encrypted:Picked[]=[];
    try{
