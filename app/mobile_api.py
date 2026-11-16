@@ -72,6 +72,8 @@ bearer = HTTPBearer(auto_error=False)
 MOBILE_MAX_IMAGE_BYTES = max(1, int(os.getenv("MOBILE_MAX_IMAGE_BYTES", str(15 * 1024 * 1024))))
 MOBILE_MAX_IMAGE_PIXELS = max(1, int(os.getenv("MOBILE_MAX_IMAGE_PIXELS", "40000000")))
 MOBILE_MAX_ANALYSIS_BYTES = max(1, int(os.getenv("MOBILE_MAX_ANALYSIS_BYTES", str(15 * 1024 * 1024))))
+MOBILE_MAX_PATIENT_MEDIA_BYTES = min(MOBILE_MAX_IMAGE_BYTES, 12 * 1024 * 1024)
+_PATIENT_MEDIA_REQUEST_KEY = re.compile(r"^[A-Za-z0-9_-]{16,96}$")
 LOGIN_RATE_WINDOW_SECONDS = LOGIN_WINDOW_SECONDS
 LOGIN_RATE_MAX_FAILURES = LOGIN_MAX_FAILURES
 
@@ -1368,62 +1370,210 @@ def mobile_academic_messages(course_id:int,user:User=Depends(_mobile_user), befo
         rows=page[:100]
         return {"items":[{"id":m.id,"role":m.role,"content":m.content,"created_at":m.created_at} for m in reversed(rows)],"next_before":rows[-1].id if len(page)>100 else None}
 
+_PATIENT_MEDIA_RECEIPT_KIND = "PATIENT_MEDIA_RECEIPT"
+
+
+def _patient_media_receipt_key(user_id: int, patient_id: int, request_key: str) -> str:
+    if not _PATIENT_MEDIA_REQUEST_KEY.fullmatch(request_key or ""):
+        raise HTTPException(status_code=422, detail="Geçersiz klinik görüntü işlem anahtarı.")
+    return hashlib.sha256(
+        f"mobile-patient-media:{user_id}:{patient_id}:{request_key}".encode()
+    ).hexdigest()
+
+
+def _patient_media_payload_hash(file_hash: str, media_type: str, tooth_number: Optional[str],
+                                note: Optional[str], original_name: str) -> str:
+    payload = [file_hash, media_type, tooth_number, note, original_name]
+    return hashlib.sha256(json.dumps(
+        payload, ensure_ascii=False, separators=(",", ":")
+    ).encode()).hexdigest()
+
+
+def _lock_patient_media_receipt(session: Session, receipt_key: Optional[str]) -> None:
+    if receipt_key and session.get_bind().dialect.name == "postgresql":
+        slot = int.from_bytes(
+            hashlib.sha256(("patient-media-receipt:" + receipt_key).encode()).digest()[:8],
+            "big", signed=True,
+        )
+        session.execute(text("SELECT pg_advisory_xact_lock(:slot)"), {"slot": slot})
+
+
+def _patient_media_result(media: PatientMedia, replayed: bool = False) -> dict:
+    return {
+        "media": {
+            "id": media.id,
+            "original_filename": media.original_filename,
+            "media_type": media.media_type,
+            "tooth_number": media.tooth_number,
+            "note": media.note,
+            "uploaded_at": media.uploaded_at,
+        },
+        "replayed": replayed,
+    }
+
+
+def _find_patient_media_receipt(session: Session, user: User, patient_id: int,
+                                receipt_key: str, digest: Optional[str] = None):
+    receipt = session.exec(select(WorkJob).where(
+        WorkJob.owner_user_id == user.id,
+        WorkJob.resource_id == patient_id,
+        WorkJob.resource_type == "PATIENT",
+        WorkJob.kind == _PATIENT_MEDIA_RECEIPT_KIND,
+        WorkJob.dedupe_key == receipt_key,
+    )).first()
+    if receipt is None:
+        return None
+    if digest is not None and receipt.source_hash != digest:
+        raise HTTPException(status_code=409, detail="Bu klinik görüntü işlem anahtarı farklı bir dosya veya bilgilerle kullanılmış.")
+    try:
+        saved = json.loads(receipt.payload_json or "{}")
+        media_id = int(saved["media_id"])
+        if int(saved.get("patient_id", 0)) != patient_id:
+            raise ValueError("receipt patient mismatch")
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+        raise HTTPException(status_code=409, detail="Klinik görüntü işlem fişi doğrulanamadı.")
+    media = session.get(PatientMedia, media_id)
+    if not media or media.patient_id != patient_id or media.owner_user_id != user.id:
+        raise HTTPException(status_code=409, detail="Önceki klinik görüntü kaydı artık galeride yok. Yeni bir işlem anahtarıyla yeniden seçin.")
+    return _patient_media_result(media, replayed=True)
+
+
+def _store_patient_media_receipt(session: Session, user: User, patient_id: int,
+                                 media: PatientMedia, receipt_key: Optional[str],
+                                 digest: Optional[str]) -> None:
+    if not receipt_key or not digest:
+        return
+    session.add(WorkJob(
+        owner_user_id=user.id,
+        resource_id=patient_id,
+        resource_type="PATIENT",
+        kind=_PATIENT_MEDIA_RECEIPT_KIND,
+        source_hash=digest,
+        dedupe_key=receipt_key,
+        payload_json=json.dumps({"patient_id": patient_id, "media_id": media.id}, sort_keys=True),
+        status="DONE",
+    ))
+
+
 @router.post("/patients/{patient_id}/media")
 async def mobile_patient_media_upload(
-    patient_id:int,
-    image:UploadFile=File(None),
-    file:UploadFile=File(None),
-    tooth_number:Optional[str]=Form(None),
-    note:Optional[str]=Form(None),
-    media_type:str=Form("PHOTO"),
-    user:User=Depends(_mobile_user),
+    patient_id: int,
+    image: UploadFile = File(None),
+    file: UploadFile = File(None),
+    tooth_number: Optional[str] = Form(None),
+    note: Optional[str] = Form(None),
+    media_type: str = Form("PHOTO"),
+    request_key: Optional[str] = Form(None),
+    user: User = Depends(_mobile_user),
 ):
+    media_type = (media_type or "").strip().upper()
     if media_type not in {"PHOTO", "RADIOGRAPH"}:
         raise HTTPException(status_code=422, detail="Geçersiz klinik görüntü türü.")
-    if tooth_number and (len(tooth_number.strip()) != 2 or not tooth_number.strip().isdigit() or tooth_number.strip()[0] not in "12345678" or tooth_number.strip()[1] not in "12345678"):
+    tooth = (tooth_number or "").strip() or None
+    if tooth and not _valid_fdi_tooth_number(tooth):
         raise HTTPException(status_code=422, detail="Geçerli FDI diş numarası girin.")
-    if note and len(note.strip()) > 2000:
+    normalized_note = (note or "").strip() or None
+    if normalized_note and len(normalized_note) > 2000:
         raise HTTPException(status_code=422, detail="Klinik not 2000 karakteri aşamaz.")
+    receipt_key = _patient_media_receipt_key(user.id, patient_id, request_key) if request_key is not None else None
     image = image or file
     if not image or not image.filename:
-        raise HTTPException(status_code=422,detail="Görüntü seçin.")
-    ext=Path(image.filename).suffix.lower()
-    if ext not in {".jpg",".jpeg",".png",".webp"}:
-        raise HTTPException(status_code=422,detail="Desteklenmeyen görüntü formatı.")
-    with Session(engine,expire_on_commit=False) as session:
-        patient=session.get(Patient,patient_id)
-        if not patient or patient.owner_user_id != user.id:
-            raise HTTPException(status_code=404,detail="Hasta bulunamadı.")
-        stored=f"patient_{patient_id}_{uuid.uuid4().hex}{ext}"
-        destination=Path("uploads")/"patient-media"/stored
-        destination.parent.mkdir(parents=True,exist_ok=True)
-        # Persist the object and its database row as one logical operation.
-        # If either persistence step fails, remove the unreferenced object.
-        try:
-            _copy_validated_image(image, destination, MOBILE_MAX_IMAGE_BYTES)
+        raise HTTPException(status_code=422, detail="Görüntü seçin.")
+    original_name = Path(image.filename).name
+    ext = Path(original_name).suffix.lower()
+    if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+        raise HTTPException(status_code=422, detail="Desteklenmeyen görüntü formatı.")
+
+    stored = f"patient_{patient_id}_{uuid.uuid4().hex}{ext}"
+    destination = Path("uploads") / "patient-media" / stored
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    persisted = False
+    digest = None
+    try:
+        _copy_validated_image(image, destination, MOBILE_MAX_PATIENT_MEDIA_BYTES)
+        file_hash = hashlib.sha256(destination.read_bytes()).hexdigest()
+        digest = _patient_media_payload_hash(file_hash, media_type, tooth, normalized_note, original_name) if receipt_key else None
+        with Session(engine, expire_on_commit=False) as session:
+            patient = session.exec(select(Patient).where(
+                Patient.id == patient_id, Patient.owner_user_id == user.id
+            ).with_for_update()).first()
+            if not patient:
+                raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+            _lock_patient_media_receipt(session, receipt_key)
+            if receipt_key:
+                existing = _find_patient_media_receipt(session, user, patient_id, receipt_key, digest)
+                if existing:
+                    session.rollback()
+                    destination.unlink(missing_ok=True)
+                    return existing
             storage_persist_file(destination)
-            media=PatientMedia(patient_id=patient_id,owner_user_id=user.id,
-                original_filename=Path(image.filename).name,stored_filename=stored,
-                file_path=str(destination),media_type=media_type,
-                tooth_number=(tooth_number or "").strip() or None,note=(note or "").strip() or None)
-            session.add(media);session.flush()
-            realtime=_record_realtime_event(session,user.id,"PATIENT_MEDIA_CREATED","patient",patient_id,{"patient_id":patient_id,"media_id":media.id,"filename":media.original_filename})
+            persisted = True
+            media = PatientMedia(
+                patient_id=patient_id,
+                owner_user_id=user.id,
+                original_filename=original_name,
+                stored_filename=stored,
+                file_path=str(destination),
+                media_type=media_type,
+                tooth_number=tooth,
+                note=normalized_note,
+            )
+            session.add(media)
+            session.flush()
+            _store_patient_media_receipt(session, user, patient_id, media, receipt_key, digest)
+            realtime = _record_realtime_event(
+                session, user.id, "PATIENT_MEDIA_CREATED", "patient", patient_id,
+                {"patient_id": patient_id, "media_id": media.id, "filename": media.original_filename},
+            )
             session.commit()
-        except Exception:
-            session.rollback()
-            try:
+            result = _patient_media_result(media, replayed=False)
+    except IntegrityError:
+        try:
+            if persisted:
                 storage_delete(str(destination))
-            except Exception:
-                logging.exception("Failed to clean orphan clinical media upload: %s", destination)
-            try:
-                destination.unlink(missing_ok=True)
-            except OSError:
-                logging.exception("Failed to clean local clinical media upload: %s", destination)
-            raise
-        await _publish_realtime_event(realtime)
-        return {"media":{"id":media.id,"original_filename":media.original_filename,
-            "media_type":media.media_type,"tooth_number":media.tooth_number,
-            "note":media.note,"uploaded_at":media.uploaded_at}}
+        except Exception:
+            logging.exception("Failed to clean duplicate clinical media object: %s", destination)
+        destination.unlink(missing_ok=True)
+        if receipt_key and digest:
+            with Session(engine, expire_on_commit=False) as session:
+                patient = session.exec(select(Patient).where(
+                    Patient.id == patient_id, Patient.owner_user_id == user.id
+                )).first()
+                if patient:
+                    existing = _find_patient_media_receipt(session, user, patient_id, receipt_key, digest)
+                    if existing:
+                        return existing
+        raise HTTPException(status_code=409, detail="Klinik görüntü işlemi aynı anda tamamlandı. Galeriyi yenileyip işlem fişini doğrulayın.")
+    except Exception:
+        try:
+            if persisted:
+                storage_delete(str(destination))
+        except Exception:
+            logging.exception("Failed to clean orphan clinical media upload: %s", destination)
+        try:
+            destination.unlink(missing_ok=True)
+        except OSError:
+            logging.exception("Failed to clean local clinical media upload: %s", destination)
+        raise
+    await _publish_realtime_event(realtime)
+    return result
+
+
+@router.get("/patients/{patient_id}/media/uploads/{request_key}")
+def mobile_patient_media_upload_status(
+    patient_id: int,
+    request_key: str,
+    user: User = Depends(_mobile_user),
+):
+    receipt_key = _patient_media_receipt_key(user.id, patient_id, request_key)
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.exec(select(Patient).where(
+            Patient.id == patient_id, Patient.owner_user_id == user.id
+        )).first()
+        if not patient:
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        existing = _find_patient_media_receipt(session, user, patient_id, receipt_key)
+        return {"found": existing is not None, "media": existing["media"] if existing else None}
 
 def _mobile_access_token(credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer)) -> str:
     if not credentials or credentials.scheme.lower() != "bearer":
