@@ -134,6 +134,13 @@ async def run_status(course_id:int,run_id:int,token:str=Depends(_mobile_access_t
     from app import main as web
     _,data=await _call(web.study_run_status,token,course_id,run_id,method='GET');return data
 
+@router.post('/academic/courses/{course_id}/runs/{run_id}/cancel')
+async def cancel_run(course_id:int,run_id:int,token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    """Use the canonical web cancellation policy for this account's single run."""
+    from app import main as web
+    _,data=await _call(web.study_run_cancel,token,course_id,run_id)
+    return JSONResponse(data,headers=HEADERS)
+
 
 def _quizzes(user,course_id,message_id=None):
     from app import main as web
