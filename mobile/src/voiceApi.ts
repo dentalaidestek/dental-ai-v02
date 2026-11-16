@@ -1,9 +1,9 @@
 import {revalidateSession} from './sessionExpiry';
 import {splitVoiceTranscript} from './voiceSession';
 const BASE="https://dentalai.tr/api/mobile/v1";
-async function send<T>(token:string,path:string,payload:unknown):Promise<T>{
+async function send<T>(token:string,path:string,payload?:unknown,method:"GET"|"POST"="POST"):Promise<T>{
  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),150000);
- try{const response=await fetch(BASE+path,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(payload),signal:controller.signal});
+ try{const response=await fetch(BASE+path,{method,headers:{"Content-Type":"application/json",Authorization:"Bearer "+token,...(method==="GET"?{"Cache-Control":"no-store"}:{})},...(method==="GET"?{}:{body:JSON.stringify(payload)}),signal:controller.signal});
  if(response.status===401)await revalidateSession(token);
  if(response.status===429)throw Error("Klinik değerlendirme hizmeti şu anda yoğun. Metniniz korunuyor; biraz sonra tekrar deneyin.");
  if(response.status>=500)throw Error("Klinik değerlendirme sunucusuna şu anda ulaşılamıyor. Metniniz korunuyor; daha sonra tekrar deneyin.");
@@ -30,7 +30,22 @@ export async function createAnonymousVoicePatient(token:string,requestKey:string
  return {patient,already_created:result.already_created};
 }
 
-export type VoiceField={value:string;quote?:string;edited?:boolean};
+
+export type VoiceHistoryField={value:string;quote:string;analysis_id:number};
+export type VoiceHistory={ok:true;revision:string;fields:Record<string,VoiceHistoryField>;notice:string};
+const VOICE_HISTORY_FIELDS=new Set(["family_history","materials","dental_history","oral_habits","medical_history","medications","allergies"]);
+export async function getVoiceHistory(token:string,patientId:number):Promise<VoiceHistory>{
+ if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Önceki muayene bilgileri için geçerli bir hasta seçin.");
+ const result=await send<VoiceHistory>(token,"/patients/"+patientId+"/voice-exam/history",undefined,"GET");
+ if(!result||result.ok!==true||typeof result.revision!=="string"||!/^[a-f0-9]{64}$/.test(result.revision)||
+    !result.fields||typeof result.fields!=="object"||Array.isArray(result.fields)||
+    Object.entries(result.fields).some(([name,item])=>!VOICE_HISTORY_FIELDS.has(name)||!item||typeof item.value!=="string"||!item.value.trim()||item.value.length>3000||typeof item.quote!=="string"||item.quote.length>3000||!Number.isSafeInteger(item.analysis_id)||item.analysis_id<=0)||
+    typeof result.notice!=="string"||result.notice.length>1000)
+  throw Error("Önceki hekim onaylı muayene geçmişi doğrulanamadı.");
+ return result;
+}
+
+export type VoiceField={value:string;quote?:string;edited?:boolean;origin?:"history"|"extraction"};
 export type VoiceExtraction={ok:boolean;revision:string;review:{
  fields?:Record<string,VoiceField>;teeth?:unknown[];insights?:Record<string,unknown>[];
  communication?:Record<string,unknown>[];
