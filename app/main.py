@@ -12165,6 +12165,7 @@ def create_guest_analysis(
             destination = UPLOAD_DIR / stored_name
 
             copy_image(image.file, destination)
+            sanitize_clinical_media_image(destination, extension, max_pixels=40_000_000)
 
             storage_persist_file(destination)
 
@@ -12266,6 +12267,9 @@ def create_analysis(
             )
             destination = UPLOAD_DIR / stored_name
             shutil.copy2(selected_media_path, destination)
+            # Legacy gallery objects are sanitized again on the analysis copy
+            # before classification/provider work; the archived original is untouched.
+            sanitize_clinical_media_image(destination, source_ext, max_pixels=40_000_000)
             storage_persist_file(destination)
             pending_assets.append(ImageAsset(
                 analysis_id=analysis.id,
@@ -12293,6 +12297,7 @@ def create_analysis(
             destination = UPLOAD_DIR / stored_name
 
             copy_image(image.file, destination)
+            sanitize_clinical_media_image(destination, extension, max_pixels=40_000_000)
 
             storage_persist_file(destination)
 
