@@ -6,6 +6,12 @@ from datetime import datetime
 from PIL import Image
 import io
 import json
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _patient_media_receipt_secret(monkeypatch):
+    monkeypatch.setenv("PATIENT_MEDIA_RECEIPT_KEY", "11" * 32)
 
 
 def test_tooth_chart_initial_focus_matches_web_latest_analysis_and_is_owner_scoped(chat, monkeypatch):
@@ -401,6 +407,110 @@ def test_mobile_patient_media_upload_receipt_replays_once_and_is_owner_scoped(ch
         "media_type": "PHOTO", "request_key": key,
     }, files={"file": ("synthetic.png", payload, "image/png")})
     assert deleted_replay.status_code == 409, "a deleted upload receipt must not resurrect the image"
+
+
+def test_mobile_patient_media_receipt_fingerprint_is_keyed_and_versioned(chat, monkeypatch, tmp_path):
+    import hashlib
+    from pathlib import Path
+    from app.patient_media_receipts import keyed_fingerprint
+
+    client, engine = chat
+    persisted = []
+    async def async_publish(_event):
+        return None
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    monkeypatch.setattr(mobile_api, "storage_persist_file", lambda path: persisted.append(str(path)))
+    monkeypatch.setattr(mobile_api, "storage_delete", lambda _path: None)
+    monkeypatch.setattr(mobile_api, "_publish_realtime_event", async_publish)
+    monkeypatch.chdir(tmp_path)
+    with Session(engine) as session:
+        session.add(main.Patient(id=88, anonymous_id="SYNTHETIC-HMAC-MEDIA", owner_user_id=1))
+        session.commit()
+
+    raw = io.BytesIO()
+    Image.new("RGB", (16, 12), (14, 28, 42)).save(raw, format="PNG")
+    response = client.post("/api/mobile/v1/patients/88/media", data={
+        "media_type": "PHOTO", "request_key": "synthetic-media-hmac-0001",
+        "batch_id": "synthetic-media-batch-0001",
+    }, files={"file": ("synthetic.png", raw.getvalue(), "image/png")})
+    assert response.status_code == 200, response.text
+    with Session(engine) as session:
+        media = session.exec(select(main.PatientMedia).where(main.PatientMedia.patient_id == 88)).one()
+        receipt = session.exec(select(WorkJob).where(
+            WorkJob.kind == "PATIENT_MEDIA_RECEIPT", WorkJob.resource_id == 88,
+        )).one()
+        file_hash = hashlib.sha256(Path(media.file_path).read_bytes()).hexdigest()
+        legacy = mobile_api._patient_media_payload_hash(file_hash, "PHOTO", None, None, "synthetic.png")
+        expected = keyed_fingerprint(legacy, bytes.fromhex("11" * 32), 1, 88)
+        payload = json.loads(receipt.payload_json)
+        assert receipt.source_hash == expected
+        assert receipt.source_hash != legacy
+        assert payload["fingerprint_version"] == 1
+        assert len(persisted) == 1
+
+
+def test_mobile_patient_media_receipt_secret_is_required_before_persisting(chat, monkeypatch, tmp_path):
+    client, engine = chat
+    persisted = []
+    monkeypatch.delenv("PATIENT_MEDIA_RECEIPT_KEY", raising=False)
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    monkeypatch.setattr(mobile_api, "storage_persist_file", lambda path: persisted.append(str(path)))
+    monkeypatch.chdir(tmp_path)
+    with Session(engine) as session:
+        session.add(main.Patient(id=89, anonymous_id="SYNTHETIC-MISSING-HMAC", owner_user_id=1))
+        session.commit()
+
+    raw = io.BytesIO()
+    Image.new("RGB", (8, 8), "white").save(raw, format="PNG")
+    response = client.post("/api/mobile/v1/patients/89/media", data={
+        "media_type": "PHOTO", "request_key": "synthetic-media-no-key-0001",
+        "batch_id": "synthetic-media-batch-0001",
+    }, files={"file": ("synthetic.png", raw.getvalue(), "image/png")})
+    assert response.status_code == 503
+    assert persisted == []
+    with Session(engine) as session:
+        assert session.exec(select(main.PatientMedia).where(main.PatientMedia.patient_id == 89)).all() == []
+
+
+def test_legacy_patient_media_receipt_is_upgraded_on_private_status_lookup(chat):
+    from app.patient_media_receipts import keyed_fingerprint
+
+    client, engine = chat
+    request_key = "legacy-media-request-0001"
+    batch_id = "legacy-media-batch-0001"
+    legacy_digest = "a" * 64
+    with Session(engine) as session:
+        session.add(main.Patient(id=90, anonymous_id="SYNTHETIC-LEGACY-MEDIA", owner_user_id=1))
+        session.add(main.PatientMedia(
+            id=900, patient_id=90, owner_user_id=1,
+            stored_filename="legacy.png", original_filename="legacy.png",
+            file_path="uploads/patient-media/legacy.png", media_type="PHOTO",
+        ))
+        session.add(WorkJob(
+            owner_user_id=1, resource_id=90, resource_type="PATIENT",
+            kind="PATIENT_MEDIA_RECEIPT", source_hash=legacy_digest,
+            dedupe_key=mobile_api._patient_media_receipt_key(1, 90, request_key),
+            result_ref=batch_id,
+            payload_json=json.dumps({
+                "patient_id": 90, "media_id": 900, "batch_id": batch_id,
+                "file_bytes": 2048,
+            }),
+            status="DONE",
+        ))
+        session.commit()
+
+    status = client.get(f"/api/mobile/v1/patients/90/media/uploads/{request_key}")
+    assert status.status_code == 200, status.text
+    assert status.headers.get("cache-control") == "private, no-store"
+    assert status.json()["found"] is True
+    with Session(engine) as session:
+        receipt = session.exec(select(WorkJob).where(
+            WorkJob.kind == "PATIENT_MEDIA_RECEIPT", WorkJob.resource_id == 90,
+        )).one()
+        assert receipt.source_hash == keyed_fingerprint(
+            legacy_digest, bytes.fromhex("11" * 32), 1, 90,
+        )
+        assert json.loads(receipt.payload_json)["fingerprint_version"] == 1
 
 
 def test_patient_media_receipts_are_not_pruned_while_patient_exists(chat):
