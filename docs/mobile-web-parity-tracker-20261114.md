@@ -215,3 +215,14 @@ Current code head before this tracker update: `c5ce462a86e5d7ed170ceba597f3332b7
 At the starting head `aa264af`, Android typecheck/APK and Security recovery, Admin security and Expert social all failed with **zero workflow steps**; the step endpoint returned empty arrays, logs returned `BlobNotFound 404`, artifacts were empty and combined commit status had no entries. Therefore `npm ci`, `tsc`, Gradle and pytest did not start. This is a runner/execution-allocation failure, not evidence that source tests failed or passed. The exact repository billing/hosted-runner permission cause remains unexposed by the available GitHub records.
 
 PR #257 remains Draft/open. No main merge, production deploy, database migration, APK/IPA publication or live patient-record mutation was performed.
+
+
+### CI recheck after the media changes — 2026-11-16 10:52 UTC
+
+The branch was checked again after the code and tracker commits. PR head is now `7bf7c686087b889e4079b6047d65f0c0948a24a1`. Four workflows were created for that exact SHA and all concluded failure:
+- Mobile Android CI: run `43852618345` — `beta-apk` and `typecheck` jobs both have empty step arrays.
+- Security recovery: run `43852618364` — `security` job has an empty step array.
+- Expert social: run `43852618369` — `regression` job has an empty step array.
+- Admin security: run `43852619602` — `security` job has an empty step array.
+
+The job-log requests for Android typecheck and both security jobs returned `BlobNotFound 404`; all four runs exposed zero artifacts, and the code-bearing commit's combined status was empty. This confirms that the current CI failure is before any test/build step, not a red assertion or a TypeScript diagnostic. The 10/10 isolated picker tests and isolated strict TypeScript check above remain the only executed checks for this pass. Full Android typecheck/APK and server security regressions remain blocked.
