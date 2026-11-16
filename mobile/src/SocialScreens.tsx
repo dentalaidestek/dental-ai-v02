@@ -1035,6 +1035,8 @@ export function DentalFlow({
   const editLock = useRef(false);
   const profileGeneration = useRef(0);
   const [mode, setMode] = useState<"discover" | "following">("discover"),
+    [selectedSpecialty, setSelectedSpecialty] = useState(""),
+    [specialties, setSpecialties] = useState<string[]>([]),
     [compose, setCompose] = useState(false),
     [comments, setComments] = useState<api.SocialPost | null>(null),
     [image, setImage] = useState<string | null>(null),
@@ -1046,11 +1048,14 @@ export function DentalFlow({
       ReturnType<typeof api.getSocialStats>
     > | null>(null);
   const pages = usePagedRecords<api.SocialPost>(
-    `${user.id}.${mode}.${expertId || 0}`,
+    `${user.id}.${mode}.${expertId || 0}.${expertId ? "" : selectedSpecialty}`,
     async (before) => {
-      const p = expertId
-        ? await api.getExpertPosts(token, expertId, before)
-        : await api.getFeed(token, mode, before);
+      if (expertId) {
+        const p = await api.getExpertPosts(token, expertId, before);
+        return { items: p.items, next_before: p.next_cursor };
+      }
+      const p = await api.getFeed(token, mode, before, selectedSpecialty);
+      setSpecialties(p.specialties);
       return { items: p.items, next_before: p.next_cursor };
     },
     false,
@@ -1085,6 +1090,16 @@ export function DentalFlow({
           </Pressable>
         )}
       </View>
+      {!expertId && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Uzmanları keşfet"
+          onPress={() => navigation.navigate("ExpertDirectory")}
+          style={{ alignSelf: "flex-end", marginBottom: 8 }}
+        >
+          <Text style={s.action}>Uzmanları keşfet ↗</Text>
+        </Pressable>
+      )}
       {expertId ? (
         <View style={s.card}>
           <Text style={s.meta}>
@@ -1158,6 +1173,37 @@ export function DentalFlow({
             </Pressable>
           ))}
         </View>
+      )}
+      {!expertId && specialties.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.filterRow}
+          accessibilityLabel="Branşa göre filtrele"
+        >
+          {["", ...specialties].map((specialty) => {
+            const selected = selectedSpecialty === specialty;
+            return (
+              <Pressable
+                key={specialty || "all"}
+                accessibilityRole="button"
+                accessibilityLabel={`Branş filtresi: ${specialty || "Tümü"}`}
+                accessibilityState={{ selected }}
+                onPress={() => setSelectedSpecialty(specialty)}
+                style={[s.filterChip, selected && s.filterChipSelected]}
+              >
+                <Text
+                  style={[
+                    s.filterChipText,
+                    selected && s.filterChipTextSelected,
+                  ]}
+                >
+                  {specialty || "Tümü"}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       )}
       <Text style={s.error}>{error || pages.error}</Text>
       {pages.error && <Button title="Tekrar dene" onPress={pages.refresh} />}
@@ -1357,6 +1403,19 @@ const s = StyleSheet.create({
     backgroundColor: "white",
     marginBottom: 14,
   },
+  filterRow: { paddingHorizontal: 4, paddingBottom: 10 },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.line,
+    backgroundColor: "white",
+    marginRight: 8,
+  },
+  filterChipSelected: { backgroundColor: C.navy, borderColor: C.navy },
+  filterChipText: { fontSize: 12, fontWeight: "700", color: C.navy },
+  filterChipTextSelected: { color: "white" },
   input: {
     padding: 12,
     borderWidth: 1,
