@@ -1,0 +1,29 @@
+# Clinical image upload byte contract — 2026-11-16
+
+This contract is shared by the web UI, Android client, web handlers and native API adapters. All values are binary MiB (1 MiB = 1,048,576 bytes). The backend is authoritative.
+
+| Flow | File count | Per file | File bytes per request/batch |
+|---|---:|---:|---:|
+| Patient clinical archive | 12 | 12 MiB | 96 MiB |
+| One AI analysis | 4 total (saved + new) | 15 MiB | 48 MiB |
+
+## Admission layers
+
+1. The ASGI `RequestLimits` middleware applies route-specific raw HTTP body limits before FastAPI/Starlette multipart parsing. The limits include multipart framing and fields, with a 256 KiB framing allowance, and remain capped by the existing global `DENTAL_MAX_REQUEST_BYTES`.
+2. Backend upload helpers read Starlette's parser-calculated `UploadFile.size` (or seek the underlying spooled file) and reject empty, per-file or aggregate overflow before creating an Analysis row or copying clinical bytes. Client `Content-Length`, picker metadata and filenames are not trusted.
+3. Bounded copy loops count bytes again while staging. Existing private PatientMedia paths are stat-checked and copied through the same bounded helper; saved + new images share the 48 MiB analysis-work budget.
+4. Pillow sanitization retains the 40,000,000 pixel ceiling. File signature/format validation, patient ownership checks, opaque storage names, private storage and no-store access behavior remain in force.
+5. Android checks source file sizes before encrypting analysis media, checks decrypted plaintext sizes again before multipart upload, and retains encrypted patient-scoped local drafts. Archive batches are sequential single-file HTTP uploads; the Android staging UI additionally caps the selected encrypted batch by subtracting the vault's fixed 40-byte nonce/tag overhead from the stored size.
+6. Mobile archive hashing is incremental; it no longer calls `read_bytes()` to materialize a full clinical image in Python memory.
+
+## Why AI analysis is 15/48 MiB
+
+The former web 25 MiB and native 15 MiB mismatch is resolved downward to 15 MiB. The native encrypted-file implementation currently performs Base64 and AEAD operations on complete file buffers; increasing it to 25 MiB would materially raise peak memory on lower-end devices. A 48 MiB aggregate budget bounds disk staging and downstream decode work while allowing four 12 MiB images or mixed smaller images. The pixel ceiling separately limits decoded-image CPU/RAM cost.
+
+## Verification
+
+- Backend regression file: `tests/test_upload_limits.py`.
+- Native regressions: `mobile/tests/uploadLimits.cjs` and the extended `mobile/tests/clinicalMediaPicker.cjs`.
+- Run backend tests with `pytest -q tests/test_upload_limits.py`.
+- Run native tests with `cd mobile && npm run typecheck && node --test tests/uploadLimits.cjs tests/clinicalMediaPicker.cjs`.
+- CI/runner results must be checked against the final branch HEAD; no test is considered passed merely because it was committed.
