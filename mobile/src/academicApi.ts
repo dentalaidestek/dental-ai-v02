@@ -1,8 +1,13 @@
 import {request} from './api';
 export type Course={id:number;title:string;description?:string;material_count?:number};
 export type Material={id:number;name:string;mime:string;size:number;index_status:string;url:string};
-export type CourseCreateIntent={title:string;description:string;known_ids:number[]};
+export type CourseCreateIntent={version:1;user:number;title:string;description:string;known_ids:number[]};
 export type UploadIntent={version:1;user:number;course:number;name:string;uri:string;size:number|null;known_ids:number[]};
+export function parseCourseCreateIntent(raw:string,user:number):CourseCreateIntent{
+ const value=JSON.parse(raw);
+ if(value?.version!==1||value.user!==user||typeof value.title!=='string'||value.title.trim().length<2||value.title.length>120||typeof value.description!=='string'||value.description.length>500||!Array.isArray(value.known_ids)||value.known_ids.some((id:unknown)=>!Number.isSafeInteger(id)||Number(id)<1))throw Error('Bekleyen ders oluşturma isteği doğrulanamadı.');
+ return value as CourseCreateIntent;
+}
 export function findCreatedCourse(items:Course[],intent:CourseCreateIntent):Course|null{
  if(!Array.isArray(items)||!intent||!Array.isArray(intent.known_ids))return null;
  const prior=new Set(intent.known_ids);
