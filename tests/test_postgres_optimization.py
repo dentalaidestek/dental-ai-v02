@@ -8,7 +8,7 @@ import uuid
 import pytest
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine, select
-from app import main, work_jobs, provider_budget
+from app import main, work_jobs, provider_budget, mobile_api
 
 
 @pytest.fixture
