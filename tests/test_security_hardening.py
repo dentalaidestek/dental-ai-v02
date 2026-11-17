@@ -351,3 +351,20 @@ def test_private_document_responses_are_not_cacheable():
     MAIN = (ROOT / "app/main.py").read_text(encoding="utf-8")
     assert 'return FileResponse(path, media_type=mime_type, headers={"Cache-Control": "private, no-store"})' in MAIN
     assert 'content_disposition_type="inline", headers={"Cache-Control": "private, no-store"}' in MAIN
+
+
+def test_native_legacy_radiograph_fallback_is_owner_scoped_and_private():
+    source = (ROOT / "app/mobile_analysis_api.py").read_text(encoding="utf-8")
+    detail = source.split('@router.get("/analyses/{analysis_id}")', 1)[1].split(
+        '@router.post("/analyses/{analysis_id}/ai")', 1
+    )[0]
+    assert '"legacy_radiograph_available": bool(analysis.radiograph_path)' in detail
+    assert '"radiograph_path":' not in detail
+
+    route = source.split('@router.get("/analyses/{analysis_id}/legacy-radiograph")', 1)[1].split(
+        '@router.get("/analyses/{analysis_id}/assets/{asset_id}")', 1
+    )[0]
+    assert "_access(session, user, analysis_id)" in route
+    assert "storage_ensure_local(analysis.radiograph_path)" in route
+    assert 'Cache-Control": "private, no-store' in route
+    assert "FileResponse(" in route
