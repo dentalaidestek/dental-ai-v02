@@ -107,3 +107,9 @@ Regression coverage added:
 No patient identifiers, clinical images, or patient records are used by this feature. No new polling, upload fan-out, backend route, database migration, storage policy, or AI provider call was added.
 
 The tests are committed but not reported as executed: current GitHub Actions jobs are failing before runner assignment, with `runner_id=0`, empty step arrays and unavailable log blobs. Full typecheck, `npm run test:beta`, Expo export, Android/iOS device acceptance and backend/PostgreSQL regressions remain required.
+
+## Latest-head CI retry evidence — 2026-11-17
+
+At feature-branch HEAD `014dc0b4673b0d3ea3fc463011011cb0b2b5bdd4`, the following PR workflows were created and completed as failures: Mobile Android CI run `44032085215`, Security recovery `44032085351`, Expert social `44032085152`, Voice regression `44032085172`, and Admin security `44032085202`. Android test APK push run: `44032080921`.
+
+Retried the current-head Android and Security runs (attempt 2). The new jobs still report `runner_id=0`, empty runner name, and zero steps. Downloading the retry logs returns Azure `BlobNotFound 404`. Therefore npm install, TypeScript, beta Node tests, Expo export, Gradle and pytest did not start. This is not evidence of a source-level test failure and is not a green CI result. The available repository integration cannot change hosted-runner allocation, organization Actions policy, or billing settings; repository owner/admin intervention is still required.
