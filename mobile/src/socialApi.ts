@@ -233,6 +233,7 @@ export async function getLinkPreview(
       result.cover.id < 1 ||
       typeof result.cover.url !== "string" ||
       result.cover.url !== `/api/expert-social/media/${result.cover.id}`
+    )
   ) {
     throw new ApiError(502, "Bağlantı görseli doğrulanamadı.");
   }
