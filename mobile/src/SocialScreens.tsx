@@ -46,6 +46,8 @@ const fresh = (): Draft => ({
   link: "",
   media_ids: [],
   attempted: false,
+  preview_id: undefined,
+  preview: null,
 });
 const draftStore = chunkedDraftStore(SecureStore, () => Crypto.randomUUID());
 function Button({
@@ -137,7 +139,7 @@ function useDraft(userId: number, scope: string) {
     setDraft(next);
     return result;
   };
-  return { draft, ready, error, retryRead: () => { setError(""); setRetry(v => v + 1); }, update, clear, send };
+  return { draft, ready, error, retryRead: () => { setError(""); setRetry(v => v + 1); }, update, flush: () => queue.current, clear, send };
 }
 
 function Composer({
@@ -153,31 +155,59 @@ function Composer({
 }) {
   const d = useDraft(userId, "post"),
     [busy, setBusy] = useState(false),
+    [previewBusy, setPreviewBusy] = useState(false),
     [error, setError] = useState(""),
-    [localPhotos, setLocalPhotos] = useState<string[]>([]),
-    lock = useRef(false);
+    lock = useRef(false),
+    previewGeneration = useRef(0);
+
+  useEffect(() => () => {
+    previewGeneration.current++;
+  }, []);
+
   async function image() {
-    if (lock.current) return;
+    if (lock.current || d.draft.attempted) return;
+    const remaining = Math.max(0, 4 - d.draft.media_ids.length);
+    if (!remaining) return;
     lock.current = true;
     setBusy(true);
     setError("");
     try {
-      const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!p.granted) throw Error("Fotoğraf izni verilmedi.");
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) throw Error("Fotoğraf izni verilmedi.");
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         quality: 0.8,
-        allowsMultipleSelection: false,
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
       });
       if (result.canceled) return;
-      const a = result.assets[0];
-      const uploaded = await api.uploadSocialImage(token, {
-        uri: a.uri,
-        name: a.fileName || ("social." + (a.mimeType === "image/png" ? "png" : a.mimeType === "image/webp" ? "webp" : "jpg")),
-        type: a.mimeType || "image/jpeg",
-      });
-      d.update({ media_ids: [...d.draft.media_ids, uploaded.id] });
-      setLocalPhotos(previous => [...previous, a.uri].slice(-4));
+      let ids = [...d.draft.media_ids];
+      for (const asset of result.assets || []) {
+        if (ids.length >= 4) break;
+        const mime = asset.mimeType || "image/jpeg";
+        if (!["image/jpeg", "image/png", "image/webp"].includes(mime)) {
+          setError("JPEG, PNG veya WebP görselleri seçin.");
+          continue;
+        }
+        if (typeof asset.fileSize === "number" && asset.fileSize > 8 * 1024 * 1024) {
+          setError("Her görsel en fazla 8 MB olabilir.");
+          continue;
+        }
+        const extension =
+          mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
+        const uploaded = await api.uploadSocialImage(token, {
+          uri: asset.uri,
+          name: asset.fileName || "social." + extension,
+          type: mime,
+        });
+        if (!Number.isSafeInteger(uploaded.id) || uploaded.id < 1)
+          throw Error("Yüklenen görselin kimliği doğrulanamadı.");
+        ids = [...ids, uploaded.id];
+        d.update({ media_ids: ids });
+        // Persist each completed upload before starting the next one. A process
+        // death cannot lose an already returned media ID from the draft.
+        await d.flush();
+      }
     } catch (e) {
       setError(message(e));
     } finally {
@@ -185,8 +215,60 @@ function Composer({
       setBusy(false);
     }
   }
+
+  async function saveMediaIds(ids: number[]) {
+    if (lock.current || d.draft.attempted) return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      d.update({ media_ids: ids });
+      await d.flush();
+    } catch (e) {
+      setError("Görsel taslağı kaydedilemedi: " + message(e));
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function previewLink() {
+    if (lock.current || previewBusy || d.draft.attempted) return;
+    const url = d.draft.link.trim();
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "https:" || !parsed.hostname) throw new Error();
+    } catch {
+      setError("Geçerli bir HTTPS bağlantısı girin.");
+      return;
+    }
+    const request = ++previewGeneration.current;
+    setPreviewBusy(true);
+    setError("");
+    try {
+      const preview = await api.getLinkPreview(token, url);
+      if (request !== previewGeneration.current) return;
+      const nextLink = preview.url || url;
+      if (preview.available && preview.id) {
+        d.update({ link: nextLink, preview_id: preview.id, preview });
+        await d.flush();
+      } else {
+        d.update({ link: nextLink, preview_id: undefined, preview: null });
+        await d.flush();
+        setError(
+          preview.message ||
+            "Önizleme alınamadı. Bağlantıyı önizlemesiz paylaşabilirsiniz.",
+        );
+      }
+    } catch (e) {
+      if (request === previewGeneration.current) setError(message(e));
+    } finally {
+      if (request === previewGeneration.current) setPreviewBusy(false);
+    }
+  }
+
   async function post() {
-    if (lock.current) return;
+    if (lock.current || previewBusy || d.draft.attempted) return;
     lock.current = true;
     setBusy(true);
     setError("");
@@ -197,6 +279,7 @@ function Composer({
           media_ids: v.media_ids,
           idempotency_key: v.id,
           ...(v.link.trim() ? { link_url: v.link.trim() } : {}),
+          ...(v.preview_id ? { preview_id: v.preview_id } : {}),
         }),
       );
       onPosted(p);
@@ -208,11 +291,27 @@ function Composer({
       setBusy(false);
     }
   }
+
+  function movePhoto(index: number, direction: -1 | 1) {
+    const next = [...d.draft.media_ids];
+    const target = index + direction;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    void saveMediaIds(next);
+  }
+
+  function removePhoto(id: number) {
+    void saveMediaIds(d.draft.media_ids.filter((value) => value !== id));
+  }
+
   return (
     <Sheet
       title="Gönderi paylaş"
       onClose={() => {
-        if (!lock.current) onClose();
+        if (!lock.current) {
+          previewGeneration.current++;
+          onClose();
+        }
       }}
     >
       <ScrollView
@@ -234,7 +333,8 @@ function Composer({
               <Button
                 title="Bozuk taslağı temizle"
                 onPress={() => {
-                  void d.clear().then(() => setLocalPhotos([])).catch((e) => setError(message(e)));
+                  previewGeneration.current++;
+                  void d.clear().catch((e) => setError(message(e)));
                 }}
               />
             )}
@@ -258,12 +358,101 @@ function Composer({
               keyboardType="url"
               editable={!busy && !d.draft.attempted}
               value={d.draft.link}
-              onChangeText={(link) => d.update({ link })}
+              onChangeText={(link) => {
+                previewGeneration.current++;
+                setPreviewBusy(false);
+                d.update({ link, preview_id: undefined, preview: null });
+              }}
               style={s.input}
             />
+            <Button
+              title={previewBusy ? "Önizleme alınıyor…" : d.draft.preview_id ? "Önizlemeyi yenile" : "Önizlemeyi getir"}
+              onPress={() => void previewLink()}
+              disabled={busy || previewBusy || d.draft.attempted || !d.draft.link.trim()}
+            />
+            {d.draft.preview?.available && (
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel="Bağlantı önizlemesini aç"
+                onPress={() =>
+                  void Linking.openURL(d.draft.link).catch((e) =>
+                    setError(message(e)),
+                  )
+                }
+                style={s.previewCard}
+              >
+                {d.draft.preview.cover?.url && (
+                  <Image
+                    source={api.socialImageSource(d.draft.preview.cover.url, token)}
+                    style={s.previewImage}
+                    resizeMode="cover"
+                  />
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={s.previewTitle}>
+                    {d.draft.preview.title ||
+                      d.draft.preview.site_name ||
+                      d.draft.preview.domain ||
+                      d.draft.link}
+                  </Text>
+                  {!!d.draft.preview.domain && (
+                    <Text style={s.previewMeta}>{d.draft.preview.domain}</Text>
+                  )}
+                  {!!d.draft.preview.description && (
+                    <Text style={s.previewDescription} numberOfLines={3}>
+                      {d.draft.preview.description}
+                    </Text>
+                  )}
+                </View>
+              </Pressable>
+            )}
             <Text style={s.meta}>{d.draft.media_ids.length}/4 fotoğraf</Text>
-            {localPhotos.length > 0 && <View style={{flexDirection:"row",flexWrap:"wrap",gap:8,marginVertical:8}}>{localPhotos.map((uri,index)=><Image key={uri+index} accessibilityLabel={`Yüklenen fotoğraf ${index+1}`} source={{uri}} resizeMode="cover" style={{width:"47%",height:140,borderRadius:12,backgroundColor:C.bg}}/>)}</View>}
-            {!!d.draft.media_ids.length && <Text style={s.meta}>Fotoğraf taslağa eklendi. Paylaşmadan önce metni ve fotoğrafları kontrol edin.</Text>}
+            {d.draft.media_ids.length > 0 && (
+              <View style={s.mediaGrid}>
+                {d.draft.media_ids.map((id, index) => (
+                  <View key={id} style={s.mediaItem}>
+                    <Image
+                      accessibilityLabel={`Yüklenen fotoğraf ${index + 1}`}
+                      source={api.socialImageSource(
+                        `/api/expert-social/media/${id}`,
+                        token,
+                      )}
+                      resizeMode="cover"
+                      style={s.mediaImage}
+                    />
+                    <View style={s.mediaControls}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Fotoğrafı önceye taşı ${index + 1}`}
+                        disabled={busy || d.draft.attempted || index === 0}
+                        onPress={() => movePhoto(index, -1)}
+                        style={s.mediaControl}
+                      >
+                        <Text style={s.mediaControlText}>‹</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Fotoğrafı kaldır ${index + 1}`}
+                        disabled={busy || d.draft.attempted}
+                        onPress={() => removePhoto(id)}
+                        style={s.mediaControl}
+                      >
+                        <Text style={s.mediaControlText}>×</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Fotoğrafı sonraya taşı ${index + 1}`}
+                        disabled={busy || d.draft.attempted || index === d.draft.media_ids.length - 1}
+                        onPress={() => movePhoto(index, 1)}
+                        style={s.mediaControl}
+                      >
+                        <Text style={s.mediaControlText}>›</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
             <Button
               title="Fotoğraf ekle"
               onPress={() => void image()}
@@ -289,6 +478,7 @@ function Composer({
               onPress={() => void post()}
               disabled={
                 busy ||
+                previewBusy ||
                 (!d.draft.text.trim() &&
                   !d.draft.media_ids.length &&
                   !d.draft.link.trim())
@@ -307,6 +497,7 @@ function Composer({
                       text: "Sil",
                       style: "destructive",
                       onPress: () => {
+                        previewGeneration.current++;
                         void d.clear().catch((e) => setError(message(e)));
                       },
                     },
@@ -892,6 +1083,13 @@ function PostCard({
     setMenuOpen(false);
     action();
   };
+  const coverMedia =
+    post.link_url && post.cover_media_id
+      ? post.media.find((item) => item.id === post.cover_media_id)
+      : undefined;
+  const gallery = post.media.filter(
+    (item) => !(post.link_url && item.id === post.cover_media_id),
+  );
   return (
     <View style={s.card}>
       <View style={s.row}>
@@ -946,27 +1144,65 @@ function PostCard({
       <Text selectable style={s.body}>
         {post.text}
       </Text>
-      {post.media.map((m) => (
-        <Pressable key={m.id} onPress={() => onImage(m.url)}>
-          <Image
-            source={api.socialImageSource(m.url, token)}
-            style={s.photo}
-            resizeMode="contain"
-          />
-        </Pressable>
-      ))}
+      {gallery.length > 0 && (
+        <View style={s.gallery}>
+          {gallery.map((item, index) => (
+            <Pressable
+              key={item.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Gönderi görselini aç ${index + 1} / ${gallery.length}`}
+              onPress={() => onImage(item.url)}
+              style={s.galleryItem}
+            >
+              <Image
+                source={api.socialImageSource(item.url, token)}
+                style={s.galleryPhoto}
+                resizeMode="cover"
+              />
+            </Pressable>
+          ))}
+        </View>
+      )}
       {!!post.link_url && (
         <Pressable
+          accessibilityRole="link"
+          accessibilityLabel="Bağlantı önizlemesi"
           onPress={() => {
-            if (/^https?:\/\//i.test(post.link_url!))
+            if (/^https:\/\//i.test(post.link_url!))
               void Linking.openURL(post.link_url!).catch((e) =>
                 setError(message(e)),
               );
           }}
+          style={s.previewCard}
         >
-          <Text style={s.action} numberOfLines={2}>
-            {post.link_url}
-          </Text>
+          {coverMedia?.url && (
+            <Image
+              source={api.socialImageSource(coverMedia.url, token)}
+              style={s.previewImage}
+              resizeMode="cover"
+            />
+          )}
+          <View style={{ flex: 1 }}>
+            <Text style={s.previewTitle} numberOfLines={2}>
+              {post.preview?.title ||
+                post.preview?.site_name ||
+                post.preview?.domain ||
+                post.link_url}
+            </Text>
+            {!!post.preview?.domain && (
+              <Text style={s.previewMeta}>{post.preview.domain}</Text>
+            )}
+            {!!post.preview?.description && (
+              <Text style={s.previewDescription} numberOfLines={3}>
+                {post.preview.description}
+              </Text>
+            )}
+            {!post.preview && (
+              <Text style={s.previewMeta} numberOfLines={2}>
+                {post.link_url}
+              </Text>
+            )}
+          </View>
         </Pressable>
       )}
       {post.status !== "PUBLISHED" && (
@@ -1030,7 +1266,12 @@ function PostCard({
       {menuOpen && (
         <Sheet title="Gönderi işlemleri" onClose={() => setMenuOpen(false)}>
           <View style={s.pad}>
-            {post.owned ? (
+            {post.owned && showExpertActions ? (
+              <Button
+                title="Profilimde yönet"
+                onPress={() => choose(onProfile)}
+              />
+            ) : post.owned ? (
               <>
                 <Button title="Düzenle" onPress={() => choose(onEdit)} />
                 <Button
@@ -1277,7 +1518,7 @@ export function DentalFlow({
               style={[s.tab, mode === m && { backgroundColor: C.navy }]}
             >
               <Text style={{ color: mode === m ? "white" : C.navy }}>
-                {m === "discover" ? "Keşfet" : "Takip edilenler"}
+                {m === "discover" ? "Keşfet" : "Takip Ettiklerim"}
               </Text>
             </Pressable>
           ))}
@@ -1509,6 +1750,20 @@ const s = StyleSheet.create({
     borderRadius: 10,
     marginVertical: 6,
   },
+  gallery: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 8 },
+  galleryItem: { width: "48%", minWidth: "46%", flexGrow: 1 },
+  galleryPhoto: { width: "100%", height: 150, borderRadius: 10, backgroundColor: C.bg },
+  mediaGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 10 },
+  mediaItem: { width: "48%", flexGrow: 1, borderRadius: 12, overflow: "hidden", backgroundColor: C.bg },
+  mediaImage: { width: "100%", height: 132, backgroundColor: C.bg },
+  mediaControls: { flexDirection: "row", alignItems: "center", justifyContent: "space-around", padding: 5, backgroundColor: "#EEF3F8" },
+  mediaControl: { minWidth: 42, minHeight: 36, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: "white" },
+  mediaControlText: { color: C.navy, fontSize: 21, fontWeight: "800" },
+  previewCard: { flexDirection: "row", gap: 12, alignItems: "center", padding: 10, borderWidth: 1, borderColor: C.line, borderRadius: 14, backgroundColor: "white", marginVertical: 8 },
+  previewImage: { width: 88, height: 88, borderRadius: 10, backgroundColor: C.bg },
+  previewTitle: { color: C.navy, fontSize: 14, fontWeight: "800", lineHeight: 19 },
+  previewMeta: { color: C.muted, fontSize: 11, marginTop: 3 },
+  previewDescription: { color: C.muted, fontSize: 12, lineHeight: 17, marginTop: 4 },
   button: {
     backgroundColor: C.navy,
     padding: 14,
