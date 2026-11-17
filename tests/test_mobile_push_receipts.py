@@ -87,6 +87,64 @@ def test_event_device_reservation_is_idempotent_and_stores_no_raw_token(tmp_path
     assert not ({"expo_push_token", "title", "body", "message", "payload_json"} & columns)
 
 
+def test_reservation_rechecks_opt_out_after_device_snapshot(tmp_path):
+    engine, user_id, device_id, token = _engine(tmp_path)
+    with Session(engine) as session:
+        stale_snapshot = session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.user_id == user_id,
+            main.MobilePushDevice.device_id == device_id,
+        )).one()
+
+    # The sender's initial SELECT happened before the user opted out.
+    with Session(engine) as session:
+        current = session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.user_id == user_id,
+            main.MobilePushDevice.device_id == device_id,
+        )).one()
+        current.enabled = False
+        session.add(current)
+        session.commit()
+
+    reserved = reserve_mobile_push_deliveries(
+        engine, event_id=443, user_id=user_id, devices=[stale_snapshot],
+    )
+    assert reserved == []
+    with Session(engine) as session:
+        assert session.exec(select(main.MobilePushDelivery)).all() == []
+    engine.dispose()
+
+
+def test_reservation_uses_rotated_live_token_not_stale_snapshot(tmp_path):
+    engine, user_id, device_id, old_token = _engine(tmp_path)
+    with Session(engine) as session:
+        stale_snapshot = session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.user_id == user_id,
+            main.MobilePushDevice.device_id == device_id,
+        )).one()
+
+    new_token = "ExpoPushToken[abcdefgh87654321]"
+    with Session(engine) as session:
+        current = session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.user_id == user_id,
+            main.MobilePushDevice.device_id == device_id,
+        )).one()
+        current.expo_push_token = new_token
+        session.add(current)
+        session.commit()
+
+    reserved = reserve_mobile_push_deliveries(
+        engine, event_id=444, user_id=user_id, devices=[stale_snapshot],
+    )
+    assert len(reserved) == 1
+    assert reserved[0]["token"] == new_token
+    assert reserved[0]["token"] != old_token
+    assert reserved[0]["token_fingerprint"] == token_fingerprint(new_token)
+    with Session(engine) as session:
+        row = session.exec(select(main.MobilePushDelivery)).one()
+    assert row.token_fingerprint == token_fingerprint(new_token)
+    engine.dispose()
+
+
 def test_disabled_transport_does_not_leave_a_receipt_poll_pending(tmp_path):
     engine, user_id, device_id, token = _engine(tmp_path)
     with Session(engine) as session:
