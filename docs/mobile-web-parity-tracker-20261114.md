@@ -644,3 +644,12 @@ Native Program continuation now uses an owner/view/day-bound, 15-minute snapshot
 ## 2026-11-17 — Program month-grid visual parity
 
 Web `program.html` uses the first three daily event types as semantic color dots and an overflow dot. Native month cells now use the same first-three/overflow rule and the web tone colors; week view retains day counts. Backend and native regression coverage added. Evidence: `docs/mobile-program-idempotency-20261117.md`.
+
+
+## 2026-11-17 — Dental Akış native media and link-preview parity
+
+Web-first review covered `expert_following.html`, `_expert_social.html`, `expert-social.js`, `dental-flow.css`, and the expert-social API/safety/relationship modules. Native gaps found: one-photo picker, no ordered remove/reorder controls, no safe link-preview receipt, raw URL-only cards, duplicated link cover in the gallery, and owner actions that differed from the aggregate web feed.
+
+Native now supports up to four sequential JPEG/PNG/WebP uploads (8 MiB each), persisting each successful media ID before continuing; secure-draft remove/reorder; HTTPS-only calls to the existing SSRF-safe `POST /preview`; bounded preview receipt persistence and validation; preview-aware post creation; metadata/cover link cards; cover exclusion from the gallery; and web-equivalent owner management routing and tab wording. No backend schema, migration, new background polling, patient data flow, merge or deployment.
+
+Regression coverage added to `mobile/tests/social.cjs` and `mobile/tests/socialScreens.cjs`. These tests are committed but not claimed as executed. Full Android typecheck, beta tests, Expo export and backend social pytest remain blocked until GitHub Actions assigns runners. Evidence: `docs/mobile-dental-flow-parity-20261117.md`.
