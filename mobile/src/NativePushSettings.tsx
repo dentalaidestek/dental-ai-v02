@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Linking, Pressable, Text, View } from "react-native";
 import { disableNativePush, enableNativePush, getNativePushState, NativePushState } from "./nativePush";
 
@@ -7,25 +7,25 @@ export default function NativePushSettings({ token, userId }: { token: string; u
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [mounted, setMounted] = useState(true);
+  const mounted = useRef(true);
 
   const refresh = useCallback(async () => {
     try {
       const result = await getNativePushState(userId);
-      if (mounted) setState(result);
+      if (mounted.current) setState(result);
     } catch (e) {
-      if (mounted) setError(e instanceof Error ? e.message : "Bildirim ayarı okunamadı.");
+      if (mounted.current) setError(e instanceof Error ? e.message : "Bildirim ayarı okunamadı.");
     }
-  }, [userId, mounted]);
+  }, [userId]);
 
   useEffect(() => {
-    setMounted(true);
+    mounted.current = true;
     void refresh();
     const listener = AppState.addEventListener("change", (value) => {
       if (value === "active") void refresh();
     });
     return () => {
-      setMounted(false);
+      mounted.current = false;
       listener.remove();
     };
   }, [refresh]);
