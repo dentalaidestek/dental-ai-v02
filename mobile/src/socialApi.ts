@@ -299,10 +299,32 @@ export async function getPost(t: string, id: number): Promise<SocialPost> {
     !["PUBLISHED", "PENDING", "REJECTED"].includes(String(post.status)) ||
     !Number.isSafeInteger(post.version) ||
     (post.version as number) < 1 ||
+    typeof post.owned !== "boolean" ||
+    typeof post.pinned !== "boolean" ||
+    typeof post.comments_closed !== "boolean" ||
+    typeof post.liked !== "boolean" ||
+    !Number.isSafeInteger(post.like_count) ||
+    (post.like_count as number) < 0 ||
+    !Number.isSafeInteger(post.comment_count) ||
+    (post.comment_count as number) < 0 ||
     !Array.isArray(post.media) ||
+    post.media.length > 4 ||
+    post.media.some((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return true;
+      const media = item as Record<string, unknown>;
+      return (
+        !Number.isSafeInteger(media.id) ||
+        (media.id as number) < 1 ||
+        typeof media.url !== "string" ||
+        media.url !== `/api/expert-social/media/${media.id}`
+      );
+    }) ||
     typeof post.created_at !== "string"
   ) {
     throw new ApiError(502, "Gönderi alanları doğrulanamadı.");
+  }
+  if (post.status !== "PUBLISHED" && post.owned !== true) {
+    throw new ApiError(502, "Yayınlanmamış gönderi sahibi doğrulanamadı.");
   }
   if (post.moderation !== undefined && post.moderation !== null) {
     const moderation = post.moderation as Record<string, unknown>;
