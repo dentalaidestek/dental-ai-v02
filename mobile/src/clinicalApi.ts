@@ -1,7 +1,11 @@
 import {request} from './api';
 export type ClinicalJob={id:number;kind:'VISION'|'PRELIMINARY'|'FINAL';status:string;retryable:boolean};
 export type ClinicalResult={status:string;most_likely?:string;findings?:unknown[];treatment_options?:string[];treatment_cautions?:string[];preferred_approach?:string;differential?:string[];recommended_evaluation?:string[];uncertainty?:string;preliminary_assessment?:string;questions?:Array<{question:string;type:string}>};
-export type ClinicalWorkspace={analysis_id:number;patient_id:number;patient_anonymous_id:string;status:string;clinical_notes:string|null;tooth_number:string|null;revision:string;result:ClinicalResult|null;job:ClinicalJob|null;assets:Array<{id:number;name:string;image_type:string;has_vision:boolean;url:string}>};
+export type ClinicalWorkspace={analysis_id:number;patient_id:number;patient_anonymous_id:string;status:string;clinical_notes:string|null;tooth_number:string|null;revision:string;result:ClinicalResult|null;job:ClinicalJob|null;assets:Array<{id:number;image_type:string;has_vision:boolean;url:string}>};
+export function clinicalAssetLabel(value:string){
+ const modality=String(value||'').toUpperCase();
+ return modality==='PANORAMIC'?'Panoramik':modality==='BITEWING'?'Bitewing':modality==='PERIAPICAL'?'Periapikal':modality==='INTRAORAL_PHOTO'?'Ağız içi':modality==='RADIOGRAPH'?'Radyografi':modality==='PHOTO'?'Klinik fotoğraf':'Görüntü';
+}
 export type ClinicalIntent={user:number;analysis:number;revision:string;answers:Record<string,string>};
 export type ClinicalNoteIntent={user:number;analysis:number;note:string;finding:string;tooth:string};
 export const clinicalNoteIntentKey=(user:number,analysis:number)=>`dai.clinical.note.${Number.isSafeInteger(user)&&user>0?user:'invalid'}.${id(analysis)}`;
@@ -20,7 +24,8 @@ const path=(analysis:number)=>'/analyses/'+id(analysis);
 export async function getClinical(token:string,analysis:number){
  const r=await request<ClinicalWorkspace>(path(analysis)+'/clinical',token);
  const assets=Array.isArray(r?.assets)?r.assets:[];
- const validAssets=assets.length<=4&&new Set(assets.map(x=>x?.id)).size===assets.length&&assets.every(x=>x&&Number.isSafeInteger(x.id)&&x.id>0&&typeof x.name==='string'&&x.name.length<=255&&typeof x.image_type==='string'&&x.image_type.length<=40&&typeof x.has_vision==='boolean'&&typeof x.url==='string'&&x.url===`/api/mobile/v1/analyses/${analysis}/assets/${x.id}`);
+ const allowedAssetKeys=new Set(['id','image_type','has_vision','url']);
+ const validAssets=assets.length<=4&&new Set(assets.map(x=>x?.id)).size===assets.length&&assets.every(x=>x&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).every(key=>allowedAssetKeys.has(key))&&Number.isSafeInteger(x.id)&&x.id>0&&typeof x.image_type==='string'&&/^[A-Z][A-Z0-9_]{0,39}$/.test(x.image_type)&&typeof x.has_vision==='boolean'&&typeof x.url==='string'&&x.url===`/api/mobile/v1/analyses/${analysis}/assets/${x.id}`);
  const job=r?.job;
  const validJob=job===null||!!job&&Number.isSafeInteger(job.id)&&job.id>0&&['VISION','PRELIMINARY','FINAL'].includes(job.kind)&&typeof job.status==='string'&&job.status.length>0&&job.status.length<=40&&typeof job.retryable==='boolean';
  if(!r||r.analysis_id!==analysis||!Number.isSafeInteger(r.patient_id)||r.patient_id<1||typeof r.patient_anonymous_id!=='string'||!r.patient_anonymous_id.trim()||r.patient_anonymous_id.length>80||!validAssets||!/^([0-9a-f]{64})$/.test(r.revision)||typeof r.status!=='string'||typeof r.clinical_notes!=='string'&&r.clinical_notes!==null||typeof r.tooth_number!=='string'&&r.tooth_number!==null||!validJob||r.result!==null&&(!r.result||typeof r.result!=='object'||typeof r.result.status!=='string'))throw Error('Klinik sonuç doğrulanamadı.');
