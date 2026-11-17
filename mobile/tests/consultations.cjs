@@ -288,3 +288,14 @@ test('incremental consultation sync requires an advancing cursor for nonterminal
   await assert.rejects(()=>api.getConsultationUpdates('token',42,10),/geçersiz sayfa/);
  });
 });
+
+test('native attachment acknowledgements append the persisted message without a full case reload',()=>{
+ const screen=fs.readFileSync(require.resolve('../src/ModernScreens.tsx'),'utf8');
+ const composer=fs.readFileSync(require.resolve('../src/ChatAttachmentComposer.tsx'),'utf8');
+ assert.ok(screen.includes('onSent={async(message?:ChatMessage)=>'));
+ assert.ok(screen.includes('mergeConsultationMessages(previous.messages||[],[message])'));
+ assert.ok(screen.includes('messageCursor.current=Math.max(messageCursor.current,message.id)'));
+ assert.equal(screen.includes('onSent={async()=>{setReplyTo(null);await load()}}'),false);
+ assert.ok(composer.includes('await onSent(result.message)'));
+ assert.ok(composer.includes('await onSent(receipt.message||undefined)'));
+});
