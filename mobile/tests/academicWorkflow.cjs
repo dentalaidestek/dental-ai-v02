@@ -88,3 +88,42 @@ test('interrupted Academic run shows its safe checkpoint and retries only after 
  assert.equal(h.calls[0].message,interrupted.question);
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('Academic native entrypoints contain no TypeScript parser diagnostics',()=>{
+ for(const file of ['../src/NativeAcademic.tsx','../src/academicApi.ts','../src/nativeAcademicFiles.ts']){
+  const source=fs.readFileSync(require.resolve(file),'utf8');
+  const result=ts.transpileModule(source,{fileName:file,reportDiagnostics:true,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.React}});
+  const errors=(result.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error).map(d=>ts.flattenDiagnosticMessageText(d.messageText,' '));
+  assert.deepEqual(errors,[],file+': '+errors.join('; '));
+ }
+});
+
+test('optional learning and quiz outages do not block the core Academic workspace',async()=>{
+ const h=ui({
+  learning:async()=>{throw Error('Synthetic learning endpoint outage')},
+  quizzes:async()=>{throw Error('Synthetic quiz endpoint outage')}
+ });
+ const tree=await open(h);
+ assert.equal(button(tree,'Gönder').props.disabled,false);
+ assert.ok(button(tree,'Derslerime Dön'));
+ assert.ok(text(tree.toJSON()).includes('Synthetic learning endpoint outage'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('index readiness outage leaves the course readable but prevents AI generation',async()=>{
+ const h=ui({indexStatus:async()=>{throw Error('Synthetic index status outage')}});
+ const tree=await open(h);
+ assert.ok(button(tree,'Derslerime Dön'));
+ assert.equal(button(tree,'Gönder').props.disabled,true);
+ assert.ok(text(tree.toJSON()).includes('Synthetic index status outage'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('required workspace failure keeps Academic actions fail-closed',async()=>{
+ const h=ui({timeline:async()=>{throw Error('Synthetic timeline outage')}});
+ const tree=await open(h);
+ assert.equal(button(tree,'Gönder').props.disabled,true);
+ assert.ok(text(tree.toJSON()).includes('Synthetic timeline outage'));
+ await renderer.act(async()=>tree.unmount());
+});
