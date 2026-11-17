@@ -187,7 +187,7 @@ function connectChat(){if(destroyed||suspended||socket&&(socket.readyState===Web
 let selectedAttachment=null,attachmentObjectUrl=null,uploadInFlight=false,pendingMediaSends=new Map(),pendingMediaIntent=null;
 const mediaIntentStorageKey="dai.consultation.media.{{ case.id }}."+String(chat?.dataset.userId||"");
 try{const saved=JSON.parse(sessionStorage.getItem(mediaIntentStorageKey)||"null");if(saved&&/^[A-Za-z0-9_-]{16,96}$/.test(saved.key||"")&&typeof saved.signature==="string")pendingMediaIntent=saved;else sessionStorage.removeItem(mediaIntentStorageKey)}catch{}
-function mediaIntentSignature(file,replyId){return [String(file?.type||""),String(replyId||"")].join("|")}
+function mediaIntentSignature(file,replyId){const type=String(file?.type||"");return [type,type.startsWith("image/")?"image":String(file?.size||0),String(replyId||"")].join("|")}
 
 document.addEventListener("submit",async e=>{const form=e.target.closest?.(".expert-composer");if(!form)return;e.preventDefault();if(sendInFlight)return;const input=form.querySelector('input[name="content"]'),value=(input?.value||"").trim();if(selectedAttachment){const replyId=currentReplyInput()?.value||"";const uploaded=await sendAttachment(selectedAttachment,{replyId});if(uploaded&&value)sendText(value,input);return}if(value&&input)sendText(value,input)},{signal:roomSignal});
 let pendingTextSends=new Map();
@@ -261,12 +261,12 @@ function optimisticImage(src,key){
 }
 async function sendAttachment(file=selectedAttachment,{replyId="",previewUrl=""}={}){
  if(!file||uploadInFlight)return false;
+ const signature=mediaIntentSignature(file,replyId);
+ if(pendingMediaIntent&&pendingMediaIntent.signature!==signature){showComposerError("Önce bekleyen ek gönderimini aynı dosya ve yanıtla tamamlayın.");return false}
  const btn=currentTextForm()?.querySelector("button[type=submit]");
  uploadInFlight=true;if(btn){btn.disabled=true;btn.setAttribute("aria-busy","true")}
  let ownPreview=false;
  if(!previewUrl&&file.type.startsWith("image/")){previewUrl=URL.createObjectURL(file);ownPreview=true}
- const signature=mediaIntentSignature(file,replyId);
- if(pendingMediaIntent&&pendingMediaIntent.signature!==signature){showComposerError("Önce bekleyen ek gönderimini aynı dosya ve yanıtla tamamlayın.");return false}
  if(!pendingMediaIntent){const key="pending-media-"+(crypto.randomUUID?.()||Date.now()+"-"+Math.random().toString(36).slice(2));pendingMediaIntent={key,signature};try{sessionStorage.setItem(mediaIntentStorageKey,JSON.stringify(pendingMediaIntent))}catch{}}
  const mediaKey=pendingMediaIntent.key;let pending=pendingMediaSends.get(mediaKey);
  if(!pending){pending=previewUrl?optimisticImage(previewUrl,mediaKey):{key:mediaKey,el:null};pendingMediaSends.set(mediaKey,pending)}
