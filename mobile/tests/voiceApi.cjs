@@ -445,3 +445,27 @@ test('native voice history rejects foreign field names, missing provenance and i
   await assert.rejects(()=>api.getVoiceHistory('token',8),/geçmişi doğrulanamadı/);
  }finally{global.fetch=original}
 });
+
+test('approved voice history uses the authenticated patient-scoped read endpoint',async()=>{
+ const original=global.fetch;let call;
+ const body={ok:true,revision:'a'.repeat(64),notice:'Önceki hekim onaylı beyanlar',fields:{allergies:{value:'Alerjim yok',quote:'Alerjim yok',analysis_id:21}}};
+ global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify(body))};
+ try{
+  const result=await api.getVoiceHistory('secret-token',12);
+  assert.equal(result.fields.allergies.value,'Alerjim yok');
+  assert.match(call.url,/\\/patients\\/12\\/voice-exam\\/history$/);
+  assert.equal(call.init.method,'GET');
+  assert.equal(call.init.headers.Authorization,'Bearer secret-token');
+  assert.equal(call.init.headers['Cache-Control'],'no-store');
+  assert.equal(call.init.body,undefined);
+ }finally{global.fetch=original}
+});
+test('approved voice history rejects unknown fields and invalid analysis references',async()=>{
+ const original=global.fetch;
+ try{
+  global.fetch=async()=>response(JSON.stringify({ok:true,revision:'a'.repeat(64),notice:'history',fields:{transcript:{value:'raw conversation',quote:'raw',analysis_id:1}}}));
+  await assert.rejects(()=>api.getVoiceHistory('token',1),/geçmişi doğrulanamadı/);
+  global.fetch=async()=>response(JSON.stringify({ok:true,revision:'a'.repeat(64),notice:'history',fields:{allergies:{value:'Alerji',quote:'Alerji',analysis_id:0}}}));
+  await assert.rejects(()=>api.getVoiceHistory('token',1),/geçmişi doğrulanamadı/);
+ }finally{global.fetch=original}
+});
