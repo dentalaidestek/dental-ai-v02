@@ -52,7 +52,7 @@ def test_range_expands_weekly_occurrences_and_does_not_leak_other_accounts(progr
 
 def test_program_edit_copy_complete_delete_reuse_web_lifecycle(program):
     client,engine=program
-    values={'event_type':'APPOINTMENT','title':'Synthetic visit','start_at':'2030-01-07T10:00','end_at':'2030-01-07T10:30','patient_id':8,'reminder_minutes':'30','recurrence_rule':'NONE'}
+    values={'event_type':'APPOINTMENT','title':'Synthetic visit','start_at':'2030-01-07T10:00','end_at':'2030-01-07T10:30','patient_id':8,'reminder_minutes':'30','recurrence_rule':'NONE','request_key':'program-create-request-000001'}
     created=client.post('/api/mobile/v1/program/events',json=values)
     assert created.status_code==200,created.text
     ident=created.json()['event']['id']
@@ -69,6 +69,52 @@ def test_program_edit_copy_complete_delete_reuse_web_lifecycle(program):
     assert client.post(f'/api/mobile/v1/program/events/{ident}/complete').status_code==200
     assert client.delete(f'/api/mobile/v1/program/events/{ident}').status_code==200
     assert client.get(f'/api/mobile/v1/program/events/{ident}').status_code==404
+
+
+def test_program_create_receipt_replays_exact_event_and_rejects_changed_payload(program):
+    client,engine=program
+    key='program-create-receipt-000001'
+    values={'event_type':'APPOINTMENT','title':'Synthetic receipt visit','start_at':'2030-01-07T10:00','end_at':'2030-01-07T10:30','patient_id':8,'reminder_minutes':'30','recurrence_rule':'NONE','request_key':key}
+    first=client.post('/api/mobile/v1/program/events',json=values)
+    assert first.status_code==200,first.text
+    second=client.post('/api/mobile/v1/program/events',json=values)
+    assert second.status_code==200,second.text
+    assert second.json()['event']['id']==first.json()['event']['id']
+    assert client.get(f'/api/mobile/v1/program/mutations/{key}').json()['state']=='FOUND'
+    changed=client.post('/api/mobile/v1/program/events',json={**values,'title':'Different appointment'})
+    assert changed.status_code==409
+    with Session(engine) as s:
+        rows=s.exec(select(main.ScheduleEvent).where(main.ScheduleEvent.owner_user_id==1,main.ScheduleEvent.client_request_hash!=None)).all()
+        assert len(rows)==1
+        jobs=s.exec(select(main.ProgramReminderJob).where(main.ProgramReminderJob.schedule_event_id==rows[0].id)).all()
+        assert len(jobs)==1 and jobs[0].status=='PENDING'
+
+
+def test_program_receipts_are_owner_scoped_and_soft_deleted_keys_do_not_recreate(program):
+    client,engine=program
+    from app.mobile_api import _program_request_hash
+    key='program-owner-scope-request-0001'
+    other_hash=_program_request_hash(2,key)
+    with Session(engine) as s:
+        s.add(main.ScheduleEvent(owner_user_id=2,event_type='PERSONAL',title='Private other event',
+            start_at=datetime(2030,1,7,7,0),client_request_hash=other_hash,client_payload_hash='a'*64))
+        s.commit()
+    assert client.get(f'/api/mobile/v1/program/mutations/{key}').json()=={'state':'NOT_FOUND'}
+    values={'event_type':'APPOINTMENT','title':'Synthetic deletable visit','start_at':'2030-01-07T10:00','end_at':'2030-01-07T10:30','patient_id':8,'reminder_minutes':'NONE','recurrence_rule':'NONE','request_key':key}
+    created=client.post('/api/mobile/v1/program/events',json=values)
+    assert created.status_code==200,created.text
+    ident=created.json()['event']['id']
+    assert client.delete(f'/api/mobile/v1/program/events/{ident}').status_code==200
+    assert client.get(f'/api/mobile/v1/program/mutations/{key}').json()=={'state':'DELETED','event_id':ident}
+    assert client.post('/api/mobile/v1/program/events',json=values).status_code==410
+
+
+def test_program_create_requires_a_valid_request_key(program):
+    client,_=program
+    values={'event_type':'APPOINTMENT','title':'Synthetic visit','start_at':'2030-01-07T10:00','end_at':'2030-01-07T10:30','patient_id':8,'reminder_minutes':'NONE','recurrence_rule':'NONE'}
+    assert client.post('/api/mobile/v1/program/events',json=values).status_code==422
+    assert client.post('/api/mobile/v1/program/events',json={**values,'request_key':'short'}).status_code==422
+
 
 def test_conflict_advice_is_owned_and_supports_recurring_records(program):
     client,engine=program
