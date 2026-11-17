@@ -2,6 +2,23 @@ const ts=require('typescript'),fs=require('node:fs'),assert=require('node:assert
 const {test}=require('node:test');
 require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
 const api=require('../src/socialApi.ts'),{submitDraft,readDraft,draftKey}=require('../src/socialDraft.ts');
+test('owner moderation refresh uses bearer auth and rejects mismatched or malformed post receipts',async()=>{
+ const original=global.fetch,calls=[],payload={id:42,author_id:7,author_name:'Verified expert',text:'Pending post',status:'PENDING',version:3,owned:true,pinned:false,comments_closed:false,liked:false,like_count:0,comment_count:0,media:[],created_at:'2026-11-17T13:20:00Z',moderation:{job_id:9,registered:true,content_version:3,revision:2,state:'WAITING_HUMAN',wait_type:'HUMAN_REVIEW',reasons:['IMAGE_REVIEW'],reason:'Görsel yönetici incelemesi bekliyor.',retryable:false}};
+ try{
+  global.fetch=async(url,init)=>{calls.push({url,...init});return new Response(JSON.stringify(payload),{status:200});};
+  const result=await api.getPost('secret',42);
+  assert.equal(result.id,42);assert.equal(result.moderation.reason,payload.moderation.reason);
+  assert.equal(calls[0].url,'https://dentalai.tr/api/expert-social/posts/42');
+  assert.equal(calls[0].credentials,'omit');assert.equal(calls[0].headers.Authorization,'Bearer secret');
+  await assert.rejects(()=>api.getPost('secret',0),/kimliği/);
+  assert.equal(calls.length,1,'invalid IDs must be rejected before network access');
+  global.fetch=async()=>new Response(JSON.stringify({...payload,id:43}),{status:200});
+  await assert.rejects(()=>api.getPost('secret',42),/alanları doğrulanamadı/);
+  global.fetch=async()=>new Response(JSON.stringify({...payload,moderation:{...payload.moderation,reason:17}}),{status:200});
+  await assert.rejects(()=>api.getPost('secret',42),/inceleme durumu doğrulanamadı/);
+ }finally{global.fetch=original;}
+});
+
 test('native social contract uses bearer, explicit states and versioned edits',async()=>{
  const original=global.fetch,calls=[];global.fetch=async(url,init)=>{calls.push({url,...init});return new Response('{}')};
  try{await api.getFeed('secret','discover',12);await api.setPostLike('secret',8,true);await api.setFollow('secret',7,false);await api.patchPost('secret',{id:8,version:3},{pinned:true});
