@@ -142,3 +142,25 @@ test('native calendar retains offset pagination only for an older backend withou
  assert.equal(calls[1].offset,50);
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('native calendar stops stale cursor retries after 409 and requires a full refresh',async()=>{
+ let calls=0;
+ const first={...page(),next_offset:50,next_cursor:'program-cursor-token-00000001'};
+ const refreshed={...page('week','Fresh calendar'),next_offset:null,next_cursor:null};
+ const conflict=Object.assign(new Error('Takvim bu sırada değişti. Yenileyin.'),{status:409});
+ const Program=component('NativeProgram',{getProgram:async()=>{calls++;if(calls===1)return first;if(calls===2)throw conflict;return refreshed}});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'token',userId:1}));await tick()});
+ assert.ok(button(tree,'Diğer kayıtlar'));
+ await renderer.act(async()=>button(tree,'Diğer kayıtlar').props.onPress());
+ await renderer.act(async()=>tick());
+ assert.equal(calls,2);
+ assert.equal(button(tree,'Diğer kayıtlar'),undefined);
+ assert.ok(button(tree,'Programı Yenile'));
+ await renderer.act(async()=>button(tree,'Programı Yenile').props.onPress());
+ await renderer.act(async()=>tick());
+ assert.equal(calls,3);
+ assert.equal(tree.root.findByType('FlatList').props.data[0].title,'Fresh calendar');
+ await renderer.act(async()=>tree.unmount());
+});
