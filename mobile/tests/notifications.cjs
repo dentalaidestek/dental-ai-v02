@@ -96,7 +96,7 @@ test('Expo SDK 54 push registration is explicit, account-scoped and token-safe',
  assert.ok(settings.includes('sunucu push dağıtımı henüz etkinleştirilmemiş'));
  assert.ok(!push.includes('console.log'));
  assert.ok(app.includes('subscribeToNativePushResponses'));
- assert.ok(app.includes('refreshNativePushRegistration(session.token,session.user.id)'));
+ assert.ok(app.includes('refreshNativePushRegistration(token,userId)'));
  assert.ok(app.includes('unregisterNativePushForLogout(session.token,session.user.id)'));
  assert.ok(app.includes('pendingNativeNotificationRoute=null'));
 });
