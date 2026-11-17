@@ -27,6 +27,9 @@ def _ensure_mobile_push_device_table(engine):
             connection.execute(text("SET LOCAL lock_timeout = '10s'"))
             connection.execute(text('SELECT pg_advisory_xact_lock(71048235)'))
         table.create(connection, checkfirst=True)
+        columns = {column["name"] for column in inspect(connection).get_columns(table.name)}
+        if "device_proof_hash" not in columns:
+            connection.execute(text(f"ALTER TABLE {table.name} ADD COLUMN device_proof_hash VARCHAR"))
         for index in table.indexes:
             index.create(connection, checkfirst=True)
 
