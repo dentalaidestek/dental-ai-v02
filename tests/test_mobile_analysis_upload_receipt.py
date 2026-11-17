@@ -386,3 +386,36 @@ def test_keyed_analysis_receipt_rejects_tampered_fingerprint_without_second_anal
     with Session(engine) as s:
         assert len(s.exec(select(main.Analysis)).all())==1
         assert len(s.exec(select(main.ImageAsset)).all())==1
+
+def test_foreign_patient_and_saved_media_are_rejected_before_upload_hashing(chat,monkeypatch,tmp_path):
+    c,engine,raw=setup(chat,monkeypatch,tmp_path)
+    calls=[]
+
+    def forbidden_hash(*_args):
+        calls.append(True)
+        raise AssertionError("unauthorized multipart bytes must not be hashed")
+
+    monkeypatch.setattr(mobile_analysis_api,"_upload_digest",forbidden_hash)
+
+    foreign_patient=post(c,raw,patient="9")
+    assert foreign_patient.status_code==404,foreign_patient.text
+
+    saved=tmp_path/"foreign-saved.png"
+    saved.write_bytes(raw)
+    _saved_media(engine,saved,media_id=39,patient_id=8,owner_id=2)
+    foreign_media=c.post(
+        "/api/mobile/v1/analyses",
+        data={
+            "patient_id":"8",
+            "request_key":"synthetic-foreign-media-hash-01",
+            "existing_media_ids":"39",
+            "tooth_number":"36",
+            "clinical_notes":"Synthetic context",
+        },
+        files={"images":("synthetic.png",raw,"image/png")},
+    )
+    assert foreign_media.status_code==404,foreign_media.text
+    assert calls==[]
+    with Session(engine) as session:
+        assert session.exec(select(main.Analysis)).all()==[]
+        assert session.exec(select(main.ImageAsset)).all()==[]
