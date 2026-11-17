@@ -3,11 +3,14 @@ import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
-import { registerPushDevice, unregisterPushDevice } from "./modernApi";
+import { claimPushDevice, registerPushDevice, unregisterPushDevice } from "./modernApi";
 import { isValidExpoPushToken } from "./pushToken";
 import { resolveExpoPushTarget, NativeNotificationTarget } from "./notificationTarget";
 
 const DEVICE_ID_KEY = "dai.push.device_id";
+const INSTALLATION_PROOF_KEY = "dai.push.installation_proof";
+type DeviceIdentity = { deviceId: string; installationProof: string };
+let deviceIdentityPromise: Promise<DeviceIdentity> | null = null;
 const ENABLED_USER_KEY = (userId: number) => "dai.push.enabled." + String(userId);
 const DELIVERY_USER_KEY = (userId: number) => "dai.push.delivery." + String(userId);
 
@@ -34,12 +37,39 @@ function easProjectId(): string {
   return typeof configured === "string" ? configured.trim() : "";
 }
 
-async function deviceId(): Promise<string> {
+async function storedDeviceId(): Promise<string | null> {
   const existing = (await SecureStore.getItemAsync(DEVICE_ID_KEY))?.trim();
-  if (existing && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(existing)) return existing;
-  const created = Crypto.randomUUID();
-  await SecureStore.setItemAsync(DEVICE_ID_KEY, created);
-  return created;
+  return existing && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(existing)
+    ? existing
+    : null;
+}
+
+async function deviceIdentity(): Promise<DeviceIdentity> {
+  if (!deviceIdentityPromise) {
+    deviceIdentityPromise = (async () => {
+      const existingId = await storedDeviceId();
+      const deviceId = existingId || Crypto.randomUUID();
+      if (!existingId) {
+        await SecureStore.setItemAsync(DEVICE_ID_KEY, deviceId);
+        await SecureStore.deleteItemAsync(INSTALLATION_PROOF_KEY);
+      }
+
+      let installationProof = await SecureStore.getItemAsync(INSTALLATION_PROOF_KEY);
+      if (installationProof && !/^[0-9a-f]{64}$/.test(installationProof)) {
+        throw new Error("Cihaz kurulum doğrulaması okunamadı. Güvenli bildirim kaydı yapılamadı.");
+      }
+      if (!installationProof) {
+        const bytes = await Crypto.getRandomBytesAsync(32);
+        installationProof = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+        await SecureStore.setItemAsync(INSTALLATION_PROOF_KEY, installationProof);
+      }
+      return { deviceId, installationProof };
+    })().catch((error) => {
+      deviceIdentityPromise = null;
+      throw error;
+    });
+  }
+  return deviceIdentityPromise;
 }
 
 function enabledKey(userId: number): string {
@@ -66,7 +96,7 @@ export async function getNativePushState(userId: number): Promise<NativePushStat
   };
 }
 
-async function expoToken(): Promise<{ deviceId: string; token: string; platform: "android" | "ios" }> {
+async function expoToken(): Promise<{ deviceId: string; installationProof: string; token: string; platform: "android" | "ios" }> {
   const platform = platformName();
   const projectId = easProjectId();
   if (!projectId) {
@@ -95,16 +125,24 @@ async function expoToken(): Promise<{ deviceId: string; token: string; platform:
   if (!isValidExpoPushToken(result.data)) {
     throw new Error("Expo geçerli bir cihaz bildirim anahtarı döndürmedi.");
   }
-  return { deviceId: await deviceId(), token: result.data, platform };
+  const identity = await deviceIdentity();
+  return { ...identity, token: result.data, platform };
 }
 
 /** Called only from the explicit account setting; never prompts during app startup. */
 export async function enableNativePush(token: string, userId: number): Promise<NativePushState> {
   const registration = await expoToken();
-  const registered = await registerPushDevice(token, registration.deviceId, registration.token, registration.platform);
+  const registered = await registerPushDevice(token, registration.deviceId, registration.token, registration.platform, registration.installationProof);
   await SecureStore.setItemAsync(enabledKey(userId), "1");
   await SecureStore.setItemAsync(DELIVERY_USER_KEY(userId), registered.delivery_enabled ? "1" : "0");
   return getNativePushState(userId);
+}
+
+/** Claim this installation for the authenticated account without enabling push or requesting OS permission. */
+export async function claimNativePushDeviceForSession(token: string, userId: number): Promise<void> {
+  enabledKey(userId); // Validate the account scope before making the authenticated claim.
+  const identity = await deviceIdentity();
+  await claimPushDevice(token, identity.deviceId, identity.installationProof);
 }
 
 /** Refreshes an opted-in token on login/foreground without showing a permission prompt. */
@@ -114,7 +152,7 @@ export async function refreshNativePushRegistration(token: string, userId: numbe
   if (platform !== "android" && platform !== "ios") return false;
 
   const permission = await Notifications.getPermissionsAsync();
-  const currentDeviceId = await SecureStore.getItemAsync(DEVICE_ID_KEY);
+  const currentDeviceId = await storedDeviceId();
   if (!permission.granted) {
     if (currentDeviceId) await unregisterPushDevice(token, currentDeviceId);
     await SecureStore.deleteItemAsync(enabledKey(userId));
