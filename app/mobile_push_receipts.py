@@ -36,19 +36,42 @@ def _now() -> datetime:
 
 
 def reserve_mobile_push_deliveries(engine, *, event_id: int, user_id: int, devices):
-    """Atomically reserve one send per event/device; duplicate event replay is a no-op."""
-    from app.main import MobilePushDelivery
+    """Reserve only after rechecking the live owner/device binding.
+
+    The supplied device objects are a candidate snapshot selected before this
+    transaction. A user can opt out, log out, or rotate an Expo token between
+    that SELECT and reservation. Never send from the detached snapshot: lock
+    and re-read the current owner-scoped rows so stale state cannot authorize
+    a post-opt-out send.
+    """
+    from app.main import MobilePushDelivery, MobilePushDevice
+
+    candidate_ids = list(dict.fromkeys(
+        device_id
+        for candidate in devices
+        if getattr(candidate, "user_id", None) == user_id
+        for device_id in [getattr(candidate, "device_id", None)]
+        if isinstance(device_id, str) and device_id.strip()
+    ))
+    if not candidate_ids:
+        return []
 
     stamp = _now()
     reserved = []
     with Session(engine, expire_on_commit=False) as session:
-        for device in devices:
-            token = getattr(device, "expo_push_token", None)
-            if (
-                getattr(device, "user_id", None) != user_id
-                or not getattr(device, "enabled", False)
-                or not is_valid_expo_push_token(token)
-            ):
+        current_devices = session.exec(
+            select(MobilePushDevice)
+            .where(
+                MobilePushDevice.user_id == user_id,
+                MobilePushDevice.device_id.in_(candidate_ids),
+                MobilePushDevice.enabled == True,
+            )
+            .order_by(MobilePushDevice.id)
+            .with_for_update(skip_locked=True)
+        ).all()
+        for device in current_devices:
+            token = device.expo_push_token
+            if not is_valid_expo_push_token(token):
                 continue
             lease_token = secrets.token_hex(24)
             row = MobilePushDelivery(
