@@ -148,10 +148,66 @@ def test_release_migration_preserves_existing_records_and_repeats_on_postgres(pg
     with engine.connect() as connection:
         assert connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all() == before
         assert set(connection.execute(text('SELECT id FROM guestanalysis')).scalars()) == {resource.id for resource in resources}
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 14
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 15
+        assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('authratebucket')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('emailchangechallenge')")).scalar_one() is not None
+
+
+
+def test_program_idempotency_migration_upgrades_revision14_without_baseline_replay(pg):
+    from app import migrate
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        connection.execute(text('CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
+        connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,14)'))
+        connection.execute(text('DROP INDEX IF EXISTS uq_scheduleevent_owner_client_request'))
+        connection.execute(text('ALTER TABLE scheduleevent DROP COLUMN client_request_hash'))
+        connection.execute(text('ALTER TABLE scheduleevent DROP COLUMN client_payload_hash'))
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        columns={row.column_name for row in connection.execute(text(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='scheduleevent'"
+        ))}
+        assert {'client_request_hash','client_payload_hash'} <= columns
+        assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one()==15
+
+
+def test_program_create_receipt_is_atomic_under_concurrent_postgres_requests(pg, monkeypatch):
+    engine, _, resources = pg
+    owner_id=resources[0].owner_user_id
+    with Session(engine) as session:
+        owner=session.get(main.User,owner_id)
+    monkeypatch.setattr(mobile_api,'engine',engine)
+    monkeypatch.setattr(mobile_api,'on_loop',lambda *args:None)
+    monkeypatch.setattr(main,'_wake_program_reminder_worker',lambda:None)
+    payload=mobile_api.MobileScheduleCreate(
+        event_type='APPOINTMENT',title='Synthetic concurrent appointment',
+        start_at='2030-01-07T10:00',end_at='2030-01-07T10:30',
+        patient_id=None,reminder_minutes=30,notification_enabled=True,
+        recurrence_rule='NONE',request_key='program-postgres-concurrency-0001',
+    )
+    def create(_):
+        return mobile_api.mobile_create_schedule(payload,owner)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results=list(executor.map(create,range(2)))
+    assert results[0]['event']['id']==results[1]['event']['id']
+    assert sorted(result['replayed'] for result in results)==[False,True]
+    event_id=results[0]['event']['id']
+    with Session(engine) as session:
+        events=session.exec(select(main.ScheduleEvent).where(
+            main.ScheduleEvent.owner_user_id==owner_id,
+            main.ScheduleEvent.client_request_hash!=None,
+        )).all()
+        reminders=session.exec(select(main.ProgramReminderJob).where(
+            main.ProgramReminderJob.schedule_event_id==event_id
+        )).all()
+        assert len(events)==1
+        assert len(reminders)==1
+
 
 
 def test_email_change_code_is_consumed_once_under_concurrent_confirmation(pg, monkeypatch):
