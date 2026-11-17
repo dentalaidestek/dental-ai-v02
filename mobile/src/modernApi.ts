@@ -67,6 +67,16 @@ export const markNotificationRead=(t:string,id:number)=>{
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz bildirim kimliği.");
  return req<{ok:boolean}>("/notifications/"+id+"/read",t,{method:"POST"});
 };
+export const markAllNotificationsRead=async(t:string,seenBefore:string)=>{
+ const timestamp=Date.parse(seenBefore);
+ if(!Number.isFinite(timestamp))throw Error("Geçersiz bildirim zaman sınırı.");
+ const result=await req<{ok:boolean;read_count:number}>("/notifications/read-all",t,{
+  method:"POST",body:JSON.stringify({seen_before:new Date(timestamp).toISOString()})
+ });
+ if(!result?.ok||!Number.isSafeInteger(result.read_count)||result.read_count<0)
+  throw Error("Bildirimlerin okundu durumu doğrulanamadı.");
+ return result;
+};
 export const getAnalysisHistory=async(t:string,before?:number,patientId?:number,toothNumber?:string)=>{
  if(patientId!==undefined&&(!Number.isSafeInteger(patientId)||patientId<=0))throw Error("Geçersiz hasta kimliği.");
  if(toothNumber!==undefined&&!/^(?:[1-4][1-8]|[5-8][1-5])$/.test(toothNumber))throw Error("Geçersiz FDI diş numarası.");
