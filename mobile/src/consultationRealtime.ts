@@ -89,6 +89,6 @@ export function consultationMessagePreview(message?:{message_type?:string;conten
   case "VOICE":return "Sesli mesaj";
   case "FILE":return "Dosya · "+String(message.content||"Belge");
   case "ANNOTATION":return "İşaretlenmiş görüntü";
-  default:return String(message.content||"Mesaj").replace(/\\s+/g," ").trim().slice(0,90)||"Mesaj";
+  default:return String(message.content||"Mesaj").replace(/\s+/g," ").trim().slice(0,90)||"Mesaj";
  }
 }
