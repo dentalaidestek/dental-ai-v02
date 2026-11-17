@@ -39,13 +39,15 @@ export default function NativePushSettings({ token, userId }: { token: string; u
       const next = state.enabled
         ? await disableNativePush(token, userId)
         : await enableNativePush(token, userId);
-      setState(next);
-      setNotice(next.enabled ? "Bu cihazda bildirimler açıldı." : "Bu cihazın bildirim kaydı kapatıldı.");
+      if (mounted.current) {
+        setState(next);
+        setNotice(next.enabled ? "Bu cihazda bildirimler açıldı." : "Bu cihazın bildirim kaydı kapatıldı.");
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Cihaz bildirimi ayarı tamamlanamadı.");
+      if (mounted.current) setError(e instanceof Error ? e.message : "Cihaz bildirimi ayarı tamamlanamadı.");
       await refresh();
     } finally {
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
 
