@@ -11065,6 +11065,14 @@ def patient_detail(request: Request, patient_id: int):
             ).order_by(PatientMedia.uploaded_at.desc())
         ).all()
 
+        # Surface only explicitly saved voice-review fields on the owning clinician's
+        # patient profile. Never derive anamnesis from arbitrary analysis notes.
+        voice_history = {'fields': {}, 'notice': ''}
+        if patient.owner_user_id == user.id:
+            from app.voice_exam import reviewed_history_payload
+            from app import main as main_module
+            voice_history = reviewed_history_payload(s, main_module, user, patient_id) or voice_history
+
         return templates.TemplateResponse(
             request=request,
             name="patient_detail.html",
@@ -11080,6 +11088,7 @@ def patient_detail(request: Request, patient_id: int):
                 "patient_edit_revision": _patient_edit_revision(patient, patient_profile),
                 "analyses": analyses,
                 "voice_review_ids": voice_review_ids,
+                "voice_history": voice_history,
                 "treatments": treatments,
                 "analysis_assets": analysis_assets,
                 "patient_media": patient_media,
