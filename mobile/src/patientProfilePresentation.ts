@@ -68,6 +68,10 @@ export type PatientProfileEditValues = Readonly<{
   first_name?: string | null;
   last_name?: string | null;
   phone?: string | null;
+  birth_date?: string | null;
+  tc_kimlik_no?: string | null;
+  address?: string | null;
+  chief_complaint?: string | null;
 }>;
 
 /** Match the native patient-edit form to the web form and canonical API contract. */
@@ -102,4 +106,16 @@ export function patientProfileCanDeletePatient(gate: PatientProfileDeleteGate): 
     gate.treatmentIntentReady === true &&
     gate.treatmentIntentBlocked === false &&
     gate.hasPendingTreatment === false;
+}
+
+/** Compare the exact editable patient fields after the backend's trim/null normalization. */
+export function patientProfileEditMatches(
+  draft: PatientProfileEditValues,
+  current: PatientProfileEditValues,
+): boolean {
+  const normalized = (value: unknown) => typeof value === 'string' ? value.trim() : '';
+  const fields: readonly (keyof PatientProfileEditValues)[] = [
+    'first_name', 'last_name', 'phone', 'birth_date', 'tc_kimlik_no', 'address', 'chief_complaint',
+  ];
+  return fields.every((field) => normalized(draft[field]) === normalized(current[field]));
 }
