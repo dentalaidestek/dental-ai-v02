@@ -32,7 +32,7 @@ test('AI rejects invalid analysis IDs before a network request',async()=>{
 });
 test('AI status and start use authorized mobile API routes',async()=>{
  const original=global.fetch,calls=[];
- global.fetch=async(url,init)=>{calls.push({url,init});return new Response(JSON.stringify(url.endsWith('/ai')?{ok:true,status:'VISION_READY'}:{analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7},assets:[]}),{status:200})};
+ global.fetch=async(url,init)=>{calls.push({url,init});return new Response(JSON.stringify(url.endsWith('/ai')?{ok:true,status:'VISION_READY'}:{analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7,anonymous_id:'SYNTHETIC-7',age:null,chief_complaint:null},assets:[]}),{status:200})};
  try{
   await api.getAnalysis('secret',23);
   await api.startAnalysisAI('secret',23);
@@ -56,13 +56,13 @@ test('AI refuses malformed created-job response instead of persisting an invalid
 
 test('AI rejects a result linked to a different patient',async()=>{
  const original=global.fetch;
- global.fetch=async()=>new Response(JSON.stringify({analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:8},assets:[]}),{status:200});
+ global.fetch=async()=>new Response(JSON.stringify({analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:8,anonymous_id:'SYNTHETIC-8',age:null,chief_complaint:null},assets:[]}),{status:200});
  try{await assert.rejects(()=>api.getAnalysis('token',23),/hasta veya iş kimliği uyuşmayan/)}
  finally{global.fetch=original}
 });
 test('AI rejects a result with a mismatched analysis job ID',async()=>{
  const original=global.fetch;
- global.fetch=async()=>new Response(JSON.stringify({analysis:{id:24,patient_id:7,status:'VISION_READY'},patient:{id:7},assets:[]}),{status:200});
+ global.fetch=async()=>new Response(JSON.stringify({analysis:{id:24,patient_id:7,status:'VISION_READY'},patient:{id:7,anonymous_id:'SYNTHETIC-7',age:null,chief_complaint:null},assets:[]}),{status:200});
  try{await assert.rejects(()=>api.getAnalysis('token',23),/hasta veya iş kimliği uyuşmayan/)}
  finally{global.fetch=original}
 });
@@ -241,10 +241,10 @@ test('analysis detail rejects duplicate and malformed clinical asset identifiers
  const oldFetch=global.fetch;
  try{
   for(const assets of [[{id:2},{id:2}],[{id:0}],[{id:'4'}],[null]]){
-   global.fetch=async()=>new Response(JSON.stringify({analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7},assets}),{status:200});
+   global.fetch=async()=>new Response(JSON.stringify({analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7,anonymous_id:'SYNTHETIC-7',age:null,chief_complaint:null},assets}),{status:200});
    await assert.rejects(()=>api.getAnalysis('token',23),/hasta veya iş kimliği uyuşmayan/);
   }
-  global.fetch=async()=>new Response(JSON.stringify({analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7},assets:[{id:2},{id:3}]}),{status:200});
+  global.fetch=async()=>new Response(JSON.stringify({analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7,anonymous_id:'SYNTHETIC-7',age:null,chief_complaint:null},assets:[{id:2},{id:3}]}),{status:200});
   assert.equal((await api.getAnalysis('token',23)).assets.length,2);
  }finally{global.fetch=oldFetch}
 });
@@ -263,4 +263,35 @@ test('analysis history rejects duplicate record IDs even when patient matches',a
   ]}),{status:200});
   assert.deepEqual((await api.getAnalysisHistory('token',7)).items.map(item=>item.id),[17,18]);
  }finally{global.fetch=original}
+});
+
+
+test('analysis workspace rejects direct patient identifiers even when the patient ID matches',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>new Response(JSON.stringify({
+  analysis:{id:23,patient_id:7,status:'VISION_READY'},
+  patient:{id:7,anonymous_id:'SYNTHETIC-7',age:36,chief_complaint:'Synthetic complaint',first_name:'Private',phone:'5550000000'},
+  assets:[]
+ }),{status:200});
+ try{await assert.rejects(()=>api.getAnalysis('token',23),error=>error.status===502&&/veri minimizasyonu/.test(error.message))}
+ finally{global.fetch=original}
+});
+
+test('analysis workspace accepts only anonymous patient summary fields',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>new Response(JSON.stringify({
+  analysis:{id:23,patient_id:7,status:'VISION_READY'},
+  patient:{id:7,anonymous_id:'SYNTHETIC-7',age:0,chief_complaint:'Synthetic complaint'},
+  assets:[]
+ }),{status:200});
+ try{
+  const result=await api.getAnalysis('token',23);
+  assert.equal(result.patient.anonymous_id,'SYNTHETIC-7');
+  assert.equal(result.patient.age,0);
+ }finally{global.fetch=original}
+});
+
+test('restored analysis patient choice falls back to anonymous ID while patient-list names remain usable',()=>{
+ assert.equal(api.analysisPatientLabel({id:7,anonymous_id:'SYNTHETIC-7'}),'SYNTHETIC-7');
+ assert.equal(api.analysisPatientLabel({id:7,anonymous_id:'SYNTHETIC-7',first_name:'Ada',last_name:'Lovelace'}),'Ada Lovelace');
 });
