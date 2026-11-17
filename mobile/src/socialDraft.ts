@@ -1,12 +1,25 @@
 import { ApiError } from "./api";
 // Save intent before sending. An uncertain response retains the exact same UUID
 // and payload; both platforms and web deduplicate on the server's UUID constraint.
+export type DraftPreview = {
+  available: boolean;
+  id?: number;
+  url?: string;
+  domain?: string;
+  site_name?: string;
+  title?: string;
+  description?: string;
+  message?: string;
+  cover?: { id: number; url: string } | null;
+};
 export type Draft = {
   id: string;
   text: string;
   link: string;
   media_ids: number[];
   attempted: boolean;
+  preview_id?: number;
+  preview?: DraftPreview | null;
 };
 export type DraftStore = {
   getItemAsync(k: string): Promise<string | null>;
@@ -118,13 +131,66 @@ export async function readDraft(
   if (!value) return null;
   const d = JSON.parse(value);
   if (
+    !d ||
+    typeof d !== "object" ||
+    Array.isArray(d) ||
     typeof d.id !== "string" ||
     typeof d.text !== "string" ||
+    d.text.length > 5000 ||
     typeof d.link !== "string" ||
-    !Array.isArray(d.media_ids)
+    d.link.length > 2048 ||
+    typeof d.attempted !== "boolean" ||
+    !Array.isArray(d.media_ids) ||
+    d.media_ids.length > 4 ||
+    d.media_ids.some((id: unknown) => !Number.isSafeInteger(id) || (id as number) < 1) ||
+    new Set(d.media_ids).size !== d.media_ids.length
   )
     throw new Error("Taslak okunamadı.");
-  return d;
+
+  const rawPreview = d.preview;
+  const previewId =
+    Number.isSafeInteger(d.preview_id) && d.preview_id > 0
+      ? d.preview_id as number
+      : undefined;
+  const validPreview =
+    previewId !== undefined &&
+    rawPreview &&
+    typeof rawPreview === "object" &&
+    !Array.isArray(rawPreview) &&
+    rawPreview.available === true &&
+    rawPreview.id === previewId &&
+    typeof rawPreview.url === "string" &&
+    rawPreview.url === d.link;
+  const safeText = (value: unknown, max: number) =>
+    typeof value === "string" ? value.slice(0, max) : undefined;
+  const safeCover =
+    validPreview &&
+    rawPreview.cover &&
+    typeof rawPreview.cover === "object" &&
+    Number.isSafeInteger(rawPreview.cover.id) &&
+    rawPreview.cover.id > 0 &&
+    typeof rawPreview.cover.url === "string" &&
+    /^\\/api\\/expert-social\\/media\\/[1-9][0-9]*$/.test(rawPreview.cover.url)
+      ? { id: rawPreview.cover.id as number, url: rawPreview.cover.url }
+      : null;
+  const preview: DraftPreview | null = validPreview
+    ? {
+        available: true,
+        id: previewId,
+        url: d.link,
+        domain: safeText(rawPreview.domain, 253),
+        site_name: safeText(rawPreview.site_name, 120),
+        title: safeText(rawPreview.title, 300),
+        description: safeText(rawPreview.description, 500),
+        cover: safeCover,
+      }
+    : null;
+  return {
+    ...d,
+    media_ids: [...d.media_ids] as number[],
+    preview_id: preview ? previewId : undefined,
+    preview,
+  };
 }
 export async function submitDraft<T>(
   store: DraftStore,
