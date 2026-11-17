@@ -86,6 +86,7 @@ test('persisted voice drafts reject traversal, encoded paths and malformed segme
 test('recorder deletion and draft reset use the same private-cache guard',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../src/NativeVoiceRecorder.tsx'),'utf8');
  assert.match(source,/if\(!isPrivateVoiceRecordingUri\(uri\)\)throw Error/);
+ assert.match(source,/if\(!uri\|\|!isPrivateVoiceRecordingUri\(uri\)\)throw Error/);
  assert.match(source,/for\(const segment of draft\.current\.segments\)if\(isPrivateVoiceRecordingUri\(segment\.uri\)\)await removeFile\(segment\.uri\)/);
  assert.match(source,/Taslak temizlendi\. Uygulama önbelleği dışında kalan doğrulanamayan dosyaya dokunulmadı\./);
 });
