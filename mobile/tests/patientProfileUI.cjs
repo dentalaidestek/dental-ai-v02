@@ -9,15 +9,16 @@ function component(api,file='NativePatientProfile',storage=new Map()){
  const intentCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/treatmentMutation.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
  vm.runInNewContext(intentCode,{exports:intentExports,Error,JSON,Date,Number,RegExp});
  const secure={getItemAsync:async key=>storage.get(key)||null,setItemAsync:async(key,value)=>storage.set(key,value),deleteItemAsync:async key=>storage.delete(key)};
- let sequence=0;
+ let sequence=0;const focusState={current:true};
  const alertCalls=[];
  const native={StyleSheet:{create:s=>s},AppState:{addEventListener:()=>({remove(){}})},Platform:{OS:'android'},Alert:{alert:(title,message,buttons)=>alertCalls.push({title,message,buttons})},...Object.fromEntries(['Modal','ActivityIndicator','KeyboardAvoidingView','Pressable','RefreshControl','ScrollView','Text','TextInput','View'].map(s=>[s,s]))},exports={};
  const endpoints={getPatient:async()=>patient(8),createTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),updateTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),...api};
- vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:name==='./patientProfilePresentation'?presentationExports:{default:'Child'}});
+ vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:name==='./patientProfilePresentation'?presentationExports:{default:'Child'}});
  const Original=exports.default;
  const Wrapped=props=>React.createElement(Original,{userId:1,...props});
  Wrapped.storage=storage;
  Wrapped.alertCalls=alertCalls;
+ Wrapped.focusState=focusState;
  return Wrapped;
 }
 const actions=Object.fromEntries(['chart','analysis','appointment','expert','voice','analysisResult','deleted'].map(k=>[k,()=>{}]));
@@ -389,5 +390,22 @@ test('second patient-delete confirmation is discarded after account or patient s
  await renderer.act(async()=>tree.update(React.createElement(Profile,{token:'two',patientId:9,actions})));
  await renderer.act(async()=>Profile.alertCalls[1].buttons[1].onPress());
  assert.equal(deletes,0,'a stale alert must not delete the previous account or patient');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('second patient-delete confirmation is discarded after the profile loses focus',async()=>{
+ let deletes=0;
+ const Profile=component({getPatient:async()=>patient(8),deletePatient:async()=>{deletes++;return {ok:true,patient_id:8}}});let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ const info=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Bilgileri')));
+ await renderer.act(async()=>info.props.onPress());
+ const remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
+ await renderer.act(async()=>remove.props.onPress());
+ await renderer.act(async()=>Profile.alertCalls[0].buttons[1].onPress());
+ assert.equal(Profile.alertCalls.length,2);
+ Profile.focusState.current=false;
+ await renderer.act(async()=>tree.update(React.createElement(Profile,{token:'one',patientId:8,actions})));
+ await renderer.act(async()=>Profile.alertCalls[1].buttons[1].onPress());
+ assert.equal(deletes,0,'a destructive alert cannot execute after the profile loses focus');
  await renderer.act(async()=>tree.unmount());
 });
