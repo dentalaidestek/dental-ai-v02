@@ -142,8 +142,8 @@ test('course creation reconciliation selects only a new exact title and descript
 
 test('uncertain course creation cannot be manually unlocked into a duplicate create',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativeAcademic.tsx'),'utf8');
- assert.match(source,/A\\.findCreatedCourse\\(v\\.items,uncertain\\)/);
- assert.match(source,/disabled=\\{busy\\|\\|!!uncertain/);
+ assert.ok(source.includes('A.findCreatedCourse(v.items,uncertain)'));
+ assert.ok(source.includes('disabled={busy||!!uncertain'));
  assert.doesNotMatch(source,/Listeyi Kontrol Ettim; Yeni Oluşturmaya İzin Ver/);
 });
 
