@@ -444,7 +444,8 @@ def test_consultation_receipt_revision_13_upgrade_on_postgres(pg):
     migrate.require_schema(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 14
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 15
+        assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
 
 
 def test_consultation_receipt_revision_12_creates_both_receipt_tables(pg):
@@ -462,10 +463,10 @@ def test_consultation_receipt_revision_12_creates_both_receipt_tables(pg):
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('mobilesupportmutationreceipt')")).scalar_one() is not None
         # The study tables are additive revision-12 objects. The receipt upgrade
-        # advances the revision to 14, so they must be created before that bump.
+        # advances through revision 14 to the current revision 15, so they must be created before those bumps.
         for table in ('studylearningstate', 'studyreview', 'studyattempt', 'studyrun'):
             assert connection.execute(text("SELECT to_regclass(:name)"), {'name': table}).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 14
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 15
 
 def test_consultation_message_same_key_replays_once_under_concurrent_postgres_writes(pg, monkeypatch):
     from fastapi.testclient import TestClient
