@@ -7,6 +7,33 @@ test('native social contract uses bearer, explicit states and versioned edits',a
  try{await api.getFeed('secret','discover',12);await api.setPostLike('secret',8,true);await api.setFollow('secret',7,false);await api.patchPost('secret',{id:8,version:3},{pinned:true});
  assert.match(calls[0].url,/feed\/discover\?limit=15&details=true&before=12/);assert.equal(calls[0].headers.Authorization,'Bearer secret');assert.equal(calls[0].credentials,'omit');assert.deepEqual(JSON.parse(calls[1].body),{liked:true});assert.deepEqual(JSON.parse(calls[2].body),{followed:false});assert.deepEqual(JSON.parse(calls[3].body),{version:3,pinned:true});}finally{global.fetch=original;}
 });
+test('native Dental Flow link previews use the safe HTTPS endpoint and retain the server receipt',async()=>{
+ const original=global.fetch,calls=[];
+ global.fetch=async(url,init)=>{calls.push({url,...init});if(String(url).endsWith('/preview'))return new Response(JSON.stringify({available:true,id:77,url:'https://example.org/article',domain:'example.org',site_name:'Example',title:'Example title',description:'Safe preview',cover:{id:81,url:'/api/expert-social/media/81'}}));return new Response(JSON.stringify({id:5}),{status:201});};
+ try{
+  const preview=await api.getLinkPreview('secret','https://example.org/article');
+  assert.equal(preview.id,77);assert.equal(preview.available,true);
+  assert.equal(calls[0].url,'https://dentalai.tr/api/expert-social/preview');
+  assert.equal(calls[0].credentials,'omit');
+  assert.equal(calls[0].headers.Authorization,'Bearer secret');
+  assert.deepEqual(JSON.parse(calls[0].body),{url:'https://example.org/article'});
+  await api.createPost('secret',{text:'',link_url:'https://example.org/article',media_ids:[],idempotency_key:'synthetic-key',preview_id:77});
+  assert.equal(JSON.parse(calls[1].body).preview_id,77);
+  assert.equal(JSON.parse(calls[1].body).media_ids.length,0);
+  await assert.rejects(()=>api.getLinkPreview('secret','http://example.org/article'),/HTTPS/);
+  assert.equal(calls.length,2,'non-HTTPS input must be rejected before network access');
+ }finally{global.fetch=original;}
+});
+test('encrypted Dental Flow drafts restore a bounded preview and reject invalid media IDs',async()=>{
+ const valid={id:'same-key',text:'draft',link:'https://example.org/article',media_ids:[11,12],attempted:false,preview_id:77,preview:{available:true,id:77,url:'https://example.org/article',domain:'example.org',title:'Example',cover:{id:81,url:'/api/expert-social/media/81'}}};
+ const saved=await readDraft({getItemAsync:async()=>JSON.stringify(valid)},'draft');
+ assert.equal(saved.preview_id,77);assert.equal(saved.preview.cover.id,81);assert.deepEqual(saved.media_ids,[11,12]);
+ for(const media_ids of [[0],[1,1],[1,2,3,4,5]]){
+  await assert.rejects(()=>readDraft({getItemAsync:async()=>JSON.stringify({...valid,media_ids})},'draft'),/Taslak okunamadı/);
+ }
+ const legacy=await readDraft({getItemAsync:async()=>JSON.stringify({id:'legacy',text:'old',link:'',media_ids:[],attempted:false})},'draft');
+ assert.equal(legacy.preview,null);assert.equal(legacy.preview_id,undefined);
+});
 test('failed commit response and app restart retain the same payload and UUID',async()=>{
  const values=new Map(),store={getItemAsync:async k=>values.get(k)||null,setItemAsync:async(k,v)=>values.set(k,v),deleteItemAsync:async k=>values.delete(k)};
  const key=draftKey(1,'post'),draft={id:'same-uuid',text:'metin',link:'',media_ids:[],attempted:false};
