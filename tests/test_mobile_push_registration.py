@@ -1,5 +1,6 @@
 """Owner-scoped native push registration and notification deep-link tests."""
 from datetime import timedelta
+import hashlib
 import uuid
 
 import pytest
@@ -347,8 +348,7 @@ def test_device_claim_revokes_previous_account_before_optional_push_opt_in(monke
         )).all()
     assert len(rows) == 1
     assert rows[0].user_id == other_id
-    assert rows[0].device_proof_hash == __import__("hashlib").sha256(proof.encode()).hexdigest()
-    assert session is not None
+    assert rows[0].device_proof_hash == hashlib.sha256(proof.encode()).hexdigest()
     engine.dispose()
 
 
@@ -383,7 +383,7 @@ def test_device_claim_rejects_another_installations_proof_without_deleting_owner
         )).all()
     assert len(rows) == 1
     assert rows[0].user_id == owner_id
-    assert rows[0].device_proof_hash == __import__("hashlib").sha256(owner_proof.encode()).hexdigest()
+    assert rows[0].device_proof_hash == hashlib.sha256(owner_proof.encode()).hexdigest()
     engine.dispose()
 
 
@@ -426,7 +426,7 @@ def test_registration_transfers_legacy_device_row_and_stores_new_proof(monkeypat
     assert len(rows) == 1
     assert rows[0].user_id == other_id
     assert rows[0].user_id != legacy_owner_id
-    assert rows[0].device_proof_hash == __import__("hashlib").sha256(proof.encode()).hexdigest()
+    assert rows[0].device_proof_hash == hashlib.sha256(proof.encode()).hexdigest()
     engine.dispose()
 
 
@@ -459,4 +459,42 @@ def test_device_claim_does_not_delete_another_installation(monkeypatch, tmp_path
             main.MobilePushDevice.user_id == owner_id,
         )).all()
     assert [row.device_id for row in rows] == [second_device]
+    engine.dispose()
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
+@pytest.mark.parametrize("proof", ["A" * 64, "g" * 64, "short", ""])
+def test_push_registration_rejects_malformed_installation_proof(monkeypatch, tmp_path, proof):
+    engine, _, _, owner_token, _ = _client_db(monkeypatch, tmp_path)
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/mobile/v1/push/devices",
+            headers={"Authorization": "Bearer " + owner_token},
+            json={
+                "device_id": str(uuid.uuid4()),
+                "expo_push_token": "ExpoPushToken[abcdefgh77777777]",
+                "platform": "android",
+                "installation_proof": proof,
+            },
+        )
+    assert response.status_code == 422
+    engine.dispose()
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
+def test_claim_requires_a_valid_uuid4_and_hex_proof(monkeypatch, tmp_path):
+    engine, _, _, _, other_token = _client_db(monkeypatch, tmp_path)
+    with TestClient(main.app) as client:
+        bad_device = client.post(
+            "/api/mobile/v1/push/devices/claim",
+            headers={"Authorization": "Bearer " + other_token},
+            json={"device_id": "not-a-uuid", "installation_proof": "a" * 64},
+        )
+        bad_proof = client.post(
+            "/api/mobile/v1/push/devices/claim",
+            headers={"Authorization": "Bearer " + other_token},
+            json={"device_id": str(uuid.uuid4()), "installation_proof": "z" * 64},
+        )
+    assert bad_device.status_code == 422
+    assert bad_proof.status_code == 422
     engine.dispose()
