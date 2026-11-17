@@ -56,7 +56,7 @@ export default function NativePatientVoiceHistory({token,patientId}:{token:strin
    <Text selectable style={{fontSize:14,color:'#102033',lineHeight:22,marginTop:5}}>{row.value}</Text>
    <Text style={{fontSize:11,color:'#718096',marginTop:5}}>Kaynak: Sesli muayene #{row.analysisId}</Text>
   </View>)}
-  {!!visible&&rows.length>0&&<Text style={{fontSize:12,color:'#8A5A00',lineHeight:19,marginTop:12}}>{visible.notice} Bu beyanları güncel hastalık, ilaç kullanımı veya alerji olarak kabul etmeden yeni işlem öncesi hastayla tekrar doğrulayın.</Text>}
+  {!!visible&&rows.length>0&&<Text style={{fontSize:12,color:'#8A5A00',lineHeight:19,marginTop:12}}>{visible.notice}</Text>}
   {!visible&&!!error&&<Pressable accessibilityRole="button" onPress={()=>void load()} disabled={busy} style={{padding:12,marginTop:6,backgroundColor:'#E8F0FF',borderRadius:10}}>
    <Text style={{color:'#1769AA',fontWeight:'800',textAlign:'center'}}>Yeniden dene</Text>
   </Pressable>}
