@@ -1236,10 +1236,15 @@ def unregister_mobile_push_device(device_id: str, user: User = Depends(_mobile_u
 @router.get("/notifications")
 def mobile_notifications(user: User = Depends(_mobile_user)):
     with Session(engine, expire_on_commit=False) as session:
+        unread_count = int(session.exec(select(func.count(AdminNotice.id)).where(
+            AdminNotice.user_id == user.id,
+            AdminNotice.status == "ACTIVE",
+            AdminNotice.is_read == False,
+        )).one() or 0)
         rows = session.exec(select(AdminNotice).where(
             AdminNotice.user_id == user.id, AdminNotice.status == "ACTIVE"
         ).order_by(AdminNotice.created_at.desc()).limit(20)).all()
-        return {"unread_count": sum(not n.is_read for n in rows), "unread": sum(not n.is_read for n in rows),
+        return {"unread_count": unread_count, "unread": unread_count,
                 "notifications": [{"id":n.id,"title":n.title,"message":n.message,
                 "notice_type":n.notice_type,"target_url":n.target_url,
                 "is_read":bool(n.is_read),"read_at":n.read_at,"created_at":n.created_at} for n in rows],
