@@ -433,6 +433,7 @@ def mobile_analysis(analysis_id: int, user: User = Depends(_mobile_user)):
                 "status": analysis.status,
                 "created_at": analysis.created_at,
                 "is_voice_review": analysis.id in _voice_review_ids(session, patient.owner_user_id, [analysis.id]),
+                "legacy_radiograph_available": bool(analysis.radiograph_path),
             },
             "patient": _patient_payload(patient),
             "assets": [
@@ -473,6 +474,33 @@ def start_mobile_analysis(analysis_id: int, user: User = Depends(_mobile_user)):
         realtime=_record_realtime_event(session,user.id,"ANALYSIS_UPDATED","analysis",analysis.id,{"analysis_id":analysis.id,"patient_id":analysis.patient_id,"status":analysis.status,"stage":"PRELIMINARY_QUEUED"})
         session.commit(); on_loop(_publish_realtime_event,realtime)
         return {"ok": True, "status": analysis.status, "job_id": job.id}
+
+
+@router.get("/analyses/{analysis_id}/legacy-radiograph")
+def mobile_legacy_analysis_radiograph(
+    analysis_id: int,
+    user: User = Depends(_mobile_user),
+):
+    """Serve the web profile's legacy radiograph fallback without exposing its storage path."""
+    with Session(engine, expire_on_commit=False) as session:
+        analysis, _ = _access(session, user, analysis_id)
+        if not analysis.radiograph_path:
+            raise HTTPException(status_code=404, detail="Radyografik görüntü bulunamadı.")
+        try:
+            path = storage_ensure_local(analysis.radiograph_path)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Radyografik görüntü dosyası bulunamadı.") from exc
+        media_type = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".webp": "image/webp",
+        }.get(path.suffix.lower(), "application/octet-stream")
+        return FileResponse(
+            path,
+            media_type=media_type,
+            headers={"Cache-Control": "private, no-store"},
+        )
 
 
 @router.get("/analyses/{analysis_id}/assets/{asset_id}")
