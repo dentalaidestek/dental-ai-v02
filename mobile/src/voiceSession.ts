@@ -74,12 +74,13 @@ export function formatVoiceElapsed(milliseconds:number):string{
  return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
 }
 export function isSafeVoiceSegmentUri(uri:unknown):uri is string{
- if(typeof uri!=='string'||!uri.startsWith('file:///')||/[?#%\\\\\u0000-\u001f]/.test(uri))return false;
+ if(typeof uri!=='string'||!uri.startsWith('file:///')||/[?#%\u0000-\u001f]/.test(uri)||uri.includes('\\'))return false;
  const path=uri.slice('file://'.length);
  if(!path.startsWith('/'))return false;
  const segments=path.split('/').slice(1);
  if(segments.length<2||segments.some(segment=>!segment||segment==='.'||segment==='..'))return false;
- return /^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\\.m4a$/i.test(segments[segments.length-1]);
+ return /^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\.m4a$/i.test(segments[segments.length-1]);
+}
 }
 
 export function parseVoiceDraft(raw:string|null,userId:number,patientId:number,now=Date.now()):VoiceDraft|null{
