@@ -9,9 +9,9 @@ import * as ImagePicker from"expo-image-picker";
 import * as SecureStore from"expo-secure-store";
 import * as Crypto from "expo-crypto";
 import{ActivityIndicator,Alert,FlatList,Image,Modal,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View}from"react-native";
-import{getAnalysisHistory,getConsultation,getConsultations,getCourses,getAcademicMessages,getExperts,getMedia,deleteMedia,getNotifications,markNotificationRead,markAllNotificationsRead,askAcademic,sendConsultationMessage,getConsultationMessageReceipt,markConsultationRead,createConsultation,Expert,Consultation,Course,ChatMessage}from"./modernApi";
+import{getAnalysisHistory,getConsultation,getConsultationUpdates,getConsultations,getCourses,getAcademicMessages,getExperts,getMedia,deleteMedia,getNotifications,markNotificationRead,markAllNotificationsRead,askAcademic,sendConsultationMessage,getConsultationMessageReceipt,markConsultationRead,createConsultation,Expert,Consultation,Course,ChatMessage}from"./modernApi";
 import{useRealtime}from"./realtime";
-import {applyConsultationInboxEvent} from "./consultationRealtime";
+import {applyConsultationInboxEvent,applyConsultationChatEvent,mergeConsultationMessages} from "./consultationRealtime";
 import {usePagedRecords} from "./usePagedRecords";
 import {resolveNativeNotificationTarget} from "./notificationTarget";
 import {applyNotificationReadAllSnapshot,parseNotificationTimestamp} from "./notificationState";
@@ -183,7 +183,7 @@ export function Consultations({token,navigation}:{token:string;navigation:any}){
  ListEmptyComponent={<Empty title={search||filter!=="all"?"Eşleşen görüşme yok":"Henüz görüşmeniz yok"} sub={pages.hasMore?"Diğer görüşmeleri yükleyerek aramaya devam edin.":"Uzman desteği görüşmeleriniz burada görünecek."}/>}/>;
 }
 export function ConsultationChat({token,route,userId}:{token:string;route:any;userId:number}){
- const navigation:any=useNavigation();const id=Number(route.params.id),{lastEvent,connected}=useRealtime(),isFocused=useIsFocused();
+ const navigation:any=useNavigation();const id=Number(route.params.id),{lastEvent,lastEventId,connected}=useRealtime(),isFocused=useIsFocused();
  const[data,setData]=useState<any>(),[text,setText]=useState(""),[replyTo,setReplyTo]=useState<number|null>(null),[olderBusy,setOlderBusy]=useState(false),[sendBusy,setSendBusy]=useState(false),[sendError,setSendError]=useState("");
  const activeScope=useRef(token+":"+userId+":"+id);activeScope.current=token+":"+userId+":"+id;
  const [preparedAttachment,setPreparedAttachment]=useState<{file:ChatFile;nonce:string;scope:string}|null>(null);
@@ -195,9 +195,64 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
  const canCompose=!!visibleData&&!visibleData.case?.messages_deleted_at&&!visibleData.case?.inbox_deleted&&!visibleData.case?.blocked_either&&!waitingStart&&["ACTIVE","WAITING_START","EXPERT_COMPLETED","DISPUTE"].includes(chatStatus);
  const [draftReady,setDraftReady]=useState(false),[pendingMessage,setPendingMessage]=useState(false);
  const lastReadRequest=useRef<{scope:string;id:number}|null>(null);
+ const catchUpPromise=useRef<Promise<void>|null>(null),catchUpAgain=useRef(false),catchUpRef=useRef<(after?:number,ready?:boolean)=>Promise<void>>(async()=>{});
+ const messageCursor=useRef(0),lastProcessedEventId=useRef(0);
  const latestMessageId=visibleData?.messages?.length?visibleData.messages[visibleData.messages.length-1].id:null;
- const load=useCallback(async()=>{const request=++requestSeq.current,scope=activeScope.current;try{const result=await getConsultation(token,id);if(request===requestSeq.current&&scope===activeScope.current)setData((previous:any)=>({...result,accountScope:scope,messages:[...(result.case?.messages_deleted_at?[]:(previous?.accountScope===scope?previous.messages||[]:[])),...result.messages].filter((m:ChatMessage,i:number,all:ChatMessage[])=>all.findIndex(v=>v.id===m.id)===i).sort((a:ChatMessage,b:ChatMessage)=>a.id-b.id),next_before:result.case?.messages_deleted_at?null:(previous?.accountScope===scope&&previous.next_before!==undefined?previous.next_before:result.next_before)}))}catch(e){if(request===requestSeq.current&&scope===activeScope.current)setSendError(e instanceof Error?e.message:"Görüşme yüklenemedi.")}},[token,id,userId]);
- useEffect(()=>{setData(null);setSendError("");setSendBusy(false);setReplyTo(null);setPendingMessage(false);sending.current=false;pending.current=null;void load();return()=>{requestSeq.current++;sending.current=false}},[load]);
+ const hasVisibleCase=!!visibleData?.case;
+ const load=useCallback(async()=>{
+  const request=++requestSeq.current,scope=activeScope.current;
+  try{
+   const result=await getConsultation(token,id);
+   if(request!==requestSeq.current||scope!==activeScope.current)return;
+   const incoming=result.case?.messages_deleted_at?[]:(result.messages||[]);
+   const latest=incoming.reduce((max,m)=>Math.max(max,Number(m.id)||0),0);
+   messageCursor.current=result.case?.messages_deleted_at?0:Math.max(messageCursor.current,latest);
+   setData((previous:any)=>({...result,accountScope:scope,
+    messages:mergeConsultationMessages(incoming,previous?.accountScope===scope?previous.messages||[]:[]),
+    next_before:result.case?.messages_deleted_at?null:(previous?.accountScope===scope&&previous.next_before!==undefined?previous.next_before:result.next_before)}));
+   void catchUpRef.current(latest,true);
+  }catch(e){if(request===requestSeq.current&&scope===activeScope.current)setSendError(e instanceof Error?e.message:"Görüşme yüklenemedi.")}
+ },[token,id,userId]);
+ const catchUpMessages=useCallback(async(afterOverride?:number,ready=false)=>{
+  if(!isFocused||!connected||(!hasVisibleCase&&!ready))return;
+  if(catchUpPromise.current){catchUpAgain.current=true;return catchUpPromise.current;}
+  const scope=activeScope.current;
+  const task=(async()=>{
+   let cursor=Math.max(messageCursor.current,Number.isSafeInteger(afterOverride)?Number(afterOverride):0);
+   for(let pageIndex=0;pageIndex<5;pageIndex++){
+    const page=await getConsultationUpdates(token,id,cursor);
+    if(scope!==activeScope.current)return;
+    if(page.case?.messages_deleted_at){
+     messageCursor.current=0;
+     setData((previous:any)=>previous?.accountScope!==scope?previous:{...previous,case:{...previous.case,...page.case},messages:[],next_before:null});
+     break;
+    }
+    setData((previous:any)=>previous?.accountScope!==scope?previous:{
+     ...previous,case:{...previous.case,...page.case},
+     messages:mergeConsultationMessages(previous.messages||[],page.messages||[]),
+    });
+    if(page.has_more){
+     if(page.next_after===null||page.next_after<=cursor)throw Error("Yeni mesaj sayfalaması ilerlemedi.");
+     cursor=page.next_after;
+     messageCursor.current=Math.max(messageCursor.current,cursor);
+    }else{
+     if(page.messages.length){
+      cursor=Math.max(cursor,page.messages[page.messages.length-1].id);
+      messageCursor.current=Math.max(messageCursor.current,cursor);
+     }
+     break;
+    }
+   }
+  })();
+  catchUpPromise.current=task;
+  try{await task}catch(e){if(scope===activeScope.current)setSendError(e instanceof Error?e.message:"Yeni mesajlar alınamadı. Tekrar deneyin.")}
+  finally{
+   if(catchUpPromise.current===task)catchUpPromise.current=null;
+   if(catchUpAgain.current){catchUpAgain.current=false;void catchUpRef.current();}
+  }
+ },[token,id,isFocused,connected,hasVisibleCase]);
+ catchUpRef.current=catchUpMessages;
+ useEffect(()=>{setData(null);setSendError("");setSendBusy(false);setReplyTo(null);setPendingMessage(false);sending.current=false;pending.current=null;messageCursor.current=0;lastProcessedEventId.current=0;catchUpAgain.current=false;void load();return()=>{requestSeq.current++;sending.current=false}},[load]);
  useEffect(()=>{let active=true;const revision=++draftRevision.current;setDraftReady(false);setText("");void Promise.all([SecureStore.getItemAsync(draftKey),SecureStore.getItemAsync(pendingKey)]).then(([draft,raw])=>{if(!active||draftRevision.current!==revision)return;let restored:any=null;try{restored=raw?JSON.parse(raw):null}catch{}if(restored){const valid=restored.version===1&&typeof restored.id==="string"&&/^[A-Za-z0-9_-]{16,96}$/.test(restored.id)&&restored.scope===intentScope&&(restored.replyTo===null||Number.isSafeInteger(restored.replyTo)&&restored.replyTo>0);if(valid){const restoredText=typeof draft==="string"&&draft.length<=4000?draft:"";pending.current={content:restoredText,id:restored.id,scope:intentScope,replyTo:restored.replyTo};setPendingMessage(true);setText(restoredText);setReplyTo(restored.replyTo);if(!restoredText)setSendError("Bekleyen mesaj taslağı bulunamadı. Yeni mesaj göndermeden önce görüşme geçmişini kontrol edin.")}else{setPendingMessage(true);setText(typeof draft==="string"?draft:"");setSendError("Bekleyen mesaj kaydı doğrulanamadı. Yeni gönderim güvenlik için kilitlendi.")}}else{setText(typeof draft==="string"?draft:"");setPendingMessage(false)}setDraftReady(true)}).catch(()=>{if(active&&draftRevision.current===revision)setDraftReady(true)});return()=>{active=false;draftRevision.current++}},[draftKey,pendingKey,intentScope,token]);
  useEffect(()=>{
   if(!isFocused||!latestMessageId||visibleData?.case?.messages_deleted_at)return;
@@ -208,16 +263,51 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
    if(lastReadRequest.current?.scope===scope&&lastReadRequest.current.id===latestMessageId)lastReadRequest.current=null;
   });
  },[token,id,isFocused,latestMessageId,visibleData?.case?.messages_deleted_at]);
- async function loadOlder(){const cursor=visibleData?.next_before,scope=activeScope.current;if(!cursor||olderBusy)return;setOlderBusy(true);try{const page=await getConsultation(token,id,cursor);if(scope!==activeScope.current)return;setData((previous:any)=>previous?.accountScope!==scope||previous?.case?.messages_deleted_at?previous:{...previous,next_before:page.next_before??null,messages:[...page.messages,...previous.messages].filter((m:ChatMessage,i:number,all:ChatMessage[])=>all.findIndex(v=>v.id===m.id)===i).sort((a:ChatMessage,b:ChatMessage)=>a.id-b.id)});}catch(e){if(scope===activeScope.current)setSendError(e instanceof Error?e.message:"Önceki mesajlar yüklenemedi.")}finally{if(scope===activeScope.current)setOlderBusy(false)}}
- useEffect(()=>{const eventType=String(lastEvent?.event_type||lastEvent?.type||"");const eventCase=Number(lastEvent?.payload?.case_id||lastEvent?.entity_id||0);if(eventCase===id&&["MESSAGE_CREATED","CASE_STATUS_UPDATED","CASE_UPDATED","CASE_READ","CASE_REPORT_CREATED"].includes(eventType))void load()},[lastEvent,load,id]);
- useEffect(()=>{if(isFocused&&connected)void load()},[isFocused,connected,load]);
+ async function loadOlder(){const cursor=visibleData?.next_before,scope=activeScope.current;if(!cursor||olderBusy)return;setOlderBusy(true);try{const page=await getConsultation(token,id,cursor);if(scope!==activeScope.current)return;setData((previous:any)=>previous?.accountScope!==scope||previous?.case?.messages_deleted_at?previous:{...previous,next_before:page.next_before??null,messages:mergeConsultationMessages(page.messages,previous.messages||[])});}catch(e){if(scope===activeScope.current)setSendError(e instanceof Error?e.message:"Önceki mesajlar yüklenemedi.")}finally{if(scope===activeScope.current)setOlderBusy(false)}}
+ useEffect(()=>{
+  if(!lastEvent)return;
+  const eventId=Number(lastEvent.event_id||lastEvent.id||lastEventId||0);
+  let gap=false;
+  if(Number.isSafeInteger(eventId)&&eventId>0){
+   if(eventId<=lastProcessedEventId.current)return;
+   gap=lastProcessedEventId.current>0&&eventId>lastProcessedEventId.current+1;
+   lastProcessedEventId.current=eventId;
+  }
+  const eventType=String(lastEvent.event_type||lastEvent.type||"");
+  const payload=lastEvent.payload||{},eventCase=Number(payload.case_id||lastEvent.entity_id||0);
+  if(eventCase===id&&eventType==="MESSAGE_CREATED"){
+   if(gap||Number(payload.message_id)>messageCursor.current)void catchUpMessages();
+   return;
+  }
+  if(eventCase===id&&eventType==="CASE_STATUS_UPDATED"){
+   setData((previous:any)=>{
+    if(previous?.accountScope!==activeScope.current)return previous;
+    const nextCase=applyConsultationChatEvent(previous.case||{},lastEvent,id,userId);
+    return nextCase.messages_deleted_at?{...previous,case:nextCase,messages:[],next_before:null}:{...previous,case:nextCase};
+   });
+   return;
+  }
+  if(eventCase===id&&eventType==="CASE_READ"){
+   setData((previous:any)=>previous?.accountScope!==activeScope.current?previous:{
+    ...previous,case:applyConsultationChatEvent(previous.case||{},lastEvent,id,userId)
+   });
+   return;
+  }
+  if(eventCase===id&&["CASE_UPDATED","CASE_REPORT_CREATED"].includes(eventType)){void load();return}
+  if(gap)void catchUpMessages();
+ },[lastEvent,lastEventId,id,userId,load,catchUpMessages,setData]);
+ useEffect(()=>{if(isFocused&&connected&&hasVisibleCase)void catchUpMessages()},[isFocused,connected,hasVisibleCase,catchUpMessages]);
  async function reconcilePending(){
   const intent=pending.current,scope=activeScope.current;if(!intent||intent.scope!==intentScope)return false;
   try{const receipt=await getConsultationMessageReceipt(token,id,intent.id);if(scope!==activeScope.current||pending.current?.id!==intent.id||(!receipt.message&&!receipt.deleted))return false;
    const saved=await SecureStore.getItemAsync(draftKey);if(saved===intent.content)await SecureStore.deleteItemAsync(draftKey);
    await SecureStore.deleteItemAsync(pendingKey);
    pending.current=null;setPendingMessage(false);setText(current=>current===intent.content?"":current);setReplyTo(null);
-   if(scope===activeScope.current)await load();return true;
+   if(scope===activeScope.current&&receipt.message){
+    messageCursor.current=Math.max(messageCursor.current,receipt.message.id);
+    setData((previous:any)=>previous?.accountScope!==scope?previous:{...previous,messages:mergeConsultationMessages(previous.messages||[],[receipt.message!])});
+   }else if(scope===activeScope.current&&receipt.deleted)await load();
+   return true;
   }catch{return false}
  }
  useEffect(()=>{if(draftReady&&isFocused&&connected&&pending.current)void reconcilePending()},[draftReady,isFocused,connected,token,id]);
@@ -241,7 +331,8 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
    await SecureStore.deleteItemAsync(pendingKey);
    if(pending.current?.id===messageId)pending.current=null;setPendingMessage(false);
    setText(current=>current===v?"":current);setReplyTo(null);
-   if(scope===activeScope.current)await load();
+   messageCursor.current=Math.max(messageCursor.current,result.message.id);
+   setData((previous:any)=>previous?.accountScope!==scope?previous:{...previous,messages:mergeConsultationMessages(previous.messages||[],[result.message])});
   }catch(e){if(scope===activeScope.current){setSendError(e instanceof Error?e.message:"Mesaj gönderilemedi. Aynı istek anahtarı korunuyor.");void reconcilePending()}}
   finally{if(scope===activeScope.current){sending.current=false;setSendBusy(false)}}
  }
