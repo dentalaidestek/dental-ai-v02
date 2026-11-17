@@ -23,6 +23,12 @@ export function isPrivateAcademicCacheUri(uri:string):boolean{
  }catch{return false}
 }
 
+
+export async function removeAcademicCacheFile(uri:string):Promise<boolean>{
+ if(!isPrivateAcademicCacheUri(uri))return false;
+ try{await FS.deleteAsync(uri,{idempotent:true});return true}catch{return false}
+}
+
 function academicMime(name:string):string|null{
  const extension=name.split('.').pop()?.toLowerCase();
  if(extension==='pdf')return 'application/pdf';
@@ -55,6 +61,6 @@ export async function uploadAcademic(token:string,course:number,file:AcademicFil
   if(!result||result.status>=400||body.ok!==true)throw new ApiError(result?.status||502,typeof body.detail==='string'?body.detail:'Dosya kaydı doğrulanamadı. Ders kaynaklarını kontrol edin.');
   // Delete only after the server has explicitly acknowledged the stored material.
   // A timeout or lost response keeps the local copy for receipt reconciliation.
-  try{await FS.deleteAsync(file.uri,{idempotent:true})}catch{/* A cache cleanup failure must not turn a confirmed upload into a retry. */}
+  await removeAcademicCacheFile(file.uri);
  }finally{clearTimeout(timer);signal?.removeEventListener('abort',cancel)}
 }
