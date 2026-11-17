@@ -11,6 +11,7 @@ import * as Crypto from "expo-crypto";
 import{ActivityIndicator,Alert,FlatList,Image,Modal,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View}from"react-native";
 import{getAnalysisHistory,getConsultation,getConsultations,getCourses,getAcademicMessages,getExperts,getMedia,deleteMedia,getNotifications,markNotificationRead,markAllNotificationsRead,askAcademic,sendConsultationMessage,getConsultationMessageReceipt,markConsultationRead,createConsultation,Expert,Consultation,Course,ChatMessage}from"./modernApi";
 import{useRealtime}from"./realtime";
+import {applyConsultationInboxEvent} from "./consultationRealtime";
 import {usePagedRecords} from "./usePagedRecords";
 import {resolveNativeNotificationTarget} from "./notificationTarget";
 import {applyNotificationReadAllSnapshot,parseNotificationTimestamp} from "./notificationState";
@@ -151,18 +152,25 @@ function chatFilterMatch(item:Consultation,filter:ChatFilter){
 }
 export function Consultations({token,navigation}:{token:string;navigation:any}){
  const[search,setSearch]=useState(""),[filter,setFilter]=useState<ChatFilter>("all");
- const{lastEvent}=useRealtime(),isFocused=useIsFocused();
+ const{lastEvent,lastEventId}=useRealtime(),isFocused=useIsFocused();
+ const lastProcessedEventId=useRef(0);
  const pages=usePagedRecords<Consultation>(token,before=>getConsultations(token,before),false,true);
  const{items:data,setItems:setData,refresh:load}=pages;
  useEffect(()=>{if(isFocused)void load()},[isFocused,load]);
  useEffect(()=>{setSearch("");setFilter("all")},[token]);
  useEffect(()=>{
-  const type=String(lastEvent?.event_type||lastEvent?.type||"");
-  const p=lastEvent?.payload||{},caseId=Number(p.case_id||lastEvent?.entity_id||0);
-  if(type==="CASE_CREATED"||type==="CASE_READ"){void load();return}
-  if(type==="CASE_STATUS_UPDATED"&&caseId){setData(v=>v.map(item=>item.id===caseId?{...item,status:p.status_key||p.status||item.status}:item));return}
-  if(type==="MESSAGE_CREATED"&&caseId){void load()}
- },[lastEvent,load,setData]);
+  if(!lastEvent)return;
+  const eventId=Number(lastEvent.event_id||lastEvent.id||lastEventId||0);
+  if(Number.isSafeInteger(eventId)&&eventId>0){
+   if(eventId<=lastProcessedEventId.current)return;
+   const gap=lastProcessedEventId.current>0&&eventId>lastProcessedEventId.current+1;
+   lastProcessedEventId.current=eventId;
+   if(gap){if(isFocused)void load();return;}
+  }
+  const result=applyConsultationInboxEvent(data,lastEvent,userId);
+  if(result.refresh){if(isFocused)void load();return;}
+  if(result.changed)setData(result.items);
+ },[lastEvent,lastEventId,data,load,setData,userId,isFocused]);
  const items=data.filter(item=>chatFilterMatch(item,filter)&&[item.other_display_name,item.specialty,item.question,item.last_message,String(item.id)].some(value=>normalizeChat(value).includes(normalizeChat(search.trim())))).sort((a,b)=>{
   const priority=(x:Consultation)=>["NEW_REQUEST","ACTION_REQUIRED"].includes(String(x.status).toUpperCase())?1:0;
   return priority(b)-priority(a)||Date.parse(b.last_message_at||b.requested_at||"")-Date.parse(a.last_message_at||a.requested_at||"");
