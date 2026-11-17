@@ -157,8 +157,8 @@ function Composer({
     [busy, setBusy] = useState(false),
     [previewBusy, setPreviewBusy] = useState(false),
     [error, setError] = useState(""),
-    lock = useRef(false),
-    previewGeneration = useRef(0);
+    previewGeneration = useRef(0),
+    lock = useRef(false);
 
   useEffect(() => () => {
     previewGeneration.current++;
@@ -1195,11 +1195,6 @@ function PostCard({
             {!!post.preview?.description && (
               <Text style={s.previewDescription} numberOfLines={3}>
                 {post.preview.description}
-              </Text>
-            )}
-            {!post.preview && (
-              <Text style={s.previewMeta} numberOfLines={2}>
-                {post.link_url}
               </Text>
             )}
           </View>
