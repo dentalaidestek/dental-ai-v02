@@ -3,12 +3,19 @@ import {ApiError} from './api';
 import {revalidateSession} from './sessionExpiry';
 export type AcademicFile={uri:string;name:string;mimeType:string;size?:number};
 
+function hasControl(value:string):boolean{
+ for(const character of value){const code=character.charCodeAt(0);if(code<32||code===127)return true}
+ return false;
+}
+function hasUnsafeUriCharacters(value:string):boolean{
+ return value.includes('\\')||value.includes('?')||value.includes('#')||hasControl(value);
+}
 export function isPrivateAcademicCacheUri(uri:string):boolean{
  const root=FS.cacheDirectory;
- if(!root||typeof uri!=='string'||!uri.startsWith('file://')||/[?#\\\\\u0000-\u001f]/.test(uri))return false;
+ if(!root||typeof uri!=='string'||!uri.startsWith('file://')||hasUnsafeUriCharacters(uri))return false;
  try{
   const decoded=decodeURIComponent(uri),decodedRoot=decodeURIComponent(root);
-  if(/[?#\\\\\u0000-\u001f]/.test(decoded))return false;
+  if(hasUnsafeUriCharacters(decoded))return false;
   const prefix=decodedRoot.endsWith('/')?decodedRoot:decodedRoot+'/';
   if(!decoded.startsWith(prefix))return false;
   const parts=decoded.slice(prefix.length).split('/');
@@ -27,14 +34,14 @@ function academicMime(name:string):string|null{
 
 export async function uploadAcademic(token:string,course:number,file:AcademicFile,maxBytes:number,progress:(fraction:number)=>void,signal?:AbortSignal){
  if(!Number.isSafeInteger(course)||course<1||!isPrivateAcademicCacheUri(file.uri))throw Error('Yalnızca uygulamanın özel önbelleğine kopyalanmış dosyalar yüklenebilir.');
- if(typeof file.name!=='string'||file.name.length>240||file.name.trim()!==file.name||/[\\\\/\u0000-\u001f]/.test(file.name))throw Error('Geçerli bir dosya adı kullanın.');
+ if(typeof file.name!=='string'||file.name.length>240||file.name.trim()!==file.name||file.name.includes('/')||file.name.includes('\\')||hasControl(file.name))throw Error('Geçerli bir dosya adı kullanın.');
  const mime=academicMime(file.name);
  if(!mime)throw Error('PDF/JPG/PNG/WEBP dosyası seçin.');
  const supplied=(file.mimeType||'').trim().toLowerCase();
  if(supplied&&supplied!=='application/octet-stream'&&supplied!==mime)throw Error('Dosya uzantısı ile içerik türü eşleşmiyor.');
  const info=await FS.getInfoAsync(file.uri);
  if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>maxBytes)throw Error('Dosya okunamadı veya dersin dosya boyutu sınırı aşıldı.');
- const task=FS.createUploadTask(`https://dentalai.tr/api/mobile/v1/academic/courses/${course}/materials`,file.uri,{httpMethod:'POST',uploadType:FS.FileSystemUploadType.MULTIPART,fieldName:'files',mimeType:mime,parameters:{original_filename:file.name},headers:{Authorization:'Bearer '+token,Cookie:''}},p=>progress(p.totalBytesExpectedToSend>0?Math.min(1,p.totalBytesSent/p.totalBytesExpectedToSend):0));
+ const task=FS.createUploadTask(\`https://dentalai.tr/api/mobile/v1/academic/courses/\${course}/materials\`,file.uri,{httpMethod:'POST',uploadType:FS.FileSystemUploadType.MULTIPART,fieldName:'files',mimeType:mime,parameters:{original_filename:file.name},headers:{Authorization:'Bearer '+token,Cookie:''}},p=>progress(p.totalBytesExpectedToSend>0?Math.min(1,p.totalBytesSent/p.totalBytesExpectedToSend):0));
  let rejectAbort:(error:Error)=>void=()=>{};
  const cancelled=new Promise<never>((_,reject)=>{rejectAbort=reject});
  const cancel=()=>{void task.cancelAsync().catch(()=>{});rejectAbort(new ApiError(408,'Aktarımın sonucu belirsiz. Tekrar yüklemeden önce ders kaynaklarını kontrol edin.'))};
