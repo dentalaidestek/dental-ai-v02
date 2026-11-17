@@ -128,3 +128,43 @@ test('clinical media preserves patient-scoped authenticated file URL',async()=>{
   assert.match(result.items[0].url,/\/patients\/3\/media\/11\/file$/);
  });
 });
+
+test('consultation message receipt lookup is account-authenticated and validates the response',async()=>{
+ await withFetch(async(url,init)=>{
+  assert.match(url,/\\/consultations\\/42\\/message-receipt\\?client_message_id=native-message-receipt-0001$/);
+  assert.equal(init.headers.Authorization,'Bearer secret');
+  assert.equal(init.method,'GET');
+  return json({message:{id:91,sender_user_id:10,message_type:'TEXT',content:'Klinik not',created_at:'2026-11-17T00:00:00'},deleted:false});
+ },async()=>{
+  const receipt=await api.getConsultationMessageReceipt('secret',42,'native-message-receipt-0001');
+  assert.equal(receipt.message.id,91);
+  assert.equal(receipt.deleted,false);
+ });
+});
+
+test('consultation message receipt reports retention deletion without exposing message content',async()=>{
+ await withFetch(async()=>json({message:null,deleted:true}),async()=>{
+  const receipt=await api.getConsultationMessageReceipt('secret',42,'native-message-receipt-0001');
+  assert.equal(receipt.message,null);
+  assert.equal(receipt.deleted,true);
+ });
+});
+
+test('consultation message receipt rejects invalid intent keys before network access',async()=>{
+ await withFetch(async()=>{throw Error('network must not be called')},async()=>{
+  await assert.rejects(()=>api.getConsultationMessageReceipt('secret',42,'short'),/Geçersiz/);
+ });
+});
+
+test('consultation text sends carry the stable client intent key and reply target',async()=>{
+ await withFetch(async(url,init)=>{
+  assert.match(url,/\\/consultations\\/42\\/messages$/);
+  assert.equal(init.method,'POST');
+  assert.deepEqual(JSON.parse(init.body),{content:'Yanıt',client_message_id:'native-message-send-0001',reply_to_message_id:17});
+  return json({ok:true,message:{id:92,sender_user_id:10,message_type:'TEXT',content:'Yanıt',created_at:'2026-11-17T00:00:00'}});
+ },async()=>{
+  const result=await api.sendConsultationMessage('secret',42,'Yanıt','native-message-send-0001',17);
+  assert.equal(result.message.id,92);
+ });
+});
+
