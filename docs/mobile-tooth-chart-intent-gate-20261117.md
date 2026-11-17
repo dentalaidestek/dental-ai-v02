@@ -35,3 +35,5 @@ The native backend intentionally treats tooth status as an observation, not proo
 - Latest CI still has `steps=[]` and typecheck/security logs return Azure `BlobNotFound 404`; no compiler, Gradle or pytest process started.
 
 No patient record was changed. No main merge, live deploy, APK/IPA publication or clinical-data mutation.
+
+Final implementation review: the Notes tab, independent treatment-history edit button, treatment name/material/date/note/result fields, and every tooth/surface editor control are now disabled under the same gate; treatment form values remain controlled while disabled. The handler-level gate also protects direct invocation. Patient-ID equality is checked on both initial and refresh reads and on all four post-write/conflict refresh paths. The modified TSX control fragments transpiled successfully with the global TypeScript compiler.
