@@ -638,3 +638,45 @@ def test_mobile_push_receipt_claim_uses_postgres_skip_locked(pg, monkeypatch):
     assert row.status == "PROVIDER_ACCEPTED"
     assert row.attempts == 1
     assert row.lease_token is None and row.lease_until is None
+
+
+def test_mobile_push_installation_advisory_lock_serializes_account_switches(pg):
+    """Two accounts claiming one SecureStore installation cannot race each other."""
+    from threading import Event
+    from app.mobile_api import _lock_mobile_push_device_identity
+
+    engine, _, _ = pg
+    device_id = str(uuid.uuid4())
+    first_locked = Event()
+    second_started = Event()
+    second_locked = Event()
+    release_first = Event()
+
+    def first_claim():
+        with Session(engine) as session:
+            _lock_mobile_push_device_identity(session, device_id)
+            first_locked.set()
+            if not release_first.wait(timeout=5):
+                raise AssertionError("first installation claim was not released")
+            session.commit()
+
+    def second_claim():
+        if not first_locked.wait(timeout=5):
+            raise AssertionError("first installation claim did not acquire its lock")
+        second_started.set()
+        with Session(engine) as session:
+            _lock_mobile_push_device_identity(session, device_id)
+            second_locked.set()
+            session.commit()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(first_claim)
+        assert first_locked.wait(timeout=5)
+        second = executor.submit(second_claim)
+        assert second_started.wait(timeout=5)
+        assert not second_locked.wait(timeout=0.2)
+        release_first.set()
+        first.result(timeout=5)
+        second.result(timeout=5)
+
+    assert second_locked.is_set()
