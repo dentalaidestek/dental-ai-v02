@@ -75,3 +75,8 @@ Web-first reinspection used `app/templates/notes_ai.html`, its `waitForIndex` pe
 The GitHub source-level patch checks passed for all changed contracts. The new Node/Python integration tests are committed but were not executed in this environment. The current-head GitHub Actions Android typecheck and Security jobs still have `runner_id=0`, `steps=[]`, no artifacts, and log downloads return `BlobNotFound 404`; npm/tsc, pytest and Gradle did not start. Do not report these as source test failures or green CI.
 
 No provider credentials, clinical data, patient records, schema migrations, main merge, production deploy or store build were changed. Full local test suite, PostgreSQL concurrency, real provider cost/continuation behavior and Android/iOS device acceptance remain open.
+
+
+### Native recovery UI follow-up
+
+The native run card now renders the last safe `run.partial` checkpoint through the existing safe Markdown renderer. FAILED and INTERRUPTED runs expose an explicit “Aynı Soruyu Yeniden Dene” action; restoring or polling an interrupted run never starts a new paid request automatically. The retry uses the original question with a new durable request key only after the user taps the button. The React-renderer regression is committed but awaits the unavailable CI runner.
