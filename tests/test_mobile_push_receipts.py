@@ -145,6 +145,43 @@ def test_reservation_uses_rotated_live_token_not_stale_snapshot(tmp_path):
     engine.dispose()
 
 
+def test_reservation_deduplicates_candidates_and_ignores_other_owner(tmp_path):
+    engine, user_id, device_id, token = _engine(tmp_path)
+    with Session(engine, expire_on_commit=False) as session:
+        owner_device = session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.user_id == user_id,
+            main.MobilePushDevice.device_id == device_id,
+        )).one()
+        other = main.User(username="push-receipt-other", role="DOCTOR", display_name="Other")
+        session.add(other)
+        session.commit()
+        other_device = main.MobilePushDevice(
+            user_id=other.id,
+            device_id=str(uuid.uuid4()),
+            expo_push_token="ExpoPushToken[otherdevice123456]",
+            platform="ios",
+            enabled=True,
+        )
+        session.add(other_device)
+        session.commit()
+        session.refresh(other_device)
+
+    reserved = reserve_mobile_push_deliveries(
+        engine,
+        event_id=445,
+        user_id=user_id,
+        devices=[owner_device, owner_device, other_device],
+    )
+    assert len(reserved) == 1
+    assert reserved[0]["device_id"] == device_id
+    assert reserved[0]["token"] == token
+    with Session(engine) as session:
+        rows = session.exec(select(main.MobilePushDelivery)).all()
+    assert len(rows) == 1
+    assert rows[0].user_id == user_id
+    engine.dispose()
+
+
 def test_disabled_transport_does_not_leave_a_receipt_poll_pending(tmp_path):
     engine, user_id, device_id, token = _engine(tmp_path)
     with Session(engine) as session:
