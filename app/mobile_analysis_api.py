@@ -327,7 +327,7 @@ async def create_mobile_analysis(
             maximum_total=MOBILE_MAX_ANALYSIS_BATCH_BYTES,
         )
         if new_bytes + saved_bytes > MOBILE_MAX_ANALYSIS_BATCH_BYTES:
-            raise HTTPException(413, "Kayıtlı ve yeni görüntülerin toplamı en fazla 80 MiB olabilir.")
+            raise HTTPException(413, "Kayıtlı ve yeni görüntülerin toplamı en fazla 48 MiB olabilir.")
 
         analysis = Analysis(
             patient_id=patient_id,
@@ -450,7 +450,6 @@ def mobile_analysis(analysis_id: int, user: User = Depends(_mobile_user)):
                     "id": job.id,
                     "kind": job.kind,
                     "status": job.status,
-                    "error_code": job.error_code,
                     "retryable": job.status in {"FAILED", "CANCELLED"},
                 }
                 if job else None

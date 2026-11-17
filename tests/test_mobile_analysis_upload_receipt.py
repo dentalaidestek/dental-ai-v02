@@ -419,3 +419,37 @@ def test_foreign_patient_and_saved_media_are_rejected_before_upload_hashing(chat
     with Session(engine) as session:
         assert session.exec(select(main.Analysis)).all()==[]
         assert session.exec(select(main.ImageAsset)).all()==[]
+
+
+def test_analysis_detail_does_not_expose_internal_job_error_code(chat,monkeypatch,tmp_path):
+    c,engine,raw=setup(chat,monkeypatch,tmp_path)
+    created=post(c,raw)
+    assert created.status_code==200,created.text
+    with Session(engine) as s:
+        s.add(work_jobs.WorkJob(
+            owner_user_id=1,resource_id=created.json()['analysis_id'],resource_type='ANALYSIS',
+            kind='PRELIMINARY',source_hash='synthetic-analysis-job',dedupe_key='synthetic-analysis-job',
+            status='FAILED',error_code='PRIVATE_PROVIDER_ERROR',
+        ))
+        s.commit()
+    response=c.get(f"/api/mobile/v1/analyses/{created.json()['analysis_id']}")
+    assert response.status_code==200,response.text
+    assert set(response.json()['job'])=={'id','kind','status','retryable'}
+    assert 'PRIVATE_PROVIDER_ERROR' not in response.text
+
+
+def test_mixed_analysis_byte_budget_error_uses_canonical_48_mib_limit(chat,monkeypatch,tmp_path):
+    from pathlib import Path
+    c,engine,raw=setup(chat,monkeypatch,tmp_path)
+    saved=tmp_path/'saved-budget.png';saved.write_bytes(raw)
+    _saved_media(engine,saved)
+    monkeypatch.setattr(mobile_analysis_api,'storage_ensure_local',lambda value:Path(value))
+    monkeypatch.setattr(mobile_analysis_api,'validate_upload_batch',lambda *_args,**_kwargs:1)
+    monkeypatch.setattr(mobile_analysis_api,'validate_path_batch',lambda *_args,**_kwargs:48*1024*1024)
+    response=_post_mixed(c,raw,'31','synthetic-mixed-byte-budget-001')
+    assert response.status_code==413,response.text
+    assert '48 MiB' in response.text
+    assert '80 MiB' not in response.text
+    with Session(engine) as s:
+        assert not s.exec(select(main.Analysis)).all()
+        assert not s.exec(select(main.ImageAsset)).all()
