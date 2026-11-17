@@ -3,7 +3,7 @@ import NativeChatDocument from "./NativeChatDocument";
 import {ChatFile} from "./chatFiles";
 import NativeConsultationRequest from "./NativeConsultationRequest";
 import {ChatActions,ChatImage,ChatPhotoComposer,DeletedChatButton} from "./NativeChatTools";
-import {useNavigation,useIsFocused} from "@react-navigation/native";
+import {useNavigation,useIsFocused,useRoute} from "@react-navigation/native";
 import React,{useCallback,useEffect,useRef,useState}from"react";
 import * as ImagePicker from"expo-image-picker";
 import * as SecureStore from"expo-secure-store";
@@ -21,14 +21,27 @@ const card={backgroundColor:C.white,borderRadius:18,borderWidth:1,borderColor:C.
 function Btn({title,onPress,disabled=false}:{title:string;onPress:()=>void;disabled?:boolean}){return <Pressable disabled={disabled} onPress={onPress} style={[s.btn,disabled&&{opacity:.5}]}><Text style={s.btnT}>{title}</Text></Pressable>}
 function Empty({title,sub}:{title:string;sub:string}){return <View style={s.empty}><Text style={s.emptyTitle}>{title}</Text><Text style={s.muted}>{sub}</Text></View>}
 
-export function Notifications({token}:{token:string}){
- const nav:any=useNavigation();const[d,setD]=useState<any>();const{lastEvent}=useRealtime();
+export function Notifications({token,initialNoticeId}:{token:string;initialNoticeId?:number}){
+ const nav:any=useNavigation(),route:any=useRoute();const rawNoticeId=initialNoticeId??route?.params?.noticeId;
+ const noticeId=Number.isSafeInteger(rawNoticeId)&&rawNoticeId>0?rawNoticeId as number:undefined;
+ const[d,setD]=useState<any>();const{lastEvent}=useRealtime();
  const[busy,setBusy]=useState(false),[markingAll,setMarkingAll]=useState(false),[error,setError]=useState("");
- const requestGeneration=useRef(0),activeToken=useRef(token);
- // Never allow an earlier account or an older refresh to overwrite this account\u0027s notifications.
- if(activeToken.current!==token){activeToken.current=token;requestGeneration.current++;}
- const load=useCallback(async()=>{const request=++requestGeneration.current;setBusy(true);try{const result=await getNotifications(token);if(request!==requestGeneration.current||activeToken.current!==token)return;setD({...result,accountToken:token});setError("")}catch(e){if(request===requestGeneration.current&&activeToken.current===token)setError(e instanceof Error?e.message:"Bildirimler alınamadı.")}finally{if(request===requestGeneration.current&&activeToken.current===token)setBusy(false)}},[token]);
- useEffect(()=>{setD(undefined);setError("");setBusy(false);return()=>{requestGeneration.current++}},[token]);
+ const requestGeneration=useRef(0),activeToken=useRef(token),autoOpenedNoticeId=useRef<number|null>(null);
+ // Never allow an earlier account or an older refresh to overwrite this account's notifications.
+ if(activeToken.current!==token){activeToken.current=token;requestGeneration.current++;autoOpenedNoticeId.current=null;}
+ const load=useCallback(async()=>{
+  const request=++requestGeneration.current;setBusy(true);
+  try{
+   const result=await getNotifications(token,noticeId);
+   if(request!==requestGeneration.current||activeToken.current!==token)return;
+   setD({...result,accountToken:token});setError("");
+  }catch(e){
+   if(request===requestGeneration.current&&activeToken.current===token)setError(e instanceof Error?e.message:"Bildirimler alınamadı.");
+  }finally{
+   if(request===requestGeneration.current&&activeToken.current===token)setBusy(false);
+  }
+ },[token,noticeId]);
+ useEffect(()=>{setD(undefined);setError("");setBusy(false);autoOpenedNoticeId.current=null;return()=>{requestGeneration.current++}},[token,noticeId]);
  useEffect(()=>{void load()},[load]);
  useEffect(()=>{if(lastEvent&&["NOTICE_CREATED","NOTICE_RESOLVED","MESSAGE_CREATED","CASE_CREATED","NOTIFICATIONS_READ"].includes(String(lastEvent.event_type||lastEvent.type)))void load()},[lastEvent,load]);
  async function open(item:any){
@@ -53,6 +66,13 @@ export function Notifications({token}:{token:string}){
    else nav.navigate(target.route.screen);
   }
  }
+ useEffect(()=>{
+  if(noticeId===undefined||d?.accountToken!==token||!Array.isArray(d.items)||autoOpenedNoticeId.current===noticeId)return;
+  autoOpenedNoticeId.current=noticeId;
+  const item=d.items.find((entry:any)=>entry.id===noticeId);
+  if(item)void open(item);
+  else setError("Bu bildirim artık etkin değil veya hesabınıza ait değil.");
+ },[noticeId,d,token]);
  async function markAllRead(){
   if(markingAll||busy||activeToken.current!==token||d?.accountToken!==token||!d?.unread)return;
   const seenBefore=new Date().toISOString();
@@ -76,8 +96,8 @@ export function Notifications({token}:{token:string}){
  refreshControl={<RefreshControl refreshing={busy&&(!d||d.accountToken===token)} onRefresh={()=>void load()}/>}
  ListHeaderComponent={<View style={{marginBottom:14}}><Text style={s.big}>Bildirimler</Text><Text style={s.muted}>Yeni mesajlar, danışmanlıklar ve hesap gelişmeleri.</Text>{d?.accountToken===token&&d.unread>0&&<Pressable accessibilityRole="button" accessibilityLabel="Tüm bildirimleri okundu işaretle" disabled={busy||markingAll} onPress={()=>void markAllRead()} style={[s.btn,{marginTop:12,opacity:(busy||markingAll)?0.55:1}]}><Text style={s.btnT}>{markingAll?"Okundu olarak işaretleniyor…":"Tümünü okundu işaretle"}</Text></Pressable>}{!!error&&(!d||d.accountToken===token)&&<Text accessibilityRole="alert" style={{color:C.red,marginTop:10}}>{error}</Text>}</View>}
  renderItem={({item})=><Pressable accessibilityRole="button" style={[card,!item.read_at&&{borderLeftWidth:4,borderLeftColor:C.navy}]} onPress={()=>void open(item)}>
- <View style={s.row}><Text style={[s.title,{flex:1}]}>{item.title}</Text>{!item.read_at&&<Text style={{color:"#1769AA",fontWeight:"800"}}>Yeni</Text>}</View>
- <Text style={s.body}>{item.message}</Text><Text style={s.meta}>{Number.isFinite(parseNotificationTimestamp(item.created_at))?new Date(parseNotificationTimestamp(item.created_at)).toLocaleString("tr-TR"):"—"}</Text>
+  <View style={s.row}><Text style={[s.title,{flex:1}]}>{item.title}</Text>{!item.read_at&&<Text style={{color:"#1769AA",fontWeight:"800"}}>Yeni</Text>}</View>
+  <Text style={s.body}>{item.message}</Text><Text style={s.meta}>{Number.isFinite(parseNotificationTimestamp(item.created_at))?new Date(parseNotificationTimestamp(item.created_at)).toLocaleString("tr-TR"):"—"}</Text>
  </Pressable>} ListEmptyComponent={!busy&&(!d||d.accountToken===token)?<View><Empty title={error?"Bildirimler yüklenemedi":"Bildirim yok"} sub={error?"Bağlantıyı kontrol edip yeniden deneyin.":"Yeni gelişmeler burada görünecek."}/>{!!error&&<Pressable accessibilityRole="button" onPress={()=>void load()} style={s.btn}><Text style={s.btnT}>Yeniden dene</Text></Pressable>}</View>:null}/>;
 }
 
