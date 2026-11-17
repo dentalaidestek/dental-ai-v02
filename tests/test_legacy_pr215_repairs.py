@@ -59,7 +59,7 @@ def test_mobile_message_adapter_awaits_offloaded_result_and_preserves_errors(sta
         'JSONResponse': JSONResponse, 'HTTPException': HTTPException, 'json': json})
     async def invoke():
         result = ns['mobile_send_consultation_message'](7, SimpleNamespace(
-            content='Sentetik mesaj', reply_to_message_id=3, client_message_id='test-id'), token='synthetic')
+            content='Sentetik mesaj', reply_to_message_id=3, client_message_id='native-test-id-0001'), token='synthetic')
         return await result if inspect.isawaitable(result) else result
     if status == 403:
         with pytest.raises(HTTPException) as error:
