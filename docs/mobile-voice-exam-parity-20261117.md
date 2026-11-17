@@ -65,3 +65,30 @@ No full repository typecheck, full beta suite, Python pytest, PostgreSQL test, E
 - Run `npm run typecheck`, `npm run test:beta`, `pytest tests/test_voice_exam.py tests/test_voice_exam_live.py`, Expo export and Android build once Actions runner allocation is available.
 - No live AI provider call was made by this change; no transcript/audio/patient data was generated or changed.
 - PR #257 remains Draft. No main merge, production deploy, APK/IPA publication or patient-record mutation.
+
+
+## 2026-11-17 follow-up — private voice-cache path containment
+
+Web-first recheck covered the canonical voice entry/device-check/session panel, voice-exam.js, voice-device-check.js, voice-pcm-worklet.js, and the native recorder/ASR adapter before changing the file boundary.
+
+### New security finding
+
+The persisted native draft parser accepted any file:// URI. The ASR uploader also accepted any file:// URI, so a corrupted or stale SecureStore record could direct the upload task at an app-readable file outside the recorder cache. Separately, the cleanup guard used only a string-prefix check against cacheDirectory; a cache-prefixed traversal such as cache/../Documents/... could pass that check. A malformed segments array containing null could also throw in the duplicate-ID pass before row validation.
+
+### Changes
+
+- Added a URI-shape validator for persisted segments: absolute file URI, no encoded path, query/fragment, control characters, backslash, dot segments, malformed filename, or non-.m4a recording.
+- Added a runtime cache-root validator that accepts only one direct .m4a child of Expo's actual FileSystem.cacheDirectory. ASR upload rejects an out-of-scope path before file metadata reads or upload-task creation.
+- Reused the same runtime validator before deletion. Draft clear skips untrusted paths, never deletes outside the app-private cache, and explains that the unverified file was left untouched.
+- Validated segment rows before building the duplicate-ID set, so malformed rows fail closed with the normal draft-validation error.
+- Added a dedicated native-voice-security job to Security Recovery. Its path filters include the native voice boundary and it runs node --test tests/nativeVoiceAudio.cjs. The existing Android workflow already watches all mobile/** changes and runs the full beta suite/typecheck.
+
+### Regression coverage
+
+The committed Node test now covers valid cache child, outside-cache path, traversal, encoded traversal, nested path, cache-prefix collision, query string, wrong extension, rejection before file read/upload, malformed draft rows, and recorder cleanup guard usage. The test is included in the existing npm run test:beta command.
+
+### Validation boundary
+
+The test source is committed and the workflow is wired, but the Node test, full TypeScript typecheck, beta suite, pytest, Expo export and Android build are not yet confirmed as executed. On starting HEAD d61ae1b, Android typecheck job 134255233806, Security job 134255233520 and Voice job 134255233557 each returned an empty step list; their log downloads returned Azure BlobNotFound 404. These jobs did not provide compiler/test output. The exact hosted-runner/account cause remains unavailable from the GitHub API; no speculative runs-on change was made.
+
+No transcript/audio/patient record was created or modified. No main merge, production deploy, migration, APK/IPA publication or store release.
