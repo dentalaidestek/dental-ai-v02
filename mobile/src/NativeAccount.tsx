@@ -1,5 +1,6 @@
 import NativeRelationships from './NativeRelationships';
 import NativeProfessional from './NativeProfessional';
+import NativePushSettings from './NativePushSettings';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {ActivityIndicator,Alert,AppState,Image,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {useIsFocused} from '@react-navigation/native';
@@ -40,6 +41,7 @@ export default function NativeAccount({token,user,onChanged,signOut,onMessages,o
  <View style={s.card}>{heading('expert','Uzman profilim')}{section==='expert'&&<NativeProfessional key={token} mode="expert" token={token} onChanged={()=>void load()} onPublicProfile={onPublicProfile} onBusyChanged={setBusy} hasPhoto={!!data?.photo_url}/>}</View>
  <View style={s.card}>{heading('security','Hesap Güvenliği')}{section==='security'&&<>{field('Mevcut şifre',currentPassword,setCurrentPassword,true)}{field('Yeni şifre',password,setPassword,true)}{field('Yeni şifre tekrarı',confirmation,setConfirmation,true)}{button(show?'Şifreleri Gizle':'Şifreleri Göster',()=>setShow(v=>!v))}<Text style={s.meta}>Şifre değiştiğinde tüm oturumlar kapatılır.</Text>{button('Şifreyi Değiştir',()=>{if(password.length<8||password!==confirmation){setError('En az 8 karakterli ve eşleşen şifreler girin.');return}void perform('password',{current_password:currentPassword,new_password:password,new_password_confirm:confirmation})},true,uncertain)}</>}</View>
  <View style={s.card}>{heading('email','E-posta Adresi')}{section==='email'&&<><Text style={s.meta}>Mevcut adres: {live.email||'—'}</Text>{data?.email_change_allowed?<>{field('Yeni e-posta',email,setEmail)}{field('Mevcut şifre',currentPassword,setCurrentPassword,true)}{button('Doğrulama Kodu Gönder',()=>void perform('email',{new_email:email,password:currentPassword}),true,uncertain)}{pendingEmail&&<><Text style={s.meta}>Kod gönderildi: {pendingEmail}</Text>{button('Kodu Yeniden Gönder',()=>void perform('email',{new_email:pendingEmail,password:currentPassword,renew:true}),false,uncertain)}<TextInput accessibilityLabel="E-posta değişikliği doğrulama kodu" value={code} onChangeText={v=>setCode(v.replace(/\D/g,''))} keyboardType="number-pad" maxLength={6} autoComplete="one-time-code" editable={!busy} style={s.input}/>{button('Yeni E-postayı Doğrula',()=>void perform('email/confirm',{code}),true,uncertain||code.length!==6)}</>}</>:<Text style={s.meta}>Yönetici e-posta adresi değiştirilemez.</Text>}</>}</View>
+ <View style={s.card}>{heading('notifications','Cihaz Bildirimleri')}{section==='notifications'&&<NativePushSettings token={token} userId={user.id}/>}</View>
  {String(live.role||'').toUpperCase()!=='ADMIN'&&<View style={s.card}>
   {heading('account','Hesap İşlemleri')}
   {section==='account'&&<>
