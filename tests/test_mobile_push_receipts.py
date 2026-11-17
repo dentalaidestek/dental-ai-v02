@@ -496,3 +496,93 @@ def test_existing_revision_15_schema_bootstraps_both_push_tables(tmp_path):
             "SELECT version FROM dental_schema_revision WHERE id=1"
         )).scalar_one() == 15
     engine.dispose()
+
+
+def test_receipt_poll_rejects_boolean_batch_limit(tmp_path):
+    engine, _, _, _ = _engine(tmp_path)
+    with pytest.raises(ValueError, match="between 1 and 500"):
+        poll_due_mobile_push_receipts(engine, limit=True)
+    engine.dispose()
+
+
+def test_receipt_maintenance_recovers_rows_with_missing_leases(tmp_path):
+    from app.mobile_push_receipts import _maintain_receipt_rows
+
+    engine, user_id, device_id, token = _engine(tmp_path)
+    stamp = main._utcnow_naive()
+    with Session(engine) as session:
+        session.add_all([
+            main.MobilePushDelivery(
+                event_id=9101, user_id=user_id, device_id=device_id,
+                token_fingerprint=token_fingerprint(token), status="SENDING",
+                lease_token=None, lease_until=None,
+                created_at=stamp - timedelta(minutes=5),
+                updated_at=stamp - timedelta(minutes=5),
+            ),
+            main.MobilePushDelivery(
+                event_id=9102, user_id=user_id, device_id=device_id,
+                token_fingerprint=token_fingerprint(token), ticket_id=str(uuid.uuid4()),
+                status="CHECKING", attempts=1, lease_token=None, lease_until=None,
+                created_at=stamp - timedelta(minutes=20),
+                updated_at=stamp - timedelta(minutes=5),
+            ),
+        ])
+        session.commit()
+
+    assert _maintain_receipt_rows(engine) == 2
+    with Session(engine) as session:
+        rows = {
+            row.event_id: row
+            for row in session.exec(select(main.MobilePushDelivery)).all()
+        }
+    assert rows[9101].status == "SEND_UNCERTAIN"
+    assert rows[9101].error_code == "SENDER_LEASE_EXPIRED"
+    assert rows[9102].status == "PENDING_RECEIPT"
+    assert rows[9102].error_code == "CHECK_LEASE_EXPIRED"
+    assert rows[9102].next_check_at >= stamp + timedelta(minutes=4)
+    assert rows[9101].lease_token is None and rows[9102].lease_token is None
+    engine.dispose()
+
+
+def test_invalid_receipt_ticket_does_not_poison_valid_provider_batch(tmp_path, monkeypatch):
+    import app.mobile_push_receipts as receipts
+
+    engine, user_id, device_id, token = _engine(tmp_path)
+    stamp = main._utcnow_naive()
+    valid_ticket = str(uuid.uuid4())
+    with Session(engine) as session:
+        session.add_all([
+            main.MobilePushDelivery(
+                event_id=9201, user_id=user_id, device_id=device_id,
+                token_fingerprint=token_fingerprint(token), ticket_id=valid_ticket,
+                status="PENDING_RECEIPT", next_check_at=stamp - timedelta(minutes=1),
+                created_at=stamp - timedelta(minutes=20), updated_at=stamp - timedelta(minutes=1),
+            ),
+            main.MobilePushDelivery(
+                event_id=9202, user_id=user_id, device_id=device_id,
+                token_fingerprint=token_fingerprint(token), ticket_id="not-a-provider-uuid",
+                status="PENDING_RECEIPT", next_check_at=stamp - timedelta(minutes=1),
+                created_at=stamp - timedelta(minutes=20), updated_at=stamp - timedelta(minutes=1),
+            ),
+        ])
+        session.commit()
+
+    requested = []
+    monkeypatch.setattr(receipts, "get_push_receipts", lambda ids: (
+        requested.append(ids) or {
+            "ok": True,
+            "receipts": {valid_ticket: {"status": "ok"}},
+        }
+    ))
+
+    assert poll_due_mobile_push_receipts(engine) == 2
+    assert requested == [[valid_ticket]]
+    with Session(engine) as session:
+        rows = {
+            row.event_id: row
+            for row in session.exec(select(main.MobilePushDelivery)).all()
+        }
+    assert rows[9201].status == "PROVIDER_ACCEPTED"
+    assert rows[9202].status == "RECEIPT_ERROR"
+    assert rows[9202].error_code == "INVALID_TICKET"
+    engine.dispose()
