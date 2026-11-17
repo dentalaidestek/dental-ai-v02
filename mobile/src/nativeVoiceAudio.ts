@@ -10,7 +10,7 @@ export class VoiceAsrError extends Error {
 
 const REQUEST_KEY=/^[A-Za-z0-9_-]{16,96}$/;
 const BASE='https://dentalai.tr/api/mobile/v1';
-const RECORDING_FILE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\\.m4a$/i;
+const RECORDING_FILE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\.m4a$/i;
 
 export function isPrivateVoiceRecordingUri(
  uri:unknown,cacheDirectory:string|null|undefined=FileSystem.cacheDirectory
