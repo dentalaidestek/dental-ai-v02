@@ -14,11 +14,12 @@ export async function getProgram(token:string,view:ProgramView,day?:string,offse
 }
 export async function getProgramEvent(token:string,eventId:number){const result=await request<{event:ProgramEvent}>(`/program/events/${id(eventId)}`,token);if(!eventValid(result.event)||result.event.id!==eventId)throw Error('Program kaydı doğrulanamadı.');return result.event;}
 const requestKeyValid=(value:string)=>/^[A-Za-z0-9_-]{16,96}$/.test(value);
-export async function getProgramMutation(token:string,requestKey:string){
+export type ProgramMutationReceipt={state:'NOT_FOUND'}|{state:'DELETED';event_id:number}|{state:'FOUND';event:ProgramEvent};
+export async function getProgramMutation(token:string,requestKey:string):Promise<ProgramMutationReceipt>{
  if(!requestKeyValid(requestKey))throw Error('Geçersiz Program istek anahtarı.');
- const result=await request<{state:'NOT_FOUND'|'DELETED'|'FOUND';event?:ProgramEvent;event_id?:number}>(`/program/mutations/${requestKey}`,token);
+ const result=await request<ProgramMutationReceipt>(`/program/mutations/${requestKey}`,token);
  if(result.state==='NOT_FOUND')return result;
- if(result.state==='DELETED'&&Number.isSafeInteger(result.event_id)&&result.event_id!>0)return result;
+ if(result.state==='DELETED'&&Number.isSafeInteger(result.event_id)&&result.event_id>0)return result;
  if(result.state==='FOUND'&&eventValid(result.event))return result;
  throw Error('Bekleyen Program kaydı sunucuda doğrulanamadı.');
 }
