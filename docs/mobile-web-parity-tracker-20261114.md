@@ -614,3 +614,12 @@ Native recorder presentation now includes a web-parity microphone focal point, t
 Also fixed two `voiceWorkflow.cjs` test calls that omitted the mandatory persisted ASR request key. Added regression assertions for idempotent transcript receipts, valid cleanup state, cache deletion recovery and the native UI contract. Security recovery now watches and runs the canonical web voice route/core/source/final modules plus `tests/test_voice_exam.py` and `tests/test_voice_exam_live.py`.
 
 Evidence and exact remaining acceptance: `docs/mobile-voice-exam-parity-20261117.md`. Full project TypeScript, beta suite, Python integration, Expo export, Gradle and physical-device tests remain unverified because the previous current-head Actions jobs had no steps and typecheck logs returned `BlobNotFound 404`. No green CI is claimed.
+
+
+## 2026-11-17 follow-up — Program create idempotency
+
+- **Completed in branch:** native Program create request key, owner-scoped durable receipt on `ScheduleEvent`, unique database index, receipt reconciliation endpoint, SecureStore request-key recovery, and PostgreSQL race/migration regression coverage.
+- **Privacy:** only a random request key is held in SecureStore; server rows contain keyed fingerprints rather than appointment text, notes or patient identifiers.
+- **Release gate:** schema revision 15 requires `python -m app.migrate` before app startup. No merge or deploy was performed.
+- **Still open:** full Android typecheck and integration suites (GitHub runner did not execute steps), stable snapshot pagination, native OS push/deep-link delivery, and 60k-user load certification.
+- **Evidence:** `docs/mobile-program-idempotency-20261117.md`.
