@@ -3,6 +3,7 @@ from datetime import timedelta
 import uuid
 
 import pytest
+from sqlalchemy import inspect, text
 from sqlmodel import Session, SQLModel, create_engine, select
 
 try:
@@ -205,3 +206,80 @@ def test_notification_push_lookup_includes_only_requested_owners_notice(monkeypa
         assert other_lookup.status_code == 200
         assert len(other_lookup.json()["items"]) == 1
         assert all(item["id"] != oldest_id for item in other_lookup.json()["items"])
+
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
+@pytest.mark.parametrize("prefix", ["ExpoPushToken", "ExponentPushToken"])
+def test_push_registration_accepts_both_canonical_expo_prefixes(monkeypatch, tmp_path, prefix):
+    engine, owner_id, _, owner_token, _ = _client_db(monkeypatch, tmp_path)
+    device_id = str(uuid.uuid4())
+    headers = {"Authorization": "Bearer " + owner_token}
+    token = f"{prefix}[abcdefgh12345678]"
+
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/mobile/v1/push/devices",
+            headers=headers,
+            json={"device_id": device_id, "expo_push_token": token, "platform": "android"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.headers.get("cache-control") == "private, no-store"
+
+    with Session(engine) as session:
+        row = session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.user_id == owner_id,
+            main.MobilePushDevice.device_id == device_id,
+        )).first()
+    assert row is not None
+    assert row.expo_push_token == token
+    engine.dispose()
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
+@pytest.mark.parametrize("token", [
+    "ExpoPushToken[short]",
+    "ExpoPushToken[bad token]",
+    r"ExpoPushToken\[abcdefgh12345678\]",
+    "ExpoPushToken[" + "a" * 129 + "]",
+    "OtherPushToken[abcdefgh12345678]",
+])
+def test_push_registration_rejects_noncanonical_token_shapes(monkeypatch, tmp_path, token):
+    engine, _, _, owner_token, _ = _client_db(monkeypatch, tmp_path)
+    headers = {"Authorization": "Bearer " + owner_token}
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/mobile/v1/push/devices",
+            headers=headers,
+            json={"device_id": str(uuid.uuid4()), "expo_push_token": token, "platform": "android"},
+        )
+    assert response.status_code == 422
+    engine.dispose()
+
+
+def test_existing_revision_15_schema_bootstraps_mobile_push_device_table(tmp_path):
+    from app import migrate
+
+    engine = create_engine(
+        "sqlite:///" + str(tmp_path / "schema-push.db"),
+        connect_args={"check_same_thread": False},
+    )
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"
+        ))
+        connection.execute(text(
+            "INSERT INTO dental_schema_revision (id, version) VALUES (1, 15)"
+        ))
+
+    migrate.require_schema(engine)
+
+    inspector = inspect(engine)
+    assert inspector.has_table("mobilepushdevice")
+    columns = {column["name"] for column in inspector.get_columns("mobilepushdevice")}
+    assert {"user_id", "device_id", "expo_push_token", "platform", "enabled", "updated_at"}.issubset(columns)
+    with engine.connect() as connection:
+        assert connection.execute(text(
+            "SELECT version FROM dental_schema_revision WHERE id=1"
+        )).scalar_one() == 15
+    engine.dispose()
