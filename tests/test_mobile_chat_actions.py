@@ -245,3 +245,25 @@ def test_chat_retention_removes_message_receipts(chat):
     assert receipt.status_code == 200
     assert receipt.json() == {"message": None, "deleted": True}
 
+def test_consultation_receipt_schema_is_compact_and_sender_scoped():
+    columns = [column.name for column in main.ConsultationMessageReceipt.__table__.primary_key.columns]
+    assert columns == ["case_id", "sender_user_id", "client_message_id"]
+    assert "content" not in main.ConsultationMessageReceipt.__table__.columns
+
+
+def test_attachment_receipt_hash_binds_bytes_and_reply_but_not_filename():
+    same_a = main._consultation_message_payload_hash(1, 7, "VOICE", "patient-a.wav", 12, b"audio-bytes")
+    same_b = main._consultation_message_payload_hash(1, 7, "VOICE", "renamed.wav", 12, b"audio-bytes")
+    changed_bytes = main._consultation_message_payload_hash(1, 7, "VOICE", "patient-a.wav", 12, b"changed-audio")
+    changed_reply = main._consultation_message_payload_hash(1, 7, "VOICE", "patient-a.wav", 13, b"audio-bytes")
+    assert same_a == same_b
+    assert same_a != changed_bytes
+    assert same_a != changed_reply
+
+
+def test_consultation_client_intent_key_has_bounded_format():
+    assert main._normalize_consultation_client_message_id("native-key-000000000001") == "native-key-000000000001"
+    with pytest.raises(main.HTTPException) as error:
+        main._normalize_consultation_client_message_id("short")
+    assert error.value.status_code == 422
+
