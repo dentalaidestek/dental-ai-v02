@@ -28,7 +28,7 @@ export default function NativePatientProfile({token,userId,patientId,actions}:{t
  deleteGate.current={busy,uncertain:mutationUncertain,treatmentIntentReady,treatmentIntentBlocked,hasPendingTreatment:pendingTreatment!==null};
  const canDeletePatient=patientProfileCanDeletePatient(deleteGate.current);
  const treatmentKey=treatmentMutationStorageKey(userId,patientId);
- const load=useCallback(async()=>{const seq=++request.current;setRefreshing(true);try{const result=await getPatient(token,patientId);if(!current()||seq!==request.current)return false;setDetail(result);setLoadedScope(scope);setError('');return true}catch(e){if(current()&&seq===request.current)setError(e instanceof Error?e.message:'Hasta alınamadı.');return false}finally{if(current()&&seq===request.current)setRefreshing(false)}},[token,patientId]);
+ const load=useCallback(async()=>{const seq=++request.current;setRefreshing(true);try{const result=await getPatient(token,patientId);if(!current()||seq!==request.current)return false;if(result.patient.id!==patientId)throw Error('Sunucu farklı bir hasta kaydı döndürdü.');setDetail(result);setLoadedScope(scope);setError('');return true}catch(e){if(current()&&seq===request.current)setError(e instanceof Error?e.message:'Hasta alınamadı.');return false}finally{if(current()&&seq===request.current)setRefreshing(false)}},[token,patientId]);
  useEffect(()=>{mounted.current=true;lock.current=false;setBusy(false);setDetail(null);setLoadedScope('');setInfoOpen(false);setTreatmentOpen(false);setEditingTreatment(null);setEditingTreatmentRevision(null);setPendingTreatment(null);setTreatmentIntentReady(false);setTreatmentIntentBlocked(false);setAllTreatments(false);setPatientForm(blankPatient);setTreatment(blankTreatment);setProfileUncertain(false);setTreatmentUncertain(false);setRevisionConflict(false);setMutationError('');return()=>{mounted.current=false;request.current++}},[load,userId]);
  useEffect(()=>{let active=true;void(async()=>{try{const raw=await treatmentStore.getItemAsync(treatmentKey);if(raw&&active&&current()){const saved=parseTreatmentMutationIntent(raw,userId,patientId);setPendingTreatment(saved);setTreatment(saved.payload);setEditingTreatment(saved.treatmentId);setEditingTreatmentRevision(saved.expectedRevision);setTreatmentOpen(true);setMutationError('Bekleyen tedavi işlemi bulundu. Aynı işlem anahtarıyla sunucuya doğrulatın.')}}catch(e){if(active&&current()){setTreatmentIntentBlocked(true);setMutationError(e instanceof Error?e.message:'Bekleyen tedavi kaydı okunamadı.')}}finally{if(active&&current())setTreatmentIntentReady(true)}})();return()=>{active=false}},[treatmentKey,token,userId,patientId]);
  useEffect(()=>{if(focused)void load();const listener=AppState.addEventListener('change',state=>{if(state==='active'&&focused)void load()});return()=>listener.remove()},[focused,load]);
@@ -62,6 +62,7 @@ export default function NativePatientProfile({token,userId,patientId,actions}:{t
   try{
    const latest=await getPatient(token,patientId);
    if(!current())return;
+   if(latest.patient.id!==patientId)throw Error('Sunucu farklı bir hasta kaydı döndürdü.');
    setDetail(latest);setLoadedScope(scope);
    const p=latest.patient;
    setPatientForm({first_name:p.first_name||'',last_name:p.last_name||'',phone:p.phone||'',birth_date:p.birth_date||'',tc_kimlik_no:p.tc_kimlik_no||'',address:p.address||'',chief_complaint:p.chief_complaint||''});
@@ -76,6 +77,7 @@ export default function NativePatientProfile({token,userId,patientId,actions}:{t
   try{
    const latest=await getPatient(token,patientId);
    if(!current())return;
+   if(latest.patient.id!==patientId)throw Error('Sunucu farklı bir hasta kaydı döndürdü.');
    setDetail(latest);setLoadedScope(scope);
    const saved=patientProfileEditMatches(patientForm,latest.patient);
    setProfileUncertain(false);setRevisionConflict(false);
