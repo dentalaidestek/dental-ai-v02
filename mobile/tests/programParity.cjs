@@ -101,10 +101,10 @@ test('program API requests opaque cursors and rejects malformed continuation tok
  const api=require('../src/programApi.ts'),original=global.fetch,cursor='program-cursor-token-00000001';
  try{
   let url='';
-  global.fetch=async(path)=>{url=String(path);return new Response(JSON.stringify({...page(),next_cursor:null}),{status:200})};
+  global.fetch=async(path)=>{url=String(path);return new Response(JSON.stringify({...page('today'),next_cursor:null}),{status:200})};
   await api.getProgram('token','today','2030-01-07',cursor);
   assert.ok(url.includes('cursor='+cursor));
-  global.fetch=async()=>new Response(JSON.stringify({...page(),next_cursor:'invalid!'}),{status:200});
+  global.fetch=async()=>new Response(JSON.stringify({...page('today'),next_cursor:'invalid!'}),{status:200});
   await assert.rejects(()=>api.getProgram('token','today','2030-01-07'),/geçersiz takvim/);
  }finally{global.fetch=original}
 });
