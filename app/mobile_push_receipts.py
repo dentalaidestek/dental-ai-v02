@@ -191,7 +191,7 @@ def poll_due_mobile_push_receipts(engine, *, limit: int = RECEIPT_BATCH_LIMIT) -
     from app.main import MobilePushDelivery
 
     if not isinstance(limit, int) or limit < 1 or limit > RECEIPT_BATCH_LIMIT:
-        raise ValueError("Receipt polling limit must be between 1 and 100")
+        raise ValueError(f"Receipt polling limit must be between 1 and {RECEIPT_BATCH_LIMIT}")
     stamp = _now()
     claimed = []
     with Session(engine, expire_on_commit=False) as session:
