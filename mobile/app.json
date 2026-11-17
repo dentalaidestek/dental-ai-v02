@@ -32,7 +32,8 @@
           "microphonePermission": "Dental AI sesli muayenede yalnızca izninizle mikrofonu kullanır.",
           "recordAudioAndroid": true
         }
-      ]
+      ],
+      "expo-notifications"
     ],
     "ios": {
       "bundleIdentifier": "tr.dentalai.app",
