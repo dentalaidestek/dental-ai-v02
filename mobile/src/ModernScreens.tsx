@@ -235,6 +235,7 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
      if(page.next_after===null||page.next_after<=cursor)throw Error("Yeni mesaj sayfalaması ilerlemedi.");
      cursor=page.next_after;
      messageCursor.current=Math.max(messageCursor.current,cursor);
+     if(pageIndex===4)catchUpAgain.current=true;
     }else{
      if(page.messages.length){
       cursor=Math.max(cursor,page.messages[page.messages.length-1].id);
@@ -276,7 +277,8 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
   const eventType=String(lastEvent.event_type||lastEvent.type||"");
   const payload=lastEvent.payload||{},eventCase=Number(payload.case_id||lastEvent.entity_id||0);
   if(eventCase===id&&eventType==="MESSAGE_CREATED"){
-   if(gap||Number(payload.message_id)>messageCursor.current)void catchUpMessages();
+   const messageId=Number(payload.message_id);
+   if(gap||!Number.isSafeInteger(messageId)||messageId>messageCursor.current)void catchUpMessages();
    return;
   }
   if(eventCase===id&&eventType==="CASE_STATUS_UPDATED"){
@@ -285,12 +287,14 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
     const nextCase=applyConsultationChatEvent(previous.case||{},lastEvent,id,userId);
     return nextCase.messages_deleted_at?{...previous,case:nextCase,messages:[],next_before:null}:{...previous,case:nextCase};
    });
+   if(gap)void catchUpMessages();
    return;
   }
   if(eventCase===id&&eventType==="CASE_READ"){
    setData((previous:any)=>previous?.accountScope!==activeScope.current?previous:{
     ...previous,case:applyConsultationChatEvent(previous.case||{},lastEvent,id,userId)
    });
+   if(gap)void catchUpMessages();
    return;
   }
   if(eventCase===id&&["CASE_UPDATED","CASE_REPORT_CREATED"].includes(eventType)){void load();return}
