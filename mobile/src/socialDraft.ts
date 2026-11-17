@@ -170,7 +170,7 @@ export async function readDraft(
     Number.isSafeInteger(rawPreview.cover.id) &&
     rawPreview.cover.id > 0 &&
     typeof rawPreview.cover.url === "string" &&
-    /^\\/api\\/expert-social\\/media\\/[1-9][0-9]*$/.test(rawPreview.cover.url)
+    /^\/api\/expert-social\/media\/[1-9][0-9]*$/.test(rawPreview.cover.url)
       ? { id: rawPreview.cover.id as number, url: rawPreview.cover.url }
       : null;
   const preview: DraftPreview | null = validPreview
