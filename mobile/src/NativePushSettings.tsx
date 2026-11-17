@@ -41,7 +41,7 @@ export default function NativePushSettings({ token, userId }: { token: string; u
         : await enableNativePush(token, userId);
       if (mounted.current) {
         setState(next);
-        setNotice(next.enabled ? "Bu cihazda bildirimler açıldı." : "Bu cihazın bildirim kaydı kapatıldı.");
+        setNotice(next.enabled ? (next.deliveryEnabled ? "Bu cihazda bildirim kaydı açıldı." : "Cihaz kaydedildi; sunucu push dağıtımı henüz açılmadı.") : "Bu cihazın bildirim kaydı kapatıldı.");
       }
     } catch (e) {
       if (mounted.current) setError(e instanceof Error ? e.message : "Cihaz bildirimi ayarı tamamlanamadı.");
@@ -74,7 +74,9 @@ export default function NativePushSettings({ token, userId }: { token: string; u
     <View style={{ paddingTop: 4 }}>
       <Text style={{ color: "#53657B", lineHeight: 21 }}>
         {state?.enabled
-          ? "Bu cihazda sistem bildirimleri açık."
+          ? state.deliveryEnabled
+            ? "Bu cihaz kaydedildi ve sunucu push gönderim anahtarı etkin."
+            : "Bu cihaz kaydedildi; ancak sunucu push dağıtımı henüz etkinleştirilmemiş."
           : "Sistem bildirimleri isteğe bağlıdır. İzin yalnızca aşağıdaki düğmeye bastığınızda istenir."}
       </Text>
       <Text style={{ color: "#718096", fontSize: 12, lineHeight: 18, marginTop: 8 }}>
