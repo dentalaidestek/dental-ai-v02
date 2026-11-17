@@ -268,7 +268,7 @@ async function sendAttachment(file=selectedAttachment,{replyId="",previewUrl=""}
  uploadInFlight=true;if(btn){btn.disabled=true;btn.setAttribute("aria-busy","true")}
  let ownPreview=false;
  if(!previewUrl&&file.type.startsWith("image/")){previewUrl=URL.createObjectURL(file);ownPreview=true}
- if(!pendingMediaIntent){const key="pending-media-"+(crypto.randomUUID?.()||Date.now()+"-"+Math.random().toString(36).slice(2));pendingMediaIntent={key,signature,replyId:String(replyId||"")};try{sessionStorage.setItem(mediaIntentStorageKey,JSON.stringify(pendingMediaIntent))}catch{}}
+ if(!pendingMediaIntent){const key="pending-media-"+(window.crypto?.randomUUID?.()||Date.now()+"-"+Math.random().toString(36).slice(2));pendingMediaIntent={key,signature,replyId:String(replyId||"")};try{sessionStorage.setItem(mediaIntentStorageKey,JSON.stringify(pendingMediaIntent))}catch{}}
  const mediaKey=pendingMediaIntent.key;let pending=pendingMediaSends.get(mediaKey);
  if(!pending){pending=previewUrl?optimisticImage(previewUrl,mediaKey):{key:mediaKey,el:null};pendingMediaSends.set(mediaKey,pending)}
  else if(pending.el){pending.el.classList.remove("send-failed");pending.el.classList.add("pending");const receipt=pending.el.querySelector(".message-receipt");if(receipt)receipt.textContent="◷ Yükleniyor…"}
