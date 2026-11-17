@@ -889,3 +889,20 @@ def test_native_patient_delete_ui_fails_closed_for_unresolved_local_mutations():
     assert delete_block.count("if(!current()||!focusedRef.current)return;") == 2
     assert "gate.uncertain === false" in presentation
     assert "gate.hasPendingTreatment === false" in presentation
+
+def test_native_tooth_chart_blocks_all_clinical_writes_until_treatment_intent_recovery():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    component = (root / "mobile/src/NativeToothChart.tsx").read_text(encoding="utf-8")
+    presentation = (root / "mobile/src/toothChartPresentation.ts").read_text(encoding="utf-8")
+    assert "toothChartClinicalMutationBlocked" in component
+    assert "hasPendingTreatment:pendingTreatment!==null" in component
+    assert component.count("if(clinicalMutationBlocked){setErr(") == 2
+    assert "editable={!busy&&!clinicalMutationBlocked} value={note}" in component
+    assert "disabled={busy||surfaceBusy||treatmentBusy||clinicalMutationBlocked}" in component
+    assert "Güvenli tedavi kaydı kontrol ediliyor." in component
+    assert "Bekleyen tedavi taslağı okunamadı." in component
+    assert "gate.treatmentIntentReady !== true" in presentation
+    assert "gate.hasPendingTreatment === true" in presentation
+    assert "if(result.patient.id!==patientId)" in component
