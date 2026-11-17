@@ -351,6 +351,10 @@ test('pending treatment intent prevents closing the selected tooth panel',async(
  assert.equal(status.props.disabled,true,'tooth status cannot change while a treatment receipt is unresolved');
  assert.equal(pin.props.disabled,true,'surface selection cannot change while a treatment receipt is unresolved');
  assert.equal(note.props.editable,false,'clinical notes remain read-only while a treatment receipt is unresolved');
+ await press('Notlar');
+ const notesInput=tree.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Diş notları');
+ assert.equal(notesInput.props.editable,false,'the notes tab must also remain read-only while a treatment receipt is unresolved');
+ await press('Diş Bilgisi');
  assert.equal(save.props.disabled,true,'tooth status cannot be saved while a treatment receipt is unresolved');
  await renderer.act(async()=>tree.unmount());
 });
@@ -389,5 +393,17 @@ test('tooth chart rejects a patient response outside the requested patient scope
  const content=flat(tree.toJSON());
  assert.ok(content.includes('Sunucu farklı bir hasta kaydı döndürdü.'));
  assert.ok(!content.includes('Synthetic'),'a different patient's chart must never render');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('corrupt treatment intent keeps the entire tooth chart read-only',async()=>{
+ focused=true;lastEvent=null;appListeners=[];
+ const storage=new Map([['dai.treatment.1.8','not-json']]);
+ const Chart=chartComponent({getPatient:async()=>patient(8)},storage);let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush();await flush()});
+ assert.ok(flat(tree.toJSON()).includes('Bekleyen tedavi taslağı okunamadı.'));
+ const teeth=tree.root.findAllByType('Pressable').filter(node=>String(node.props.accessibilityLabel||'').startsWith('Diş ')&&/^Diş \d{2},/.test(node.props.accessibilityLabel));
+ assert.ok(teeth.length>0);
+ assert.ok(teeth.every(node=>node.props.disabled===true));
  await renderer.act(async()=>tree.unmount());
 });
