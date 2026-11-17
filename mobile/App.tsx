@@ -7,8 +7,8 @@ import NativeAuth from "./src/NativeAuth";
 import NativePatientAppointment from "./src/NativePatientAppointment";
 import NativePatientProfile from "./src/NativePatientProfile";
 import React,{useCallback,useEffect,useRef,useState}from"react";
-import{ActivityIndicator,Alert,FlatList,KeyboardAvoidingView,Linking,PermissionsAndroid,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View,Image}from"react-native";
-import{NavigationContainer,useNavigation}from"@react-navigation/native";
+import{ActivityIndicator,Alert,FlatList,KeyboardAvoidingView,Linking,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View,Image}from"react-native";
+import{NavigationContainer,useNavigation,useIsFocused}from"@react-navigation/native";
 import{createBottomTabNavigator}from"@react-navigation/bottom-tabs";
 import{createNativeStackNavigator}from"@react-navigation/native-stack";
 import*as SecureStore from"expo-secure-store";
@@ -56,8 +56,8 @@ function VisualFeature({title,description,asset,tint,onPress,photo=false}:{title
   <Text style={{position:"absolute",right:12,top:20,fontSize:24,fontWeight:"800",color:"#143C59"}}>›</Text>
  </Pressable>;
 }
-function Home({token,user}:{token:string;user:User}){const nav:any=useNavigation();const{lastEvent}=useRealtime();
- const[d,setD]=useState<any>();const[homeSearch,setHomeSearch]=useState("");const[r,setR]=useState(false);const[unread,setUnread]=useState(0);const[homeError,setHomeError]=useState("");const load=useCallback(async()=>{try{setD(await getDashboard(token));setHomeError("")}catch(e:any){setHomeError(e?.message||"Ana sayfa yüklenemedi.")}},[token]);const loadUnread=useCallback(async()=>{try{setUnread((await getNotifications(token)).unread)}catch{}},[token]);useEffect(()=>{load();loadUnread()},[load,loadUnread]);useEffect(()=>{if(lastEvent)loadUnread()},[lastEvent,loadUnread]);useEffect(()=>{if(lastEvent&&["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED","ANALYSIS_CREATED","ANALYSIS_UPDATED","PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(String(lastEvent.event_type||lastEvent.type)))load()},[load,lastEvent]);
+function Home({token,user}:{token:string;user:User}){const nav:any=useNavigation();const focused=useIsFocused();const{lastEvent}=useRealtime();
+ const[d,setD]=useState<any>();const[homeSearch,setHomeSearch]=useState("");const[r,setR]=useState(false);const[unread,setUnread]=useState(0);const[homeError,setHomeError]=useState("");const load=useCallback(async()=>{try{setD(await getDashboard(token));setHomeError("")}catch(e:any){setHomeError(e?.message||"Ana sayfa yüklenemedi.")}},[token]);const loadUnread=useCallback(async()=>{try{setUnread((await getNotifications(token)).unread)}catch{}},[token]);useEffect(()=>{load();if(focused)loadUnread()},[load,loadUnread,focused]);useEffect(()=>{if(lastEvent)loadUnread()},[lastEvent,loadUnread]);useEffect(()=>{if(lastEvent&&["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED","ANALYSIS_CREATED","ANALYSIS_UPDATED","PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(String(lastEvent.event_type||lastEvent.type)))load()},[load,lastEvent]);
  return <ScrollView style={s.page} contentContainerStyle={[s.content,{paddingHorizontal:10,paddingTop:8}]} refreshControl={<RefreshControl refreshing={r} onRefresh={async()=>{setR(true);await load();setR(false)}}/>}>
   <View style={[s.top,{marginBottom:8}]}><View style={{flex:1}}><Text style={s.muted}>Merhaba 👋</Text><Text style={s.userName}>{user.display_name}</Text></View><Pressable accessibilityRole="button" accessibilityLabel={unread>0?`Bildirimler, ${unread} okunmamış`:"Bildirimler"} onPress={()=>nav.navigate("Notifications")} style={{width:44,height:44,alignItems:"center",justifyContent:"center",marginRight:8}}><Text style={{fontSize:25,color:C.navy}}>🔔</Text>{unread>0&&<View style={{position:"absolute",right:0,top:0,minWidth:18,height:18,borderRadius:9,backgroundColor:C.red,alignItems:"center",justifyContent:"center",paddingHorizontal:3}}><Text style={{color:"#FFF",fontSize:10,fontWeight:"800"}}>{unread>99?"99+":unread}</Text></View>}</Pressable><Logo small/></View>{!!homeError&&<Pressable accessibilityRole="button" onPress={()=>void load()} style={s.card}><Text style={s.err}>{homeError} · Tekrar dene</Text></Pressable>}
   <View style={[s.hero,{backgroundColor:"#EAF3FD",padding:0,minHeight:116,height:116,borderRadius:19}]}><View style={{flex:1,padding:14,zIndex:1}}><Text style={[s.eyebrow,{color:"#426B99"}]}>DENTAL AI</Text><Text style={[s.heroTitle,{color:"#08294F",fontSize:21,maxWidth:230}]}>Hoş geldin, {user.display_name}</Text><Text style={[s.heroSub,{color:"#42617C",maxWidth:220}]}>Sağlıklı bir gülüş, sağlıklı bir gelecek demektir.</Text></View><Image source={{uri:DASHBOARD_ASSET+"welcome_tooth.webp"}} resizeMode="cover" style={{width:112,height:110,alignSelf:"center"}}/></View><View style={{flexDirection:"row",alignItems:"center",backgroundColor:"#FFFFFF",borderWidth:1,borderColor:"#DCE7F4",borderRadius:14,marginTop:8,paddingHorizontal:11,height:46}}><Icon n="search"/><TextInput accessibilityLabel="Ana sayfada hasta ara" style={{flex:1,marginLeft:10,color:"#10233F",fontSize:13}} placeholder="Hasta adı, soyadı veya hasta no..." placeholderTextColor="#7B8B9D" value={homeSearch} onChangeText={setHomeSearch} returnKeyType="search" onSubmitEditing={()=>nav.navigate("Patients",{screen:"PatientsList",params:{search:homeSearch.trim()}})}/><Pressable accessibilityRole="button" accessibilityLabel="Hastaları ara" onPress={()=>nav.navigate("Patients",{screen:"PatientsList",params:{search:homeSearch.trim()}})}><Text style={{color:"#0878F9",fontWeight:"800"}}>Ara</Text></Pressable></View>
@@ -108,17 +108,10 @@ function Main({token,user,signOut,onUserChanged}:{token:string;user:User;signOut
 function NotificationPermissionIntro({userId}:{userId:number}){
  const [visible,setVisible]=useState(false),[working,setWorking]=useState(false);
  useEffect(()=>{let mounted=true;void(async()=>{try{const flag=await SecureStore.getItemAsync("dai.notification.intro."+userId);if(mounted&&!flag)setVisible(true)}catch{}})();return()=>{mounted=false}},[userId]);
- async function finish(ask:boolean){
+ async function finish(){
   if(working)return;setWorking(true);
-  try{
-   if(ask&&Platform.OS==="android"&&Number(Platform.Version)>=33){
-    const result=await PermissionsAndroid.request("android.permission.POST_NOTIFICATIONS" as any);
-    if(result!==PermissionsAndroid.RESULTS.GRANTED)Alert.alert("Bildirimler kapalı","Uygulama içi bildirimleri yine de kullanabilirsin. Sistem bildirimlerini daha sonra telefon ayarlarından açabilirsin.");
-   }else if(ask&&Platform.OS==="ios"){
-    Alert.alert("Bildirim izni","iOS anlık bildirimleri için cihaz kaydı henüz etkinleştirilmedi. Uygulama içi bildirimlerin çalışmaya devam eder.");
-   }
-   await SecureStore.setItemAsync("dai.notification.intro."+userId,"seen");setVisible(false);
-  }catch{Alert.alert("İzin durumu","Bildirim tercihi kaydedilemedi. Daha sonra tekrar deneyebilirsin.")}
+  try{await SecureStore.setItemAsync("dai.notification.intro."+userId,"seen");setVisible(false)}
+  catch{Alert.alert("Bildirim tercihi","Bilgilendirme kapatılamadı. Daha sonra tekrar deneyebilirsin.")}
   finally{setWorking(false)}
  }
  if(!visible)return null;
@@ -126,10 +119,9 @@ function NotificationPermissionIntro({userId}:{userId:number}){
  <View style={{backgroundColor:"#FFF",borderRadius:24,padding:24}}>
  <Text style={{fontSize:35,textAlign:"center"}}>🔔</Text>
  <Text style={{fontSize:21,fontWeight:"900",color:C.navy,textAlign:"center",marginTop:12}}>Dental AI bildirimleri</Text>
- <Text style={{color:C.muted,lineHeight:22,textAlign:"center",marginTop:12}}>Yeni danışmanlıkları, uzman mesajlarını ve önemli gelişmeleri bildirim merkezinden takip et. Telefon bildirimleri için ayrıca izin gerekir.</Text>
- <Text style={{color:C.muted,fontSize:12,lineHeight:18,marginTop:12}}>Anlık push iletimi henüz etkin değil. İzin vermesen de uygulama içindeki bildirimler çalışır.</Text>
- <Pressable accessibilityRole="button" disabled={working} style={[s.primary,{marginTop:20}]} onPress={()=>void finish(true)}><Text style={s.primaryText}>Bildirim iznini ayarla</Text></Pressable>
- <Pressable accessibilityRole="button" disabled={working} style={{padding:15,alignItems:"center"}} onPress={()=>void finish(false)}><Text style={{color:C.muted,fontWeight:"700"}}>Şimdi değil</Text></Pressable>
+ <Text style={{color:C.muted,lineHeight:22,textAlign:"center",marginTop:12}}>Uygulama içi bildirimler Bildirimler ekranında görünür. Bu sürümde Expo push token kaydı ve uygulama kapalıyken açılış bağlantısı henüz bağlanmadı.</Text>
+ <Text style={{color:C.muted,fontSize:12,lineHeight:18,marginTop:12}}>Bu nedenle henüz Android veya iOS sistem bildirimi izni istemiyoruz. Push kaydı ve güvenli hedef yönlendirmesi tamamlandığında bu tercih ekranı güncellenecek.</Text>
+ <Pressable accessibilityRole="button" disabled={working} style={[s.primary,{marginTop:20}]} onPress={()=>void finish()}><Text style={s.primaryText}>Anladım</Text></Pressable>
  </View></View>;
 }
 function AppContent(){
