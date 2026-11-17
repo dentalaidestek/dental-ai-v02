@@ -51,7 +51,7 @@ Native behavior now includes:
 - An explicit **Profil > Cihaz Bildirimleri** setting. No permission is requested during login, onboarding, app startup or background refresh.
 - Project-ID preflight before requesting OS permission. If the EAS project ID is missing, the setting explains the blocker and does not prompt.
 - A UUID installation identifier in SecureStore. Expo push tokens are sent directly to the authenticated API and are not persisted locally or written to logs.
-- Token refresh only for a user who previously opted in, on session restore and app foreground; no polling timer.
+- Token refresh only for a user who previously opted in, on session restore and app foreground; no polling timer. The registration API returns the backend delivery gate, and the account UI distinguishes a registered device from a server whose push sender is still disabled.
 - Android default notification channel and a foreground banner/list handler. Foreground sound and OS badge mutation are disabled.
 - Response listeners plus cold-start response lookup. Only the server's two existing payload shapes are accepted: `{kind: "notification", notice_id}` and `{kind: "consultation", case_id}`.
 - A notification tap fetches the exact active notice by ID through the owner-scoped API before the existing web-path allowlist opens its native target. A consultation tap opens the existing case screen, whose API still enforces participant ownership.
@@ -73,7 +73,7 @@ The lockfile was updated, but `npm ci` has not been executed in this environment
 ## Remaining acceptance and external configuration
 
 - Supply the real EAS project ID as `EXPO_PUBLIC_EAS_PROJECT_ID` in the mobile build environment. Until then, native push intentionally remains disabled and does not ask for permission.
-- Configure Android FCM v1 and iOS APNs credentials for the EAS project, then set the server-side `MOBILE_PUSH_ENABLED=true` only after the owner approves activation. The current backend sender is disabled by default; no production environment was changed.
+- Configure Android FCM v1 and iOS APNs credentials for the EAS project, then set the server-side `MOBILE_PUSH_ENABLED=true` only after the owner approves activation. The current backend sender is disabled by default; the native account screen reports that state instead of implying delivery is live. No production environment was changed.
 - Run `npm ci`, TypeScript typecheck, beta Node tests, backend TestClient/SQLite tests, Android prebuild/APK and iOS prebuild in a functioning runner.
 - Validate real-device permission denial/recovery, Android channel presentation, iOS presentation, token rotation, duplicate tap/cold-start handling, logout, account switch, expired sessions, offline revocation and EAS delivery receipts.
 - The explicit native read-all button remains a deliberate UX choice; compare it with web auto-read-on-open during product acceptance.
