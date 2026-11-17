@@ -169,6 +169,16 @@ export const sendConsultationMessage=(t:string,id:number,content:string,clientMe
   throw Error("Geçersiz görüşme, boş mesaj veya eksik istek kimliği.");
  return req<{ok:boolean;message:ChatMessage}>(`/consultations/${id}/messages`,t,{method:"POST",body:JSON.stringify({content,client_message_id:clientMessageId,...(replyToMessageId?{reply_to_message_id:replyToMessageId}:{})})});
 };
+export const getConsultationMessageReceipt=async(t:string,id:number,clientMessageId:string)=>{
+ if(!Number.isSafeInteger(id)||id<=0||!/^[A-Za-z0-9_-]{16,96}$/.test(clientMessageId||""))
+  throw Error("Geçersiz görüşme veya mesaj istek anahtarı.");
+ const result=await req<{message:ChatMessage|null;deleted?:boolean}>(`/consultations/${id}/message-receipt?client_message_id=${encodeURIComponent(clientMessageId)}`,t);
+ if(result.message!==null&&(!result.message||!Number.isSafeInteger(result.message.id)||result.message.id<=0||
+    !Number.isSafeInteger(result.message.sender_user_id)||result.message.sender_user_id<=0||
+    typeof result.message.message_type!=="string"||typeof result.message.created_at!=="string"))
+  throw Error("Mesaj gönderim makbuzu doğrulanamadı.");
+ return result.message;
+};
 function validateAcademicPage<T extends {id:number}>(response:{items:T[];next_before?:number|null},before?:number,dateOrdered=false):{items:T[];next_before:number|null}{
  const cursor=response?.next_before??null;
  if(!Array.isArray(response?.items)||
@@ -222,16 +232,19 @@ export function sharedCaseImageSource(token:string,caseId:number,linkId:number){
  if(!Number.isSafeInteger(caseId)||caseId<=0||!Number.isSafeInteger(linkId)||linkId<=0)throw Error("Geçersiz vaka görseli kimliği.");
  return {uri:API_BASE+`/consultations/${caseId}/shared-media/${linkId}`,headers:{Authorization:"Bearer "+token}};
 }
-export function sendChatImage(token:string,caseId:number,file:ChatFile,replyTo?:number){
+export function sendChatImage(token:string,caseId:number,file:ChatFile,replyTo?:number,clientMessageId?:string){
  if(!/^image\/(jpeg|png|webp)$/.test(file.type))return Promise.reject(Error("Geçerli bir hasta görüntüsü seçin."));
- return sendChatFile(token,caseId,file,replyTo);
+ return sendChatFile(token,caseId,file,replyTo,clientMessageId);
 }
-export async function sendChatFile(token:string,caseId:number,file:ChatFile,replyTo?:number){
+export async function sendChatFile(token:string,caseId:number,file:ChatFile,replyTo?:number,clientMessageId?:string){
  if(!Number.isSafeInteger(caseId)||caseId<=0||(replyTo!==undefined&&(!Number.isSafeInteger(replyTo)||replyTo<=0)))throw Error("Geçersiz görüşme veya yanıt kimliği.");
+ const key=clientMessageId||("native-media-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2));
+ if(!/^[A-Za-z0-9_-]{16,96}$/.test(key))throw Error("Geçersiz ek istek anahtarı.");
  const checked=validateChatFile(file),body=new FormData();
  body.append("file",{uri:checked.uri,name:checked.name,type:checked.type} as any);
+ body.append("client_message_id",key);
  if(replyTo)body.append("reply_to_message_id",String(replyTo));
- const result=await req<{ok:boolean;message:ChatMessage}>(`/consultations/${caseId}/attachments`,token,{method:"POST",body});
+ const result=await req<{ok:boolean;message:ChatMessage;replayed?:boolean}>(`/consultations/${caseId}/attachments`,token,{method:"POST",body});
  if(result.ok!==true||!Number.isSafeInteger(result.message?.id)||result.message.id<=0)throw Error("Ek kaydı doğrulanamadı. Tekrar göndermeden önce görüşmeyi kontrol edin.");
  return result;
 }
