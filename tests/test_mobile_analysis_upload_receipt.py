@@ -1,13 +1,16 @@
 import io
 import json
+import hashlib
 from PIL import Image
 from sqlmodel import Session,select
 from test_mobile_chat_actions import chat
 from app import main,mobile_analysis_api,work_jobs
+from app.analysis_upload_receipts import keyed_analysis_upload_fingerprint
+from app.patient_media_receipts import encryption_key
 
 
 def setup(chat,monkeypatch,tmp_path):
-    c,engine=chat;monkeypatch.setattr(mobile_analysis_api,'engine',engine);monkeypatch.chdir(tmp_path)
+    c,engine=chat;monkeypatch.setenv('PATIENT_MEDIA_RECEIPT_KEY','11'*32);monkeypatch.setattr(mobile_analysis_api,'engine',engine);monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(mobile_analysis_api,'storage_persist_file',lambda _:None)
     monkeypatch.setattr(mobile_analysis_api,'classify_dental_image',lambda _:'PERIAPICAL')
     monkeypatch.setattr(work_jobs,'_code_version',lambda:'synthetic-code')
@@ -315,3 +318,71 @@ def test_mobile_analysis_accepts_exactly_four_saved_images_and_rejects_five(chat
     assert rejected.status_code==422,rejected.text
     with Session(engine) as session:
         assert len(session.exec(select(main.Analysis)).all())==1
+
+
+def _legacy_digest(raw,patient=8,tooth='36',note='Synthetic clinical context',filename='synthetic.png'):
+    payload=[patient,tooth,note,[[filename,len(raw),hashlib.sha256(raw).hexdigest()]]]
+    return hashlib.sha256(json.dumps(payload,ensure_ascii=False).encode()).hexdigest()
+
+
+def test_new_analysis_receipt_persists_owner_scoped_hmac_not_raw_image_digest(chat,monkeypatch,tmp_path):
+    c,engine,raw=setup(chat,monkeypatch,tmp_path)
+    response=post(c,raw);assert response.status_code==200,response.text
+    legacy=_legacy_digest(raw)
+    expected=keyed_analysis_upload_fingerprint(legacy,encryption_key(),1,8)
+    with Session(engine) as s:
+        receipt=s.exec(select(work_jobs.WorkJob).where(
+            work_jobs.WorkJob.owner_user_id==1,
+            work_jobs.WorkJob.kind=='UPLOAD_RECEIPT',
+        )).one()
+        assert receipt.source_hash==expected
+        assert receipt.source_hash!=legacy
+        assert json.loads(receipt.payload_json)['fingerprint_version']==1
+        assert legacy not in receipt.payload_json
+    assert expected!=keyed_analysis_upload_fingerprint(legacy,encryption_key(),2,8)
+    assert expected!=keyed_analysis_upload_fingerprint(legacy,encryption_key(),1,9)
+
+
+def test_legacy_analysis_receipt_is_upgraded_on_authenticated_status_lookup(chat,monkeypatch,tmp_path):
+    c,engine,raw=setup(chat,monkeypatch,tmp_path)
+    first=post(c,raw);assert first.status_code==200,first.text
+    legacy=_legacy_digest(raw)
+    with Session(engine) as s:
+        receipt=s.exec(select(work_jobs.WorkJob).where(work_jobs.WorkJob.kind=='UPLOAD_RECEIPT')).one()
+        receipt.source_hash=legacy
+        receipt.payload_json=json.dumps({'job_id':first.json()['job_id']})
+        s.add(receipt);s.commit()
+    status=c.get('/api/mobile/v1/analyses/uploads/receipt?patient_id=8&request_key=synthetic-upload-key-001')
+    assert status.status_code==200,status.text
+    expected=keyed_analysis_upload_fingerprint(legacy,encryption_key(),1,8)
+    with Session(engine) as s:
+        receipt=s.exec(select(work_jobs.WorkJob).where(work_jobs.WorkJob.kind=='UPLOAD_RECEIPT')).one()
+        assert receipt.source_hash==expected
+        assert json.loads(receipt.payload_json)['fingerprint_version']==1
+    replay=post(c,raw)
+    assert replay.status_code==200 and replay.json()['analysis_id']==first.json()['analysis_id']
+
+
+def test_missing_analysis_receipt_key_fails_closed_before_any_clinical_allocation(chat,monkeypatch,tmp_path):
+    c,engine,raw=setup(chat,monkeypatch,tmp_path)
+    monkeypatch.delenv('PATIENT_MEDIA_RECEIPT_KEY')
+    response=post(c,raw,key='synthetic-missing-key-01')
+    assert response.status_code==503,response.text
+    with Session(engine) as s:
+        assert not s.exec(select(main.Analysis)).all()
+        assert not s.exec(select(main.ImageAsset)).all()
+        assert not s.exec(select(work_jobs.WorkJob).where(work_jobs.kind=='UPLOAD_RECEIPT')).all()
+
+
+def test_keyed_analysis_receipt_rejects_tampered_fingerprint_without_second_analysis(chat,monkeypatch,tmp_path):
+    c,engine,raw=setup(chat,monkeypatch,tmp_path)
+    first=post(c,raw);assert first.status_code==200,first.text
+    with Session(engine) as s:
+        receipt=s.exec(select(work_jobs.WorkJob).where(work_jobs.kind=='UPLOAD_RECEIPT')).one()
+        receipt.source_hash='a'*64
+        s.add(receipt);s.commit()
+    replay=post(c,raw)
+    assert replay.status_code==409
+    with Session(engine) as s:
+        assert len(s.exec(select(main.Analysis)).all())==1
+        assert len(s.exec(select(main.ImageAsset)).all())==1
