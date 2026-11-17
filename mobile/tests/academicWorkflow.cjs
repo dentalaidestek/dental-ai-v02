@@ -74,3 +74,17 @@ test('native Academic polling is foreground-only, idle-free and slower than acti
  assert.match(source,/runBusy\?5000:15000/);
  assert.match(source,/\[focused,foreground,ready,runBusy,indexPending\]/);
 });
+
+
+test('interrupted Academic run shows its safe checkpoint and retries only after an explicit action',async()=>{
+ const interrupted={...running,status:'INTERRUPTED',partial:'Synthetic safe checkpoint',error:'Synthetic interruption'};
+ const h=ui({activeRun:async()=>interrupted,runStatus:async()=>interrupted}),tree=await open(h);
+ assert.ok(text(tree.toJSON()).includes('Synthetic safe checkpoint'));
+ const retry=button(tree,'Aynı Soruyu Yeniden Dene');
+ assert.ok(retry);
+ assert.equal(h.calls.length,0,'restoring an interrupted run must never auto-charge a retry');
+ await renderer.act(async()=>{retry.props.onPress();await new Promise(r=>setImmediate(r))});
+ assert.equal(h.calls.length,1);
+ assert.equal(h.calls[0].message,interrupted.question);
+ await renderer.act(async()=>tree.unmount());
+});
