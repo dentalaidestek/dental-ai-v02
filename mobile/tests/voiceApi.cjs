@@ -453,7 +453,7 @@ test('approved voice history uses the authenticated patient-scoped read endpoint
  try{
   const result=await api.getVoiceHistory('secret-token',12);
   assert.equal(result.fields.allergies.value,'Alerjim yok');
-  assert.match(call.url,/\\/patients\\/12\\/voice-exam\\/history$/);
+  assert.ok(call.url.endsWith('/patients/12/voice-exam/history'));
   assert.equal(call.init.method,'GET');
   assert.equal(call.init.headers.Authorization,'Bearer secret-token');
   assert.equal(call.init.headers['Cache-Control'],'no-store');
