@@ -211,3 +211,18 @@ test('native voice history is loaded privately, requires patient confirmation, a
  assert.ok(rendered.includes('Önceki ve güncel beyanlar çelişiyorsa ayrıca gösterilir'));
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('native voice recorder exposes the web session microphone, timer, meter and transcript preview',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativeVoiceRecorder.tsx'),'utf8');
+ assert.match(source,/SESLİ MUAYENE/);
+ assert.match(source,/Mikrofonu başlat/);
+ assert.match(source,/Duraklat/);
+ assert.match(source,/Muayeneyi bitir/);
+ assert.match(source,/formatVoiceElapsed\(elapsedMs\)/);
+ assert.match(source,/accessibilityRole="progressbar"/);
+ assert.match(source,/WAVE_BARS\.map/);
+ assert.match(source,/SON ALINAN KONUŞMA METNİ/);
+ assert.match(source,/isMeteringEnabled:true/);
+ assert.match(source,/voiceDeviceSignalLevel\(status\.metering\)/);
+});
