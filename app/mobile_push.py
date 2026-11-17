@@ -31,6 +31,16 @@ _ERROR_CODES = {
     "PUSH_TOO_MANY_EXPERIENCE_IDS",
     "TOO_MANY_REQUESTS",
     "UNAUTHORIZED",
+    "TRANSPORT",
+    "TRANSPORT_UNCERTAIN",
+    "NO_TICKET",
+    "MISSING_TICKET_ID",
+    "INVALID_TICKET",
+    "INVALID_RECEIPT_RESPONSE",
+    "RECEIPT_NOT_READY",
+    "CHECK_LEASE_EXPIRED",
+    "SENDER_LEASE_EXPIRED",
+    "RECEIPT_TTL_EXPIRED",
 }
 
 
@@ -57,7 +67,11 @@ def _receipt_id(value: object) -> str | None:
 
 
 def _safe_error_code(value: object) -> str:
-    return value if isinstance(value, str) and value in _ERROR_CODES else "OTHER"
+    if not isinstance(value, str):
+        return "OTHER"
+    if value in _ERROR_CODES or re.fullmatch(r"HTTP_[1-5][0-9]{2}", value):
+        return value
+    return "OTHER"
 
 
 def _headers() -> dict[str, str]:
@@ -75,13 +89,14 @@ def send_push_tokens(tokens, *, title="Dental AI", body="Yeni bir bildiriminiz v
 
     unique = []
     seen = set()
+    valid_unique_count = 0
     for token in tokens:
         if not is_valid_expo_push_token(token) or token in seen:
             continue
         seen.add(token)
-        if len(unique) >= MAX_SEND_TOKENS:
-            break
-        unique.append(token)
+        valid_unique_count += 1
+        if len(unique) < MAX_SEND_TOKENS:
+            unique.append(token)
 
     tickets = []
     errors = []
@@ -145,7 +160,7 @@ def send_push_tokens(tokens, *, title="Dental AI", body="Yeni bir bildiriminiz v
         "sent": sum(1 for item in tickets if item["status"] == "ok"),
         "tickets": tickets,
         "errors": errors,
-        "truncated": max(0, len(unique) - MAX_SEND_TOKENS),
+        "truncated": max(0, valid_unique_count - len(unique)),
     }
 
 
