@@ -835,3 +835,51 @@ def test_mobile_patient_media_batch_fails_closed_on_malformed_receipt(chat, monk
         assert session.exec(select(main.PatientMedia).where(
             main.PatientMedia.patient_id == 8,
         )).all() == []
+
+def test_mobile_patient_delete_is_owner_scoped_and_refuses_clinical_dependents(chat):
+    client, engine = chat
+    with Session(engine) as session:
+        session.add_all([
+            main.Patient(id=8, anonymous_id="SYNTHETIC-DELETE-8", owner_user_id=1),
+            main.Patient(id=9, anonymous_id="SYNTHETIC-DELETE-9", owner_user_id=2),
+            main.Patient(id=10, anonymous_id="SYNTHETIC-DELETE-10", owner_user_id=1),
+            main.Analysis(id=108, patient_id=8, tooth_number="36", status="DRAFT"),
+            main.PatientProfile(patient_id=10, address="Synthetic address"),
+        ])
+        session.commit()
+
+    # The native adapter deliberately refuses to erase a patient while clinical
+    # history exists; the UI must not bypass this audited-erasure boundary.
+    blocked = client.delete("/api/mobile/v1/patients/8")
+    assert blocked.status_code == 409, blocked.text
+    assert "Güvenli silme" in blocked.json()["detail"]
+
+    # Another clinician's patient is indistinguishable from a missing record.
+    assert client.delete("/api/mobile/v1/patients/9").status_code == 404
+
+    # An owned patient without dependent clinical rows can be deleted normally.
+    removed = client.delete("/api/mobile/v1/patients/10")
+    assert removed.status_code == 200, removed.text
+    with Session(engine) as session:
+        assert session.get(main.Patient, 8) is not None
+        assert session.get(main.Patient, 9) is not None
+        assert session.get(main.Patient, 10) is None
+        assert session.exec(
+            select(main.PatientProfile).where(main.PatientProfile.patient_id == 10)
+        ).first() is None
+
+
+def test_native_patient_delete_ui_fails_closed_for_unresolved_local_mutations():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    component = (root / "mobile/src/NativePatientProfile.tsx").read_text(encoding="utf-8")
+    presentation = (root / "mobile/src/patientProfilePresentation.ts").read_text(encoding="utf-8")
+    assert "patientProfileCanDeletePatient(deleteGate.current)" in component
+    assert "treatmentIntentReady" in component and "treatmentIntentBlocked" in component
+    assert "hasPendingTreatment:pendingTreatment!==null" in component
+    assert "patientProfileEditMatches(patientForm,latest.patient)" in component
+    assert "Sunucudaki profil kaydını karşılaştır" in component
+    assert "Kontrol ettim" not in component
+    assert "gate.uncertain === false" in presentation
+    assert "gate.hasPendingTreatment === false" in presentation
