@@ -409,3 +409,30 @@ test('second patient-delete confirmation is discarded after the profile loses fo
  assert.equal(deletes,0,'a destructive alert cannot execute after the profile loses focus');
  await renderer.act(async()=>tree.unmount());
 });
+
+test('patient profile refuses a response whose patient id differs from the requested route',async()=>{
+ const Profile=component({getPatient:async()=>patient(9)});let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ const content=text(tree.toJSON());
+ assert.ok(content.includes('Sunucu farklı bir hasta kaydı döndürdü.'));
+ assert.ok(!content.includes('Synthetic9'),'another patient response must never render in this profile');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('mismatched patient identity cannot resolve an ambiguous edit or enable deletion',async()=>{
+ let reads=0;
+ const Profile=component({
+  getPatient:async()=>reads++===0?patient(8):patient(9),
+  editPatient:async()=>{throw Object.assign(new Error('Sunucu yanıtı belirsiz'),{status:503})}
+ });let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ await press('Hasta Bilgileri');await press('Değişiklikleri Kaydet');
+ await press('Sunucudaki profil kaydını karşılaştır');
+ assert.ok(text(tree.toJSON()).includes('Belirsizlik korunuyor'));
+ assert.ok(text(tree.toJSON()).includes('Sunucu farklı bir hasta kaydı döndürdü.'));
+ assert.ok(!text(tree.toJSON()).includes('Synthetic9'));
+ const remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
+ assert.equal(remove.props.disabled,true);
+ await renderer.act(async()=>tree.unmount());
+});
