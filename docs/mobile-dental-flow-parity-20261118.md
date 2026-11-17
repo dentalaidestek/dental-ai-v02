@@ -14,6 +14,7 @@
 1. The general native Dental Flow header showed `＋ Paylaş` whenever `expertId` was absent. That is the member discovery feed, not an expert-owned profile; regular members could see a composer that the API would reject. The general feed no longer exposes this action. The owner profile composer remains gated by `PublicExpert.can_publish` and ownership.
 2. Native owner cards displayed only a generic `İnceleme durumu: PENDING` string. They did not expose the moderation explanation or a way to refresh the authoritative state after a moderator decision. The card now shows a bounded user-facing reason and an accessible `Durumu yenile` action backed by `GET /api/expert-social/posts/{id}`.
 3. The refresh response is validated before use: requested post ID, owner ID, status, version, media array and moderation state/reason are checked. Feed-only author metadata (specialty/follow/support state) is retained when the detail endpoint does not include it.
+   The detail boundary also rejects more than four media items, non-first-party media URLs, malformed interaction counters/flags and any non-published detail response that is not marked as owned. Exhausted moderation failures are labeled as requiring administrator intervention instead of promising an automatic retry.
 4. Native post headers previously showed either specialty or date. When a specialty existed, the publication date disappeared; even otherwise only the date was shown. The card now displays the verified-expert marker, specialty and full localized date/time together.
 
 ## Changed files
