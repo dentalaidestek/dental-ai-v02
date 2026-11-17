@@ -239,6 +239,25 @@ async def create_mobile_analysis(
     if any(Path(Path(image.filename).name).suffix.lower() not in allowed for image in valid):
         raise HTTPException(status_code=422, detail="Yalnızca JPEG, PNG veya WebP görüntüler yüklenebilir.")
 
+    # Authorize the target patient and every saved-media reference before reading
+    # or hashing multipart bytes. The main transaction below rechecks ownership
+    # to close the race between this bounded preflight and record allocation.
+    with Session(engine) as preflight:
+        patient = preflight.get(Patient, patient_id)
+        if not patient or (user.role != "ADMIN" and patient.owner_user_id != user.id):
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        if selected_media_ids:
+            rows = preflight.exec(select(PatientMedia).where(
+                PatientMedia.id.in_(selected_media_ids),
+                PatientMedia.patient_id == patient_id,
+            )).all()
+            by_id = {row.id: row for row in rows}
+            if len(by_id) != len(selected_media_ids) or any(
+                user.role != "ADMIN" and by_id[media_id].owner_user_id != user.id
+                for media_id in selected_media_ids if media_id in by_id
+            ):
+                raise HTTPException(status_code=404, detail="Seçilen klinik görüntü bulunamadı.")
+
     digest=await run_in_threadpool(_upload_digest,patient_id,tooth_number,clinical_notes,valid,selected_media_ids) if request_key else None
     receipt_key=_upload_key(user.id,request_key) if request_key else None
     receipt_secret = None
