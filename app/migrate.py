@@ -137,9 +137,11 @@ def _upgrade_support_receipts_schema(main):
 
 def _apply_baseline():
     from app import main
+    # Revision 12's study tables are an additive migration that deliberately
+    # preserves the baseline version. Run it before the receipt migration,
+    # which advances that same revision to 14.
+    _upgrade_learning_schema(main)
     if _upgrade_support_receipts_schema(main):
-        return
-    if _upgrade_learning_schema(main):
         return
     if _upgrade_recent_schema(main):
         return
