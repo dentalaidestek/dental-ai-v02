@@ -249,3 +249,27 @@ test('uncertain program edit does not claim success when the server still has ol
  assert.equal(button(tree,'Değişiklikleri Kaydet').props.disabled,false);
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('uncertain calendar actions require a successful server refresh before unlocking',async()=>{
+ let reads=0,actions=0;
+ const timeout=Object.assign(new Error('network timeout'),{status:408});
+ const Program=component('NativeProgram',{
+  getProgram:async()=>{reads++;if(reads===1)return page();if(reads===2)throw new Error('refresh unavailable');return page('week','Server refreshed');},
+  programAction:async()=>{actions++;throw timeout}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'token',userId:1}));await tick()});
+ await renderer.act(async()=>button(tree,'İşlemler').props.onPress());
+ await renderer.act(async()=>button(tree,'Tamamlandı').props.onPress());
+ assert.equal(actions,1);
+ assert.equal(button(tree,'Kontrol ettim, işlemlere devam et'),undefined);
+ assert.ok(button(tree,'Takvimi sunucudan yenile'));
+ await renderer.act(async()=>button(tree,'Takvimi sunucudan yenile').props.onPress());
+ assert.ok(button(tree,'Takvimi sunucudan yenile'));
+ await renderer.act(async()=>button(tree,'Takvimi sunucudan yenile').props.onPress());
+ assert.equal(reads,3);
+ assert.equal(button(tree,'Takvimi sunucudan yenile'),undefined);
+ assert.equal(tree.root.findByType('FlatList').props.data[0].title,'Server refreshed');
+ await renderer.act(async()=>tree.unmount());
+});
