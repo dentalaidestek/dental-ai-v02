@@ -31,3 +31,13 @@ This was a native-only lifecycle gap. The backend already has two independent pr
 - Real two-account Android/iOS confirmation, screen-reader and destructive-dialog device checks, and the full mobile/Python suites remain open.
 
 No patient record was changed by this work. No main merge, live deployment or store publication.
+
+## Follow-up hardening: independent mutation lifecycles
+
+Reviewing the new guard exposed a second-order race: the screen previously reused one `uncertain` boolean for both patient-profile edits and treatment receipts. A restored treatment intent could coexist with a profile form, and a successful treatment receipt could clear the shared flag even if a profile edit was still uncertain.
+
+Separated the state into `profileUncertain` and `treatmentUncertain`. Patient edits now wait for treatment-intent restoration and are blocked while a treatment intent is pending; treatment writes are blocked while a profile edit is uncertain. A treatment receipt can no longer resolve a profile mutation, or vice versa. The delete gate consumes the union of both states plus the pending/blocked SecureStore flags.
+
+A second destructive-alert review found that the nested native confirmation could outlive the screen/account scope. Both the initial and final delete callbacks now require the original patient/account scope to remain current. The final confirmation still rechecks the live mutation gate.
+
+Additional renderer regressions cover pending-treatment/profile-edit isolation, profile uncertainty preventing treatment writes, and discarding a second delete confirmation after account/patient switch. The Python source invariant now checks both uncertainty states and both stale-scope guards. These new tests are committed; full React renderer and Python execution remain blocked by unavailable package/runtime and GitHub runner execution.
