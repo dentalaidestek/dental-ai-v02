@@ -213,3 +213,23 @@ test('web consultation media retries keep the same session-scoped key',()=>{
  assert.ok(source.includes('pendingMediaIntent.key'));
  assert.ok(source.includes('clearAttachment(force=false)'));
 });
+
+test('native consultation media blocks camera, document picker and send until receipt recovery finishes',()=>{
+ const source=fs.readFileSync(require.resolve('../src/ChatAttachmentComposer.tsx'),'utf8');
+ assert.ok(source.includes('[restoring,setRestoring]=useState(true)'));
+ assert.ok(source.includes('if(lock.current||restoring||recoveryBlocked||disabled||uncertain)return;'));
+ assert.ok(source.includes('if(!file||lock.current||restoring||recoveryBlocked||disabled||uncertain)return;'));
+ assert.ok(source.includes('disabled={restoring||recoveryBlocked||busy||disabled||uncertain}'));
+ assert.ok(source.includes('Bekleyen ek kaydı kontrol ediliyor; kontrol bitmeden yeni gönderim açılamaz.'));
+});
+
+test('corrupt consultation media intent fails closed and offers local recovery without deleting the intent',()=>{
+ const source=fs.readFileSync(require.resolve('../src/ChatAttachmentComposer.tsx'),'utf8');
+ const invalidStart=source.indexOf('if(!valid){');
+ const validNext=source.indexOf('setPendingId(value.id)',invalidStart);
+ assert.ok(invalidStart>=0&&validNext>invalidStart);
+ const invalidBranch=source.slice(invalidStart,validNext);
+ assert.ok(invalidBranch.includes('setRecoveryBlocked(true)'));
+ assert.equal(invalidBranch.includes('deleteItemAsync(pendingKey)'),false);
+ assert.ok(source.includes('setRestoreAttempt(value=>value+1)'));
+});
