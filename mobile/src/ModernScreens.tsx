@@ -196,10 +196,12 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
  async function send(){
   const scope=activeScope.current,v=text.trim(),reply=replyTo,revisionAtSend=draftRevision.current;if(sending.current||!v||!canCompose||!draftReady)return;
   if(pending.current&&pending.current.scope===intentScope&&(pending.current.content!==v||pending.current.replyTo!==reply)){setSendError("Önce bekleyen mesajın sonucunu doğrulayın.");return}
-  if(!pending.current||pending.current.scope!==intentScope)pending.current={content:v,scope:intentScope,replyTo:reply,id:"native-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2)};
+  if(pendingMessage&&!pending.current){setSendError("Bekleyen mesaj kaydı doğrulanamadı. Önce görüşme geçmişini kontrol edin.");return}
+  if(!pending.current||pending.current.scope!==intentScope)pending.current={content:v,scope:intentScope,replyTo:reply,id:"native-"+Crypto.randomUUID()};
   const intent=pending.current,messageId=intent.id;sending.current=true;setSendBusy(true);setPendingMessage(true);setSendError("");
   try{
-   await SecureStore.setItemAsync(pendingKey,JSON.stringify({version:1,...intent}));
+   await SecureStore.setItemAsync(draftKey,v);
+   await SecureStore.setItemAsync(pendingKey,JSON.stringify({version:1,id:intent.id,scope:intent.scope,replyTo:intent.replyTo}));
    if(scope!==activeScope.current)return;
    const result=await sendConsultationMessage(token,id,v,messageId,reply??undefined);
    if(scope!==activeScope.current)return;
