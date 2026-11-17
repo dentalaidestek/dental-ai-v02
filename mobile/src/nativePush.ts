@@ -151,7 +151,12 @@ export function subscribeToNativePushResponses(
   const handle = (response: Notifications.NotificationResponse) => {
     const identifier = response.notification.request.identifier;
     if (identifier && handled.has(identifier)) return;
-    if (identifier) handled.add(identifier);
+    if (identifier) {
+      handled.add(identifier);
+      // Suppress only the listener/cold-start duplicate; a later deliberate
+      // tap on the same notification must be allowed to navigate again.
+      setTimeout(() => handled.delete(identifier), 1200);
+    }
 
     const target = resolveExpoPushTarget(response.notification.request.content.data);
     if (target.kind === "navigate") onTarget(target);
