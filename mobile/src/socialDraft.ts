@@ -19,6 +19,7 @@ export type Draft = {
   media_ids: number[];
   attempted: boolean;
   preview_id?: number;
+  cover_media_id?: number;
   preview?: DraftPreview | null;
 };
 export type DraftStore = {
@@ -199,10 +200,19 @@ export async function readDraft(
         cover: safeCover,
       }
     : null;
+  const coverMediaId =
+    typeof d.cover_media_id === "number" &&
+    Number.isSafeInteger(d.cover_media_id) &&
+    d.cover_media_id > 0 &&
+    d.media_ids.includes(d.cover_media_id) &&
+    d.link.trim().length > 0
+      ? (d.cover_media_id as number)
+      : undefined;
   return {
     ...d,
     media_ids: [...d.media_ids] as number[],
     preview_id: preview ? previewId : undefined,
+    cover_media_id: coverMediaId,
     preview,
   };
 }
