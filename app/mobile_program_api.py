@@ -35,14 +35,21 @@ def _program_cursor_owner(user_id: int) -> str:
     return hashlib.sha256(f"dental-ai:program-cursor:v1:{int(user_id)}".encode("ascii")).hexdigest()[:24]
 
 
-def _encode_program_cursor(view: str, focus: date, user_id: int, snapshot_at: datetime, item: dict) -> str:
+def _program_local_start_utc(value: datetime, app_timezone) -> datetime:
+    """Interpret naive occurrence datetimes as Istanbul wall time, never host local time."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=app_timezone)
+    return value.astimezone(timezone.utc)
+
+
+def _encode_program_cursor(view: str, focus: date, user_id: int, snapshot_at: datetime, item: dict, app_timezone) -> str:
     payload = {
         "v": 1,
         "view": view,
         "day": focus.isoformat(),
         "owner": _program_cursor_owner(user_id),
         "snapshot": snapshot_at.isoformat(timespec="microseconds"),
-        "after": item["start_local"].astimezone(timezone.utc).isoformat(timespec="microseconds"),
+        "after": _program_local_start_utc(item["start_local"], app_timezone).isoformat(timespec="microseconds"),
         "id": int(item["id"]),
     }
     raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
@@ -192,7 +199,7 @@ def program_range(
         cursor_key = (after_utc, after_id)
         remaining = [
             item for item in selected
-            if (item['start_local'].astimezone(timezone.utc), item['id']) > cursor_key
+            if (_program_local_start_utc(item['start_local'], web.APP_TIMEZONE), item['id']) > cursor_key
         ]
         page = remaining[:50]
         has_more = len(remaining) > len(page)
@@ -201,7 +208,7 @@ def program_range(
         has_more = offset + len(page) < total
 
     next_cursor = (
-        _encode_program_cursor(view, focus, user.id, snapshot_at, page[-1])
+        _encode_program_cursor(view, focus, user.id, snapshot_at, page[-1], web.APP_TIMEZONE)
         if snapshot_at is not None and has_more and page else None
     )
     next_offset = offset + len(page) if cursor is None and has_more else None
