@@ -427,7 +427,7 @@ test('native voice history uses authenticated no-store GET and validates approve
  global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'a'.repeat(64),fields:{medical_history:{value:'Astım beyanı',quote:'Önceki onaylı kayıt',analysis_id:17}},notice:'Hastayla güncelliğini doğrulayın.'}))};
  try{
   const result=await api.getVoiceHistory('secret',12);
-  assert.match(call.url,/\\/patients\\/12\\/voice-exam\\/history$/);
+  assert.ok(call.url.endsWith('/patients/12/voice-exam/history'));
   assert.equal(call.init.method,'GET');assert.equal(call.init.headers.Authorization,'Bearer secret');
   assert.equal(call.init.headers['Cache-Control'],'no-store');assert.equal(call.init.body,undefined);
   assert.equal(result.fields.medical_history.value,'Astım beyanı');assert.equal(result.fields.medical_history.analysis_id,17);
