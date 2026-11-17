@@ -23,6 +23,7 @@ export default function NativePatientProfile({token,userId,patientId,actions}:{t
  const mounted=useRef(true),request=useRef(0),lock=useRef(false),owner=useRef(`${userId}:${token}:${patientId}`),scope=`${userId}:${token}:${patientId}`;if(owner.current!==scope){owner.current=scope;request.current++;}
  const current=()=>mounted.current&&owner.current===scope;
  const mutationUncertain=profileUncertain||treatmentUncertain;
+ const focusedRef=useRef(focused);focusedRef.current=focused;
  const deleteGate=useRef({busy,uncertain:mutationUncertain,treatmentIntentReady,treatmentIntentBlocked,hasPendingTreatment:pendingTreatment!==null});
  deleteGate.current={busy,uncertain:mutationUncertain,treatmentIntentReady,treatmentIntentBlocked,hasPendingTreatment:pendingTreatment!==null};
  const canDeletePatient=patientProfileCanDeletePatient(deleteGate.current);
@@ -127,14 +128,14 @@ export default function NativePatientProfile({token,userId,patientId,actions}:{t
  }
  function confirmDelete(){
   const blockedMessage='Bekleyen profil veya tedavi işlemi sunucuyla doğrulanmadan hasta kaydı silinemez.';
-  if(!current())return;
+  if(!current()||!focusedRef.current)return;
   if(lock.current||!patientProfileCanDeletePatient(deleteGate.current)){setMutationError(blockedMessage);return}
   Alert.alert('Hasta kaydı silinsin mi?','Bu işlem geri alınamaz.',[
    {text:'Vazgeç',style:'cancel'},
    {text:'Devam',style:'destructive',onPress:()=>Alert.alert('Son onay','Hasta kaydını kalıcı olarak silmek üzeresiniz.',[
     {text:'Vazgeç',style:'cancel'},
     {text:'Hasta Kaydını Sil',style:'destructive',onPress:async()=>{
-     if(!current())return;
+     if(!current()||!focusedRef.current)return;
      if(lock.current||!patientProfileCanDeletePatient(deleteGate.current)){setMutationError(blockedMessage);return}
      lock.current=true;setBusy(true);
      try{await deletePatient(token,patientId);if(current())actions.deleted()}
