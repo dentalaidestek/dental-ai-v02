@@ -586,3 +586,26 @@ def test_invalid_receipt_ticket_does_not_poison_valid_provider_batch(tmp_path, m
     assert rows[9202].status == "RECEIPT_ERROR"
     assert rows[9202].error_code == "INVALID_TICKET"
     engine.dispose()
+
+
+def test_receipt_http_429_uses_backoff_without_disabling_device(tmp_path, monkeypatch):
+    import app.mobile_push_receipts as receipts
+
+    engine, user_id, device_id, token = _engine(tmp_path)
+    _, ticket_id = _pending(engine, user_id, device_id, token)
+    before = main._utcnow_naive()
+    monkeypatch.setattr(receipts, "get_push_receipts", lambda ids: {
+        "ok": False, "receipts": {}, "error_code": "HTTP_429",
+    })
+
+    assert poll_due_mobile_push_receipts(engine) == 1
+    with Session(engine) as session:
+        row = session.exec(select(main.MobilePushDelivery)).one()
+        device = session.exec(select(main.MobilePushDevice)).one()
+    assert row.ticket_id == ticket_id
+    assert row.status == "PENDING_RECEIPT"
+    assert row.attempts == 1
+    assert row.error_code == "HTTP_429"
+    assert row.next_check_at >= before + timedelta(minutes=14)
+    assert device.enabled is True
+    engine.dispose()
