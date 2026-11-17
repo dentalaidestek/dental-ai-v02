@@ -421,6 +421,39 @@ def test_receipt_maintenance_rejects_unbounded_batch_size(tmp_path):
     engine.dispose()
 
 
+def test_worker_receipt_checks_are_throttled_instead_of_per_queue_iteration(monkeypatch):
+    import app.mobile_push_receipts as receipts
+
+    clock = {"now": 1000.0}
+    calls = []
+    monkeypatch.setattr(receipts.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(receipts, "_last_poll_at", 0.0)
+    monkeypatch.setattr(receipts, "_last_maintenance_at", 0.0)
+    monkeypatch.setattr(
+        receipts, "poll_due_mobile_push_receipts",
+        lambda engine: calls.append("poll") or 0,
+    )
+    monkeypatch.setattr(
+        receipts, "_maintain_receipt_rows",
+        lambda engine: calls.append("maintenance") or 0,
+    )
+
+    assert receipts.run_mobile_push_receipt_maintenance(object()) is False
+    assert calls == ["poll", "maintenance"]
+
+    clock["now"] = 1059.0
+    assert receipts.run_mobile_push_receipt_maintenance(object()) is False
+    assert calls == ["poll", "maintenance"]
+
+    clock["now"] = 1060.0
+    assert receipts.run_mobile_push_receipt_maintenance(object()) is False
+    assert calls == ["poll", "maintenance", "poll"]
+
+    clock["now"] = 1300.0
+    assert receipts.run_mobile_push_receipt_maintenance(object()) is False
+    assert calls == ["poll", "maintenance", "poll", "poll", "maintenance"]
+
+
 def test_existing_revision_15_schema_bootstraps_both_push_tables(tmp_path):
     from app import migrate
 
