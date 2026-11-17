@@ -949,3 +949,61 @@ def test_mobile_patient_detail_exposes_surface_updated_at_for_history_parity(cha
 
     # The same detail contract must not reveal another owner's surface history.
     assert client.get("/api/mobile/v1/patients/9").status_code == 404
+
+
+def test_native_patient_media_delete_replay_is_idempotent_and_owner_scoped(chat, monkeypatch):
+    client, engine = chat
+    deleted_paths = []
+
+    async def async_publish(_event):
+        return None
+
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    monkeypatch.setattr(mobile_api, "storage_delete", lambda path: deleted_paths.append(path))
+    monkeypatch.setattr(mobile_api, "_publish_realtime_event", async_publish)
+    with Session(engine) as session:
+        session.add_all([
+            main.Patient(id=88, anonymous_id="SYNTHETIC-MEDIA-DELETE-88", owner_user_id=1),
+            main.Patient(id=89, anonymous_id="SYNTHETIC-MEDIA-DELETE-89", owner_user_id=2),
+            main.PatientMedia(
+                id=880, patient_id=88, owner_user_id=1, media_type="PHOTO",
+                stored_filename="synthetic-880.png", original_filename="synthetic.png",
+                file_path="synthetic/private/880.png",
+            ),
+            main.PatientMedia(
+                id=890, patient_id=89, owner_user_id=2, media_type="PHOTO",
+                stored_filename="synthetic-890.png", original_filename="synthetic.png",
+                file_path="synthetic/private/890.png",
+            ),
+        ])
+        session.commit()
+
+    first = client.delete("/api/mobile/v1/patients/88/media/880")
+    assert first.status_code == 200, first.text
+    assert first.json() == {
+        "ok": True,
+        "media_id": 880,
+        "already_deleted": False,
+        "storage_cleanup_pending": False,
+    }
+
+    # Simulates a lost first response followed by the same native retry.
+    replay = client.delete("/api/mobile/v1/patients/88/media/880")
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == {
+        "ok": True,
+        "media_id": 880,
+        "already_deleted": True,
+        "storage_cleanup_pending": False,
+    }
+    assert deleted_paths == ["synthetic/private/880.png"]
+
+    # Existing media from another patient is never treated as an idempotent miss.
+    assert client.delete("/api/mobile/v1/patients/88/media/890").status_code == 404
+    assert client.delete("/api/mobile/v1/patients/999/media/880").status_code == 404
+
+    client.headers["Authorization"] = "Bearer token2"
+    assert client.delete("/api/mobile/v1/patients/88/media/880").status_code == 404
+    with Session(engine) as session:
+        assert session.get(main.PatientMedia, 880) is None
+        assert session.get(main.PatientMedia, 890) is not None
