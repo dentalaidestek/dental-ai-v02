@@ -384,6 +384,43 @@ def test_missing_receipt_expires_after_expo_retention_window(tmp_path, monkeypat
     assert row.error_code == "RECEIPT_NOT_READY"
 
 
+def test_terminal_receipt_cleanup_processes_a_bounded_thousand_rows(tmp_path):
+    from app.mobile_push_receipts import _maintain_receipt_rows
+
+    engine, user_id, _, _ = _engine(tmp_path)
+    old = main._utcnow_naive() - timedelta(days=31)
+    with Session(engine) as session:
+        session.add_all([
+            main.MobilePushDelivery(
+                event_id=10000 + index,
+                user_id=user_id,
+                device_id=str(uuid.uuid4()),
+                token_fingerprint=f"{index:064x}",
+                status="PROVIDER_ACCEPTED",
+                created_at=old,
+                updated_at=old,
+                checked_at=old,
+            )
+            for index in range(1005)
+        ])
+        session.commit()
+
+    assert _maintain_receipt_rows(engine) == 1000
+    with Session(engine) as session:
+        remaining = session.exec(select(main.MobilePushDelivery)).all()
+    assert len(remaining) == 5
+    engine.dispose()
+
+
+def test_receipt_maintenance_rejects_unbounded_batch_size(tmp_path):
+    from app.mobile_push_receipts import _maintain_receipt_rows
+
+    engine, _, _, _ = _engine(tmp_path)
+    with pytest.raises(ValueError, match="between 1 and 1,000"):
+        _maintain_receipt_rows(engine, limit=1001)
+    engine.dispose()
+
+
 def test_existing_revision_15_schema_bootstraps_both_push_tables(tmp_path):
     from app import migrate
 
