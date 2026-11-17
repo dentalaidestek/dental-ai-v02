@@ -7,8 +7,8 @@ import NativeAuth from "./src/NativeAuth";
 import NativePatientAppointment from "./src/NativePatientAppointment";
 import NativePatientProfile from "./src/NativePatientProfile";
 import React,{useCallback,useEffect,useRef,useState}from"react";
-import{ActivityIndicator,Alert,FlatList,KeyboardAvoidingView,Linking,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View,Image}from"react-native";
-import{NavigationContainer,useNavigation,useIsFocused}from"@react-navigation/native";
+import{ActivityIndicator,Alert,AppState,FlatList,KeyboardAvoidingView,Linking,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View,Image}from"react-native";
+import{NavigationContainer,createNavigationContainerRef,useNavigation,useIsFocused}from"@react-navigation/native";
 import{createBottomTabNavigator}from"@react-navigation/bottom-tabs";
 import{createNativeStackNavigator}from"@react-navigation/native-stack";
 import*as SecureStore from"expo-secure-store";
@@ -29,9 +29,26 @@ import NativeSupportRequests from "./src/NativeSupportRequests";
 import{Academic,AnalysisHistory,ConsultationChat,Consultations,ExpertDirectory,Notifications,MediaGallery,NewConsultation}from"./src/ModernScreens";
 import{RealtimeProvider,useRealtime}from"./src/realtime";
 import{uploadPatientMedia}from"./src/api";
-import{unregisterPushDevice,getNotifications}from"./src/modernApi";
+import{getNotifications}from"./src/modernApi";
+import{refreshNativePushRegistration,subscribeToNativePushResponses,unregisterNativePushForLogout}from"./src/nativePush";
 
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",red:"#B42318",green:"#16803C"};
+const notificationNavigationRef=createNavigationContainerRef<any>();
+let pendingNativeNotificationRoute:any=null;
+function navigateNativePushTarget(target:any){
+ if(target?.kind!=="navigate"||!target.route)return;
+ const route=target.route;
+ if(!notificationNavigationRef.isReady()){pendingNativeNotificationRoute=route;return;}
+ if("params" in route)notificationNavigationRef.navigate(route.screen,route.params);
+ else notificationNavigationRef.navigate(route.screen);
+}
+function flushPendingNativeNotificationRoute(){
+ if(!pendingNativeNotificationRoute||!notificationNavigationRef.isReady())return;
+ const route=pendingNativeNotificationRoute;pendingNativeNotificationRoute=null;
+ if("params" in route)notificationNavigationRef.navigate(route.screen,route.params);
+ else notificationNavigationRef.navigate(route.screen);
+}
+
 
 function Icon({n,a=false}:{n:string;a?:boolean}){if(n==="messages")return <View style={{width:24,height:24}}><View style={{position:"absolute",left:2,top:3,width:21,height:16,borderWidth:2,borderRadius:4,borderColor:a?C.navy:C.muted}}/><View style={{position:"absolute",left:6,top:16,width:6,height:6,borderLeftWidth:2,borderBottomWidth:2,backgroundColor:C.white,borderColor:a?C.navy:C.muted,transform:[{skewY:"-35deg"}]}}/></View>;const m:any={home:"⌂",patients:"♙",ai:"✦",calendar:"□",profile:"○",plus:"+",search:"⌕",chevron:"›",clock:"◷"};return <Text style={[s.icon,{color:a?C.navy:C.muted}]}>{m[n]||"•"}</Text>}
 function Logo({small=false}){return <View style={[s.logo,{width:small?42:70,height:small?42:70,borderRadius:small?14:22}]}><Text style={{fontSize:small?22:36}}>🦷</Text></View>}
@@ -104,7 +121,7 @@ function TabShell({token,user,signOut,onUserChanged}:{token:string;user:User;sig
  <Tabs.Screen name="Messages" options={{tabBarLabel:"Mesajlar",tabBarAccessibilityLabel:"Mesajlar",tabBarIcon:({focused})=><Icon n="messages" a={focused}/>}}>{({navigation})=><Consultations token={token} userId={user.id} navigation={navigation}/>}</Tabs.Screen>
  <Tabs.Screen name="Profile" options={{tabBarLabel:"Profil",tabBarIcon:({focused})=><Icon n="profile" a={focused}/>}}>{()=> <Profile user={user} token={token} signOut={signOut} onUserChanged={onUserChanged}/>}</Tabs.Screen>
  </Tabs.Navigator>}
-function Main({token,user,signOut,onUserChanged}:{token:string;user:User;signOut:()=>void;onUserChanged:(user:User)=>void}){return <RealtimeProvider token={token} userId={user.id}><NavigationContainer><Stack.Navigator screenOptions={{headerTintColor:C.navy,headerShadowVisible:false,headerTitleStyle:{fontWeight:"800"}}}><Stack.Screen name="AppTabs" options={{headerShown:false}}>{()=> <TabShell token={token} user={user} signOut={signOut} onUserChanged={onUserChanged}/>}</Stack.Screen><Stack.Screen name="DentalFlow" options={{title:"Dental Akış"}}>{({navigation})=><DentalFlow token={token} user={user} navigation={navigation}/>}</Stack.Screen><Stack.Screen name="ExpertProfile" options={{title:"Uzman Profili"}}>{({route,navigation}:any)=><NativeExpertProfile key={token+":"+route.params.id} token={token} user={user} navigation={navigation} expertId={route.params.id} patientId={route.params.patientId}/>}</Stack.Screen><Stack.Screen name="ExpertManagement" options={{title:"Uzman Profilimi Yönet"}}>{({navigation}:any)=><ScrollView style={s.page} contentContainerStyle={{padding:16,paddingBottom:40}}><NativeProfessional key={token} token={token} mode="expert" onChanged={()=>{void getMe(token).then(result=>onUserChanged(result.user)).catch(()=>Alert.alert("Profil yenilenemedi","Bilgiler kaydedildi; güncel hesap bilgileri için profilinizi yeniden açın."))}} onPublicProfile={()=>navigation.navigate("ExpertProfile",{id:user.id})}/></ScrollView>}</Stack.Screen><Stack.Screen name="AnalysisResult" options={{title:"Analiz Sonucu"}}>{({route}:any)=><ScrollView style={s.page} contentContainerStyle={{padding:18}}><NativeDentalAI token={token} userId={user.id} initialAnalysisId={route.params.id}/></ScrollView>}</Stack.Screen><Stack.Screen name="Program" options={{title:"Programım"}}>{({route,navigation}:any)=>route.params?.patientId?<NativePatientAppointment key={token+":"+route.params.patientId} token={token} userId={user.id} patientId={route.params.patientId} onSaved={()=>navigation.goBack()}/>:<Program token={token} userId={user.id}/>}</Stack.Screen><Stack.Screen name="Notifications" options={{title:"Bildirimler"}}>{()=> <Notifications token={token}/>}</Stack.Screen><Stack.Screen name="SupportRequests" options={{title:"Destek Taleplerim"}}>{({route}:any)=> <NativeSupportRequests token={token} initialTicketId={route.params?.ticketId}/>}</Stack.Screen><Stack.Screen name="AnalysisHistory" options={{title:"Analiz Geçmişi"}}>{()=> <AnalysisHistory token={token}/>}</Stack.Screen><Stack.Screen name="Academic" options={{title:"Akademik AI"}}>{()=> <NativeAcademic key={token} token={token} userId={user.id}/>}</Stack.Screen><Stack.Screen name="VoiceExam" options={{title:"Sesli Muayene"}}>{({route}:any)=> <VoiceExamEntry token={token} userId={user.id} initialPatientId={route.params?.patientId}/>}</Stack.Screen><Stack.Screen name="ExpertDirectory" options={{title:"Uzmandan Destek Al"}}>{(p:any)=><ExpertDirectory token={token} navigation={p.navigation} patientId={p.route.params?.patientId}/>}</Stack.Screen><Stack.Screen name="NewConsultation" options={{title:"Yeni Danışmanlık"}}>{(p:any)=><NewConsultation key={user.id+":"+(p.route.params?.expert?.user_id||0)+":"+(p.route.params?.patientId||0)} token={token} userId={user.id} route={p.route} navigation={p.navigation}/>}</Stack.Screen><Stack.Screen name="Consultations" options={{title:"Danışmanlıklar"}}>{(p:any)=><Consultations token={token} userId={user.id} navigation={p.navigation}/>}</Stack.Screen><Stack.Screen name="ConsultationChat" options={{title:"Vaka Görüşmesi"}}>{(p:any)=><ConsultationChat token={token} route={p.route} userId={user.id}/>}</Stack.Screen><Stack.Screen name="MediaGallery" options={{title:"Hasta Medyası"}}>{(p:any)=><MediaGallery token={token} patientId={p.route.params.patientId}/>}</Stack.Screen></Stack.Navigator><NotificationPermissionIntro userId={user.id}/></NavigationContainer></RealtimeProvider>}
+function Main({token,user,signOut,onUserChanged}:{token:string;user:User;signOut:()=>void;onUserChanged:(user:User)=>void}){return <RealtimeProvider token={token} userId={user.id}><NavigationContainer ref={notificationNavigationRef} onReady={flushPendingNativeNotificationRoute}><Stack.Navigator screenOptions={{headerTintColor:C.navy,headerShadowVisible:false,headerTitleStyle:{fontWeight:"800"}}}><Stack.Screen name="AppTabs" options={{headerShown:false}}>{()=> <TabShell token={token} user={user} signOut={signOut} onUserChanged={onUserChanged}/>}</Stack.Screen><Stack.Screen name="DentalFlow" options={{title:"Dental Akış"}}>{({navigation})=><DentalFlow token={token} user={user} navigation={navigation}/>}</Stack.Screen><Stack.Screen name="ExpertProfile" options={{title:"Uzman Profili"}}>{({route,navigation}:any)=><NativeExpertProfile key={token+":"+route.params.id} token={token} user={user} navigation={navigation} expertId={route.params.id} patientId={route.params.patientId}/>}</Stack.Screen><Stack.Screen name="ExpertManagement" options={{title:"Uzman Profilimi Yönet"}}>{({navigation}:any)=><ScrollView style={s.page} contentContainerStyle={{padding:16,paddingBottom:40}}><NativeProfessional key={token} token={token} mode="expert" onChanged={()=>{void getMe(token).then(result=>onUserChanged(result.user)).catch(()=>Alert.alert("Profil yenilenemedi","Bilgiler kaydedildi; güncel hesap bilgileri için profilinizi yeniden açın."))}} onPublicProfile={()=>navigation.navigate("ExpertProfile",{id:user.id})}/></ScrollView>}</Stack.Screen><Stack.Screen name="AnalysisResult" options={{title:"Analiz Sonucu"}}>{({route}:any)=><ScrollView style={s.page} contentContainerStyle={{padding:18}}><NativeDentalAI token={token} userId={user.id} initialAnalysisId={route.params.id}/></ScrollView>}</Stack.Screen><Stack.Screen name="Program" options={{title:"Programım"}}>{({route,navigation}:any)=>route.params?.patientId?<NativePatientAppointment key={token+":"+route.params.patientId} token={token} userId={user.id} patientId={route.params.patientId} onSaved={()=>navigation.goBack()}/>:<Program token={token} userId={user.id}/>}</Stack.Screen><Stack.Screen name="Notifications" options={{title:"Bildirimler"}}>{({route}:any)=> <Notifications token={token} initialNoticeId={route.params?.noticeId}/>}</Stack.Screen><Stack.Screen name="SupportRequests" options={{title:"Destek Taleplerim"}}>{({route}:any)=> <NativeSupportRequests token={token} initialTicketId={route.params?.ticketId}/>}</Stack.Screen><Stack.Screen name="AnalysisHistory" options={{title:"Analiz Geçmişi"}}>{()=> <AnalysisHistory token={token}/>}</Stack.Screen><Stack.Screen name="Academic" options={{title:"Akademik AI"}}>{()=> <NativeAcademic key={token} token={token} userId={user.id}/>}</Stack.Screen><Stack.Screen name="VoiceExam" options={{title:"Sesli Muayene"}}>{({route}:any)=> <VoiceExamEntry token={token} userId={user.id} initialPatientId={route.params?.patientId}/>}</Stack.Screen><Stack.Screen name="ExpertDirectory" options={{title:"Uzmandan Destek Al"}}>{(p:any)=><ExpertDirectory token={token} navigation={p.navigation} patientId={p.route.params?.patientId}/>}</Stack.Screen><Stack.Screen name="NewConsultation" options={{title:"Yeni Danışmanlık"}}>{(p:any)=><NewConsultation key={user.id+":"+(p.route.params?.expert?.user_id||0)+":"+(p.route.params?.patientId||0)} token={token} userId={user.id} route={p.route} navigation={p.navigation}/>}</Stack.Screen><Stack.Screen name="Consultations" options={{title:"Danışmanlıklar"}}>{(p:any)=><Consultations token={token} userId={user.id} navigation={p.navigation}/>}</Stack.Screen><Stack.Screen name="ConsultationChat" options={{title:"Vaka Görüşmesi"}}>{(p:any)=><ConsultationChat token={token} route={p.route} userId={user.id}/>}</Stack.Screen><Stack.Screen name="MediaGallery" options={{title:"Hasta Medyası"}}>{(p:any)=><MediaGallery token={token} patientId={p.route.params.patientId}/>}</Stack.Screen></Stack.Navigator><NotificationPermissionIntro userId={user.id}/></NavigationContainer></RealtimeProvider>}
 function NotificationPermissionIntro({userId}:{userId:number}){
  const [visible,setVisible]=useState(false),[working,setWorking]=useState(false);
  useEffect(()=>{let mounted=true;void(async()=>{try{const flag=await SecureStore.getItemAsync("dai.notification.intro."+userId);if(mounted&&!flag)setVisible(true)}catch{}})();return()=>{mounted=false}},[userId]);
@@ -119,14 +136,25 @@ function NotificationPermissionIntro({userId}:{userId:number}){
  <View style={{backgroundColor:"#FFF",borderRadius:24,padding:24}}>
  <Text style={{fontSize:35,textAlign:"center"}}>🔔</Text>
  <Text style={{fontSize:21,fontWeight:"900",color:C.navy,textAlign:"center",marginTop:12}}>Dental AI bildirimleri</Text>
- <Text style={{color:C.muted,lineHeight:22,textAlign:"center",marginTop:12}}>Uygulama içi bildirimler Bildirimler ekranında görünür. Bu sürümde Expo push token kaydı ve uygulama kapalıyken açılış bağlantısı henüz bağlanmadı.</Text>
- <Text style={{color:C.muted,fontSize:12,lineHeight:18,marginTop:12}}>Bu nedenle henüz Android veya iOS sistem bildirimi izni istemiyoruz. Push kaydı ve güvenli hedef yönlendirmesi tamamlandığında bu tercih ekranı güncellenecek.</Text>
+ <Text style={{color:C.muted,lineHeight:22,textAlign:"center",marginTop:12}}>Uygulama içi bildirimleri Bildirimler ekranında görebilirsiniz. Sistem bildirimlerini Profil > Cihaz Bildirimleri bölümünden isteğe bağlı açabilirsiniz.</Text>
+ <Text style={{color:C.muted,fontSize:12,lineHeight:18,marginTop:12}}>İşletim sistemi izni yalnızca Cihaz Bildirimleri bölümündeki açık tercihinizle istenir. Kilit ekranında hasta adı veya klinik ayrıntı gösterilmez.</Text>
  <Pressable accessibilityRole="button" disabled={working} style={[s.primary,{marginTop:20}]} onPress={()=>void finish()}><Text style={s.primaryText}>Anladım</Text></Pressable>
  </View></View>;
 }
 function AppContent(){
  const[session,setSession]=useState<{token:string;user:User}|null>(null),[boot,setBoot]=useState(true),[bootError,setBootError]=useState("");
  useSessionHealth(session?.token);
+ useEffect(()=>{
+  if(!session)return;
+  return subscribeToNativePushResponses(navigateNativePushTarget);
+ },[session?.token,session?.user.id]);
+ useEffect(()=>{
+  if(!session)return;
+  const refresh=()=>{void refreshNativePushRegistration(session.token,session.user.id).catch(()=>{});};
+  refresh();
+  const listener=AppState.addEventListener("change",state=>{if(state==="active")refresh()});
+  return()=>listener.remove();
+ },[session?.token,session?.user.id]);
  const restore=useCallback(async()=>{
   setBoot(true);setBootError("");
   try{setSession(await restoreStoredSession(SecureStore,getMe))}
@@ -135,7 +163,23 @@ function AppContent(){
  },[]);
  useEffect(()=>{void restore()},[restore]);
  useEffect(()=>{if(!session)return;let active=true;const token=session.token;const stop=subscribeSessionExpiry(token,()=>{setBoot(true);void SecureStore.deleteItemAsync("dentalai_token").catch(()=>{}).finally(()=>{if(active){setSession(current=>current?.token===token?null:current);setBoot(false)}})});return()=>{active=false;stop()}},[session?.token]);
- async function signOut(){if(session){try{const deviceId=await SecureStore.getItemAsync("dai.push.device_id");if(deviceId)await unregisterPushDevice(session.token,deviceId)}catch{}try{await logout(session.token)}catch{}}await SecureStore.deleteItemAsync("dentalai_token");setSession(null)}
+ async function finishSignOut(){
+  if(session){try{await logout(session.token)}catch{}}
+  await SecureStore.deleteItemAsync("dentalai_token");setSession(null);
+ }
+ async function signOut(){
+  if(session){
+   try{await unregisterNativePushForLogout(session.token,session.user.id);}
+   catch{
+    Alert.alert("Cihaz bildirimi kaldırılamadı","Sunucuya ulaşılamadığı için bu cihazın bildirim kaydı doğrulanamadı. Yine de çıkış yaparsanız genel bildirimler bir süre daha gelebilir; klinik içerik gönderilmez.",[
+     {text:"Vazgeç",style:"cancel"},
+     {text:"Yine de çıkış yap",style:"destructive",onPress:()=>void finishSignOut()}
+    ]);
+    return;
+   }
+  }
+  await finishSignOut();
+ }
  if(boot)return <Splash/>;
  if(bootError)return <View style={s.splash}><Logo/><Text style={s.err}>{bootError}</Text><Pressable style={s.primary} onPress={()=>void restore()}><Text style={s.primaryText}>Tekrar Dene</Text></Pressable></View>;
  return session?<Main key={session.user.id} token={session.token} user={session.user} signOut={signOut} onUserChanged={user=>setSession(current=>current?.token===session.token?{...current,user}:current)}/>:<Login done={(token,user)=>setSession({token,user})}/>;
