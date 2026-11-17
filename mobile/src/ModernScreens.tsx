@@ -8,7 +8,7 @@ import React,{useCallback,useEffect,useRef,useState}from"react";
 import * as ImagePicker from"expo-image-picker";
 import * as SecureStore from"expo-secure-store";
 import{ActivityIndicator,Alert,FlatList,Image,Modal,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View}from"react-native";
-import{getAnalysisHistory,getConsultation,getConsultations,getCourses,getAcademicMessages,getExperts,getMedia,deleteMedia,getNotifications,markNotificationRead,askAcademic,sendConsultationMessage,markConsultationRead,createConsultation,Expert,Consultation,Course,ChatMessage}from"./modernApi";
+import{getAnalysisHistory,getConsultation,getConsultations,getCourses,getAcademicMessages,getExperts,getMedia,deleteMedia,getNotifications,markNotificationRead,askAcademic,sendConsultationMessage,getConsultationMessageReceipt,markConsultationRead,createConsultation,Expert,Consultation,Course,ChatMessage}from"./modernApi";
 import{useRealtime}from"./realtime";
 import {usePagedRecords} from "./usePagedRecords";
 import {resolveNativeNotificationTarget} from "./notificationTarget";
@@ -159,17 +159,17 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
  const activeScope=useRef(token+":"+userId+":"+id);activeScope.current=token+":"+userId+":"+id;
  const [preparedAttachment,setPreparedAttachment]=useState<{file:ChatFile;nonce:string;scope:string}|null>(null);
  const requestSeq=useRef(0),sending=useRef(false),draftRevision=useRef(0),pending=useRef<{content:string;id:string;scope:string;replyTo:number|null}|null>(null);
- const draftKey="dai.consultation.draft."+userId+"."+id;
+ const draftKey="dai.consultation.draft."+userId+"."+id,pendingKey="dai.consultation.pending."+userId+"."+id,intentScope=userId+":"+id;
  const visibleData=data?.accountScope===activeScope.current?data:null;
  const chatStatus=String(visibleData?.case?.status||"").toUpperCase();
  const waitingStart=chatStatus==="WAITING_START"&&Number(visibleData?.case?.requester_user_id)===userId&&!!visibleData?.case?.consultation_start_deadline&&Date.parse(visibleData.case.consultation_start_deadline)>Date.now();
  const canCompose=!!visibleData&&!visibleData.case?.messages_deleted_at&&!visibleData.case?.inbox_deleted&&!visibleData.case?.blocked_either&&!waitingStart&&["ACTIVE","WAITING_START","EXPERT_COMPLETED","DISPUTE"].includes(chatStatus);
- const [draftReady,setDraftReady]=useState(false);
+ const [draftReady,setDraftReady]=useState(false),[pendingMessage,setPendingMessage]=useState(false);
  const lastReadRequest=useRef<{scope:string;id:number}|null>(null);
  const latestMessageId=visibleData?.messages?.length?visibleData.messages[visibleData.messages.length-1].id:null;
  const load=useCallback(async()=>{const request=++requestSeq.current,scope=activeScope.current;try{const result=await getConsultation(token,id);if(request===requestSeq.current&&scope===activeScope.current)setData((previous:any)=>({...result,accountScope:scope,messages:[...(result.case?.messages_deleted_at?[]:(previous?.accountScope===scope?previous.messages||[]:[])),...result.messages].filter((m:ChatMessage,i:number,all:ChatMessage[])=>all.findIndex(v=>v.id===m.id)===i).sort((a:ChatMessage,b:ChatMessage)=>a.id-b.id),next_before:result.case?.messages_deleted_at?null:(previous?.accountScope===scope&&previous.next_before!==undefined?previous.next_before:result.next_before)}))}catch(e){if(request===requestSeq.current&&scope===activeScope.current)setSendError(e instanceof Error?e.message:"Görüşme yüklenemedi.")}},[token,id,userId]);
- useEffect(()=>{setData(null);setSendError("");setSendBusy(false);setReplyTo(null);sending.current=false;pending.current=null;void load();return()=>{requestSeq.current++;sending.current=false}},[load]);
- useEffect(()=>{let active=true;const revision=++draftRevision.current;setDraftReady(false);setText("");void SecureStore.getItemAsync(draftKey).then(v=>{if(active&&draftRevision.current===revision){setText(v||"");setDraftReady(true)}}).catch(()=>{if(active&&draftRevision.current===revision)setDraftReady(true)});return()=>{active=false;draftRevision.current++}},[draftKey]);
+ useEffect(()=>{setData(null);setSendError("");setSendBusy(false);setReplyTo(null);setPendingMessage(false);sending.current=false;pending.current=null;void load();return()=>{requestSeq.current++;sending.current=false}},[load]);
+ useEffect(()=>{let active=true;const revision=++draftRevision.current;setDraftReady(false);setText("");void Promise.all([SecureStore.getItemAsync(draftKey),SecureStore.getItemAsync(pendingKey)]).then(([draft,raw])=>{if(!active||draftRevision.current!==revision)return;let restored:any=null;try{restored=raw?JSON.parse(raw):null}catch{}if(restored&&restored.version===1&&typeof restored.id==="string"&&/^[A-Za-z0-9_-]{16,96}$/.test(restored.id)&&restored.scope===intentScope&&typeof restored.content==="string"&&restored.content.length>0&&restored.content.length<=4000&&(restored.replyTo===null||Number.isSafeInteger(restored.replyTo)&&restored.replyTo>0)){pending.current={content:restored.content,id:restored.id,scope:intentScope,replyTo:restored.replyTo};setPendingMessage(true);setText(restored.content);setReplyTo(restored.replyTo)}else{setText(draft||"");setPendingMessage(false)}setDraftReady(true)}).catch(()=>{if(active&&draftRevision.current===revision)setDraftReady(true)});return()=>{active=false;draftRevision.current++}},[draftKey,pendingKey,intentScope]);
  useEffect(()=>{
   if(!isFocused||!latestMessageId||visibleData?.case?.messages_deleted_at)return;
   const scope=activeScope.current;
@@ -182,22 +182,34 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
  async function loadOlder(){const cursor=visibleData?.next_before,scope=activeScope.current;if(!cursor||olderBusy)return;setOlderBusy(true);try{const page=await getConsultation(token,id,cursor);if(scope!==activeScope.current)return;setData((previous:any)=>previous?.accountScope!==scope||previous?.case?.messages_deleted_at?previous:{...previous,next_before:page.next_before??null,messages:[...page.messages,...previous.messages].filter((m:ChatMessage,i:number,all:ChatMessage[])=>all.findIndex(v=>v.id===m.id)===i).sort((a:ChatMessage,b:ChatMessage)=>a.id-b.id)});}catch(e){if(scope===activeScope.current)setSendError(e instanceof Error?e.message:"Önceki mesajlar yüklenemedi.")}finally{if(scope===activeScope.current)setOlderBusy(false)}}
  useEffect(()=>{const eventType=String(lastEvent?.event_type||lastEvent?.type||"");const eventCase=Number(lastEvent?.payload?.case_id||lastEvent?.entity_id||0);if(eventCase===id&&["MESSAGE_CREATED","CASE_STATUS_UPDATED","CASE_UPDATED","CASE_READ","CASE_REPORT_CREATED"].includes(eventType))void load()},[lastEvent,load,id]);
  useEffect(()=>{if(isFocused&&connected)void load()},[isFocused,connected,load]);
+ async function reconcilePending(){
+  const intent=pending.current,scope=activeScope.current;if(!intent||intent.scope!==intentScope)return false;
+  try{const receipt=await getConsultationMessageReceipt(token,id,intent.id);if(scope!==activeScope.current||pending.current?.id!==intent.id||!receipt)return false;
+   pending.current=null;setPendingMessage(false);setText(current=>current===intent.content?"":current);setReplyTo(null);
+   await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});const saved=await SecureStore.getItemAsync(draftKey).catch(()=>null);if(saved===intent.content)await SecureStore.deleteItemAsync(draftKey).catch(()=>{});
+   if(scope===activeScope.current)await load();return true;
+  }catch{return false}
+ }
+ useEffect(()=>{if(draftReady&&isFocused&&connected&&pending.current)void reconcilePending()},[draftReady,isFocused,connected,token,id]);
  async function send(){
   const scope=activeScope.current,v=text.trim(),reply=replyTo,revisionAtSend=draftRevision.current;if(sending.current||!v||!canCompose||!draftReady)return;
-  if(!pending.current||pending.current.content!==v||pending.current.scope!==scope||pending.current.replyTo!==reply)pending.current={content:v,scope,replyTo:reply,id:"native-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2)};
-  const messageId=pending.current.id;sending.current=true;setSendBusy(true);setSendError("");
+  if(pending.current&&pending.current.scope===intentScope&&(pending.current.content!==v||pending.current.replyTo!==reply)){setSendError("Önce bekleyen mesajın sonucunu doğrulayın.");return}
+  if(!pending.current||pending.current.scope!==intentScope)pending.current={content:v,scope:intentScope,replyTo:reply,id:"native-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2)};
+  const intent=pending.current,messageId=intent.id;sending.current=true;setSendBusy(true);setPendingMessage(true);setSendError("");
   try{
+   await SecureStore.setItemAsync(pendingKey,JSON.stringify({version:1,...intent}));
+   if(scope!==activeScope.current)return;
    const result=await sendConsultationMessage(token,id,v,messageId,reply??undefined);
    if(scope!==activeScope.current)return;
-   if(!result?.ok||!result?.message?.id)throw Error("Gönderim doğrulanamadı. Tekrar göndermeden önce görüşmeyi yenileyin.");
-   if(pending.current?.id===messageId)pending.current=null;
+   if(!result?.ok||!result?.message?.id)throw Error("Gönderim doğrulanamadı. Aynı mesaj anahtarı korunuyor.");
+   if(pending.current?.id===messageId)pending.current=null;setPendingMessage(false);
+   await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});
    setText(current=>current===v?"":current);setReplyTo(null);
-   // Only remove the saved draft if it still contains the message just sent.
    const saved=await SecureStore.getItemAsync(draftKey).catch(()=>null);
    if(scope!==activeScope.current)return;
    if(saved===v&&draftRevision.current===revisionAtSend)await SecureStore.deleteItemAsync(draftKey).catch(()=>{});
    if(scope===activeScope.current)await load();
-  }catch(e){if(scope===activeScope.current)setSendError(e instanceof Error?e.message:"Mesaj gönderilemedi. Tekrar deneyin.")}
+  }catch(e){if(scope===activeScope.current){setSendError(e instanceof Error?e.message:"Mesaj gönderilemedi. Aynı istek anahtarı korunuyor.");void reconcilePending()}}
   finally{if(scope===activeScope.current){sending.current=false;setSendBusy(false)}}
  }
  return <KeyboardAvoidingView style={s.page} behavior={Platform.OS==="ios"?"padding":"height"}>
@@ -208,8 +220,9 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
  renderItem={({item}:any)=><View style={[s.msg,item.sender_user_id===userId?s.mine:s.theirs]}>{!!item.reply_to_message_id&&<Text style={[s.meta,{color:C.navy,fontWeight:"700"}]}>↩ {String(visibleData?.messages?.find((m:ChatMessage)=>m.id===item.reply_to_message_id)?.content||"Mesaj").slice(0,90)}</Text>}{item.message_type==="IMAGE"?<ChatImage token={token} caseId={id} message={item} canEdit={canCompose} onEdited={file=>{setReplyTo(item.id);setPreparedAttachment({file,nonce:file.uri,scope:activeScope.current})}}/>:item.message_type==="VOICE"||item.message_type==="FILE"?<NativeChatDocument key={token+":"+id+":"+item.id} token={token} caseId={id} message={item}/>:<Text style={s.body}>{item.content||"Klinik içerik"}</Text>}{item.sender_user_id===userId&&<Text style={s.meta}>{visibleData?.case?.other_read_at&&Date.parse(item.created_at)<=Date.parse(visibleData.case.other_read_at)?"✓✓ Okundu":"✓ Gönderildi"}</Text>}<View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:12}}><Text style={s.meta}>{new Date(item.created_at).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}</Text><Pressable accessibilityRole="button" accessibilityLabel="Mesajı yanıtla" onPress={()=>setReplyTo(item.id)}><Text style={[s.meta,{color:C.navy,fontWeight:"800"}]}>↩ Yanıtla</Text></Pressable></View></View>}/>
  {waitingStart&&<Text style={{color:C.muted,paddingHorizontal:16,paddingVertical:8}}>Mesajlaşma, belirlenen görüşme başlangıcında açılacak.</Text>}
  {!!visibleData?.case?.messages_deleted_at&&<Text style={{color:C.red,paddingHorizontal:16,paddingVertical:8}}>Bu görüşmenin mesajları kaldırılmış.</Text>}
- {!!sendError&&<Pressable accessibilityRole="button" onPress={()=>void load()}><Text style={{color:C.red,paddingHorizontal:16}}>{sendError} · Yenile</Text></Pressable>}
- {!!replyTo&&<View style={{backgroundColor:C.soft,padding:10,flexDirection:"row",alignItems:"center",justifyContent:"space-between"}}><Text style={{flex:1,color:C.navy}} numberOfLines={2}>↩ {String(visibleData?.messages?.find((m:ChatMessage)=>m.id===replyTo)?.content||"Mesaja yanıt").slice(0,110)}</Text><Pressable accessibilityRole="button" accessibilityLabel="Yanıtı kaldır" onPress={()=>setReplyTo(null)}><Text style={{fontWeight:"800",color:C.red}}>✕</Text></Pressable></View>}<ChatPhotoComposer key={token+":"+id} token={token} caseId={id} replyTo={replyTo} prepared={preparedAttachment?.scope===activeScope.current?preparedAttachment:null} disabled={!canCompose||!draftReady||sendBusy} onRefresh={load} onSent={async()=>{setReplyTo(null);await load()}}/><View style={s.composer}><TextInput style={[s.input,{flex:1,marginTop:0,maxHeight:120}]} multiline maxLength={4000} value={text} onChangeText={v=>{draftRevision.current++;setText(v);pending.current=null;void SecureStore.setItemAsync(draftKey,v).catch(()=>{})}} editable={!sendBusy&&canCompose&&draftReady} placeholder="Mesaj yaz..." placeholderTextColor={C.muted}/><Pressable accessibilityRole="button" style={[s.send,(!canCompose||!draftReady||sendBusy||!text.trim())&&{opacity:.5}]} onPress={()=>void send()} disabled={!canCompose||!draftReady||sendBusy||!text.trim()}><Text style={s.btnT}>{sendBusy?"…":"Gönder"}</Text></Pressable></View>
+ {!!pendingMessage&&<Text style={{color:C.muted,paddingHorizontal:16,paddingVertical:5}}>Gönderim sonucu doğrulanıyor; aynı istek anahtarı korunuyor.</Text>}
+ {!!sendError&&<Pressable accessibilityRole="button" onPress={()=>void reconcilePending().then(()=>load())}><Text style={{color:C.red,paddingHorizontal:16}}>{sendError} · Gönderim sonucunu kontrol et</Text></Pressable>}
+ {!!replyTo&&<View style={{backgroundColor:C.soft,padding:10,flexDirection:"row",alignItems:"center",justifyContent:"space-between"}}><Text style={{flex:1,color:C.navy}} numberOfLines={2}>↩ {String(visibleData?.messages?.find((m:ChatMessage)=>m.id===replyTo)?.content||"Mesaja yanıt").slice(0,110)}</Text><Pressable accessibilityRole="button" accessibilityLabel="Yanıtı kaldır" onPress={()=>setReplyTo(null)}><Text style={{fontWeight:"800",color:C.red}}>✕</Text></Pressable></View>}<ChatPhotoComposer key={token+":"+id} token={token} userId={userId} caseId={id} replyTo={replyTo} prepared={preparedAttachment?.scope===activeScope.current?preparedAttachment:null} disabled={!canCompose||!draftReady||sendBusy} onRefresh={load} onSent={async()=>{setReplyTo(null);await load()}}/><View style={s.composer}><TextInput style={[s.input,{flex:1,marginTop:0,maxHeight:120}]} multiline maxLength={4000} value={text} onChangeText={v=>{draftRevision.current++;setText(v);pending.current=null;void SecureStore.setItemAsync(draftKey,v).catch(()=>{})}} editable={!sendBusy&&!pendingMessage&&canCompose&&draftReady} placeholder="Mesaj yaz..." placeholderTextColor={C.muted}/><Pressable accessibilityRole="button" style={[s.send,(!canCompose||!draftReady||sendBusy||!text.trim())&&{opacity:.5}]} onPress={()=>void send()} disabled={!canCompose||!draftReady||sendBusy||!text.trim()}><Text style={s.btnT}>{sendBusy?"…":pendingMessage?"Aynı mesajı tekrar dene":"Gönder"}</Text></Pressable></View>
  </KeyboardAvoidingView>;
 }
 
