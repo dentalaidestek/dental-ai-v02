@@ -78,6 +78,10 @@ on:
       - 'mobile/src/NativeVoiceRecorder.tsx'
       - 'mobile/src/voiceSession.ts'
       - 'mobile/tests/nativeVoiceAudio.cjs'
+      - 'mobile/src/SocialScreens.tsx'
+      - 'mobile/src/socialApi.ts'
+      - 'mobile/tests/social.cjs'
+      - 'mobile/tests/socialScreens.cjs'
       - '.github/workflows/security-recovery.yml'
   workflow_dispatch:
 permissions:
@@ -102,6 +106,22 @@ jobs:
         run: npm ci
       - name: Validate private voice audio path containment
         run: node --test tests/nativeVoiceAudio.cjs
+  native-social-security:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install native social regression dependencies
+        run: npm ci
+      - name: Validate Dental Flow moderation, identity and draft behavior
+        run: node --test tests/social.cjs tests/socialScreens.cjs
   security:
     runs-on: ubuntu-latest
     timeout-minutes: 15
