@@ -639,3 +639,8 @@ Evidence and exact remaining acceptance: `docs/mobile-voice-exam-parity-20261117
 ## 2026-11-17 — Program snapshot pagination
 
 Native Program continuation now uses an owner/view/day-bound, 15-minute snapshot cursor with a deterministic `(start_local, event_id)` key. Schedule writes after page one invalidate later pages with 409 rather than mixing old and new calendar rows. Legacy offset remains for older builds. The date-window occurrence helper still materializes the owner's schedule rows to produce weekly recurrence and day counts; query-plan and 60k load tests remain open. Evidence: `docs/mobile-program-idempotency-20261117.md`.
+
+
+## 2026-11-17 — Program month-grid visual parity
+
+Web `program.html` uses the first three daily event types as semantic color dots and an overflow dot. Native month cells now use the same first-three/overflow rule and the web tone colors; week view retains day counts. Backend and native regression coverage added. Evidence: `docs/mobile-program-idempotency-20261117.md`.

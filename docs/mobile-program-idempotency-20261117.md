@@ -79,3 +79,8 @@ This was a data-integrity issue, not merely a duplicate-button issue.
 - Backend and native regressions cover 120 equal-time records, complete/no-duplicate traversal, cursor scope validation, invalid cursors, create/update invalidation and old-backend offset fallback.
 - Android workflow path filters now include `app/mobile_program_api.py`, so native API contract changes trigger typecheck/beta validation.
 - Full Python/Node/TypeScript/Gradle execution remains gated by GitHub Actions runner allocation; static source checks are not represented as full-suite passes.
+
+
+## 2026-11-17 — Month-grid visual parity
+
+The web month grid renders the first three event markers for each day and a fourth overflow marker when more events exist. Native previously showed only a numeric count, losing event-type semantics. The mobile Program range now returns `event_types[:3]` and `has_more` for each day. Native renders the same semantic tones as web (class blue, clinic green, exam orange, appointment violet, assignment/thesis purple, general gray); month cells use dots rather than a raw count. Week view keeps its day-count label. The response validator rejects malformed marker arrays and the native renderer test checks three dots plus overflow.
