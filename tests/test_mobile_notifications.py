@@ -24,7 +24,7 @@ def test_mobile_notification_read_all_is_owner_scoped_and_respects_cutoff(monkey
     monkeypatch.setattr(mobile_api, "on_loop", lambda *_args: None)
 
     now = main._utcnow_naive()
-    cutoff = now - timedelta(seconds=5)
+    cutoff = now - timedelta(minutes=5)
     owner_token = "mobile-notice-owner-token"
     other_token = "mobile-notice-other-token"
     with Session(engine, expire_on_commit=False) as session:
@@ -52,10 +52,13 @@ def test_mobile_notification_read_all_is_owner_scoped_and_respects_cutoff(monkey
             user_id=owner.id, title="Eski", message="İçerik", notice_type="TEST",
             status="ACTIVE", is_read=False, created_at=cutoff - timedelta(minutes=1),
         )
-        future_notice = main.AdminNotice(
-            user_id=owner.id, title="Yeni", message="İçerik", notice_type="TEST",
-            status="ACTIVE", is_read=False, created_at=cutoff + timedelta(minutes=1),
-        )
+        future_notices = [
+            main.AdminNotice(
+                user_id=owner.id, title=f"Yeni {index}", message="İçerik", notice_type="TEST",
+                status="ACTIVE", is_read=False, created_at=cutoff + timedelta(seconds=index + 1),
+            )
+            for index in range(25)
+        ]
         other_notice = main.AdminNotice(
             user_id=other.id, title="Diğer", message="İçerik", notice_type="TEST",
             status="ACTIVE", is_read=False, created_at=cutoff - timedelta(minutes=1),
@@ -64,10 +67,10 @@ def test_mobile_notification_read_all_is_owner_scoped_and_respects_cutoff(monkey
             user_id=owner.id, title="Çözüldü", message="İçerik", notice_type="TEST",
             status="RESOLVED", is_read=False, created_at=cutoff - timedelta(minutes=1),
         )
-        session.add_all([old_notice, future_notice, other_notice, resolved_notice])
+        session.add_all([old_notice, *future_notices, other_notice, resolved_notice])
         session.commit()
         owner_id, other_id = owner.id, other.id
-        old_id, future_id = old_notice.id, future_notice.id
+        old_id, future_ids = old_notice.id, [notice.id for notice in future_notices]
         other_id_notice, resolved_id = other_notice.id, resolved_notice.id
 
     payload = {"seen_before": cutoff.replace(tzinfo=timezone.utc).isoformat()}
@@ -79,6 +82,10 @@ def test_mobile_notification_read_all_is_owner_scoped_and_respects_cutoff(monkey
         replay = client.post("/api/mobile/v1/notifications/read-all", headers=headers, json=payload)
         assert replay.status_code == 200
         assert replay.json() == {"ok": True, "read_count": 0}
+        listing = client.get("/api/mobile/v1/notifications", headers=headers)
+        assert listing.status_code == 200
+        assert len(listing.json()["notifications"]) == 20
+        assert listing.json()["unread_count"] == 25
         assert client.post("/api/mobile/v1/notifications/read-all", json=payload).status_code == 401
         assert client.post(
             "/api/mobile/v1/notifications/read-all", headers=headers,
@@ -87,7 +94,7 @@ def test_mobile_notification_read_all_is_owner_scoped_and_respects_cutoff(monkey
 
     with Session(engine) as session:
         old_row = session.get(main.AdminNotice, old_id)
-        future_row = session.get(main.AdminNotice, future_id)
+        future_rows = [session.get(main.AdminNotice, notice_id) for notice_id in future_ids]
         other_row = session.get(main.AdminNotice, other_id_notice)
         resolved_row = session.get(main.AdminNotice, resolved_id)
         events = session.exec(select(main.RealtimeEvent).where(
@@ -95,7 +102,7 @@ def test_mobile_notification_read_all_is_owner_scoped_and_respects_cutoff(monkey
             main.RealtimeEvent.event_type == "NOTIFICATIONS_READ",
         )).all()
     assert old_row.is_read is True and old_row.read_at is not None
-    assert future_row.is_read is False and future_row.read_at is None
+    assert all(row.is_read is False and row.read_at is None for row in future_rows)
     assert other_row.is_read is False and other_row.read_at is None
     assert resolved_row.is_read is False and resolved_row.read_at is None
     assert len(events) == 1
