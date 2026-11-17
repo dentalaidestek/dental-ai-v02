@@ -105,6 +105,8 @@ def complete_mobile_push_deliveries(engine, reserved, result) -> int:
     }
     first_error = next(iter((result or {}).get("errors", [])), {})
     fallback_error = first_error.get("error_code") if isinstance(first_error, dict) else None
+    fallback_ambiguous = bool(first_error.get("ambiguous")) if isinstance(first_error, dict) else False
+    enabled = bool((result or {}).get("enabled"))
     completed = 0
     stamp = _now()
     with Session(engine, expire_on_commit=False) as session:
@@ -116,7 +118,10 @@ def complete_mobile_push_deliveries(engine, reserved, result) -> int:
             ):
                 continue
             ticket = ticket_map.get(item["token_fingerprint"])
-            if ticket and ticket.get("status") == "ok" and ticket.get("ticket_id"):
+            if not enabled:
+                row.status = "SEND_DISABLED"
+                row.error_code = "PUSH_DISABLED"
+            elif ticket and ticket.get("status") == "ok" and ticket.get("ticket_id"):
                 row.ticket_id = ticket["ticket_id"]
                 row.status = "PENDING_RECEIPT"
                 row.next_check_at = stamp + RECEIPT_FIRST_CHECK
@@ -128,8 +133,11 @@ def complete_mobile_push_deliveries(engine, reserved, result) -> int:
             elif ticket:
                 row.status = "TICKET_ERROR"
                 row.error_code = _safe_error_code(ticket.get("error_code"))
+            elif fallback_error and not fallback_ambiguous:
+                row.status = "SEND_FAILED"
+                row.error_code = _safe_error_code(fallback_error)
             else:
-                # A timeout may occur after Expo accepted the batch. Do not resend
+                # A timeout may happen after Expo accepted the batch. Do not resend
                 # automatically because doing so could duplicate the notification.
                 row.status = "SEND_UNCERTAIN"
                 row.error_code = _safe_error_code(fallback_error) if fallback_error else "NO_TICKET"
@@ -286,7 +294,7 @@ def _maintain_receipt_rows(engine, *, limit: int = 100) -> int:
 
         terminal = [
             "PROVIDER_ACCEPTED", "DEVICE_NOT_REGISTERED", "TICKET_ERROR",
-            "RECEIPT_ERROR", "RECEIPT_EXPIRED", "SEND_UNCERTAIN",
+            "RECEIPT_ERROR", "RECEIPT_EXPIRED", "SEND_UNCERTAIN", "SEND_FAILED", "SEND_DISABLED",
         ]
         old_ids = session.exec(
             select(MobilePushDelivery.id)
