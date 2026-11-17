@@ -210,7 +210,7 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
    setData((previous:any)=>({...result,accountScope:scope,
     messages:mergeConsultationMessages(incoming,previous?.accountScope===scope?previous.messages||[]:[]),
     next_before:result.case?.messages_deleted_at?null:(previous?.accountScope===scope&&previous.next_before!==undefined?previous.next_before:result.next_before)}));
-   void catchUpRef.current(latest,true);
+   if(!result.case?.messages_deleted_at)void catchUpRef.current(latest,true);
   }catch(e){if(request===requestSeq.current&&scope===activeScope.current)setSendError(e instanceof Error?e.message:"Görüşme yüklenemedi.")}
  },[token,id,userId]);
  const catchUpMessages=useCallback(async(afterOverride?:number,ready=false)=>{
@@ -218,6 +218,7 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
   const activeCatchUp=catchUpPromise.current;
   if(activeCatchUp){catchUpAgain.current=true;return activeCatchUp;}
   const scope=activeScope.current,generation=requestSeq.current;
+  catchUpAgain.current=false;
   const task=(async()=>{
    let cursor=Math.max(messageCursor.current,Number.isSafeInteger(afterOverride)?Number(afterOverride):0);
    for(let pageIndex=0;pageIndex<5;pageIndex++){
