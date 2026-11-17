@@ -62,3 +62,27 @@ Still required:
 ## Commit range
 
 This work starts from PR #257 head `54fb2e9474ad` and is committed only to `feature/mobile-web-parity-20261110`. The PR remains open and Draft. Main merge and live deploy are not authorized.
+
+
+## Follow-up hardening
+
+A review of the newly added preview/draft path found two additional edge cases:
+
+- A restored SecureStore preview could have a non-HTTPS URL or a cover media ID that did not match its first-party media URL. Draft recovery now requires an HTTPS URL without credentials/nonstandard ports, and the cover URL must be exactly `/api/expert-social/media/{cover_id}`. The API response validator enforces the same ID/path binding. Opening a restored preview repeats the HTTPS/credential check.
+- The first composer implementation blocked `post()` when `attempted=true`, even though the UI correctly showed "Tekrar dene". That would have prevented recovery after an ambiguous network response. The guard now permits retry of the frozen draft; edits/uploads/preview changes remain locked, and `submitDraft` reuses the same idempotency UUID and payload. A regression test covers this.
+
+Additional tests cover non-HTTPS restored previews, mismatched cover IDs, and idempotent retry. These tests are committed but not executed locally or in CI.
+
+## Latest observed CI at head d5c415a
+
+The following current-head runs completed as failures before any step:
+
+- Mobile Android CI: run `44030198756`; jobs `133860014317` (typecheck) and `133860014558` (beta APK).
+- Security recovery: run `44030198821`; job `133860015124`.
+- Expert social: run `44030198735`; job `133860014209`.
+- Admin security: run `44030198867`; job `133860014845`.
+- Voice regression: run `44030198773`; job `133860015148`.
+
+All six direct job-step queries returned empty arrays; all six log downloads returned Azure `BlobNotFound 404`. No npm, TypeScript, Node beta, Gradle or pytest command ran. This does not establish a source-level test failure or a passing result. The exact hosted-runner/account cause is not exposed by the repository API.
+
+The work from starting PR head `54fb2e9474ad` through this follow-up comprises 18 commits on the feature branch. The PR remains Open/Draft; no main merge, live deploy, APK/IPA publication or patient-record mutation.
