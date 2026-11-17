@@ -82,3 +82,24 @@ export function patientProfileEditError(values: PatientProfileEditValues): strin
   }
   return null;
 }
+
+export type PatientProfileDeleteGate = Readonly<{
+  busy: boolean;
+  uncertain: boolean;
+  treatmentIntentReady: boolean;
+  treatmentIntentBlocked: boolean;
+  hasPendingTreatment: boolean;
+}>;
+
+/**
+ * A patient can only be deleted after every local clinical mutation intent is
+ * known and settled. This prevents deleting the parent record while an
+ * idempotent treatment create/update may still have reached the server.
+ */
+export function patientProfileCanDeletePatient(gate: PatientProfileDeleteGate): boolean {
+  return gate.busy === false &&
+    gate.uncertain === false &&
+    gate.treatmentIntentReady === true &&
+    gate.treatmentIntentBlocked === false &&
+    gate.hasPendingTreatment === false;
+}
