@@ -11,6 +11,7 @@ const DEVICE_ID_KEY = "dai.push.device_id";
 const INSTALLATION_PROOF_KEY = "dai.push.installation_proof";
 type DeviceIdentity = { deviceId: string; installationProof: string };
 let deviceIdentityPromise: Promise<DeviceIdentity> | null = null;
+let installationClaimQueue: Promise<void> = Promise.resolve();
 const ENABLED_USER_KEY = (userId: number) => "dai.push.enabled." + String(userId);
 const DELIVERY_USER_KEY = (userId: number) => "dai.push.delivery." + String(userId);
 
@@ -139,15 +140,23 @@ export async function enableNativePush(token: string, userId: number): Promise<N
 }
 
 /** Claim this installation for the authenticated account without enabling push or requesting OS permission. */
-export async function claimNativePushDeviceForSession(token: string, userId: number): Promise<void> {
+export function claimNativePushDeviceForSession(token: string, userId: number): Promise<void> {
   enabledKey(userId); // Validate the account scope before making the authenticated claim.
-  const identity = await deviceIdentity();
-  await claimPushDevice(token, identity.deviceId, identity.installationProof);
+  const claim = async () => {
+    const identity = await deviceIdentity();
+    await claimPushDevice(token, identity.deviceId, identity.installationProof);
+  };
+  // Serialize account changes: a slow claim from the previous session must not
+  // finish after the new session and remove the new account's device binding.
+  const result = installationClaimQueue.then(claim, claim);
+  installationClaimQueue = result.catch(() => undefined);
+  return result;
 }
 
 /** Refreshes an opted-in token on login/foreground without showing a permission prompt. */
 export async function refreshNativePushRegistration(token: string, userId: number): Promise<boolean> {
   if ((await SecureStore.getItemAsync(enabledKey(userId))) !== "1") return false;
+  await installationClaimQueue.catch(() => undefined);
   const platform = Platform.OS;
   if (platform !== "android" && platform !== "ios") return false;
 
