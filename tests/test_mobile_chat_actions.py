@@ -243,6 +243,7 @@ def test_chat_retention_removes_message_receipts(chat):
         )).all() == []
     receipt = c.get(f"/api/mobile/v1/consultations/1/message-receipt?client_message_id={key}")
     assert receipt.status_code == 200
+    assert receipt.headers["cache-control"] == "private, no-store"
     assert receipt.json() == {"message": None, "deleted": True}
 
 def test_consultation_receipt_schema_is_compact_and_sender_scoped():
