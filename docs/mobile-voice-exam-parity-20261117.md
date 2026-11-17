@@ -80,6 +80,7 @@ The persisted native draft parser accepted any file:// URI. The ASR uploader als
 - Added a URI-shape validator for persisted segments: absolute file URI, no encoded path, query/fragment, control characters, backslash, dot segments, malformed filename, or non-.m4a recording.
 - Added a runtime cache-root validator that accepts only one direct .m4a child of Expo's actual FileSystem.cacheDirectory. ASR upload rejects an out-of-scope path before file metadata reads or upload-task creation.
 - Reused the same runtime validator before deletion. Draft clear skips untrusted paths, never deletes outside the app-private cache, and explains that the unverified file was left untouched.
+- The recorder now validates Expo Audio's returned URI immediately after preparation and before calling record(), so an unexpected output location never opens the microphone.
 - Validated segment rows before building the duplicate-ID set, so malformed rows fail closed with the normal draft-validation error.
 - Added a dedicated native-voice-security job to Security Recovery. Its path filters include the native voice boundary and it runs node --test tests/nativeVoiceAudio.cjs. The existing Android workflow already watches all mobile/** changes and runs the full beta suite/typecheck.
 
