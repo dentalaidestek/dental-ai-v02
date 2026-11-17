@@ -70,10 +70,10 @@ export const markNotificationRead=(t:string,id:number)=>{
 export const markAllNotificationsRead=async(t:string,seenBefore:string)=>{
  const timestamp=Date.parse(seenBefore);
  if(!Number.isFinite(timestamp))throw Error("Geçersiz bildirim zaman sınırı.");
- const result=await req<{ok:boolean;read_count:number}>("/notifications/read-all",t,{
+ const result=await req<{ok:boolean;read_count:number;unread_count:number}>("/notifications/read-all",t,{
   method:"POST",body:JSON.stringify({seen_before:new Date(timestamp).toISOString()})
  });
- if(!result?.ok||!Number.isSafeInteger(result.read_count)||result.read_count<0)
+ if(!result?.ok||!Number.isSafeInteger(result.read_count)||result.read_count<0||!Number.isSafeInteger(result.unread_count)||result.unread_count<0)
   throw Error("Bildirimlerin okundu durumu doğrulanamadı.");
  return result;
 };
