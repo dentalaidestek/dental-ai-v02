@@ -31,8 +31,10 @@ function mountMedia(getMedia, options={}){
   if(name==='expo-secure-store')return secureStore;
   if(name==='expo-crypto')return {randomUUID:()=>options.randomUUID?.()||`synthetic-media-key-${String(++keySequence).padStart(4,'0')}`};
   if(name==='./socialDraft')return {chunkedDraftStore:raw=>raw};
+  if(name==='./clinicalMediaDraft')return {clearClinicalMediaDraft:async(deleteIntent,cleanup)=>{await deleteIntent();try{await cleanup()}catch{}}};
   if(name==='./clinicalMediaVault')return {
    cleanupStaleClinicalMediaTemps:async()=>{},
+   cleanupOrphanedClinicalMediaVaultFiles:async()=>0,
    encryptClinicalMediaFile:async(uri,userId,patientId)=>options.onEncrypt?options.onEncrypt(uri,userId,patientId):'file:///documents/dai-clinical-vault/'+userId+'/'+patientId+'/synthetic-media-key-0001.dai',
    decryptClinicalMediaFile:async(uri,userId,patientId,name)=>options.onDecrypt?options.onDecrypt(uri,userId,patientId,name):'file:///cache/dai-clinical-upload-synthetic.png',
    deleteClinicalMediaVaultFile:async uri=>{options.onDeleteVault?.(uri)},
@@ -44,7 +46,7 @@ function mountMedia(getMedia, options={}){
    getPatientMediaUpload:async(...args)=>options.onReceipt?options.onReceipt(...args):({found:false}),
    uploadPatientMedia:async(...args)=>options.onUpload?options.onUpload(...args):({media:{id:1,original_filename:'synthetic.png',media_type:'PHOTO'},replayed:false})
   };
-  if(name==='./modernApi')return {getMedia,analyzeSelectedPatientMedia:async()=>({analysis_id:1}),deleteMedia:async(...args)=>{options.onDelete?.(...args)},deleteAllPatientMedia:async(...args)=>{options.onDelete?.(...args)}};
+  if(name==='./modernApi')return {getMedia,analyzeSelectedPatientMedia:async()=>({analysis_id:1}),deleteMedia:async(...args)=>options.onDelete?.(...args),deleteAllPatientMedia:async(...args)=>options.onDelete?.(...args)};
   if(name==='./realtime')return {useRealtime:()=>({lastEvent:null})};
   if(name==='./NativeAnalysisUpload')return {default:props=>React.createElement('NativeAnalysisUpload',props)};
   throw Error('Unexpected import '+name);
@@ -82,13 +84,54 @@ test('switching accounts starts a new gallery request while the old request is p
 });
 
 
-test('uncertain media deletion blocks repeated destructive requests until reconciliation',()=>{
+test('uncertain media deletion exposes a safe replay action for the same request',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
- assert.match(source,/async function remove\(id\?:number\)\{if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|loadedOwner!==owner\)return;/);
- assert.match(source,/setUncertain\(true\);setError\(\(e instanceof Error\?e\.message:'Silme durumu doğrulanamadı\.'\)/);
+ assert.match(source,/async function remove\(id\?:number,reconcile=false\)\{/);
+ assert.match(source,/\(uncertain&&!reconcile\)/);
+ assert.match(source,/setUncertainDelete\(id\?\?null\)/);
+ assert.match(source,/button\('Silme durumunu güvenle doğrula',\(\)=>void remove\(uncertainDelete\?\?undefined,true\)/);
  assert.match(source,/function confirmDelete\(id\?:number\)\{if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|loadedOwner!==owner\)return;/);
  assert.match(source,/confirmDelete\(preview\.id\),busy\|\|uncertain/);
  assert.match(source,/confirmDelete\(\),busy\|\|uncertain/);
+});
+
+async function pressByAccessibilityLabel(tree,label){
+ const node=tree.root.findAllByType('Pressable').find(value=>value.props.accessibilityLabel===label);
+ assert.ok(node,'missing accessible button: '+label);
+ await renderer.act(async()=>{node.props.onPress?.();await new Promise(resolve=>setImmediate(resolve))});
+}
+
+test('ambiguous gallery delete can be reconciled by replaying the same delete request',async()=>{
+ let deleteCalls=0,confirmDeleteAction;
+ const Media=mountMedia(async()=>({
+  items:[{id:5,url:'https://example.invalid/clinical-5.png',media_type:'PHOTO',uploaded_at:'2026-11-17T10:00:00'}],
+  next_before:null
+ }),{
+  onDelete:async()=>{
+   deleteCalls++;
+   if(deleteCalls===1)throw Error('synthetic network timeout after commit');
+   return {ok:true,media_id:5,already_deleted:true};
+  },
+  onAlert:(_title,_message,actions)=>{
+   confirmDeleteAction=actions.find(action=>action.text==='Sil')?.onPress;
+  }
+ });
+ let tree;
+ await renderer.act(async()=>{
+  tree=renderer.create(React.createElement(Media,{token:'synthetic-token',patientId:5,onAnalysis:()=>{}}));
+  await new Promise(resolve=>setImmediate(resolve));
+ });
+ await pressByAccessibilityLabel(tree,'Klinik görselleri aç');
+ await press(tree,'Fotoğraf');
+ await press(tree,'Görseli Sil');
+ assert.equal(typeof confirmDeleteAction,'function');
+ await renderer.act(async()=>{confirmDeleteAction();await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(deleteCalls,1);
+ assert.ok(findButton(tree,'Silme durumunu güvenle doğrula'));
+ await press(tree,'Silme durumunu güvenle doğrula');
+ assert.equal(deleteCalls,2);
+ assert.equal(findButton(tree,'Silme durumunu güvenle doğrula'),undefined);
+ await renderer.act(async()=>tree.unmount());
 });
 
 test('clinical gallery offers recovery for failed reads and distinguishes empty from error',()=>{
