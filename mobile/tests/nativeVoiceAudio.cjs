@@ -75,3 +75,17 @@ test('native recorder retries the same segment key and only creates a new key af
  assert.match(source,/item\.id===segment\.id\?\{...item,id:Crypto\.randomUUID\(\),ready:true\}:item/);
  assert.match(source,/await store\.setItemAsync\(key,JSON\.stringify\(saved\)\);\s*draft\.current=saved;\s*if\(mounted\.current\)setView\(saved\);\s*setIndeterminateSegmentId\(null\);\s*setError\(''\);\s*await drain\(\)/);
 });
+
+
+test('native voice keeps a durable transcript receipt until private audio deletion is confirmed',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../src/NativeVoiceRecorder.tsx'),'utf8');
+ assert.match(source,/markVoiceSegmentTranscribed/);
+ assert.match(source,/const next=markVoiceSegmentTranscribed\(draft\.current,segment\.id,result\.transcript\)/);
+ assert.match(source,/await persist\(next\);[\\s\\S]*?await removeFile\(segment\.uri\);[\\s\\S]*?await persist\(removeVoiceSegment\(draft\.current,segment\.id\)\)/);
+ assert.match(source,/if\(segment\.transcribed\)[\\s\\S]*?await removeFile\(segment\.uri\);[\\s\\S]*?continue;/);
+ assert.match(source,/cleanupTranscribedSegments/);
+ assert.match(source,/const remaining=await FileSystem\.getInfoAsync\(uri\)/);
+ assert.match(source,/if\(cleanupPending\)setStorageBlocked\(true\)/);
+ assert.match(source,/Geçici ses dosyası silinemedi/);
+ assert.match(source,/directory:'cache' as const,isMeteringEnabled:true/);
+});
