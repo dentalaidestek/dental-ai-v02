@@ -18,12 +18,25 @@ async function call<T>(path:string,token:string,options:RequestInit={}):Promise<
   finally{clearTimeout(timeout);external?.removeEventListener('abort',abort)}
 }
 
+export type AnalysisPatientSummary=Pick<Patient,'id'|'anonymous_id'|'age'|'chief_complaint'>;
 export type MobileAnalysis={
   analysis:{id:number;patient_id:number;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at?:string;is_voice_review?:boolean};
-  patient:Patient;
+  patient:AnalysisPatientSummary;
   assets:Array<{id:number;original_filename:string;image_type:string;has_vision:boolean}>;
   ai_result?:any|null;
 };
+export function analysisPatientLabel(patient:Pick<Patient,'id'|'anonymous_id'|'first_name'|'last_name'>):string{
+ const name=[patient.first_name,patient.last_name].map(value=>typeof value==='string'?value.trim():'').filter(Boolean).join(' ');
+ return name||patient.anonymous_id||`Hasta #${patient.id}`;
+}
+function validAnalysisPatient(value:any,expectedId:number):value is AnalysisPatientSummary{
+ if(!value||value.id!==expectedId||!Number.isSafeInteger(value.id))return false;
+ const allowed=new Set(['id','anonymous_id','age','chief_complaint']);
+ if(Object.keys(value).some(key=>!allowed.has(key)))return false;
+ return typeof value.anonymous_id==='string'&&value.anonymous_id.length>0&&value.anonymous_id.length<=128&&
+  (value.age===null||(Number.isSafeInteger(value.age)&&value.age>=0&&value.age<=130))&&
+  (value.chief_complaint===null||(typeof value.chief_complaint==='string'&&value.chief_complaint.length<=4000));
+}
 
 export function normalizeAnalysisImages(images:Array<{uri:string;name?:string;type?:string}>){
   if(!Array.isArray(images)||!images.length||images.length>ANALYSIS_MAX_IMAGES||images.some(i=>!i||typeof i.uri!=="string"||!i.uri))throw Error(`1–${ANALYSIS_MAX_IMAGES} geçerli klinik görüntü seçin.`);
@@ -72,7 +85,7 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
   return result;
 }
 
-export async function getAnalysis(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");const result=await call<MobileAnalysis>("/analyses/"+id,token);if(!result?.analysis||result.analysis.id!==id||!Number.isSafeInteger(result.analysis.patient_id)||result.analysis.patient_id<=0||!result.patient||result.patient.id!==result.analysis.patient_id||!Array.isArray(result.assets)||result.assets.some(asset=>!asset||!Number.isSafeInteger(asset.id)||asset.id<=0)||new Set(result.assets.map(asset=>asset.id)).size!==result.assets.length)throw Error("Analiz sunucusundan hasta veya iş kimliği uyuşmayan yanıt alındı.");return result;}
+export async function getAnalysis(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");const result=await call<MobileAnalysis>("/analyses/"+id,token);if(!result?.analysis||result.analysis.id!==id||!Number.isSafeInteger(result.analysis.patient_id)||result.analysis.patient_id<=0||!validAnalysisPatient(result.patient,result.analysis.patient_id)||!Array.isArray(result.assets)||result.assets.some(asset=>!asset||!Number.isSafeInteger(asset.id)||asset.id<=0)||new Set(result.assets.map(asset=>asset.id)).size!==result.assets.length)throw new ApiError(502,"Analiz yanıtı hasta kapsamı veya veri minimizasyonu sözleşmesini karşılamıyor.");return result;}
 export function startAnalysisAI(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");return call<{ok:boolean;status:string}>("/analyses/"+id+"/ai",token,{method:"POST"});}
 
 export type AnalysisHistoryItem={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at:string};
