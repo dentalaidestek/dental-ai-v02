@@ -262,3 +262,15 @@ test('Dental Flow defaults the first of four uploaded images as the link cover a
  await publish2.props.onPress();
  assert.equal(h2.posts[0].cover_media_id,undefined);
 });
+
+test('Dental Flow keeps a safe link card visible when metadata preview is unavailable',async()=>{
+ const h=harness(),props={token:'synthetic',userId:1,onClose(){},onPosted(){}};
+ const saved={id:'plain-link',text:'',link:'https://example.org/article',media_ids:[],attempted:false,preview:null};
+ h.storeValues.set('1:post',JSON.stringify(saved));
+ h.render('Composer',props);await tick();
+ const tree=h.render('Composer',props);
+ const card=nodes(tree).find(n=>n.props?.accessibilityLabel==='Bağlantı önizlemesini aç');
+ assert.ok(card,'the web composer retains the URL card when preview metadata is unavailable');
+ await card.props.onPress();
+ assert.deepEqual(h.opened,['https://example.org/article']);
+});
