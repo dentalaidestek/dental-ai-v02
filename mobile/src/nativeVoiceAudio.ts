@@ -10,12 +10,23 @@ export class VoiceAsrError extends Error {
 
 const REQUEST_KEY=/^[A-Za-z0-9_-]{16,96}$/;
 const BASE='https://dentalai.tr/api/mobile/v1';
+const RECORDING_FILE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\\.m4a$/i;
+
+export function isPrivateVoiceRecordingUri(
+ uri:unknown,cacheDirectory:string|null|undefined=FileSystem.cacheDirectory
+):uri is string{
+ if(typeof uri!=='string'||typeof cacheDirectory!=='string'||
+    !cacheDirectory.startsWith('file:///')||!cacheDirectory.endsWith('/'))return false;
+ if(!uri.startsWith(cacheDirectory))return false;
+ const filename=uri.slice(cacheDirectory.length);
+ return RECORDING_FILE.test(filename);
+}
 
 export async function transcribeNativeRecording(
  token:string,patientId:number,uri:string,requestKey:string,signal?:AbortSignal
 ):Promise<{transcript:string;revision:string;replayed:boolean}>{
- if(!Number.isSafeInteger(patientId)||patientId<=0||!uri.startsWith('file://'))
-  throw Error('Ses kaydı veya hasta kimliği geçersiz.');
+ if(!Number.isSafeInteger(patientId)||patientId<=0||!isPrivateVoiceRecordingUri(uri))
+  throw Error('Ses kaydı uygulamanın özel önbelleğinde doğrulanamadı veya hasta kimliği geçersiz.');
  if(typeof requestKey!=='string'||!REQUEST_KEY.test(requestKey))
   throw Error('Ses bölümü işlem anahtarı geçersiz; yerel kayıt korundu.');
  const info=await FileSystem.getInfoAsync(uri);
