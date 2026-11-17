@@ -8,6 +8,7 @@ require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(
 }).outputText,filename);
 
 const {applyNotificationReadAllSnapshot,parseNotificationTimestamp}=require('../src/notificationState.ts');
+const {isValidExpoPushToken}=require('../src/pushToken.ts');
 
 test('mark-all snapshot reads only notices created at or before the captured cutoff',()=>{
  const items=[
@@ -109,4 +110,17 @@ test('native push asks permission only after an explicit account action and refr
  assert.ok(push.includes('if ((await SecureStore.getItemAsync(enabledKey(userId))) !== "1") return false'));
  assert.ok(app.includes('state==="active"'));
  assert.ok(!intro.includes('requestPermissionsAsync'));
+});
+
+
+test('Expo push token validation accepts canonical tokens and rejects escaped or malformed values',()=>{
+ assert.equal(isValidExpoPushToken('ExpoPushToken[abcdefgh]'),true);
+ assert.equal(isValidExpoPushToken('ExponentPushToken[abcdefgh12345678]'),true);
+ assert.equal(isValidExpoPushToken('ExpoPushToken['+'a'.repeat(128)+']'),true);
+ assert.equal(isValidExpoPushToken('ExpoPushToken['+'a'.repeat(129)+']'),false);
+ assert.equal(isValidExpoPushToken('ExpoPushToken[short]'),false);
+ assert.equal(isValidExpoPushToken('ExpoPushToken[bad token]'),false);
+ assert.equal(isValidExpoPushToken('ExpoPushToken\\[abcdefgh12345678\\]'),false);
+ assert.equal(isValidExpoPushToken('OtherPushToken[abcdefgh12345678]'),false);
+ assert.equal(isValidExpoPushToken(null),false);
 });
