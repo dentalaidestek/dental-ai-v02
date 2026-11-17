@@ -634,3 +634,8 @@ Evidence and exact remaining acceptance: `docs/mobile-voice-exam-parity-20261117
 - Added Python receipt/privacy tests and native analysis-response tests; registered the helper in Security recovery.
 - Evidence: `docs/mobile-analysis-receipt-privacy-20261117.md`. Tests are committed but full repository execution remains blocked by current-head Actions jobs failing before runner allocation; no green CI is claimed.
 - Deployment prerequisite: configure the stable 64-hex `PATIENT_MEDIA_RECEIPT_KEY` secret. No main merge, production deploy, store build or clinical record mutation.
+
+
+## 2026-11-17 — Program snapshot pagination
+
+Native Program continuation now uses an owner/view/day-bound, 15-minute snapshot cursor with a deterministic `(start_local, event_id)` key. Schedule writes after page one invalidate later pages with 409 rather than mixing old and new calendar rows. Legacy offset remains for older builds. The date-window occurrence helper still materializes the owner's schedule rows to produce weekly recurrence and day counts; query-plan and 60k load tests remain open. Evidence: `docs/mobile-program-idempotency-20261117.md`.

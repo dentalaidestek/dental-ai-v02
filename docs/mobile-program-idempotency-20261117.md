@@ -62,7 +62,20 @@ This was a data-integrity issue, not merely a duplicate-button issue.
 ## Still open
 
 - The full Android typecheck, beta suite, Python pytest, PostgreSQL integration suite and APK build have not been confirmed by GitHub Actions because the recent workflow jobs were created without runner steps and their log artifacts returned 404. Isolated source/logic checks are not a substitute for these runs.
-- Program range pagination still uses offset over an expanded occurrence list; a stable snapshot/cursor contract remains separate work.
+- Native Program now uses a versioned base64url continuation cursor bound to the authenticated owner, view and selected day. It carries a 15-minute UTC snapshot watermark and the last `(start_local, event_id)` tuple, giving equal-time appointments and weekly occurrences a deterministic continuation order.
+- The occurrence helper filters rows by `created_at` and `updated_at` at that watermark. Before and after a cursor-page read, the API checks for owner schedule writes newer than the watermark; it returns 409 and asks the client to refresh rather than silently mixing a changed calendar into an old page. Legacy numeric offset remains available for older installed clients.
+- This is stable transfer pagination, not yet a database-level occurrence query: the helper still loads and expands the selected user's events in the requested date window to calculate day counts and weekly occurrences. A 60,000-user load certification and query-plan measurement remain open.
 - Native OS push scheduling and killed-app deep links remain incomplete; in-app Program reminders and notifications are not evidence that Expo push is live.
 - No 60,000-user load certification was run.
 - No main merge, production migration, deploy or APK/IPA publication was performed.
+
+
+## 2026-11-17 — Stable native Program continuation
+
+- Re-read the web Program page/form and canonical `_user_schedule_occurrences` / `_event_occurrences` helpers before changing the native range contract.
+- Native Program continuation now uses a versioned base64url cursor with owner scope, view/day scope, a 15-minute UTC snapshot watermark and the last `(start_local, event_id)` ordering key. Equal-time events and repeated weekly occurrences no longer depend on a shifting numeric offset.
+- A new event or an edit/completion/deletion after page one invalidates later pages with HTTP 409. The native list asks for a full refresh instead of appending a mixed calendar snapshot. Cursors expire after 15 minutes and are rejected when reused for another owner/view/day.
+- Legacy offset requests remain supported for older native builds. No database migration or new index was introduced.
+- Backend and native regressions cover 120 equal-time records, complete/no-duplicate traversal, cursor scope validation, invalid cursors, create/update invalidation and old-backend offset fallback.
+- Android workflow path filters now include `app/mobile_program_api.py`, so native API contract changes trigger typecheck/beta validation.
+- Full Python/Node/TypeScript/Gradle execution remains gated by GitHub Actions runner allocation; static source checks are not represented as full-suite passes.
