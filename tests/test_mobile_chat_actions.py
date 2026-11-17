@@ -4,7 +4,7 @@ from datetime import timedelta
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel import SQLModel, Session, create_engine, select
 from app import main, mobile_api
 
 @pytest.fixture
@@ -33,11 +33,11 @@ def chat(monkeypatch,tmp_path):
 
 def test_two_participants_share_persisted_text_and_outsider_is_rejected(chat):
     c,engine=chat
-    r=c.post("/api/mobile/v1/consultations/1/messages",json={"content":"Synthetic first","client_message_id":"first"})
+    r=c.post("/api/mobile/v1/consultations/1/messages",json={"content":"Synthetic first","client_message_id":"native-first-00000001"})
     assert r.status_code==200,r.text
     ident=r.json()["message"]["id"]
     c.headers["Authorization"]="Bearer token2"
-    r=c.post("/api/mobile/v1/consultations/1/messages",json={"content":"Synthetic reply","reply_to_message_id":ident,"client_message_id":"reply"})
+    r=c.post("/api/mobile/v1/consultations/1/messages",json={"content":"Synthetic reply","reply_to_message_id":ident,"client_message_id":"native-reply-00000001"})
     assert r.status_code==200,r.text
     messages=c.get("/api/mobile/v1/consultations/1").json()["messages"]
     assert [m["sender_user_id"] for m in messages]==[1,2]
@@ -135,3 +135,96 @@ def test_case_shared_media_is_selected_link_scoped_and_private(chat, tmp_path):
         assert c.get('/api/mobile/v1/consultations/1/shared-media/6').status_code==404
     c.headers['Authorization']='Bearer token3'
     assert c.get('/api/mobile/v1/consultations/1/shared-media/5').status_code==404
+
+
+def test_text_message_receipt_replays_once_and_rejects_payload_reuse(chat):
+    c, engine = chat
+    key = "native-text-receipt-000001"
+    first = c.post("/api/mobile/v1/consultations/1/messages",
+                   json={"content": "Aynı klinik mesaj", "client_message_id": key})
+    assert first.status_code == 200, first.text
+    second = c.post("/api/mobile/v1/consultations/1/messages",
+                    json={"content": "Aynı klinik mesaj", "client_message_id": key})
+    assert second.status_code == 200, second.text
+    assert second.json()["replayed"] is True
+    assert second.json()["message"]["id"] == first.json()["message"]["id"]
+    conflict = c.post("/api/mobile/v1/consultations/1/messages",
+                      json={"content": "Farklı içerik", "client_message_id": key})
+    assert conflict.status_code == 409
+    with Session(engine) as session:
+        rows = session.exec(select(main.ConsultationMessage).where(
+            main.ConsultationMessage.case_id == 1,
+            main.ConsultationMessage.sender_user_id == 1,
+        )).all()
+        assert len(rows) == 1
+
+
+def test_message_receipt_is_private_and_sender_scoped(chat):
+    c, engine = chat
+    key = "native-scope-receipt-0001"
+    first = c.post("/api/mobile/v1/consultations/1/messages",
+                   json={"content": "Gönderen hesabın mesajı", "client_message_id": key})
+    assert first.status_code == 200, first.text
+    own = c.get(f"/api/mobile/v1/consultations/1/message-receipt?client_message_id={key}")
+    assert own.status_code == 200
+    assert own.headers["cache-control"] == "private, no-store"
+    assert own.json()["message"]["id"] == first.json()["message"]["id"]
+    c.headers["Authorization"] = "Bearer token2"
+    peer = c.get(f"/api/mobile/v1/consultations/1/message-receipt?client_message_id={key}")
+    assert peer.status_code == 200
+    assert peer.json()["message"] is None
+    c.headers["Authorization"] = "Bearer token3"
+    assert c.get(f"/api/mobile/v1/consultations/1/message-receipt?client_message_id={key}").status_code == 404
+
+
+def test_same_client_key_is_isolated_between_consultation_participants(chat):
+    c, engine = chat
+    key = "native-two-senders-0001"
+    first = c.post("/api/mobile/v1/consultations/1/messages",
+                   json={"content": "İlk hekim", "client_message_id": key})
+    assert first.status_code == 200, first.text
+    c.headers["Authorization"] = "Bearer token2"
+    second = c.post("/api/mobile/v1/consultations/1/messages",
+                    json={"content": "Uzman yanıtı", "client_message_id": key})
+    assert second.status_code == 200, second.text
+    assert second.json()["message"]["id"] != first.json()["message"]["id"]
+    with Session(engine) as session:
+        rows = session.exec(select(main.ConsultationMessage).where(
+            main.ConsultationMessage.case_id == 1,
+        )).all()
+        assert len(rows) == 2
+
+
+def test_media_message_receipt_replays_same_bytes_and_rejects_changed_bytes(chat):
+    import wave
+    c, engine = chat
+    def wav(sample):
+        raw = io.BytesIO()
+        with wave.open(raw, "wb") as output:
+            output.setnchannels(1)
+            output.setsampwidth(2)
+            output.setframerate(8000)
+            output.writeframes(sample * 80)
+        return raw.getvalue()
+    key = "native-media-receipt-0001"
+    payload = wav(b"\\x00\\x00")
+    first = c.post("/api/mobile/v1/consultations/1/attachments",
+                   files={"file": ("voice.wav", payload, "audio/wav")},
+                   data={"client_message_id": key})
+    assert first.status_code == 200, first.text
+    second = c.post("/api/mobile/v1/consultations/1/attachments",
+                    files={"file": ("voice.wav", payload, "audio/wav")},
+                    data={"client_message_id": key})
+    assert second.status_code == 200, second.text
+    assert second.json()["message"]["id"] == first.json()["message"]["id"]
+    conflict = c.post("/api/mobile/v1/consultations/1/attachments",
+                      files={"file": ("voice.wav", wav(b"\\x01\\x00"), "audio/wav")},
+                      data={"client_message_id": key})
+    assert conflict.status_code == 409
+    with Session(engine) as session:
+        rows = session.exec(select(main.ConsultationMessage).where(
+            main.ConsultationMessage.case_id == 1,
+            main.ConsultationMessage.sender_user_id == 1,
+        )).all()
+        assert len(rows) == 1
+
