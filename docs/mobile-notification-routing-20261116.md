@@ -23,7 +23,7 @@ Reviewed the real web notification/account flow before changing native code:
 - The endpoint accepts a client-captured `seen_before` timestamp, normalizes offset-aware values to UTC, clamps future values to server time, and marks only active unread notices created at or before the cutoff.
 - Existing `read_at` values are preserved. Notices created after the cutoff, resolved notices and another user's notices remain untouched.
 - A durable `NOTIFICATIONS_READ` realtime event is recorded only when at least one notice changes. Replaying the same cutoff is idempotent and emits no second event.
-- Added the native API adapter and a pure local snapshot helper so the list only optimistically reads items at or before the same cutoff.
+- Added the native API adapter and a pure local snapshot helper so the list only optimistically reads items at or before the same cutoff. SQLModel's naive server datetimes are interpreted as UTC (matching the web client), while explicit offsets are respected; this prevents a +03:00 device timezone from leaving older notices visually unread.
 - Added an explicit “Tümünü okundu işaretle” action. It does not mark notices read merely because the user opened the native screen; this keeps the action deliberate while preserving the web cutoff semantics.
 - Home refreshes its unread badge when it regains focus, and the notification list reconciles `NOTIFICATIONS_READ` events.
 - Removed the premature Android OS permission request from the first-run notice. It now explains that in-app notices are available while native Expo push registration and killed-app routing are not yet integrated. No OS permission is requested until that feature can actually register a device.
@@ -33,7 +33,7 @@ Reviewed the real web notification/account flow before changing native code:
 
 Committed tests:
 - `tests/test_mobile_notifications.py`: owner isolation, active-status filter, cutoff boundary, newer-notice preservation, unauthorized request, invalid timestamp and idempotent replay.
-- `mobile/tests/notifications.cjs`: cutoff snapshot, already-read preservation, invalid cutoff, native API/UI wiring, Home focus refresh and no premature OS permission prompt.
+- `mobile/tests/notifications.cjs`: cutoff snapshot, already-read preservation, invalid cutoff, naive-UTC/offset parsing, native API/UI wiring, Home focus refresh and no premature OS permission prompt.
 
 The GitHub Actions jobs inspected at the starting PR head had empty step arrays and no runner assignment; npm, TypeScript, Gradle and pytest did not start. The new tests are committed and registered but are not reported as passed. Full mobile typecheck, beta suite, backend TestClient/SQLite execution, Android build and device tests remain required.
 
