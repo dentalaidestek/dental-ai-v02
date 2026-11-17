@@ -78,10 +78,10 @@ def test_mobile_notification_read_all_is_owner_scoped_and_respects_cutoff(monkey
     with TestClient(main.app) as client:
         first = client.post("/api/mobile/v1/notifications/read-all", headers=headers, json=payload)
         assert first.status_code == 200, first.text
-        assert first.json() == {"ok": True, "read_count": 1}
+        assert first.json() == {"ok": True, "read_count": 1, "unread_count": 25}
         replay = client.post("/api/mobile/v1/notifications/read-all", headers=headers, json=payload)
         assert replay.status_code == 200
-        assert replay.json() == {"ok": True, "read_count": 0}
+        assert replay.json() == {"ok": True, "read_count": 0, "unread_count": 25}
         listing = client.get("/api/mobile/v1/notifications", headers=headers)
         assert listing.status_code == 200
         assert len(listing.json()["notifications"]) == 20
