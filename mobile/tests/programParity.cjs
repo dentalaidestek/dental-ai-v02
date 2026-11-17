@@ -17,7 +17,7 @@ test('program payload validates real dates, end order and removes stale patient/
  const base={event_type:'APPOINTMENT',title:'Test visit',start_at:'2030-01-07T10:00',end_at:'2030-01-07T10:30',patient_id:8,location:'',notes:'',reminder_minutes:'NONE',recurrence_rule:'NONE',recurrence_until:'2029-01-01'};
  assert.equal(programPayload(base).patient_id,8);assert.equal(programPayload({...base,event_type:'CLASS'}).patient_id,undefined);assert.equal(programPayload(base).recurrence_until,'');
  assert.throws(()=>programPayload({...base,end_at:'2030-01-07T09:59'}));assert.throws(()=>programPayload({...base,recurrence_rule:'WEEKLY'}));
- assert.equal(validWallTime('2025-02-29T10:00'),false);assert.equal(validWallTime('2030-01-07T24:00'),false);assert.equal(wallTimeLabel(base.start_at),'10:00');
+ assert.equal(validWallTime('2025-02-29T10:00'),false);assert.equal(validWallTime('2030-01-07T24:00'),false);assert.equal(wallTimeLabel(base.start_at),'10:00');assert.throws(()=>programPayload({...base,location:'x'.repeat(161)}),/Konum/);assert.throws(()=>programPayload({...base,reminder_minutes:'BAD'}),/Hatırlatma/);const {programTitleCopy}=require('../src/programModel.ts');assert.deepEqual(programTitleCopy('CLASS'),{label:'Ders adı',placeholder:'Örn. Ortodonti'});assert.equal(programTitleCopy('UNKNOWN').label,'Başlık');
 });
 test('program form sends a selected record once despite duplicate taps and disables reminders explicitly',async()=>{
  const calls=[];let release;const Editor=component('NativeProgramEditor',{saveProgramEvent:async(_token,payload,_eventId,requestKey)=>{calls.push({payload,requestKey});return new Promise(resolve=>{release=()=>resolve({id:7,...payload,start_local:payload.start_at})})}});let tree;
@@ -179,5 +179,30 @@ test('native month grid renders the web event-type dots and overflow marker',asy
  await renderer.act(async()=>tick());
  for(const type of ['CLASS','CLINIC','EXAM'])assert.equal(tree.root.findAllByProps({testID:'program-month-dot-'+type+'-2030-01-07'}).length,1);
  assert.equal(tree.root.findAllByProps({testID:'program-month-dot-more-2030-01-07'}).length,1);
+ await renderer.act(async()=>tree.unmount());
+});
+
+
+test('native copy sheet excludes the source date like the web copy form',async()=>{
+ const Program=component('NativeProgram',{getProgram:async()=>page()});let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'token',userId:1}));await tick()});
+ await renderer.act(async()=>button(tree,'İşlemler').props.onPress());
+ await renderer.act(async()=>button(tree,'Günlere Kopyala').props.onPress());
+ const modal=tree.root.findByType('Modal');
+ const modalText=text(modal);
+ assert.ok(!modalText.includes('07.01.2030'));
+ assert.ok(modalText.includes('08.01.2030'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('native editor mirrors web title copy and caps location at 160 characters',async()=>{
+ const Editor=component('NativeProgramEditor',{saveProgramEvent:async(_token,payload)=>({id:7,...payload,start_local:payload.start_at})});let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),initialType:'CLASS',onSaved(){},onClose(){}}));await tick()});
+ const titleInput=tree.root.findByProps({accessibilityLabel:'Program başlığı'});
+ assert.equal(titleInput.props.placeholder,'Örn. Ortodonti');
+ assert.ok(tree.root.findAllByType('Text').some(node=>text(node)==='Ders adı'));
+ await renderer.act(async()=>button(tree,'Konum, tekrar ve notlar').props.onPress());
+ const locationInput=tree.root.findByProps({accessibilityLabel:'Program konumu'});
+ assert.equal(locationInput.props.maxLength,160);
  await renderer.act(async()=>tree.unmount());
 });
