@@ -1,6 +1,6 @@
 const ts=require("typescript"),fs=require("node:fs"),assert=require("node:assert/strict"),{test}=require("node:test");
 require.extensions[".ts"]=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
-const {applyConsultationInboxEvent,applyConsultationChatEvent,mergeConsultationMessages}=require("../src/consultationRealtime.ts");
+const {applyConsultationInboxEvent,applyConsultationChatEvent,mergeConsultationMessages,consultationStatusLabel,consultationMessagePreview}=require("../src/consultationRealtime.ts");
 const row=(overrides={})=>({id:42,status:"ACTIVE",last_message:"Önceki",last_message_at:"2026-11-16T10:00:00",last_message_id:10,unread_count:2,...overrides});
 const event=(event_type,payload,event_id=100)=>({event_type,payload,event_id,entity_id:payload.case_id});
 
@@ -111,4 +111,27 @@ test("consultation inbox receives authenticated user identity from both navigati
  assert.ok(source.includes('"EXPERT_TIMEOUT","PROPOSAL_EXPIRED"'));
  assert.ok(app.includes("<Consultations token={token} userId={user.id} navigation={navigation}/>"));
  assert.ok(app.includes("<Consultations token={token} userId={user.id} navigation={p.navigation}/>"));
+});
+
+test("expert chat status labels match the web room's Turkish status vocabulary",()=>{
+ assert.equal(consultationStatusLabel("REQUESTED"),"Yeni talep");
+ assert.equal(consultationStatusLabel("WAITING_START"),"Başlangıç bekleniyor");
+ assert.equal(consultationStatusLabel("EXPERT_COMPLETED"),"Onay bekleniyor");
+ assert.equal(consultationStatusLabel("PROPOSAL_EXPIRED"),"Süresi doldu");
+ assert.equal(consultationStatusLabel("UNKNOWN_STATE"),"UNKNOWN_STATE");
+ assert.equal(consultationStatusLabel(null),"Yükleniyor");
+});
+
+test("reply previews describe media and annotation types like the web room",()=>{
+ assert.equal(consultationMessagePreview({message_type:"IMAGE",content:null}),"Görsel");
+ assert.equal(consultationMessagePreview({message_type:"VOICE",content:null}),"Sesli mesaj");
+ assert.equal(consultationMessagePreview({message_type:"FILE",content:"case.pdf"}),"Dosya · case.pdf");
+ assert.equal(consultationMessagePreview({message_type:"ANNOTATION",content:"internal"}),"İşaretlenmiş görüntü");
+ assert.equal(consultationMessagePreview({message_type:"TEXT",content:"  Klinik   notu  "}),"Klinik notu");
+});
+
+test("attachment receipts can be merged without a duplicate after realtime catch-up",()=>{
+ const receipt={id:44,sender_user_id:7,message_type:"IMAGE",content:null,created_at:"2026-11-17T09:00:00"};
+ const merged=mergeConsultationMessages([{id:43,sender_user_id:8,message_type:"TEXT"}],[receipt,receipt]);
+ assert.deepEqual(merged.map(item=>item.id),[43,44]);
 });
