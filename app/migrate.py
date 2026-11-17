@@ -1,7 +1,7 @@
 """Explicit, serialized release migration: python -m app.migrate.
 
 The existing idempotent baseline DDL is retained; revision 2 adds durable work, provider reservations and immutable analysis-result pointers;
-revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata; revision 5 adds lazy visual page artifacts; revision 6 adds one-time email verification state; revision 9 adds shared authentication admission counters; revision 10 adds isolated email-change challenges; revision 11 adds consultation chat retention and a committed media-deletion outbox. revision 12 adds private membership-verification records. Web/workers only
+revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata; revision 5 adds lazy visual page artifacts; revision 6 adds one-time email verification state; revision 9 adds shared authentication admission counters; revision 10 adds isolated email-change challenges; revision 11 adds consultation chat retention and a committed media-deletion outbox. revision 12 adds private membership-verification records; revision 15 adds native Program idempotency fields. Web/workers only
 check the revision in production, avoiding repeated boot-time DDL/backfills.
 """
 import logging
@@ -9,7 +9,7 @@ from sqlalchemy import text, inspect
 
 logger = logging.getLogger(__name__)
 
-REVISION = 14
+REVISION = 15
 
 
 def require_schema(engine,*,require_study=False):
@@ -76,7 +76,7 @@ def _upgrade_recent_schema(main):
             return False
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
         logger.warning('migration.recent revision=%s', revision)
-        if revision == REVISION:
+        if revision in (REVISION - 1, REVISION):
             return True
         if revision not in (10, 11):
             return False
@@ -84,7 +84,7 @@ def _upgrade_recent_schema(main):
         connection.execute(text('SELECT pg_advisory_xact_lock(71048233)'))
         # Re-read after obtaining the lock: another deploy may have finished.
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
-        if revision == REVISION:
+        if revision in (REVISION - 1, REVISION):
             return True
         if revision not in (10, 11):
             raise RuntimeError('Schema changed during release migration')
@@ -101,8 +101,8 @@ def _upgrade_recent_schema(main):
         _create_study_tables(connection)
         logger.warning('migration.recent begin=retention_backfill')
         main._backfill_legacy_deadline_jobs_if_needed(bind=connection)
-        connection.execute(text('UPDATE dental_schema_revision SET version=:version WHERE id=1'), {'version': REVISION})
-    logger.warning('migration.recent complete revision=%s', REVISION)
+        connection.execute(text('UPDATE dental_schema_revision SET version=:version WHERE id=1'), {'version': REVISION - 1})
+    logger.warning('migration.recent complete revision=%s', REVISION - 1)
     return True
 
 
@@ -116,13 +116,13 @@ def _upgrade_support_receipts_schema(main):
         if not inspect(connection).has_table('dental_schema_revision'):
             return False
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
-        if revision == REVISION:
+        if revision in (REVISION - 1, REVISION):
             return True
         if revision not in (12, 13):
             return False
         connection.execute(text('SELECT pg_advisory_xact_lock(71048233)'))
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
-        if revision == REVISION:
+        if revision in (REVISION - 1, REVISION):
             return True
         if revision not in (12, 13):
             raise RuntimeError('Schema changed during consultation receipt migration')
@@ -130,8 +130,45 @@ def _upgrade_support_receipts_schema(main):
             from app.mobile_api import MobileSupportMutationReceipt
             MobileSupportMutationReceipt.__table__.create(connection, checkfirst=True)
         main.ConsultationMessageReceipt.__table__.create(connection, checkfirst=True)
-        connection.execute(text('UPDATE dental_schema_revision SET version=:version WHERE id=1'), {'version': REVISION})
-    logger.warning('migration.consultation_receipts complete revision=%s', REVISION)
+        connection.execute(text('UPDATE dental_schema_revision SET version=:version WHERE id=1'), {'version': REVISION - 1})
+    logger.warning('migration.consultation_receipts complete revision=%s', REVISION - 1)
+    return True
+
+
+
+def _upgrade_program_idempotency_schema(main):
+    """Add nullable, owner-scoped request fingerprints to native Program events."""
+    if main.engine.dialect.name != 'postgresql':
+        return False
+    with main.engine.begin() as connection:
+        connection.execute(text("SET LOCAL lock_timeout = '5s'"))
+        connection.execute(text("SET LOCAL statement_timeout = '60s'"))
+        if not inspect(connection).has_table('dental_schema_revision'):
+            return False
+        revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
+        if revision == REVISION:
+            return True
+        if revision != REVISION - 1:
+            return False
+        connection.execute(text('SELECT pg_advisory_xact_lock(71048233)'))
+        revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
+        if revision == REVISION:
+            return True
+        if revision != REVISION - 1:
+            raise RuntimeError('Schema changed during Program idempotency migration')
+        if not inspect(connection).has_table('scheduleevent'):
+            raise RuntimeError('Program table is missing during idempotency migration')
+        connection.execute(text('ALTER TABLE scheduleevent ADD COLUMN IF NOT EXISTS client_request_hash VARCHAR'))
+        connection.execute(text('ALTER TABLE scheduleevent ADD COLUMN IF NOT EXISTS client_payload_hash VARCHAR'))
+        connection.execute(text(
+            'CREATE UNIQUE INDEX IF NOT EXISTS uq_scheduleevent_owner_client_request '
+            'ON scheduleevent(owner_user_id, client_request_hash)'
+        ))
+        connection.execute(
+            text('UPDATE dental_schema_revision SET version=:version WHERE id=1'),
+            {'version': REVISION},
+        )
+    logger.warning('migration.program_idempotency complete revision=%s', REVISION)
     return True
 
 
@@ -142,8 +179,10 @@ def _apply_baseline():
     # which advances that same revision to 14.
     _upgrade_learning_schema(main)
     if _upgrade_support_receipts_schema(main):
+        _upgrade_program_idempotency_schema(main)
         return
     if _upgrade_recent_schema(main):
+        _upgrade_program_idempotency_schema(main)
         return
     # A dedicated migration process owns the advisory lock through all of the
     # historical DDL transactions. It is released even on migration failure.
