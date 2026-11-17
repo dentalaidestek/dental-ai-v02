@@ -198,6 +198,17 @@ test('Dental Flow-owned aggregate posts route management to the expert profile l
  const labels=nodes(sheet).map(n=>n.props?.title);assert.ok(labels.includes('Profilimde yönet'));assert.equal(labels.includes('Düzenle'),false);
 });
 
+test('uncertain Dental Flow post retries reuse the frozen idempotency key',async()=>{
+ const h=harness(),draft={id:'11111111-1111-4111-8111-111111111111',text:'Retry me',link:'',media_ids:[9],attempted:true};
+ h.storeValues.set('3:post',JSON.stringify(draft));
+ const props={token:'synthetic',userId:3,onClose(){},onPosted(){}};
+ let tree=h.render('Composer',props);await tick();tree=h.render('Composer',props);
+ const retry=nodes(tree).find(n=>text(n)==='Tekrar dene');assert.ok(retry);
+ await retry.props.onPress();await tick();
+ assert.equal(h.posts.length,1);
+ assert.equal(h.posts[0].idempotency_key,draft.id);
+ assert.deepEqual(h.posts[0].media_ids,[9]);
+});
 test('Dental Flow native tabs use the web label and selected state',()=>{
  const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
  assert.ok(source.includes('m === "discover" ? "Keşfet" : "Takip Ettiklerim"'));
