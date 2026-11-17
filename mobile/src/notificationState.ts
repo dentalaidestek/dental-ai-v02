@@ -7,7 +7,7 @@ export type NotificationReadState = {
 export function parseNotificationTimestamp(value: string): number {
   if (typeof value !== "string" || !value.trim()) return Number.NaN;
   const raw = value.trim();
-  const hasOffset = /(?:Z|[+-]\\d{2}:\\d{2})$/i.test(raw);
+  const hasOffset = /(?:Z|[+-]\d{2}:\d{2})$/i.test(raw);
   return Date.parse(hasOffset ? raw : raw + "Z");
 }
 
