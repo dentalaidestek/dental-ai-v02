@@ -1,15 +1,17 @@
 const ts=require('typescript'),fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),{test}=require('node:test');
 const tick=()=>new Promise(r=>setImmediate(r));
 function harness(){
- const state=[],alerts=[],refs=[],previous=[],effects=[],requests=[];let cursor=0,ri=0,ei=0;
+ const state=[],alerts=[],refs=[],previous=[],effects=[],requests=[],uploads=[],previews=[],posts=[],shared=[],opened=[],storeValues=new Map();let cursor=0,ri=0,ei=0;
+ const store={getItemAsync:async k=>storeValues.get(k)||null,setItemAsync:async(k,v)=>storeValues.set(k,v),deleteItemAsync:async k=>storeValues.delete(k)};
+ const picker={assets:[],options:null,requestMediaLibraryPermissionsAsync:async()=>({granted:true}),launchImageLibraryAsync:async options=>{picker.options=options;return {canceled:false,assets:picker.assets}}};
  const react={useState:initial=>{const id=cursor++;if(!(id in state))state[id]=typeof initial==='function'?initial():initial;return [state[id],v=>state[id]=typeof v==='function'?v(state[id]):v]},useRef:v=>{const i=ri++;return refs[i]||(refs[i]={current:v})},useEffect:(f,deps)=>{const i=ei++;if(!previous[i]||deps.some((v,j)=>!Object.is(v,previous[i].deps[j])))effects.push(()=>{previous[i]?.cleanup?.();previous[i]={deps,cleanup:f()}})},createElement:(type,props,...children)=>({type,props:{...props,children}})};react.default=react;
  const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8')+'\nexport const __test={PostCard,CommentThread,Composer};';
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText,exports={};
- const shared=[];
- const native={Alert:{alert:(...args)=>alerts.push(args)},Share:{share:async options=>{shared.push(options);return {action:'sharedAction'}}},StyleSheet:{create:s=>s},Pressable:'Pressable',Text:'Text',View:'View',Image:'Image'};
- const api={getComments:async(...args)=>{requests.push(args);return {items:[{id:20,text:'reply',author_name:'R',parent_id:10}],next_cursor:null}},setFollow:async(_t,_id,followed)=>({following_by_viewer:followed}),socialPostUrl:(authorId,postId)=>'https://dentalai.tr/expert-support/expert/'+authorId+'?post='+postId};
- vm.runInNewContext(code,{exports,require:n=>n==='react'?react:n==='react-native'?native:n==='./socialApi'?api:n==='./socialDraft'?{chunkedDraftStore:()=>({}),draftKey:()=> 'draft',readDraft:async()=>null}:n==='expo-crypto'?{randomUUID:()=> 'synthetic-id'}:{}});
- return {alerts,refs,requests,shared,render:(name,props)=>{cursor=ri=ei=0;const tree=exports.__test[name](props);while(effects.length)effects.shift()();return tree}};
+ const native={Alert:{alert:(...args)=>alerts.push(args)},Share:{share:async options=>{shared.push(options);return {action:'sharedAction'}}},Linking:{openURL:async url=>opened.push(url)},Platform:{OS:'ios'},StyleSheet:{create:s=>s},Pressable:'Pressable',Text:'Text',View:'View',Image:'Image',ScrollView:'ScrollView',KeyboardAvoidingView:'KeyboardAvoidingView',Modal:'Modal',SafeAreaView:'SafeAreaView',ActivityIndicator:'ActivityIndicator',FlatList:'FlatList'};
+ const api={getComments:async(...args)=>{requests.push(args);return {items:[{id:20,text:'reply',author_name:'R',parent_id:10}],next_cursor:null}},setFollow:async(_t,_id,followed)=>({following_by_viewer:followed}),socialPostUrl:(authorId,postId)=>'https://dentalai.tr/expert-support/expert/'+authorId+'?post='+postId,socialImageSource:(url,token)=>({uri:url,headers:{Authorization:'Bearer '+token}}),uploadSocialImage:async(_token,file)=>{uploads.push(file);return {id:uploads.length,url:'/api/expert-social/media/'+uploads.length}},getLinkPreview:async(_token,url)=>{previews.push(url);return {available:true,id:77,url,domain:'example.org',site_name:'Example',title:'Example title',description:'Safe preview',cover:{id:81,url:'/api/expert-social/media/81'}}},createPost:async(_token,payload)=>{posts.push(payload);return {id:90,author_id:1,author_name:'Expert',text:payload.text,status:'PUBLISHED',version:1,owned:true,pinned:false,comments_closed:false,liked:false,like_count:0,comment_count:0,media:[],created_at:'2026-11-17'}}};
+ const draftModule={chunkedDraftStore:()=>store,draftKey:(userId,scope)=>userId+':'+scope,readDraft:async(s,key)=>{const value=await s.getItemAsync(key);return value?JSON.parse(value):null},submitDraft:async(s,key,draft,send)=>{const intent={...draft,attempted:true};await s.setItemAsync(key,JSON.stringify(intent));const result=await send(intent);await s.deleteItemAsync(key);return result}};
+ vm.runInNewContext(code,{exports,require:n=>n==='react'?react:n==='react-native'?native:n==='react-native-safe-area-context'?{SafeAreaView:'SafeAreaView'}:n==='./socialApi'?api:n==='./socialDraft'?draftModule:n==='expo-secure-store'?store:n==='expo-image-picker'?picker:n==='expo-crypto'?{randomUUID:()=> 'synthetic-id'}:{}});
+ return {alerts,refs,requests,shared,opened,uploads,previews,posts,picker,storeValues,render:(name,props)=>{cursor=ri=ei=0;const tree=exports.__test[name](props);while(effects.length)effects.shift()();return tree}};
 }
 function nodes(tree){if(!tree||typeof tree!=='object')return [];return [tree,...(tree.props?.children||[]).flat(Infinity).flatMap(nodes)];}
 const text=n=>typeof n==='string'?n:!n||typeof n!=='object'?'':(n.props?.children||[]).flat(Infinity).map(text).join('');
@@ -138,23 +140,68 @@ test('consultation messages cannot display or overwrite another account or case'
  assert.match(chat,/return\(\)=>\{requestSeq\.current\+\+;sending\.current=false\}/);
 });
 
-test('Dental Flow picker does not mislabel unnamed PNG and WebP uploads as JPEG',()=>{
- const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
- const upload=source.slice(source.indexOf('async function image()'),source.indexOf('async function post()'));
- assert.match(upload,/a\.mimeType === "image\/png" \? "png"/);
- assert.match(upload,/a\.mimeType === "image\/webp" \? "webp"/);
- assert.match(upload,/name: a\.fileName \|\|/);
+test('Dental Flow native composer selects up to four images and persists each completed upload',async()=>{
+ const h=harness(),props={token:'synthetic',userId:1,onClose(){},onPosted(){}};
+ h.picker.assets=[
+  {uri:'file:///one.png',fileName:'one.png',mimeType:'image/png',fileSize:1200},
+  {uri:'file:///two.webp',fileName:'two.webp',mimeType:'image/webp',fileSize:1400},
+  {uri:'file:///large.jpg',fileName:'large.jpg',mimeType:'image/jpeg',fileSize:9*1024*1024},
+ ];
+ let tree=h.render('Composer',props);await tick();tree=h.render('Composer',props);
+ const add=nodes(tree).find(n=>text(n)==='Fotoğraf ekle');assert.ok(add);
+ await add.props.onPress();await tick();tree=h.render('Composer',props);
+ assert.equal(h.picker.options.allowsMultipleSelection,true);
+ assert.equal(h.picker.options.selectionLimit,4);
+ assert.deepEqual(h.uploads.map(x=>x.name),['one.png','two.webp']);
+ assert.deepEqual(JSON.parse(h.storeValues.get('1:post')).media_ids,[1,2]);
+ assert.ok(text(tree).includes('8 MB'));
+ const move=nodes(tree).find(n=>n.props?.accessibilityLabel==='Fotoğrafı sonraya taşı 1');assert.ok(move);
+ await move.props.onPress();await tick();tree=h.render('Composer',props);
+ assert.deepEqual(JSON.parse(h.storeValues.get('1:post')).media_ids,[2,1]);
+ const remove=nodes(tree).find(n=>n.props?.accessibilityLabel==='Fotoğrafı kaldır 1');assert.ok(remove);
+ await remove.props.onPress();await tick();
+ assert.deepEqual(JSON.parse(h.storeValues.get('1:post')).media_ids,[1]);
 });
 
-test('Dental Flow composer previews each selected photo and clears local thumbnails with draft',()=>{
- const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
- const composer=source.slice(source.indexOf('function Composer('),source.indexOf('function Sheet('));
- assert.match(composer,/setLocalPhotos\(previous => \[\.\.\.previous, a\.uri\]\.slice\(-4\)\)/);
- assert.match(composer,/localPhotos\.map\(\(uri,index\)=>/);
- assert.match(composer,/setLocalPhotos\(\[\]\)/);
- assert.doesNotMatch(composer,/Yüklenen son fotoğrafın önizlemesi/);
+test('Dental Flow composer previews HTTPS links and sends the owner-scoped preview receipt',async()=>{
+ const h=harness(),closed=[];const props={token:'synthetic',userId:2,onClose:()=>closed.push(true),onPosted(){}};
+ let tree=h.render('Composer',props);await tick();tree=h.render('Composer',props);
+ const link=nodes(tree).find(n=>n.props?.accessibilityLabel==='Bağlantı');assert.ok(link);
+ link.props.onChangeText('https://example.org/article');
+ tree=h.render('Composer',props);
+ const preview=nodes(tree).find(n=>text(n)==='Önizlemeyi getir');assert.ok(preview);
+ await preview.props.onPress();await tick();tree=h.render('Composer',props);
+ assert.deepEqual(h.previews,['https://example.org/article']);
+ assert.ok(text(tree).includes('Example title'));
+ const publish=nodes(tree).find(n=>text(n)==='Paylaş');assert.ok(publish);
+ await publish.props.onPress();await tick();
+ assert.equal(h.posts.length,1);
+ assert.equal(h.posts[0].preview_id,77);
+ assert.equal(h.posts[0].link_url,'https://example.org/article');
+ assert.deepEqual(closed,[true]);
 });
 
+test('native Dental Flow renders link cover separately from the four-image gallery',()=>{
+ const h=harness(),post={id:42,author_id:7,author_name:'Expert',text:'Clinical share',status:'PUBLISHED',version:1,owned:false,pinned:false,comments_closed:false,liked:false,like_count:0,comment_count:0,link_url:'https://example.org/article',cover_media_id:10,preview:{title:'Example title',domain:'example.org',description:'Safe description'},media:[{id:10,url:'/api/expert-social/media/10'},{id:11,url:'/api/expert-social/media/11'}],created_at:'2026-11-17'};
+ const tree=h.render('PostCard',{token:'synthetic',userId:2,post,showExpertActions:true,onUpdate(){},onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow:async()=>true,onSupport(){}});
+ const galleryButtons=nodes(tree).filter(n=>n.props?.accessibilityLabel?.startsWith('Gönderi görselini aç'));
+ assert.equal(galleryButtons.length,1,'the link cover must not be duplicated in the gallery');
+ assert.ok(text(tree).includes('Example title'));
+ assert.ok(text(tree).includes('Safe description'));
+ assert.equal(nodes(tree).filter(n=>n.type==='Image').length,2,'one gallery image plus one preview cover');
+});
+
+test('Dental Flow-owned aggregate posts route management to the expert profile like web',()=>{
+ const h=harness(),props={token:'synthetic',userId:1,post:{id:5,author_id:1,author_name:'Owner',text:'Owned',media:[],status:'PUBLISHED',owned:true,created_at:'2026-11-17'},showExpertActions:true,onUpdate(){},onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow:async()=>true,onSupport(){}};
+ let tree=h.render('PostCard',props);nodes(tree).find(n=>n.props?.accessibilityLabel==='Gönderi işlemleri').props.onPress();
+ tree=h.render('PostCard',props);const sheet=nodes(tree).find(n=>n.props?.title==='Gönderi işlemleri');
+ const labels=nodes(sheet).map(n=>n.props?.title);assert.ok(labels.includes('Profilimde yönet'));assert.equal(labels.includes('Düzenle'),false);
+});
+
+test('Dental Flow native tabs use the web label and selected state',()=>{
+ const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
+ assert.ok(source.includes('m === "discover" ? "Keşfet" : "Takip Ettiklerim"'));
+});
 test('failed encrypted Dental Flow draft reads offer non-destructive retry',()=>{
  const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
  const draft=source.slice(source.indexOf('function useDraft('),source.indexOf('function Composer('));
