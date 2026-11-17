@@ -41,3 +41,25 @@ def test_failed_viewer_job_reports_failure_without_automatic_paid_retry(chat,mon
     r=c.get(path);assert r.status_code==503 and r.json()['job_id']==ident
     assert 'PRIVATE_PROVIDER_ERROR' not in r.text
     with Session(engine) as s:assert len(s.exec(select(work_jobs.WorkJob)).all())==1
+
+
+def test_mobile_analysis_workspace_returns_only_minimal_patient_context(chat,monkeypatch):
+    c,engine=setup(chat,monkeypatch)
+    with Session(engine) as s:
+        patient=s.get(main.Patient,8)
+        patient.first_name='Synthetic'
+        patient.last_name='Patient'
+        patient.phone='+905550000000'
+        patient.birth_date='1990-01-01'
+        patient.age=36
+        patient.chief_complaint='Synthetic sensitivity complaint'
+        s.add(patient);s.commit()
+    response=c.get('/api/mobile/v1/analyses/1')
+    assert response.status_code==200,response.text
+    patient_payload=response.json()['patient']
+    assert set(patient_payload)=={'id','anonymous_id','age','chief_complaint'}
+    assert patient_payload['anonymous_id']=='SYNTHETIC-VIEWER'
+    assert patient_payload['age']==36
+    assert patient_payload['chief_complaint']=='Synthetic sensitivity complaint'
+    for field in ('first_name','last_name','phone','birth_date','tc_kimlik_no','address','created_at'):
+        assert field not in patient_payload
