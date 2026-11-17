@@ -12,6 +12,7 @@ on:
       - 'app/clinical_privacy.py'
       - 'app/clinical_rag_router.py'
       - 'app/main.py'
+      - 'app/migrate.py'
       - 'app/clinical_media.py'
       - 'app/mobile_api.py'
       - 'app/patient_media_receipts.py'
