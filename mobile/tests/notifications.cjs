@@ -7,7 +7,7 @@ require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(
  fileName:filename,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}
 }).outputText,filename);
 
-const {applyNotificationReadAllSnapshot}=require('../src/notificationState.ts');
+const {applyNotificationReadAllSnapshot,parseNotificationTimestamp}=require('../src/notificationState.ts');
 
 test('mark-all snapshot reads only notices created at or before the captured cutoff',()=>{
  const items=[
@@ -21,6 +21,11 @@ test('mark-all snapshot reads only notices created at or before the captured cut
  assert.equal(result[1].read_at,null);
  assert.equal(result[2].read_at,'2026-11-17T00:40:00.000Z');
  assert.equal(result[3].read_at,null);
+});
+
+test('naive backend datetimes are interpreted as UTC rather than device-local time',()=>{
+ assert.equal(parseNotificationTimestamp('2026-11-17T04:30:00'),Date.parse('2026-11-17T04:30:00.000Z'));
+ assert.equal(parseNotificationTimestamp('2026-11-17T04:30:00+03:00'),Date.parse('2026-11-17T01:30:00.000Z'));
 });
 
 test('mark-all snapshot rejects an invalid cutoff instead of reading everything',()=>{
