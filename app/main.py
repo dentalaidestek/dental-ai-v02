@@ -117,7 +117,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSON
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from sqlmodel import Field, Session, SQLModel, create_engine, select
-from sqlalchemy import String, UniqueConstraint, cast, delete, func, or_ as sa_or, text
+from sqlalchemy import String, cast, delete, func, or_ as sa_or, text
 from sqlalchemy.exc import IntegrityError
 
 try:
@@ -742,18 +742,13 @@ class ConsultationMessage(SQLModel, table=True):
 
 
 class ConsultationMessageReceipt(SQLModel, table=True):
-    """Durable idempotency receipt; stores only a digest and the resulting message ID."""
-    __table_args__ = (UniqueConstraint(
-        "case_id", "sender_user_id", "client_message_id",
-        name="uq_consultation_message_receipt_intent",
-    ),)
-    id: Optional[int] = Field(default=None, primary_key=True)
-    case_id: int = Field(index=True)
-    sender_user_id: int = Field(index=True)
-    client_message_id: str = Field(max_length=96)
+    """Compact per-sender idempotency receipt; stores only a digest and message ID."""
+    case_id: int = Field(primary_key=True)
+    sender_user_id: int = Field(primary_key=True)
+    client_message_id: str = Field(primary_key=True, max_length=96)
     payload_hash: str = Field(max_length=64)
-    message_id: int = Field(index=True)
-    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    message_id: int
+    created_at: datetime = Field(default_factory=_utcnow_naive)
 
 
 def _normalize_consultation_client_message_id(value: Optional[str]) -> Optional[str]:
