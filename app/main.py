@@ -287,6 +287,8 @@ class MobilePushDevice(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(index=True)
     device_id: str = Field(index=True)
+    # Hash of the installation-held proof; never persist the raw proof or Expo token in delivery rows.
+    device_proof_hash: Optional[str] = None
     expo_push_token: str = Field(index=True, unique=True)
     platform: str
     enabled: bool = True
