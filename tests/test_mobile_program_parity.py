@@ -1,7 +1,7 @@
 from test_mobile_chat_actions import chat
 from app import main,mobile_api
 from sqlmodel import Session,select
-from datetime import datetime,timedelta
+from datetime import date,datetime,timedelta,timezone
 from starlette.responses import Response
 import pytest
 
@@ -194,6 +194,12 @@ def test_program_cursor_rejects_scope_changes_and_invalidates_mutated_snapshots(
     assert first.status_code==200,first.text
     cursor=first.json()['next_cursor']
     assert isinstance(cursor,str) and len(cursor)>=16
+    from app.mobile_program_api import _decode_program_cursor
+    try:
+        _decode_program_cursor(cursor,'today',date(2030,1,7),2,main.APP_TIMEZONE,datetime.now(timezone.utc))
+        assert False,'another account must not reuse this cursor'
+    except Exception as exc:
+        assert getattr(exc,'status_code',None)==422
     assert client.get('/api/mobile/v1/program',params={'view':'month','day':'2030-01-07','cursor':cursor}).status_code==422
     assert client.get('/api/mobile/v1/program',params={'view':'today','day':'2030-01-07','cursor':'not-a-valid-cursor-token'}).status_code==422
 
@@ -207,6 +213,14 @@ def test_program_cursor_rejects_scope_changes_and_invalidates_mutated_snapshots(
     stale=client.get('/api/mobile/v1/program',params={'view':'today','day':'2030-01-07','cursor':cursor})
     assert stale.status_code==409
 
+    # Move the synthetic insert behind the new watermark so the next assertion
+    # isolates an update to an existing event rather than the earlier insert.
+    with Session(engine) as s:
+        later=s.get(main.ScheduleEvent,900)
+        later.created_at=old
+        later.updated_at=old
+        s.add(later)
+        s.commit()
     refreshed=client.get('/api/mobile/v1/program?view=today&day=2030-01-07')
     assert refreshed.status_code==200,refreshed.text
     refreshed_cursor=refreshed.json()['next_cursor']
