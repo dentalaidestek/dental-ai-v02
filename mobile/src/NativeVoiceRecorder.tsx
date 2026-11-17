@@ -6,7 +6,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import {chunkedDraftStore} from './socialDraft';
-import {addVoiceElapsed,appendVoiceSegment,formatVoiceElapsed,markVoiceSegmentTranscribed,newVoiceDraft,parseVoiceDraft,removeVoiceSegment,VoiceDraft,voiceDraftKey} from './voiceSession';
+import {addVoiceElapsed,formatVoiceElapsed,markVoiceSegmentTranscribed,newVoiceDraft,parseVoiceDraft,removeVoiceSegment,VoiceDraft,voiceDraftKey} from './voiceSession';
 import {transcribeNativeRecording,VoiceAsrError} from './nativeVoiceAudio';
 import {voiceDeviceSignalLevel} from './voiceDeviceCheck';
 
@@ -24,7 +24,7 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
  useEffect(()=>{onSessionState?.({started:view.audioStarted===true||view.ended,finished:view.ended&&view.segments.length===0})},[view,onSessionState]);
  useEffect(()=>{onBusyChanged?.(occupied||!ready);return()=>onBusyChanged?.(false)},[occupied,ready,onBusyChanged]);
  usePreventRemove(occupied,()=>Alert.alert('Muayene sürüyor','Önce muayeneyi duraklatın veya bitirin.'));
- async function persist(next:VoiceDraft){draft.current={...next,updatedAt:Date.now()};if(mounted.current)setView(draft.current);await store.setItemAsync(key,JSON.stringify(draft.current));}
+ async function persist(next:VoiceDraft){const saved={...next,updatedAt:Date.now()};await store.setItemAsync(key,JSON.stringify(saved));draft.current=saved;if(mounted.current)setView(saved);}
  async function removeFile(uri:string){
   const cache=FileSystem.cacheDirectory;
   if(!cache||!uri.startsWith(cache))throw Error('Ses dosyası uygulamanın özel önbelleği dışında; otomatik silme yapılmadı.');
