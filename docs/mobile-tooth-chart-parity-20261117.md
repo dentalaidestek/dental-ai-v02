@@ -22,7 +22,7 @@ The native implementation was inspected in `NativeToothChart.tsx`, `NativeToothV
 
 - Native permanent and primary teeth now use the same bundled four-column enamel atlas and FDI-to-column mapping as the web chart. Implant artwork and status overlays remain native and local; no network image or AI call was added.
 - The mobile `PatientDetail.surfaces` type now includes optional `updated_at`, and `getPatient` rejects a non-string timestamp instead of silently accepting a malformed contract.
-- The native tooth history tab now displays the selected tooth's surface, status, note and update timestamp before the analysis history and separate treatment records.
+- The native tooth history tab now displays the selected tooth's surface, status, note and update timestamp before the analysis history and separate treatment records. It uses the web history labels (including Bukkal / Vestibül, Lingual / Palatinal and Kanal Tedavisi) and the same day/month/year + hour/minute timestamp precision.
 - Added FDI atlas mapping tests, an end-to-end native component regression for surface history, and a backend contract test for owner-scoped surface timestamps.
 
 ## Verification and limitations
