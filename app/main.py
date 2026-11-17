@@ -8908,6 +8908,14 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
     if len(text_value) > 4000:
         if wants_json: return JSONResponse({"ok": False, "error": "Mesaj 4000 karakteri aşamaz."}, status_code=400)
         return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Mesaj 4000 karakteri aşamaz.')}", status_code=303)
+    try:
+        client_key = _normalize_consultation_client_message_id(client_message_id)
+    except HTTPException as exc:
+        if wants_json: return JSONResponse({"ok": False, "error": str(exc.detail)}, status_code=exc.status_code)
+        return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus(str(exc.detail))}", status_code=303)
+    payload_hash = _consultation_message_payload_hash(
+        case_id, user.id, "TEXT", text_value, reply_to_message_id,
+    )
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
         case = _locked_consultation_case(s, case_id)
@@ -8915,7 +8923,20 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
         status_events: list[RealtimeEvent] = []
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+        if case.messages_deleted_at:
+            if wants_json: return JSONResponse({"ok": False, "error": "Bu görüşmenin mesajları artık saklanmıyor."}, status_code=410)
+            return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu görüşmenin mesajları artık saklanmıyor.')}", status_code=303)
+        if client_key:
+            replay, replay_error = _consultation_message_receipt_replay(
+                s, case, user.id, client_key, payload_hash,
+            )
+            if replay_error:
+                message, status_code = replay_error
+                if wants_json: return JSONResponse({"ok": False, "error": message}, status_code=status_code)
+                return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus(message)}", status_code=303)
+            if replay:
+                return JSONResponse({"ok": True, "message": replay, "replayed": True}) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
             if wants_json: return JSONResponse({"ok": False, "error": "Bu danışmanlık şu anda mesajlaşmaya açık değil."}, status_code=409)
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu vaka mesajlaşmaya açık değil.')}", status_code=303)
         # Bekleme süresinde uzman görüşmeyi erken başlatabilir; gönderen hekim süre dolmadan yazamaz.
@@ -8944,6 +8965,12 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
                 reply_to_message_id = None
         message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, content=text_value, reply_to_message_id=reply_to_message_id)
         s.add(message)
+        s.flush()
+        if client_key:
+            s.add(ConsultationMessageReceipt(
+                case_id=case.id, sender_user_id=user.id, client_message_id=client_key,
+                payload_hash=payload_hash, message_id=message.id,
+            ))
         if user.id == case.expert_user_id and case.expert_started_at is None:
             case.expert_started_at = now
             if case.status == "WAITING_START":
@@ -8953,13 +8980,11 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
             _consultation_event(s, case.id, "EXPERT_FIRST_RESPONSE", user.id)
             s.add(case)
         _consultation_event(s, case.id, "MESSAGE_SENT", user.id)
-        s.commit()
-        s.refresh(message)
         sender=s.get(User,user.id)
         realtime_events=_record_message_realtime_events(s,case,message,sender)
         s.commit()
-        safe_client_message_id = client_message_id.strip()[:96] or None
-        payload = {"ok": True, "message": {"id": message.id, "sender_user_id": message.sender_user_id, "message_type": message.message_type, "content": message.content, "reply_to_message_id": message.reply_to_message_id, "created_at": message.created_at.isoformat(), "client_message_id": safe_client_message_id}}
+        s.refresh(message)
+        payload = {"ok": True, "message": _consultation_message_payload(case, message, client_key), "replayed": False}
     on_loop(consultation_socket_hub.broadcast, case_id, {'type': 'message', 'message': payload['message']})
     for realtime_event in status_events + realtime_events:
         on_loop(_publish_realtime_event, realtime_event)
