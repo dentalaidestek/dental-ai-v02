@@ -228,3 +228,37 @@ test('Dental Flow composer remounts when authenticated account or session change
  const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
  assert.match(source,/<Composer\s+key=\{\x60\$\{user\.id\}:\$\{token\}\x60\}\s+token=\{token\}\s+userId=\{user\.id\}/);
 });
+
+test('Dental Flow composer selects, restores and submits a custom link cover',async()=>{
+ const h=harness(),props={token:'synthetic',userId:1,onClose(){},onPosted(){}};
+ const saved={id:'cover-key',text:'',link:'https://example.org/article',media_ids:[11,12],attempted:false,preview_id:77,preview:{available:true,id:77,url:'https://example.org/article',cover:{id:81,url:'/api/expert-social/media/81'}}};
+ h.storeValues.set('1:post',JSON.stringify(saved));
+ h.render('Composer',props);await tick();
+ let tree=h.render('Composer',props);
+ const choose=nodes(tree).find(n=>n.props?.accessibilityLabel==='Bağlantı kapağı yap 2');
+ assert.ok(choose,'uploaded media should be selectable as the link cover');
+ choose.props.onPress();
+ tree=h.render('Composer',props);
+ assert.ok(nodes(tree).some(n=>n.props?.accessibilityLabel==='Bağlantı kapağı seçildi 2'));
+ const publish=nodes(tree).find(n=>n.type==='Pressable'&&text(n)==='Paylaş');
+ assert.ok(publish);await publish.props.onPress();
+ assert.equal(h.posts.length,1);assert.equal(h.posts[0].cover_media_id,12);
+});
+test('Dental Flow defaults the first of four uploaded images as the link cover and clears a removed cover',async()=>{
+ const h=harness(),props={token:'synthetic',userId:1,onClose(){},onPosted(){}};
+ const saved={id:'cover-key',text:'',link:'https://example.org/article',media_ids:[11,12,13,14],attempted:false,preview_id:77,preview:{available:true,id:77,url:'https://example.org/article',cover:null}};
+ h.storeValues.set('1:post',JSON.stringify(saved));
+ h.render('Composer',props);await tick();
+ let tree=h.render('Composer',props);
+ const publish=nodes(tree).find(n=>n.type==='Pressable'&&text(n)==='Paylaş');
+ await publish.props.onPress();
+ assert.equal(h.posts[0].cover_media_id,11,'web uses the first image when all four slots are filled without a selected cover');
+ const h2=harness(),saved2={...saved,media_ids:[11,12],cover_media_id:12};
+ h2.storeValues.set('1:post',JSON.stringify(saved2));
+ h2.render('Composer',props);await tick();tree=h2.render('Composer',props);
+ const remove=nodes(tree).find(n=>n.props?.accessibilityLabel==='Fotoğrafı kaldır 2');
+ assert.ok(remove);remove.props.onPress();await tick();await tick();tree=h2.render('Composer',props);
+ const publish2=nodes(tree).find(n=>n.type==='Pressable'&&text(n)==='Paylaş');
+ await publish2.props.onPress();
+ assert.equal(h2.posts[0].cover_media_id,undefined);
+});
