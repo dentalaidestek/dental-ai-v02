@@ -1322,7 +1322,9 @@ function PostCard({
               ? "Düzenleme gerekli"
               : post.status === "PENDING"
                 ? post.moderation?.state === "FAILED"
-                  ? "Otomatik kontrol yeniden denenecek"
+                  ? post.moderation.retryable
+                    ? "Otomatik kontrol yeniden denenecek"
+                    : "Yönetici müdahalesi gerekiyor"
                   : "İnceleme bekliyor"
                 : "Yayınlanmadı"}
           </Text>
