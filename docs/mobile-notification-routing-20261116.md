@@ -38,11 +38,43 @@ Committed tests:
 
 The GitHub Actions jobs inspected at the starting PR head had empty step arrays and no runner assignment; npm, TypeScript, Gradle and pytest did not start. The new tests are committed and registered but are not reported as passed. Full mobile typecheck, beta suite, backend TestClient/SQLite execution, Android build and device tests remain required.
 
-## Remaining acceptance
+## Native Expo push implementation — 2026-11-17
 
-- Add the Expo SDK-compatible `expo-notifications` dependency and native config only when the lockfile can be generated with `npx expo install` and verified on Android/iOS.
-- Register Expo tokens only after an explicit user action and real OS permission grant; keep device ID in SecureStore, token out of logs, and revoke only the current account/device on logout.
-- Add notification-response listeners for foreground/background/killed-app launches and route only the known same-origin target types through the existing resolver. Push payloads must remain free of patient names, case content, message previews and clinical data.
-- Validate duplicate delivery, token rotation, account switch, logout, expired/revoked sessions, permission denial, offline retries and cross-device unread reconciliation on physical devices.
-- The explicit native read-all button is a deliberate UX choice; compare it with web auto-read-on-open during product acceptance.
-- No main merge, production deployment, APK/IPA publication or patient-record mutation was performed.
+The SDK 54 compatibility table in Expo's `sdk-54` branch confirms:
+- `expo-notifications ~0.32.17`
+- `expo-constants ~18.0.14`
+- `expo-application ~7.0.8`
+
+The mobile manifest and npm lock now include the notification package and its dependency closure. `expo-notifications` is registered as an app config plugin. The dynamic `app.config.js` reads the non-secret `EXPO_PUBLIC_EAS_PROJECT_ID` build variable; no project ID was invented or committed because this repository's app config did not contain one.
+
+Native behavior now includes:
+- An explicit **Profil > Cihaz Bildirimleri** setting. No permission is requested during login, onboarding, app startup or background refresh.
+- Project-ID preflight before requesting OS permission. If the EAS project ID is missing, the setting explains the blocker and does not prompt.
+- A UUID installation identifier in SecureStore. Expo push tokens are sent directly to the authenticated API and are not persisted locally or written to logs.
+- Token refresh only for a user who previously opted in, on session restore and app foreground; no polling timer.
+- Android default notification channel and a foreground banner/list handler. Foreground sound and OS badge mutation are disabled.
+- Response listeners plus cold-start response lookup. Only the server's two existing payload shapes are accepted: `{kind: "notification", notice_id}` and `{kind: "consultation", case_id}`.
+- A notification tap fetches the exact active notice by ID through the owner-scoped API before the existing web-path allowlist opens its native target. A consultation tap opens the existing case screen, whose API still enforces participant ownership.
+- Logout revokes only the current account/device registration before clearing the session. If the network prevents revocation, the user is warned before choosing to force logout.
+- Backend registration validates UUIDv4 device IDs and Expo token shape, rejects cross-account token reuse, serializes same-account updates, caps each account at 10 devices and maps unique-index races to HTTP 409.
+- Notification list, read, read-all and push-device endpoints return `private, no-store` responses. The optional `notice_id` lookup includes an older notice only when it is active and belongs to the authenticated user.
+
+Push payloads remain generic. The server sends no patient name, case text, message preview or clinical details; only a generic title/body and the allowlisted numeric routing IDs are included.
+
+## Tests and verification boundary
+
+Committed tests now also include:
+- `tests/test_mobile_push_registration.py`: UUID/token validation, cross-account token conflict, owner-only unregister, same-device token replacement, ten-device cap, no-store headers and owner-scoped lookup outside the 20-item page.
+- `mobile/tests/notificationTargets.cjs`: strict Expo payload routing and malformed/unsafe identifier rejection.
+- `mobile/tests/notifications.cjs`: SDK dependency/lock, app plugin, explicit opt-in, no token logging, logout revocation and foreground refresh wiring.
+
+The lockfile was updated, but `npm ci` has not been executed in this environment. The Actions jobs on the current PR head still have empty step arrays and their logs return `BlobNotFound 404`; npm, TypeScript, Node, pytest and Gradle did not start. These tests are committed and included in the mobile/security workflows, not reported as passed.
+
+## Remaining acceptance and external configuration
+
+- Supply the real EAS project ID as `EXPO_PUBLIC_EAS_PROJECT_ID` in the mobile build environment. Until then, native push intentionally remains disabled and does not ask for permission.
+- Configure Android FCM v1 and iOS APNs credentials for the EAS project, then set the server-side `MOBILE_PUSH_ENABLED=true` only after the owner approves activation. The current backend sender is disabled by default; no production environment was changed.
+- Run `npm ci`, TypeScript typecheck, beta Node tests, backend TestClient/SQLite tests, Android prebuild/APK and iOS prebuild in a functioning runner.
+- Validate real-device permission denial/recovery, Android channel presentation, iOS presentation, token rotation, duplicate tap/cold-start handling, logout, account switch, expired sessions, offline revocation and EAS delivery receipts.
+- The explicit native read-all button remains a deliberate UX choice; compare it with web auto-read-on-open during product acceptance.
+- No main merge, production deployment, APK/IPA publication, migration or patient-record mutation was performed.
