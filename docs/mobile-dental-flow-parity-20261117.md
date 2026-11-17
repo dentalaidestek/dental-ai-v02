@@ -86,3 +86,24 @@ The following current-head runs completed as failures before any step:
 All six direct job-step queries returned empty arrays; all six log downloads returned Azure `BlobNotFound 404`. No npm, TypeScript, Node beta, Gradle or pytest command ran. This does not establish a source-level test failure or a passing result. The exact hosted-runner/account cause is not exposed by the repository API.
 
 The work from starting PR head `54fb2e9474ad` through this follow-up comprises 18 commits on the feature branch. The PR remains Open/Draft; no main merge, live deploy, APK/IPA publication or patient-record mutation.
+
+## 2026-11-17 — Native custom link-cover parity
+
+Re-opened the web composer source before changing native code: `app/templates/_expert_social.html`, `app/static/expert-social.js`, `app/static/dental-flow.css`, and the existing `POST /api/expert-social/posts` contract in `app/expert_social_api.py`.
+
+A remaining web/native gap was confirmed: web lets an expert choose one of the uploaded images as a separate link-card cover, shows that cover in the preview, excludes it from the post gallery, and uses the first image as the cover when all four media slots are filled and no custom cover was chosen. Native previously sent only `preview_id`; it could not choose a custom cover, and it hid the URL card when metadata preview was unavailable.
+
+Native changes:
+- Persist optional `cover_media_id` inside the existing encrypted SecureStore draft; restore it only when it is a positive safe integer, belongs to the draft's uploaded `media_ids`, and the draft still has a link.
+- Add an accessible per-image “Kapak yap / Bağlantı kapağı” control. Removing the selected image clears the cover; clearing the link clears the cover; reordering preserves the selected media ID.
+- Render the URL card whenever a link exists, even when server metadata is unavailable. Prefer the explicitly selected uploaded cover, otherwise use the safe server preview cover.
+- Send the selected cover ID in `POST /posts`. If exactly four images are present and no explicit cover is selected, match the web fallback by choosing the first image. With fewer than four images and no selection, the server's preview cover remains the fallback.
+- Validate the cover ID client-side before network access. It must be one of the post's own media IDs; the existing backend still validates ownership and unattached state while locking media rows.
+
+Regression coverage added:
+- `mobile/tests/social.cjs`: cover draft restore, invalid/non-member cover rejection, and API preflight validation.
+- `mobile/tests/socialScreens.cjs`: custom cover selection and submission, four-image first-cover fallback, removal of the selected cover, and URL-card visibility/opening when preview metadata is unavailable.
+
+No patient identifiers, clinical images, or patient records are used by this feature. No new polling, upload fan-out, backend route, database migration, storage policy, or AI provider call was added.
+
+The tests are committed but not reported as executed: current GitHub Actions jobs are failing before runner assignment, with `runner_id=0`, empty step arrays and unavailable log blobs. Full typecheck, `npm run test:beta`, Expo export, Android/iOS device acceptance and backend/PostgreSQL regressions remain required.
