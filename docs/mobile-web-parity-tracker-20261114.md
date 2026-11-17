@@ -543,3 +543,21 @@ Source-contract checks against the committed files passed **11/11**. React rende
 Latest code-bearing head `ae3fbe3` CI: Android run `43984303486`, Security recovery `43984303514`, Admin security `43984303446`, Expert social `43984303506`, Voice `43984303433`. All jobs failed before runner allocation (`runner_id=0`, `steps=[]`, `ubuntu-latest`, 2–3 seconds); typecheck logs return `BlobNotFound 404`. This is not a compiler or pytest result. Exact owner-level hosted-runner/account/billing cause is unavailable from repository APIs.
 
 No main merge, live deploy, APK/IPA publication or patient-record mutation.
+
+## 2026-11-17 — Expert Support message/media recovery
+
+Web-first comparison: `app/templates/expert_case_room.html` already sent client intent IDs, but canonical text/media handlers only echoed those IDs. Native text kept its key in memory and native media had no stable key. A response loss or process death could therefore create duplicate consultation messages/attachments.
+
+Implemented:
+- Added compact composite-key `ConsultationMessageReceipt(case_id, sender_user_id, client_message_id)`; stores only payload SHA-256, message ID, timestamp. No message text, file bytes, filename, or extra lookup indexes.
+- Text/media handlers now replay same-key/same-payload messages and return 409 for same-key/different-payload. Message, receipt, and durable realtime events commit together.
+- Media hash binds raw bytes, media kind, and reply target; excludes filename. Chat retention deletes receipts in the same transaction as messages.
+- Added participant-checked, sender-scoped mobile receipt lookup with `Cache-Control: private, no-store`.
+- Native text: encrypted draft remains the only stored copy of clinical text; a separate encrypted intent stores only key/scope/reply target. Draft is deleted before key after success/reconciliation so process death cannot restore an already-sent message as a fresh draft.
+- Native media: SecureStore retains only key/scope/type/size/reply metadata; no URI, bytes, or filename. Restart reconciles receipt first; if absent, user reselects same file and retries with the same key.
+- Web media: sessionStorage retains only key, type/size signature, and reply target; refresh/retry reuses the key and does not persist clinical content.
+- Schema revision 14; security workflow path includes migration changes.
+
+Regression tests added (committed, not executed): `tests/test_mobile_chat_actions.py`, `mobile/tests/consultations.cjs`; legacy synthetic key updated in `tests/test_legacy_pr215_repairs.py`.
+
+Open acceptance: PostgreSQL migration/concurrency run, full Node/Python suite, TypeScript 5.9.2, Android build, real Android/iOS process-death and account-isolation tests, push/realtime replay checks, and 60k-user load/storage measurements. No main merge, production deploy, app-store release, or patient-record mutation.
