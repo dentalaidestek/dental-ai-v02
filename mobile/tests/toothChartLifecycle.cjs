@@ -408,3 +408,26 @@ test('corrupt treatment intent keeps the entire tooth chart read-only',async()=>
  assert.ok(teeth.every(node=>node.props.disabled===true));
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('native tooth history shows web-equivalent surface status, note and timestamp',async()=>{
+ focused=true;lastEvent=null;appListeners=[];
+ const detail=patient(8,'Ada');
+ detail.surfaces=[{id:5,tooth_number:'11',surface:'MESIAL',status:'CARIES',note:'Mesial clinical note',updated_at:'2026-11-17T09:15:00'}];
+ const Chart=chartComponent({getPatient:async()=>detail});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush();await flush()});
+ const tooth=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş 11, Sağlıklı');
+ assert.ok(tooth);
+ await renderer.act(async()=>tooth.props.onPress());
+ const history=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children)==='Tedavi Geçmişi'));
+ assert.ok(history);
+ await renderer.act(async()=>history.props.onPress());
+ const rendered=flat(tree.toJSON());
+ assert.match(rendered,/Yüzey durumları/);
+ assert.match(rendered,/Mesial/);
+ assert.match(rendered,/Çürük/);
+ assert.match(rendered,/Mesial clinical note/);
+ assert.match(rendered,/09:15/);
+ await renderer.act(async()=>tree.unmount());
+});
