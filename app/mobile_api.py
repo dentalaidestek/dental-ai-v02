@@ -5,7 +5,7 @@ data. It deliberately reuses the same session-token records as the web app so
 mobile clients do not create a second authentication system.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
 import hashlib
@@ -1255,6 +1255,43 @@ def mobile_notification_read(notice_id:int,user:User=Depends(_mobile_user)):
             raise HTTPException(status_code=404,detail="Bildirim bulunamadı.")
         n.is_read=True;n.read_at=datetime.utcnow();session.add(n);session.commit()
         return {"ok":True}
+
+class MobileNotificationReadAll(BaseModel):
+    seen_before: datetime
+
+
+@router.post("/notifications/read-all")
+def mobile_notifications_read_all(payload: MobileNotificationReadAll, user: User = Depends(_mobile_user)):
+    """Mark only active notices visible at the client's captured cutoff as read."""
+    now = _utcnow_naive()
+    seen_before = payload.seen_before
+    if seen_before.tzinfo is not None:
+        seen_before = seen_before.astimezone(timezone.utc).replace(tzinfo=None)
+    seen_before = min(seen_before, now)
+
+    realtime_event = None
+    with Session(engine, expire_on_commit=False) as session:
+        rows = session.exec(select(AdminNotice).where(
+            AdminNotice.user_id == user.id,
+            AdminNotice.status == "ACTIVE",
+            AdminNotice.is_read == False,
+            AdminNotice.created_at <= seen_before,
+        )).all()
+        for notice in rows:
+            notice.is_read = True
+            if not notice.read_at:
+                notice.read_at = now
+            session.add(notice)
+        if rows:
+            realtime_event = _record_realtime_event(
+                session, user.id, "NOTIFICATIONS_READ", "notification", None,
+                {"read_count": len(rows)},
+            )
+        session.commit()
+    if realtime_event:
+        on_loop(_publish_realtime_event, realtime_event)
+    return {"ok": True, "read_count": len(rows)}
+
 
 @router.get("/consultations/experts")
 def mobile_experts(user:User=Depends(_mobile_user),specialty:str=Query("",max_length=100),available:bool=False):
