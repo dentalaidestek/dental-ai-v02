@@ -215,13 +215,14 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
  },[token,id,userId]);
  const catchUpMessages=useCallback(async(afterOverride?:number,ready=false)=>{
   if(!isFocused||!connected||(!hasVisibleCase&&!ready))return;
-  if(catchUpPromise.current){catchUpAgain.current=true;return catchUpPromise.current;}
-  const scope=activeScope.current;
+  const activeCatchUp=catchUpPromise.current;
+  if(activeCatchUp){catchUpAgain.current=true;return activeCatchUp;}
+  const scope=activeScope.current,generation=requestSeq.current;
   const task=(async()=>{
    let cursor=Math.max(messageCursor.current,Number.isSafeInteger(afterOverride)?Number(afterOverride):0);
    for(let pageIndex=0;pageIndex<5;pageIndex++){
     const page=await getConsultationUpdates(token,id,cursor);
-    if(scope!==activeScope.current)return;
+    if(scope!==activeScope.current||generation!==requestSeq.current)return;
     if(page.case?.messages_deleted_at){
      messageCursor.current=0;
      setData((previous:any)=>previous?.accountScope!==scope?previous:{...previous,case:{...previous.case,...page.case},messages:[],next_before:null});
@@ -249,7 +250,7 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
   try{await task}catch(e){if(scope===activeScope.current)setSendError(e instanceof Error?e.message:"Yeni mesajlar alınamadı. Tekrar deneyin.")}
   finally{
    if(catchUpPromise.current===task)catchUpPromise.current=null;
-   if(catchUpAgain.current){catchUpAgain.current=false;void catchUpRef.current();}
+   if(catchUpAgain.current&&generation===requestSeq.current){catchUpAgain.current=false;void catchUpRef.current();}
   }
  },[token,id,isFocused,connected,hasVisibleCase]);
  catchUpRef.current=catchUpMessages;
