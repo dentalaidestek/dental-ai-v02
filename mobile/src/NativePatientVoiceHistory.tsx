@@ -21,7 +21,7 @@ export default function NativePatientVoiceHistory({token,patientId}:{token:strin
    if(active.current!==owner||generation.current!==seq)return;
    setData({scope:owner,history});
   }catch(e){
-   if(active.current===owner&&generation.current===seq)setError(e instanceof Error?e.message:'Hekim onaylı anamnez alınamadı.');
+   if(active.current===owner&&generation.current===seq){setError(e instanceof Error?e.message:'Hekim onaylı anamnez alınamadı.');setData(null);}
   }finally{
    if(active.current===owner&&generation.current===seq)setBusy(false);
   }
