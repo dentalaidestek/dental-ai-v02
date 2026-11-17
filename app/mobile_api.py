@@ -1268,6 +1268,13 @@ class MobilePushRegistration(BaseModel):
     device_id: str = RequestField(min_length=1, max_length=128)
     expo_push_token: str = RequestField(min_length=1, max_length=256)
     platform: str = RequestField(min_length=1, max_length=16)
+    # Optional during the rolling upgrade; new native builds always send it.
+    installation_proof: Optional[str] = RequestField(default=None, min_length=64, max_length=64)
+
+
+class MobilePushDeviceClaim(BaseModel):
+    device_id: str = RequestField(min_length=1, max_length=128)
+    installation_proof: str = RequestField(min_length=64, max_length=64)
 
 
 _PRIVATE_MOBILE_RESPONSE_HEADERS = {
@@ -1278,6 +1285,63 @@ _PRIVATE_MOBILE_RESPONSE_HEADERS = {
 MAX_MOBILE_PUSH_DEVICES_PER_USER = 10
 
 
+def _validated_mobile_push_device_id(raw_device_id: str) -> str:
+    try:
+        parsed = uuid.UUID(raw_device_id.strip())
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(status_code=422, detail="Geçersiz cihaz kimliği.")
+    if parsed.version != 4:
+        raise HTTPException(status_code=422, detail="Geçersiz cihaz kimliği.")
+    return str(parsed)
+
+
+def _mobile_push_installation_proof_hash(proof: str) -> str:
+    if not isinstance(proof, str) or not re.fullmatch(r"[0-9a-f]{64}", proof):
+        raise HTTPException(status_code=422, detail="Geçersiz kurulum doğrulaması.")
+    return hashlib.sha256(proof.encode("ascii")).hexdigest()
+
+
+def _lock_mobile_push_device_identity(session: Session, device_id: str) -> None:
+    """Serialize claims/registrations for one installation across account IDs."""
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(0, hashtext(:device_id))"),
+            {"device_id": device_id},
+        )
+
+
+@router.post("/push/devices/claim")
+def claim_mobile_push_device(
+    payload: MobilePushDeviceClaim,
+    response: Response,
+    user: User = Depends(_mobile_user),
+):
+    """Revoke a previous account's registration on this installation without opting in."""
+    response.headers.update(_PRIVATE_MOBILE_RESPONSE_HEADERS)
+    device_id = _validated_mobile_push_device_id(payload.device_id)
+    proof_hash = _mobile_push_installation_proof_hash(payload.installation_proof)
+
+    with Session(engine, expire_on_commit=False) as session:
+        _lock_mobile_push_device_identity(session, device_id)
+        rows = session.exec(select(MobilePushDevice).where(
+            MobilePushDevice.device_id == device_id,
+        ).with_for_update()).all()
+        previous_owners = [row for row in rows if row.user_id != user.id]
+        for row in previous_owners:
+            stored_hash = row.device_proof_hash
+            # NULL is a legacy row created before installation proofs existed.
+            # Its UUIDv4 was generated and retained in SecureStore by the old client.
+            if stored_hash is not None and (
+                not re.fullmatch(r"[0-9a-f]{64}", stored_hash)
+                or not hmac.compare_digest(stored_hash, proof_hash)
+            ):
+                raise HTTPException(status_code=409, detail="Bu cihaz başka bir kurulum anahtarına bağlı.")
+        for row in previous_owners:
+            session.delete(row)
+        session.commit()
+    return {"ok": True, "revoked_previous_owners": len(previous_owners)}
+
+
 @router.post("/push/devices")
 def register_mobile_push_device(
     payload: MobilePushRegistration,
@@ -1285,35 +1349,51 @@ def register_mobile_push_device(
     user: User = Depends(_mobile_user),
 ):
     response.headers.update(_PRIVATE_MOBILE_RESPONSE_HEADERS)
-    raw_device_id = payload.device_id.strip()
+    device_id = _validated_mobile_push_device_id(payload.device_id)
     token = payload.expo_push_token.strip()
     platform = payload.platform.strip().lower()
-    try:
-        parsed_device_id = uuid.UUID(raw_device_id)
-        device_id = str(parsed_device_id)
-    except (ValueError, TypeError, AttributeError):
-        raise HTTPException(status_code=422, detail="Geçersiz cihaz kimliği.")
-    if parsed_device_id.version != 4 or platform not in {"android", "ios"}:
+    proof_hash = (
+        _mobile_push_installation_proof_hash(payload.installation_proof)
+        if payload.installation_proof is not None else None
+    )
+    if platform not in {"android", "ios"}:
         raise HTTPException(status_code=422, detail="Geçersiz cihaz bilgisi.")
-    if not re.fullmatch(r"(?:Expo|Exponent)PushToken\[[A-Za-z0-9_-]{8,128}\]", token):
+    if not re.fullmatch(r"(?:Expo|Exponent)PushToken\\[[A-Za-z0-9_-]{8,128}\\]", token):
         raise HTTPException(status_code=422, detail="Geçersiz Expo push token.")
 
     with Session(engine, expire_on_commit=False) as session:
-        # Serialize updates for this account; the unique token index remains the
-        # cross-account race guard for two users registering the same token.
+        _lock_mobile_push_device_identity(session, device_id)
         session.exec(select(User).where(User.id == user.id).with_for_update()).first()
-        other_owner = session.exec(select(MobilePushDevice).where(
-            MobilePushDevice.expo_push_token == token,
-            MobilePushDevice.user_id != user.id,
-        )).first()
-        if other_owner:
-            raise HTTPException(status_code=409, detail="Cihaz bildirimi önceki hesaptan kaldırılmalı.")
 
-        previous = session.exec(select(MobilePushDevice).where(
+        same_installation = session.exec(select(MobilePushDevice).where(
+            MobilePushDevice.device_id == device_id,
+        ).with_for_update()).all()
+        token_owner = session.exec(select(MobilePushDevice).where(
+            MobilePushDevice.expo_push_token == token,
+        ).with_for_update()).first()
+        if token_owner and token_owner.user_id != user.id and token_owner.device_id != device_id:
+            raise HTTPException(status_code=409, detail="Bu Expo anahtarı başka bir cihazda kayıtlı.")
+
+        for item in same_installation:
+            if item.user_id != user.id and item.device_proof_hash is not None:
+                if (
+                    proof_hash is None
+                    or not re.fullmatch(r"[0-9a-f]{64}", item.device_proof_hash)
+                    or not hmac.compare_digest(item.device_proof_hash, proof_hash)
+                ):
+                    raise HTTPException(status_code=409, detail="Bu cihaz başka bir kurulum anahtarına bağlı.")
+
+        previous_by_id = {
+            item.id: item for item in same_installation if item.id is not None
+        }
+        current_token_rows = session.exec(select(MobilePushDevice).where(
             MobilePushDevice.user_id == user.id,
-            (MobilePushDevice.device_id == device_id) | (MobilePushDevice.expo_push_token == token),
-        )).all()
-        for item in previous:
+            MobilePushDevice.expo_push_token == token,
+        ).with_for_update()).all()
+        for item in current_token_rows:
+            if item.id is not None:
+                previous_by_id[item.id] = item
+        for item in previous_by_id.values():
             session.delete(item)
         session.flush()
 
@@ -1326,6 +1406,7 @@ def register_mobile_push_device(
         session.add(MobilePushDevice(
             user_id=user.id,
             device_id=device_id,
+            device_proof_hash=proof_hash,
             expo_push_token=token,
             platform=platform,
             enabled=True,
