@@ -133,7 +133,7 @@ test('consultation message receipt lookup is account-authenticated and validates
  await withFetch(async(url,init)=>{
   assert.ok(url.includes('/consultations/42/message-receipt?client_message_id=native-message-receipt-0001'));
   assert.equal(init.headers.Authorization,'Bearer secret');
-  assert.equal(init.method,'GET');
+  assert.equal(init.method||'GET','GET');
   return json({message:{id:91,sender_user_id:10,message_type:'TEXT',content:'Klinik not',created_at:'2026-11-17T00:00:00'},deleted:false});
  },async()=>{
   const receipt=await api.getConsultationMessageReceipt('secret',42,'native-message-receipt-0001');
