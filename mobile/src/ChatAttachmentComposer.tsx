@@ -14,13 +14,14 @@ export default function ChatAttachmentComposer({token,userId,caseId,replyTo,disa
  const scope=useRef(token+":"+userId+":"+caseId);scope.current=token+":"+userId+":"+caseId;const lock=useRef(false),active=useRef(true),pendingKey="dai.consultation.media."+userId+"."+caseId;
  useEffect(()=>{active.current=true;return()=>{active.current=false}},[]);
  useEffect(()=>{let live=true;setFile(null);setBusy(false);setUncertain(false);setError("");setEditing(false);setPendingId(null);setPendingMeta(null);lock.current=false;
+  if(deleted){void SecureStore.deleteItemAsync(pendingKey).catch(()=>{});return()=>{live=false}}
   void SecureStore.getItemAsync(pendingKey).then(async raw=>{if(!raw)return;let value:any=null;try{value=JSON.parse(raw)}catch{}if(!value||value.version!==1||typeof value.id!=="string"||!/^[A-Za-z0-9_-]{16,96}$/.test(value.id)||value.scope!==userId+":"+caseId||typeof value.name!=="string"||typeof value.type!=="string"||(value.replyTo!==null&&!Number.isSafeInteger(value.replyTo)))return;
    if(!live)return;setPendingId(value.id);setPendingMeta({id:value.id,scope:value.scope,replyTo:value.replyTo,name:value.name,type:value.type,size:Number.isFinite(value.size)?value.size:null,createdAt:Number(value.createdAt)||Date.now()});
    try{const receipt=await getConsultationMessageReceipt(token,caseId,value.id);if(live&&(receipt.deleted||receipt.message)){await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});setPendingId(null);setPendingMeta(null);setFile(null);await onSent()}}
    catch{/* Keep the encrypted intent for an explicit same-key retry. */}
   }).catch(()=>{if(live)setError("Bekleyen ek kaydı okunamadı. Güvenli taslak korunuyor.")});
   return()=>{live=false};
- },[token,userId,caseId,pendingKey]);
+ },[token,userId,caseId,pendingKey,deleted]);
  useEffect(()=>{if(prepared){try{select(prepared.file);setEditing(false)}catch(e){setError(e instanceof Error?e.message:"Dosya hazırlanamadı.")}}},[prepared?.nonce]);
  useEffect(()=>{if(pendingMeta&&file&&(file.name!==pendingMeta.name||file.type!==pendingMeta.type||(pendingMeta.size!==null&&file.size!==undefined&&file.size!==pendingMeta.size))){setFile(null);setError("Bekleyen ek gönderimini tamamlamak için aynı dosyayı yeniden seçin.")}},[pendingMeta,file]);
  useEffect(()=>{if(deleted){setFile(null);setPendingId(null);setPendingMeta(null);setUncertain(false);void SecureStore.deleteItemAsync(pendingKey).catch(()=>{})}},[deleted,pendingKey]);
