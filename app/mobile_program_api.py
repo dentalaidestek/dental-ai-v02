@@ -3,8 +3,8 @@ from datetime import date,datetime,timedelta
 from typing import Optional
 from fastapi import APIRouter,Depends,HTTPException,Query
 from pydantic import BaseModel,Field
-from sqlmodel import Session
-from app.mobile_api import _mobile_user,_mobile_access_token,_mobile_request,MobileScheduleCreate,mobile_create_schedule
+from sqlmodel import Session,select
+from app.mobile_api import _mobile_user,_mobile_access_token,_mobile_request,MobileScheduleCreate,mobile_create_schedule,_program_request_hash
 from app.mobile_account_api import _invoke
 
 router=APIRouter(tags=['mobile-program'])
@@ -52,6 +52,23 @@ def program_range(view:str=Query('week',pattern='^(today|week|month)$'),day:Opti
         'copy_days':[{'date':item['date'].isoformat(),'label':item['label']} for item in web._program_week_days(focus)],'month_title':f'{web.PROGRAM_MONTH_NAMES[focus.month-1]} {focus.year}', 'event_types':web.PROGRAM_EVENT_TYPES,'reminders':['NONE',*[str(x) for x in sorted(web.REMINDER_OPTIONS)]],'recurrences':sorted(web.RECURRENCE_OPTIONS),
         'suggested_start_local':suggested.strftime('%Y-%m-%dT%H:%M'),'suggested_end_local':(suggested+timedelta(minutes=30)).strftime('%Y-%m-%dT%H:%M')}
 
+@router.get('/program/mutations/{request_key}')
+def program_mutation(request_key:str,user=Depends(_mobile_user)):
+    from app import main as web
+    try:
+        request_hash=_program_request_hash(user.id,request_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422,detail='Program isteği anahtarını kontrol edin.') from exc
+    with Session(web.engine,expire_on_commit=False) as session:
+        event=session.exec(select(web.ScheduleEvent).where(
+            web.ScheduleEvent.owner_user_id==user.id,
+            web.ScheduleEvent.client_request_hash==request_hash,
+        )).first()
+        if not event:return {'state':'NOT_FOUND'}
+        if event.status=='DELETED':return {'state':'DELETED','event_id':event.id}
+        return {'state':'FOUND','event':_event(session,web,event,user)}
+
+
 @router.get('/program/events/{event_id}')
 def program_event(event_id:int,user=Depends(_mobile_user)):
     from app import main as web
@@ -68,6 +85,7 @@ class ProgramValues(BaseModel):
     reminder_minutes:str='30'
     recurrence_rule:str='NONE'
     recurrence_until:str=''
+    request_key:Optional[str]=Field(default=None,max_length=96)
 
 @router.post('/program/conflicts')
 def program_conflicts(payload:ProgramValues,exclude_id:Optional[int]=Query(None,ge=1),user=Depends(_mobile_user)):
@@ -84,6 +102,8 @@ def program_conflicts(payload:ProgramValues,exclude_id:Optional[int]=Query(None,
 
 @router.post('/program/events')
 def create_program_event(payload:ProgramValues,user=Depends(_mobile_user)):
+    if not payload.request_key:
+        raise HTTPException(status_code=422,detail='Program isteği anahtarı zorunludur.')
     try:reminder=None if payload.reminder_minutes=='NONE' else int(payload.reminder_minutes)
     except ValueError:raise HTTPException(status_code=422,detail='Hatırlatma seçimini kontrol edin.')
     result=mobile_create_schedule(MobileScheduleCreate(**{**payload.model_dump(),'reminder_minutes':reminder,'notification_enabled':reminder is not None}),user)
