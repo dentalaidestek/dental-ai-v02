@@ -52,6 +52,7 @@ def _client_db(monkeypatch, tmp_path):
 
 @pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
 def test_push_registration_is_strict_owner_scoped_and_revocable(monkeypatch, tmp_path):
+    monkeypatch.delenv("MOBILE_PUSH_ENABLED", raising=False)
     engine, owner_id, other_id, owner_token, other_token = _client_db(monkeypatch, tmp_path)
     device_id = str(uuid.uuid4())
     push_token = "ExpoPushToken[abcdefgh12345678]"
@@ -66,6 +67,7 @@ def test_push_registration_is_strict_owner_scoped_and_revocable(monkeypatch, tmp
         )
         assert registered.status_code == 200, registered.text
         assert registered.headers.get("cache-control") == "private, no-store"
+        assert registered.json()["delivery_enabled"] is False
 
         conflict = client.post(
             "/api/mobile/v1/push/devices",
