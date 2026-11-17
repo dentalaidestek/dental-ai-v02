@@ -122,7 +122,11 @@ test('ambiguous gallery delete can be reconciled by replaying the same delete re
   await new Promise(resolve=>setImmediate(resolve));
  });
  await pressByAccessibilityLabel(tree,'Klinik görselleri aç');
- await press(tree,'Fotoğraf');
+ const photoCard=tree.root.findAllByType('Pressable').find(node=>
+  node.findAllByType('Image').length>0&&visible(node).trim()==='Fotoğraf'
+ );
+ assert.ok(photoCard,'gallery photo card must be selectable independently from the add-photo action');
+ await renderer.act(async()=>{photoCard.props.onPress?.();await new Promise(resolve=>setImmediate(resolve))});
  await press(tree,'Görseli Sil');
  assert.equal(typeof confirmDeleteAction,'function');
  await renderer.act(async()=>{confirmDeleteAction();await new Promise(resolve=>setImmediate(resolve))});
