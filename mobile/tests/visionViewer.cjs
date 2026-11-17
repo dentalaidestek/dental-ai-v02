@@ -167,3 +167,36 @@ test('parent mutation lock disables treatment selection and prevents a duplicate
  assert.equal(calls.length,0);
  await renderer.act(async()=>t.unmount());
 });
+
+test('switching assets during an in-flight vision request discards stale findings and loads the latest asset',async()=>{
+ const requests=[];
+ const Component=ui((token,analysis,asset,modality)=>new Promise(resolve=>requests.push({token,analysis,asset,modality,resolve})));
+ const assets=[{id:4,name:'bitewing.png',image_type:'BITEWING'},{id:5,name:'intraoral.png',image_type:'INTRAORAL_PHOTO'}];
+ function Host(){const [assetId,setAssetId]=React.useState(4);return React.createElement(Component,{token:'A',analysisId:12,assetId,assets,onSelectAsset:setAssetId,onClose(){}})}
+ let t;
+ await renderer.act(async()=>{t=renderer.create(React.createElement(Host));await new Promise(r=>setImmediate(r))});
+ assert.equal(requests.length,1);
+ assert.equal(requests[0].asset,4);
+ const oldImageLoad=t.root.findByType('Image').props.onLoad;
+ await renderer.act(async()=>oldImageLoad({nativeEvent:{source:{width:1200,height:800}}}));
+ const next=t.root.findAllByType('Pressable').find(node=>text(node).includes('2 · Ağız içi'));
+ assert.ok(next);
+ await renderer.act(async()=>{next.props.onPress();await new Promise(r=>setImmediate(r))});
+ assert.equal(requests.length,1,'the second asset waits for the in-flight request lock');
+ await renderer.act(async()=>oldImageLoad({nativeEvent:{source:{width:1200,height:800}}}));
+ assert.equal(t.root.findAllByType('Svg').length,0,'old image dimensions cannot be reused for the newly selected asset');
+ await renderer.act(async()=>{
+  requests[0].resolve({pending:false,findings:[{id:'old',label:'Old asset result',category:'Diğer',tooth:null,surface:null,attention:false,confidence:.9,box:null,description:'stale'}]});
+  await new Promise(r=>setImmediate(r));
+ });
+ assert.equal(requests.length,2,'latest asset is fetched after the old request settles');
+ assert.equal(requests[1].asset,5);
+ assert.equal(requests[1].modality,'INTRAORAL_PHOTO');
+ assert.ok(!text(t.toJSON()).includes('Old asset result'),'stale response is not rendered under another image');
+ await renderer.act(async()=>{
+  requests[1].resolve({pending:false,findings:[{id:'new',label:'Current asset result',category:'Diğer',tooth:null,surface:null,attention:false,confidence:.9,box:null,description:'current'}]});
+  await new Promise(r=>setImmediate(r));
+ });
+ assert.ok(text(t.toJSON()).includes('Current asset result'));
+ await renderer.act(async()=>t.unmount());
+});
