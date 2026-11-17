@@ -31,6 +31,20 @@ def _ensure_mobile_push_device_table(engine):
             index.create(connection, checkfirst=True)
 
 
+def _ensure_mobile_push_delivery_table(engine):
+    """Create the additive Expo ticket/receipt table without changing schema revision."""
+    from app import main
+
+    table = main.MobilePushDelivery.__table__
+    with engine.begin() as connection:
+        if engine.dialect.name == 'postgresql':
+            connection.execute(text("SET LOCAL lock_timeout = '10s'"))
+            connection.execute(text('SELECT pg_advisory_xact_lock(71048236)'))
+        table.create(connection, checkfirst=True)
+        for index in table.indexes:
+            index.create(connection, checkfirst=True)
+
+
 def require_schema(engine,*,require_study=False):
     try:
         with engine.connect() as connection:
@@ -51,6 +65,7 @@ def require_schema(engine,*,require_study=False):
             connection.execute(text('CREATE TABLE IF NOT EXISTS adminverifiedsession (token_hash VARCHAR PRIMARY KEY, user_id INTEGER NOT NULL)'))
             connection.execute(text('CREATE INDEX IF NOT EXISTS ix_adminverifiedsession_user_id ON adminverifiedsession (user_id)'))
     _ensure_mobile_push_device_table(engine)
+    _ensure_mobile_push_delivery_table(engine)
     if require_study:
         inspector=inspect(engine)
         if any(not inspector.has_table(table) for table in ('studylearningstate','studyreview','studyattempt','studyrun')):
