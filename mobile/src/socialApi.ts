@@ -23,6 +23,29 @@ export function socialImageSource(path: string, token: string): {
     ? { uri, headers: { Authorization: "Bearer " + token } }
     : { uri };
 }
+export type SocialModeration = {
+  job_id: number | null;
+  registered: boolean;
+  content_version: number;
+  revision: number;
+  state: "WAITING_HUMAN" | "WAITING_OWNER" | "FAILED" | "RUNNING" | "AUTO_DONE" | "HUMAN_DONE";
+  wait_type: string;
+  reasons: string[];
+  reason: string;
+  created_at?: string;
+  updated_at?: string;
+  waiting_since?: string | null;
+  age_seconds?: number;
+  retryable: boolean;
+  next_attempt_at?: string | null;
+  last_decision?: {
+    status: string;
+    source: string;
+    reason: string;
+    at: string | null;
+  };
+};
+
 export type SocialPost = {
   id: number;
   author_id: number;
@@ -45,6 +68,7 @@ export type SocialPost = {
   link_url?: string;
   media: Array<{ id: number; url: string }>;
   created_at: string;
+  moderation?: SocialModeration;
 };
 export type SocialComment = {
   id: number;
@@ -256,6 +280,51 @@ export const getExpertPosts = (t: string, id: number, before?: number) =>
     t,
     `/experts/${id}/posts?limit=15${before ? "&before=" + before : ""}`,
   );
+
+export async function getPost(t: string, id: number): Promise<SocialPost> {
+  if (!Number.isSafeInteger(id) || id < 1) {
+    throw new Error("Geçersiz gönderi kimliği.");
+  }
+  const value = await socialRequest<unknown>(t, `/posts/${id}`);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ApiError(502, "Gönderi yanıtı doğrulanamadı.");
+  }
+  const post = value as Record<string, unknown>;
+  if (
+    post.id !== id ||
+    !Number.isSafeInteger(post.author_id) ||
+    (post.author_id as number) < 1 ||
+    typeof post.author_name !== "string" ||
+    typeof post.text !== "string" ||
+    !["PUBLISHED", "PENDING", "REJECTED"].includes(String(post.status)) ||
+    !Number.isSafeInteger(post.version) ||
+    (post.version as number) < 1 ||
+    !Array.isArray(post.media) ||
+    typeof post.created_at !== "string"
+  ) {
+    throw new ApiError(502, "Gönderi alanları doğrulanamadı.");
+  }
+  if (post.moderation !== undefined && post.moderation !== null) {
+    const moderation = post.moderation as Record<string, unknown>;
+    const states = ["WAITING_HUMAN", "WAITING_OWNER", "FAILED", "RUNNING", "AUTO_DONE", "HUMAN_DONE"];
+    if (
+      typeof moderation !== "object" ||
+      Array.isArray(moderation) ||
+      typeof moderation.registered !== "boolean" ||
+      !states.includes(String(moderation.state)) ||
+      typeof moderation.wait_type !== "string" ||
+      typeof moderation.reason !== "string" ||
+      moderation.reason.length > 1000 ||
+      !Array.isArray(moderation.reasons) ||
+      moderation.reasons.length > 12 ||
+      moderation.reasons.some((reason) => typeof reason !== "string" || reason.length > 80) ||
+      typeof moderation.retryable !== "boolean"
+    ) {
+      throw new ApiError(502, "Yayın inceleme durumu doğrulanamadı.");
+    }
+  }
+  return post as unknown as SocialPost;
+}
 export const getSocialStats = (t: string, id: number) =>
   socialRequest<{
     followers: number;
