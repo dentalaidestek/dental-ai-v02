@@ -280,17 +280,16 @@ def _upgrade_program_query_indexes(main):
                 if valid is not True:
                     raise RuntimeError(f'Program query index {index_name} was not built validly')
 
-            with main.engine.begin() as transaction:
-                result = transaction.execute(
-                    text('UPDATE dental_schema_revision SET version=:version WHERE id=1 AND version=:prior'),
-                    {'version': REVISION, 'prior': PROGRAM_IDEMPOTENCY_REVISION},
-                )
-                if result.rowcount != 1:
-                    current = transaction.execute(
-                        text('SELECT version FROM dental_schema_revision WHERE id=1')
-                    ).scalar()
-                    if current != REVISION:
-                        raise RuntimeError('Schema changed during Program query index migration')
+            result = connection.execute(
+                text('UPDATE dental_schema_revision SET version=:version WHERE id=1 AND version=:prior'),
+                {'version': REVISION, 'prior': PROGRAM_IDEMPOTENCY_REVISION},
+            )
+            if result.rowcount != 1:
+                current = connection.execute(
+                    text('SELECT version FROM dental_schema_revision WHERE id=1')
+                ).scalar()
+                if current != REVISION:
+                    raise RuntimeError('Schema changed during Program query index migration')
         finally:
             connection.execute(
                 text('SELECT pg_advisory_unlock(:lock_key)'),
