@@ -17,8 +17,8 @@ function harness({deleteCache,deleteVault}={}){
   encryptClinicalMediaFile:async()=>encrypted,
   validateClinicalMediaVaultFile:async()=>{},
   deleteClinicalMediaVaultFile:async uri=>{if(deleteVault)await deleteVault(uri);deleted.push(uri)},
-  decryptClinicalMediaFile:async()=> 'file:///cache/dai-clinical-upload-temp.png',
-  deleteClinicalMediaTemp:async uri=>{if(deleteCache)await deleteCache(uri);deleted.push(uri)}
+  decryptClinicalMediaFile:async()=>{const uri='file:///cache/dai-clinical-upload-temp.png';files.set(uri,{exists:true,size:512});return uri},
+  deleteClinicalMediaTemp:async uri=>{if(deleteCache)await deleteCache(uri);files.delete(uri);deleted.push(uri)}
  };
  const exports={};
  vm.runInNewContext(compile('../src/nativeAnalysisFiles.ts'),{
@@ -57,4 +57,10 @@ test('final cleanup removes encrypted and legacy copies but never the picker pre
  assert.ok(h.deleted.includes(encrypted));
  assert.ok(h.deleted.includes(legacy));
  assert.ok(!h.deleted.includes('file:///photos/original.png'));
+});
+
+test('plaintext upload-temp cleanup failures are surfaced instead of silently ignored',async()=>{
+ const h=harness({deleteCache:async uri=>{if(uri.includes('dai-clinical-upload-temp'))throw Error('Synthetic plaintext temp cleanup failure')}});
+ const prepared=await h.api.prepareAnalysisUploadImages([{uri:encrypted,encryptedUri:encrypted,name:'old.png',type:'image/png'}],1,8);
+ await assert.rejects(prepared.cleanup(),/Synthetic plaintext temp cleanup failure/);
 });
