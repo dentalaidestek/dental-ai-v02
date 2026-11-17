@@ -117,7 +117,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSON
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from sqlmodel import Field, Session, SQLModel, create_engine, select
-from sqlalchemy import String, cast, delete, func, or_ as sa_or, text
+from sqlalchemy import String, UniqueConstraint, cast, delete, func, or_ as sa_or, text
 from sqlalchemy.exc import IntegrityError
 
 try:
@@ -905,6 +905,12 @@ class ScheduleEvent(SQLModel, table=True):
     Tarihler UTC olarak saklanır. timezone_name alanı, ileride Android/iOS
     bildirimlerinin doğru yerel saate kurulabilmesi için kayıtla birlikte tutulur.
     """
+    # Native create retries use the event row itself as a durable receipt. Web
+    # events leave both fields NULL; the unique owner/key pair permits many NULLs.
+    __table_args__ = (
+        UniqueConstraint("owner_user_id", "client_request_hash",
+                         name="uq_scheduleevent_owner_client_request"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     owner_user_id: int = Field(index=True)
     event_type: str = Field(index=True)
@@ -922,6 +928,8 @@ class ScheduleEvent(SQLModel, table=True):
     timezone_name: str = "Europe/Istanbul"
     created_at: datetime = Field(default_factory=_utcnow_naive)
     updated_at: datetime = Field(default_factory=_utcnow_naive)
+    client_request_hash: Optional[str] = None
+    client_payload_hash: Optional[str] = None
 
 
 class ProgramReminderJob(SQLModel, table=True):
