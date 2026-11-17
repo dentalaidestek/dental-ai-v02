@@ -294,14 +294,22 @@ export const createPost = (
     preview_id?: number;
     media_ids: number[];
     idempotency_key: string;
-    preview_id?: number;
     cover_media_id?: number;
   },
-) =>
-  socialRequest<SocialPost>(t, "/posts", {
+) => {
+  if (
+    payload.cover_media_id !== undefined &&
+    (!Number.isSafeInteger(payload.cover_media_id) ||
+      payload.cover_media_id < 1 ||
+      !payload.media_ids.includes(payload.cover_media_id))
+  ) {
+    throw new Error("Bağlantı kapağı gönderi görsellerinden biri olmalı.");
+  }
+  return socialRequest<SocialPost>(t, "/posts", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+};
 export const uploadSocialImage = (
   t: string,
   file: { uri: string; name: string; type: string },
