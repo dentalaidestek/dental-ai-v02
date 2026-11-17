@@ -58,8 +58,14 @@ export type Consultation={id:number;other_user_id:number;other_display_name:stri
 export type ChatMessage={id:number;sender_user_id:number;message_type:string;content:string;reply_to_message_id?:number|null;created_at:string;has_media?:boolean};
 export type AnalysisHistory={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;status:string;clinical_notes?:string|null;created_at:string;is_voice_review?:boolean};
 export type Course={id:number;title:string;description?:string|null;updated_at:string;material_count:number};
-export const registerPushDevice=(t:string,deviceId:string,expoPushToken:string,platform:"android"|"ios")=>
- req<{ok:boolean;delivery_enabled?:boolean}>("/push/devices",t,{method:"POST",body:JSON.stringify({device_id:deviceId,expo_push_token:expoPushToken,platform})});
+export const registerPushDevice=(t:string,deviceId:string,expoPushToken:string,platform:"android"|"ios",installationProof:string)=>{
+ if(!/^[0-9a-f]{64}$/.test(installationProof))throw Error("Geçersiz cihaz kurulum doğrulaması.");
+ return req<{ok:boolean;delivery_enabled?:boolean}>("/push/devices",t,{method:"POST",body:JSON.stringify({device_id:deviceId,expo_push_token:expoPushToken,platform,installation_proof:installationProof})});
+};
+export const claimPushDevice=(t:string,deviceId:string,installationProof:string)=>{
+ if(!/^[0-9a-f]{64}$/.test(installationProof))throw Error("Geçersiz cihaz kurulum doğrulaması.");
+ return req<{ok:boolean;revoked_previous_owners:number}>("/push/devices/claim",t,{method:"POST",body:JSON.stringify({device_id:deviceId,installation_proof:installationProof})});
+};
 export const unregisterPushDevice=(t:string,deviceId:string)=>
  req<{ok:boolean}>("/push/devices/"+encodeURIComponent(deviceId),t,{method:"DELETE"});
 export const getNotifications=async(t:string,noticeId?:number)=>{
