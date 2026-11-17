@@ -24,6 +24,14 @@ from app.main import (
 )
 from app.mobile_api import _mobile_user
 from app.work_jobs import WorkJob
+from app.analysis_upload_receipts import (
+    AnalysisUploadReceiptConflict,
+    AnalysisUploadReceiptCorrupt,
+    encryption_key,
+    keyed_analysis_upload_fingerprint,
+    verify_or_upgrade_analysis_upload_receipt,
+)
+from app.patient_media_receipts import PatientMediaReceiptKeyUnavailable
 from sqlalchemy import text
 from starlette.concurrency import run_in_threadpool
 
@@ -36,16 +44,13 @@ def _voice_review_ids(session, user_id, analysis_ids):
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile-analysis"])
 
 def _patient_payload(patient: Patient) -> dict:
+    # The analysis composer mirrors the web page: anonymous ID, age and
+    # complaint only. Direct identifiers belong to the patient-profile API.
     return {
         "id": patient.id,
         "anonymous_id": patient.anonymous_id,
-        "first_name": patient.first_name,
-        "last_name": patient.last_name,
-        "phone": patient.phone,
-        "birth_date": patient.birth_date,
         "age": patient.age,
         "chief_complaint": patient.chief_complaint,
-        "created_at": patient.created_at,
     }
 MOBILE_MAX_ANALYSIS_BYTES = MAX_ANALYSIS_IMAGE_BYTES
 MOBILE_MAX_ANALYSIS_BATCH_BYTES = MAX_ANALYSIS_BATCH_BYTES
@@ -134,6 +139,16 @@ def _access(session: Session, user: User, analysis_id: int):
 def _upload_key(user_id,key):return hashlib.sha256(f'mobile-analysis-upload:{user_id}:{key}'.encode()).hexdigest()
 
 
+def _analysis_receipt_key():
+    try:
+        return encryption_key()
+    except PatientMediaReceiptKeyUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Klinik analiz yükleme fişi güvenlik anahtarı yapılandırılmamış.",
+        ) from exc
+
+
 def _upload_digest(patient_id,tooth,notes,images,existing_media_ids=()):
     hashes=[]
     batch_total=0
@@ -171,7 +186,25 @@ def upload_receipt(patient_id:int=Query(...,ge=1),request_key:str=Query(...,patt
         patient=session.get(Patient,patient_id)
         if not patient or user.role!='ADMIN' and patient.owner_user_id!=user.id:raise HTTPException(404,'Hasta bulunamadı.')
         row=session.exec(select(WorkJob).where(WorkJob.owner_user_id==user.id,WorkJob.kind=='UPLOAD_RECEIPT',WorkJob.dedupe_key==_upload_key(user.id,request_key))).first()
-        return JSONResponse({'receipt':_upload_receipt(session,user,row,patient_id) if row else None},headers={'Cache-Control':'private, no-store','Vary':'Authorization'})
+        if not row:
+            payload = None
+        else:
+            analysis, _ = _access(session, user, row.resource_id)
+            if analysis.patient_id != patient_id:
+                raise HTTPException(404, 'Hasta yükleme kaydı bulunamadı.')
+            key = _analysis_receipt_key()
+            try:
+                upgraded = verify_or_upgrade_analysis_upload_receipt(
+                    row, legacy_digest=None, key=key,
+                    owner_id=user.id, patient_id=patient_id,
+                )
+            except AnalysisUploadReceiptCorrupt as exc:
+                raise HTTPException(503, 'Klinik analiz yükleme fişi doğrulanamadı.') from exc
+            if upgraded:
+                session.add(row)
+                session.commit()
+            payload = _upload_receipt(session, user, row, patient_id)
+        return JSONResponse({'receipt':payload},headers={'Cache-Control':'private, no-store','Vary':'Authorization'})
 
 
 @router.post("/analyses")
@@ -208,6 +241,8 @@ async def create_mobile_analysis(
 
     digest=await run_in_threadpool(_upload_digest,patient_id,tooth_number,clinical_notes,valid,selected_media_ids) if request_key else None
     receipt_key=_upload_key(user.id,request_key) if request_key else None
+    receipt_secret = None
+    receipt_fingerprint = None
     with Session(engine, expire_on_commit=False) as session:
         if receipt_key and session.get_bind().dialect.name=='postgresql':
             # Per-request admission lock; do not acquire the owner lock before
@@ -219,9 +254,24 @@ async def create_mobile_analysis(
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
 
         if receipt_key:
+            receipt_secret = _analysis_receipt_key()
+            receipt_fingerprint = keyed_analysis_upload_fingerprint(
+                digest, receipt_secret, user.id, patient_id
+            )
             receipt=session.exec(select(WorkJob).where(WorkJob.dedupe_key==receipt_key,WorkJob.owner_user_id==user.id,WorkJob.kind=='UPLOAD_RECEIPT')).first()
             if receipt:
-                if receipt.source_hash!=digest:raise HTTPException(409,'Bu yükleme anahtarı farklı dosya veya klinik bilgiler için kullanılmış.')
+                try:
+                    upgraded = verify_or_upgrade_analysis_upload_receipt(
+                        receipt, legacy_digest=digest, key=receipt_secret,
+                        owner_id=user.id, patient_id=patient_id,
+                    )
+                except AnalysisUploadReceiptConflict as exc:
+                    raise HTTPException(409, 'Bu yükleme anahtarı farklı dosya veya klinik bilgiler için kullanılmış.') from exc
+                except AnalysisUploadReceiptCorrupt as exc:
+                    raise HTTPException(503, 'Klinik analiz yükleme fişi doğrulanamadı.') from exc
+                if upgraded:
+                    session.add(receipt)
+                    session.commit()
                 return _upload_receipt(session,user,receipt,patient_id)
 
         selected_media=[]
@@ -316,7 +366,15 @@ async def create_mobile_analysis(
                 shutil.move(str(temporary),str(destination))
                 await run_in_threadpool(storage_persist_file,destination)
         if receipt_key:
-            session.add(WorkJob(owner_user_id=user.id,resource_id=analysis.id,resource_type='ANALYSIS',kind='UPLOAD_RECEIPT',source_hash=digest,dedupe_key=receipt_key,status='DONE',payload_json=json.dumps({'job_id':job.id})))
+            session.add(WorkJob(
+                owner_user_id=user.id, resource_id=analysis.id, resource_type='ANALYSIS',
+                kind='UPLOAD_RECEIPT', source_hash=receipt_fingerprint,
+                dedupe_key=receipt_key, status='DONE',
+                payload_json=json.dumps(
+                    {'job_id':job.id, 'fingerprint_version':1},
+                    sort_keys=True, separators=(',', ':'),
+                ),
+            ))
         realtime=_record_realtime_event(session,user.id,"ANALYSIS_CREATED","analysis",analysis.id,{"analysis_id":analysis.id,"patient_id":patient_id,"status":analysis.status,"tooth_number":analysis.tooth_number})
         session.commit(); await _publish_realtime_event(realtime)
         return {
