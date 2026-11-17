@@ -58,6 +58,13 @@ test('published Dental Flow cards show verified expert, specialty and full times
  assert.ok(text(tree).includes(expected),'specialty must not replace the web-equivalent date/time');
 });
 
+test('exhausted moderation failure escalates instead of promising an automatic retry',()=>{
+ const h=harness(),post={id:14,author_id:1,author_name:'Expert',text:'Pending',media:[],status:'PENDING',version:3,owned:true,comments_closed:false,liked:false,like_count:0,comment_count:0,created_at:'2026-11-17T13:20:00Z',moderation:{registered:true,content_version:3,revision:4,state:'FAILED',wait_type:'RETRY_EXHAUSTED',reasons:['MODERATION_UNAVAILABLE'],reason:'Otomatik kontrol tamamlanamadı; yönetici müdahalesi gerekiyor.',retryable:false}};
+ const tree=h.render('PostCard',{token:'synthetic',userId:1,post,showExpertActions:false,onUpdate(){},onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow(){},onSupport(){}});
+ assert.ok(text(tree).includes('Yönetici müdahalesi gerekiyor'));
+ assert.equal(text(tree).includes('Otomatik kontrol yeniden denenecek'),false);
+});
+
 test('pending posts disable like/share and closed comments are not opened',()=>{
  const h=harness(),post={id:3,author_id:7,author_name:'Expert',text:'Pending',media:[],status:'PENDING',owned:true,comments_closed:true,liked:false,like_count:0,comment_count:0,created_at:'2026-11-17'};
  const tree=h.render('PostCard',{token:'synthetic',userId:2,post,showExpertActions:true,onUpdate(){},onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow(){},onSupport(){}});
