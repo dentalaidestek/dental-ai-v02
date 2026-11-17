@@ -1,5 +1,6 @@
 """Mobile notification read-all ownership and cutoff regression tests."""
 from datetime import timedelta, timezone
+import json
 
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -106,3 +107,4 @@ def test_mobile_notification_read_all_is_owner_scoped_and_respects_cutoff(monkey
     assert other_row.is_read is False and other_row.read_at is None
     assert resolved_row.is_read is False and resolved_row.read_at is None
     assert len(events) == 1
+    assert json.loads(events[0].payload_json)["unread_count"] == 25
