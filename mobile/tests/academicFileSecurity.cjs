@@ -85,3 +85,13 @@ test('an ambiguous timeout preserves the local file for receipt reconciliation',
  assert.equal(cancelled,1);
  assert.equal(deleted,0);
 });
+
+
+test('recovery cleanup refuses to delete a URI outside the private cache',async()=>{
+ const deleted=[],api=load(filesystem({deleteAsync:async(uri)=>deleted.push(uri)}));
+ assert.equal(await api.removeAcademicCacheFile('file:///Documents/private.pdf'),false);
+ assert.equal(await api.removeAcademicCacheFile('file:///cache/../Documents/private.pdf'),false);
+ assert.deepEqual(deleted,[]);
+ assert.equal(await api.removeAcademicCacheFile(valid.uri),true);
+ assert.deepEqual(deleted,[valid.uri]);
+});
