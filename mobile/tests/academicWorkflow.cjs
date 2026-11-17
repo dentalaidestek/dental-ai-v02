@@ -152,14 +152,22 @@ test('Academic upload receipt matches only a newly created same-name material',(
   {id:7,name:'lecture.pdf',mime:'application/pdf',size:100,index_status:'ready',url:'/file/7'},
   {id:11,name:'lecture.pdf',mime:'application/pdf',size:100,index_status:'ready',url:'/file/11'}
  ];
- assert.equal(a.findUploadedMaterial(items,'lecture.pdf',[7]).id,11);
- assert.equal(a.findUploadedMaterial(items,'lecture.pdf',[7,11]),null);
+ assert.equal(a.findUploadedMaterial(items,'lecture.pdf',[7],100).id,11);
+ assert.equal(a.findUploadedMaterial(items,'lecture.pdf',[7,11],100),null);
 });
 
 test('persisted upload intent is bound to the same user and course',()=>{
- const a=api(),value={version:1,user:1,course:3,name:'lecture.pdf',uri:'file:///cache/lecture.pdf',known_ids:[2,4]};
+ const a=api(),value={version:1,user:1,course:3,name:'lecture.pdf',uri:'file:///cache/lecture.pdf',size:100,known_ids:[2,4]};
  assert.equal(a.parseUploadIntent(JSON.stringify(value),1,3).name,'lecture.pdf');
  assert.throws(()=>a.parseUploadIntent(JSON.stringify(value),2,3));
  assert.throws(()=>a.parseUploadIntent(JSON.stringify(value),1,4));
  assert.throws(()=>a.parseUploadIntent(JSON.stringify({...value,known_ids:['2']}),1,3));
+});
+
+
+test('Academic upload recovery requires a newly created same-name and same-size server row',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativeAcademic.tsx'),'utf8');
+ assert.ok(source.includes('A.findUploadedMaterial(fresh.materials,uploadIntent.name,uploadIntent.known_ids,uploadIntent.size)'));
+ assert.ok(source.includes('removeAcademicCacheFile(uploadIntent.uri)'));
+ assert.ok(!source.includes('Kaynakları Kontrol Ettim'));
 });
