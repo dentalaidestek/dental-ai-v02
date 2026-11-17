@@ -578,3 +578,15 @@ Web-first comparison of `base.html`, `account.html`, `main.py` and the mobile no
 Also found that first-run native onboarding asked for Android notification permission despite having no Expo token registration or push-response listener. Removed that premature permission request and made the current in-app-only state explicit. Backend push registration/transport exists, but `expo-notifications` is not yet installed or wired in native; do not claim OS push delivery. The support-ticket target was already implemented in the resolver, so the older tracker statement that it was unsupported is corrected.
 
 Added `tests/test_mobile_notifications.py`, `mobile/tests/notifications.cjs`, beta-suite registration and security workflow coverage. These tests are committed but not yet executed. Latest inspected GitHub Actions runs at the starting head failed with zero steps and no runner assignment; no green typecheck, pytest, Gradle or full beta result is claimed. Main merge, live deploy, APK/IPA publication and patient-record mutation remain prohibited.
+
+## 2026-11-17 — Patient profile mutation/delete safety follow-up
+
+Re-read the PR base web flow first: `patient_detail.html` and `main.py` patient edit/delete handlers. Native profile comparison found that the two-stage delete action could remain available while a SecureStore treatment intent was still restoring, corrupt, or awaiting receipt reconciliation. An ambiguous profile edit could also be cleared by a manual acknowledgement before a successful server read.
+
+Added a fail-closed native delete gate covering busy/uncertain profile mutation, incomplete or corrupt treatment-intent restore, and unresolved treatment receipt. The second destructive confirmation rechecks the live gate. Replaced manual profile-edit acknowledgement with an authenticated GET comparison of all seven editable fields; a matching server snapshot confirms the save, a mismatch preserves the draft and refreshes the edit revision for explicit resubmission, and a failed read keeps the operation uncertain.
+
+Added five mobile renderer regressions and two backend/security regressions. Backend delete remains deliberately conservative: owner-scoped, 404 for another user's patient, and 409 when clinical dependencies exist. No cascade deletion or new erasure policy was introduced.
+
+Commits: `65c8603`, `65915e9`, `548166a`, `7790335`, `b127168`, `0e2519e`; tracker update follows. The pure presentation helper was checked with Node 22 and TypeScript transpilation. React renderer tests require packages not installed in this runtime; Python API tests are committed but not run. At starting HEAD `364062f`, Android typecheck/APK and Security recovery jobs had zero steps; direct step queries returned empty arrays and logs returned BlobNotFound 404. No npm/tsc, Gradle or pytest ran. Exact GitHub hosted-runner/account cause remains unavailable. Real device and full suite acceptance remain open.
+
+No patient records changed; no main merge, live deploy or store publication.
