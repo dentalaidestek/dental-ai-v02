@@ -57,12 +57,12 @@ export function Notifications({token}:{token:string}){
   const seenBefore=new Date().toISOString();
   setMarkingAll(true);setError("");
   try{
-   await markAllNotificationsRead(token,seenBefore);
+   const result=await markAllNotificationsRead(token,seenBefore);
    if(activeToken.current!==token)return;
    setD((old:any)=>{
     if(old?.accountToken!==token||!Array.isArray(old.items))return old;
     const items=applyNotificationReadAllSnapshot(old.items,seenBefore);
-    return {...old,items,unread:items.reduce((count:number,item:any)=>count+(item.read_at?0:1),0)};
+    return {...old,items,unread:result.unread_count};
    });
   }catch(e){
    if(activeToken.current===token)setError(e instanceof Error?e.message:"Bildirimler okundu olarak işaretlenemedi.");
