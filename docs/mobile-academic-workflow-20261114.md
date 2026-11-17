@@ -50,3 +50,28 @@ Regression coverage:
 - Registered the new test in `npm run test:beta`.
 
 Validation boundary: 11/11 GitHub-source contract checks passed against the committed files. The React renderer tests are committed and registered but were not executed in this runtime because the repository's installed React/test-renderer dependencies are not available here. Full project typecheck, `test:beta`, Android/iOS builds and physical-device keyboard/safe-area acceptance remain open. No main merge, backend deploy, store release or patient-data mutation.
+
+
+## 2026-11-17 — Academic AI cancellation, checkpoint retention and index polling
+
+Web-first reinspection used `app/templates/notes_ai.html`, its `waitForIndex` per-file status loop, `study_run_status`, and the owned index status helper. The native route and API were then compared with `app/mobile_academic_api.py`, `mobile/src/NativeAcademic.tsx` and `mobile/src/academicApi.ts`.
+
+### New issues found and fixed
+
+- **Native cancellation was wired to a missing canonical web handler on this branch.** The mobile adapter called `web.study_run_cancel`, but the branch had no route/helper. Added owner+course+run scoped `cancel_run`, the canonical web POST route and the web chat stop button. The web UI reconciles a lost cancellation response against the run status and removes any partial text only after the server confirms cancellation. A late worker cannot commit after the row becomes CANCELLED because `complete_in_transaction` checks RUNNING under row lock.
+- **Index polling used the aggregate `partial` state.** That state also remains partial when one file is usable and another has permanently failed, so native could poll the same failed file forever. Native now follows the web contract exactly: poll only while a file is `preparing` or `updating`; a ready+failed partial snapshot stops polling. Index status is checked at 15-second intervals, active run status remains 5 seconds with backoff, and the effect has no timer while neither work item is active.
+- **Visible checkpoints were discarded on failure/restart.** Failed and interrupted StudyRuns now retain the last safe visible checkpoint; hidden PDF/structured output does not overwrite it, and the final visible stream chunk is flushed. Explicit cancel/clear still removes partial content.
+- **Long academic generation had a low continuation ceiling.** Kept a bounded policy rather than adopting unlimited provider continuation: 240,000 answer characters and six continuation calls. Large Anthropic source batches/structured question sets receive a 32k per-call budget; ordinary turns retain the lower 7k default. Continuation remains enabled for batch partials within the aggregate cap.
+
+### Regression coverage added
+
+- Native API contract tests cover per-file `preparing`/`updating`, ready+failed partial snapshots, complete snapshots and malformed counts.
+- Native screen source contract checks cover idle stop, foreground/focus dependencies and the 15-second index cadence.
+- Python mobile Academic regression checks cover cancellation ownership/idempotency and reject a late completion after cancellation.
+- New `tests/academic_v2/test_study_progress_retention.py` checks safe checkpoint retention, cancellation scope and bounded continuation policy.
+
+### Validation boundary
+
+The GitHub source-level patch checks passed for all changed contracts. The new Node/Python integration tests are committed but were not executed in this environment. The current-head GitHub Actions Android typecheck and Security jobs still have `runner_id=0`, `steps=[]`, no artifacts, and log downloads return `BlobNotFound 404`; npm/tsc, pytest and Gradle did not start. Do not report these as source test failures or green CI.
+
+No provider credentials, clinical data, patient records, schema migrations, main merge, production deploy or store build were changed. Full local test suite, PostgreSQL concurrency, real provider cost/continuation behavior and Android/iOS device acceptance remain open.
