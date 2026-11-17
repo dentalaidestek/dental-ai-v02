@@ -412,6 +412,16 @@ def test_terminal_receipt_cleanup_processes_a_bounded_thousand_rows(tmp_path):
     engine.dispose()
 
 
+def test_receipt_poll_batch_is_bounded_to_five_hundred(tmp_path):
+    from app.mobile_push_receipts import RECEIPT_BATCH_LIMIT
+
+    engine, _, _, _ = _engine(tmp_path)
+    assert RECEIPT_BATCH_LIMIT == 500
+    with pytest.raises(ValueError, match="between 1 and 500"):
+        poll_due_mobile_push_receipts(engine, limit=501)
+    engine.dispose()
+
+
 def test_receipt_maintenance_rejects_unbounded_batch_size(tmp_path):
     from app.mobile_push_receipts import _maintain_receipt_rows
 
