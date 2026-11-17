@@ -935,6 +935,11 @@ class ScheduleEvent(SQLModel, table=True):
     __table_args__ = (
         Index("uq_scheduleevent_owner_client_request", "owner_user_id",
               "client_request_hash", unique=True),
+        # Program reads are owner-scoped. Composite indexes avoid scanning all
+        # of one owner's historical rows for a bounded calendar or snapshot page.
+        Index("ix_scheduleevent_owner_start_at", "owner_user_id", "start_at"),
+        Index("ix_scheduleevent_owner_created_at", "owner_user_id", "created_at"),
+        Index("ix_scheduleevent_owner_updated_at", "owner_user_id", "updated_at"),
     )
     id: Optional[int] = Field(default=None, primary_key=True)
     owner_user_id: int = Field(index=True)
@@ -959,6 +964,13 @@ class ScheduleEvent(SQLModel, table=True):
 
 class ProgramReminderJob(SQLModel, table=True):
     """Durable occurrence-specific queue for Program reminders."""
+    __table_args__ = (
+        # The worker claims due jobs in run_at order and cancels jobs by event
+        # or owner. Keep these hot paths indexable as the durable queue grows.
+        Index("ix_programreminderjob_status_run_at", "status", "run_at"),
+        Index("ix_programreminderjob_event_status", "schedule_event_id", "status"),
+        Index("ix_programreminderjob_owner_status", "owner_user_id", "status"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     schedule_event_id: int = Field(index=True)
     owner_user_id: int = Field(index=True)
