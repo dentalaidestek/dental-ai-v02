@@ -1265,49 +1265,92 @@ def _response_json(response):
     return response
 
 class MobilePushRegistration(BaseModel):
-    device_id: str
-    expo_push_token: str
-    platform: str
+    device_id: str = RequestField(min_length=1, max_length=128)
+    expo_push_token: str = RequestField(min_length=1, max_length=256)
+    platform: str = RequestField(min_length=1, max_length=16)
+
+
+_PRIVATE_MOBILE_RESPONSE_HEADERS = {
+    "Cache-Control": "private, no-store",
+    "Pragma": "no-cache",
+    "Vary": "Authorization",
+}
+MAX_MOBILE_PUSH_DEVICES_PER_USER = 10
 
 
 @router.post("/push/devices")
-def register_mobile_push_device(payload: MobilePushRegistration, user: User = Depends(_mobile_user)):
-    device_id = payload.device_id.strip()
+def register_mobile_push_device(
+    payload: MobilePushRegistration,
+    response: Response,
+    user: User = Depends(_mobile_user),
+):
+    response.headers.update(_PRIVATE_MOBILE_RESPONSE_HEADERS)
+    raw_device_id = payload.device_id.strip()
     token = payload.expo_push_token.strip()
     platform = payload.platform.strip().lower()
-    if not (1 <= len(device_id) <= 128) or platform not in {"android", "ios"}:
+    try:
+        parsed_device_id = uuid.UUID(raw_device_id)
+        device_id = str(parsed_device_id)
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(status_code=422, detail="Geçersiz cihaz kimliği.")
+    if parsed_device_id.version != 4 or platform not in {"android", "ios"}:
         raise HTTPException(status_code=422, detail="Geçersiz cihaz bilgisi.")
-    if len(token) > 256 or not (token.startswith("ExponentPushToken[") or token.startswith("ExpoPushToken[")) or not token.endswith("]"):
+    if not re.fullmatch(r"(?:Expo|Exponent)PushToken\\[[A-Za-z0-9_-]{8,128}\\]", token):
         raise HTTPException(status_code=422, detail="Geçersiz Expo push token.")
+
     with Session(engine, expire_on_commit=False) as session:
-        # Reject cross-account token conflicts; a client-supplied device ID is not proof of ownership.
+        # Serialize updates for this account; the unique token index remains the
+        # cross-account race guard for two users registering the same token.
+        session.exec(select(User).where(User.id == user.id).with_for_update()).first()
         other_owner = session.exec(select(MobilePushDevice).where(
             MobilePushDevice.expo_push_token == token,
             MobilePushDevice.user_id != user.id,
         )).first()
         if other_owner:
             raise HTTPException(status_code=409, detail="Cihaz bildirimi önceki hesaptan kaldırılmalı.")
+
         previous = session.exec(select(MobilePushDevice).where(
-            (MobilePushDevice.user_id == user.id) & (
-                (MobilePushDevice.device_id == device_id) | (MobilePushDevice.expo_push_token == token)
-            )
+            MobilePushDevice.user_id == user.id,
+            (MobilePushDevice.device_id == device_id) | (MobilePushDevice.expo_push_token == token),
         )).all()
         for item in previous:
             session.delete(item)
         session.flush()
-        session.add(MobilePushDevice(user_id=user.id, device_id=device_id,
-                                     expo_push_token=token, platform=platform))
-        session.commit()
+
+        device_count = int(session.exec(select(func.count(MobilePushDevice.id)).where(
+            MobilePushDevice.user_id == user.id,
+        )).one() or 0)
+        if device_count >= MAX_MOBILE_PUSH_DEVICES_PER_USER:
+            raise HTTPException(status_code=409, detail="Bu hesap için en fazla 10 cihaz bildirimi kaydedilebilir.")
+
+        session.add(MobilePushDevice(
+            user_id=user.id,
+            device_id=device_id,
+            expo_push_token=token,
+            platform=platform,
+            enabled=True,
+        ))
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            raise HTTPException(status_code=409, detail="Cihaz bildirimi başka bir oturumda kaydedildi. Tekrar deneyin.")
     return {"ok": True}
 
 
 @router.delete("/push/devices/{device_id}")
-def unregister_mobile_push_device(device_id: str, user: User = Depends(_mobile_user)):
-    if len(device_id) > 128:
+def unregister_mobile_push_device(
+    device_id: str,
+    response: Response,
+    user: User = Depends(_mobile_user),
+):
+    response.headers.update(_PRIVATE_MOBILE_RESPONSE_HEADERS)
+    if not (1 <= len(device_id) <= 128):
         raise HTTPException(status_code=422, detail="Geçersiz cihaz.")
     with Session(engine, expire_on_commit=False) as session:
         for item in session.exec(select(MobilePushDevice).where(
-            MobilePushDevice.user_id == user.id, MobilePushDevice.device_id == device_id
+            MobilePushDevice.user_id == user.id,
+            MobilePushDevice.device_id == device_id,
         )).all():
             session.delete(item)
         session.commit()
@@ -1315,7 +1358,12 @@ def unregister_mobile_push_device(device_id: str, user: User = Depends(_mobile_u
 
 
 @router.get("/notifications")
-def mobile_notifications(user: User = Depends(_mobile_user)):
+def mobile_notifications(
+    response: Response,
+    notice_id: Optional[int] = Query(None, ge=1),
+    user: User = Depends(_mobile_user),
+):
+    response.headers.update(_PRIVATE_MOBILE_RESPONSE_HEADERS)
     with Session(engine, expire_on_commit=False) as session:
         unread_count = int(session.exec(select(func.count(AdminNotice.id)).where(
             AdminNotice.user_id == user.id,
@@ -1323,32 +1371,67 @@ def mobile_notifications(user: User = Depends(_mobile_user)):
             AdminNotice.is_read == False,
         )).one() or 0)
         rows = session.exec(select(AdminNotice).where(
-            AdminNotice.user_id == user.id, AdminNotice.status == "ACTIVE"
+            AdminNotice.user_id == user.id,
+            AdminNotice.status == "ACTIVE",
         ).order_by(AdminNotice.created_at.desc()).limit(20)).all()
-        return {"unread_count": unread_count, "unread": unread_count,
-                "notifications": [{"id":n.id,"title":n.title,"message":n.message,
-                "notice_type":n.notice_type,"target_url":n.target_url,
-                "is_read":bool(n.is_read),"read_at":n.read_at,"created_at":n.created_at} for n in rows],
-                "items": [{"id":n.id,"title":n.title,"message":n.message,
-                "notice_type":n.notice_type,"target_url":n.target_url,
-                "read_at":n.read_at,"created_at":n.created_at} for n in rows]}
+        # A push tap may point to an older notice outside the 20-card page. Add
+        # it only after the same owner/status predicate; never reveal another
+        # account's notice existence or content.
+        if notice_id and all(row.id != notice_id for row in rows):
+            requested = session.exec(select(AdminNotice).where(
+                AdminNotice.id == notice_id,
+                AdminNotice.user_id == user.id,
+                AdminNotice.status == "ACTIVE",
+            )).first()
+            if requested:
+                rows.append(requested)
+        items = [{
+            "id": n.id, "title": n.title, "message": n.message,
+            "notice_type": n.notice_type, "target_url": n.target_url,
+            "read_at": n.read_at, "created_at": n.created_at,
+        } for n in rows]
+        legacy_items = [{
+            **item,
+            "is_read": bool(next(row.is_read for row in rows if row.id == item["id"])),
+        } for item in items]
+        return {
+            "unread_count": unread_count,
+            "unread": unread_count,
+            "notifications": legacy_items,
+            "items": items,
+        }
+
 
 @router.post("/notifications/{notice_id}/read")
-def mobile_notification_read(notice_id:int,user:User=Depends(_mobile_user)):
+def mobile_notification_read(
+    notice_id: int,
+    response: Response,
+    user: User = Depends(_mobile_user),
+):
+    response.headers.update(_PRIVATE_MOBILE_RESPONSE_HEADERS)
     with Session(engine, expire_on_commit=False) as session:
-        n=session.get(AdminNotice,notice_id)
-        if not n or n.user_id!=user.id or n.status!="ACTIVE":
-            raise HTTPException(status_code=404,detail="Bildirim bulunamadı.")
-        n.is_read=True;n.read_at=datetime.utcnow();session.add(n);session.commit()
-        return {"ok":True}
+        n = session.get(AdminNotice, notice_id)
+        if not n or n.user_id != user.id or n.status != "ACTIVE":
+            raise HTTPException(status_code=404, detail="Bildirim bulunamadı.")
+        n.is_read = True
+        n.read_at = _utcnow_naive()
+        session.add(n)
+        session.commit()
+        return {"ok": True}
+
 
 class MobileNotificationReadAll(BaseModel):
     seen_before: datetime
 
 
 @router.post("/notifications/read-all")
-def mobile_notifications_read_all(payload: MobileNotificationReadAll, user: User = Depends(_mobile_user)):
+def mobile_notifications_read_all(
+    payload: MobileNotificationReadAll,
+    response: Response,
+    user: User = Depends(_mobile_user),
+):
     """Mark only active notices visible at the client's captured cutoff as read."""
+    response.headers.update(_PRIVATE_MOBILE_RESPONSE_HEADERS)
     now = _utcnow_naive()
     seen_before = payload.seen_before
     if seen_before.tzinfo is not None:
