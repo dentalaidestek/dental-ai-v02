@@ -881,6 +881,8 @@ def test_native_patient_delete_ui_fails_closed_for_unresolved_local_mutations():
     assert "profileUncertain" in component and "treatmentUncertain" in component
     assert "if(lock.current||profileUncertain||treatmentUncertain||pendingTreatment||!treatmentIntentReady||treatmentIntentBlocked)return;" in component
     assert "patientProfileEditMatches(patientForm,latest.patient)" in component
+    assert component.count("if(result.patient.id!==patientId)") == 1
+    assert component.count("if(latest.patient.id!==patientId)") == 2
     assert "Sunucudaki profil kaydını karşılaştır" in component
     assert "Kontrol ettim" not in component
     delete_block = component.split("function confirmDelete()", 1)[1].split("const button=", 1)[0]
