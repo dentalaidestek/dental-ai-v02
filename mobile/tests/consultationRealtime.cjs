@@ -105,6 +105,10 @@ test("consultation inbox receives authenticated user identity from both navigati
  const inbox=source.slice(start,end);
  assert.ok(inbox.includes("export function Consultations({token,userId,navigation}:{token:string;userId:number;navigation:any})"));
  assert.ok(inbox.includes("applyConsultationInboxEvent(data,lastEvent,userId)"));
+ const filterStart=source.indexOf("function chatFilterMatch");
+ assert.ok(source.slice(filterStart,start).includes("item.status_key||item.status"));
+ assert.ok(inbox.includes("item.status_label||item.status"));
+ assert.ok(source.includes('"EXPERT_TIMEOUT","PROPOSAL_EXPIRED"'));
  assert.ok(app.includes("<Consultations token={token} userId={user.id} navigation={navigation}/>"));
  assert.ok(app.includes("<Consultations token={token} userId={user.id} navigation={p.navigation}/>"));
 });
