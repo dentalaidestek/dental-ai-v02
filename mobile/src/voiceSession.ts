@@ -81,7 +81,6 @@ export function isSafeVoiceSegmentUri(uri:unknown):uri is string{
  if(segments.length<2||segments.some(segment=>!segment||segment==='.'||segment==='..'))return false;
  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\.m4a$/i.test(segments[segments.length-1]);
 }
-}
 
 export function parseVoiceDraft(raw:string|null,userId:number,patientId:number,now=Date.now()):VoiceDraft|null{
  if(!raw)return null;let p:VoiceDraft;try{p=JSON.parse(raw)}catch{throw Error('Muayene taslağı okunamadı.')}
