@@ -1287,15 +1287,21 @@ def mobile_notifications_read_all(payload: MobileNotificationReadAll, user: User
             if not notice.read_at:
                 notice.read_at = now
             session.add(notice)
+        session.flush()
+        unread_count = int(session.exec(select(func.count(AdminNotice.id)).where(
+            AdminNotice.user_id == user.id,
+            AdminNotice.status == "ACTIVE",
+            AdminNotice.is_read == False,
+        )).one() or 0)
         if rows:
             realtime_event = _record_realtime_event(
                 session, user.id, "NOTIFICATIONS_READ", "notification", None,
-                {"read_count": len(rows)},
+                {"read_count": len(rows), "unread_count": unread_count},
             )
         session.commit()
     if realtime_event:
         on_loop(_publish_realtime_event, realtime_event)
-    return {"ok": True, "read_count": len(rows)}
+    return {"ok": True, "read_count": len(rows), "unread_count": unread_count}
 
 
 @router.get("/consultations/experts")
