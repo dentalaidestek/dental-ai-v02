@@ -1409,8 +1409,20 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Q
     with Session(engine,expire_on_commit=False) as session:
         scope=(ConsultationCase.requester_user_id==user.id)|(ConsultationCase.expert_user_id==user.id)
         query=select(ConsultationCase).where(scope)
+        latest_state_id = (
+            select(func.max(ConsultationInboxState.id))
+            .where(
+                ConsultationInboxState.case_id == ConsultationCase.id,
+                ConsultationInboxState.user_id == user.id,
+            )
+            .correlate(ConsultationCase)
+            .scalar_subquery()
+        )
         hidden = select(ConsultationInboxState.case_id).where(
-            ConsultationInboxState.user_id == user.id, ConsultationInboxState.deleted_at != None)
+            ConsultationInboxState.user_id == user.id,
+            ConsultationInboxState.id == latest_state_id,
+            ConsultationInboxState.deleted_at != None,
+        )
         query = query.where(~ConsultationCase.id.in_(hidden))
         if before is not None:
             anchor=select(ConsultationCase.requested_at).where(ConsultationCase.id==before,scope).scalar_subquery()
@@ -1420,9 +1432,12 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Q
         case_ids=[c.id for c in cases]
         other_ids={c.expert_user_id if c.requester_user_id==user.id else c.requester_user_id for c in cases}
         peers={u.id:u for u in session.exec(select(User).where(User.id.in_(other_ids))).all()} if other_ids else {}
-        inbox_states={state.case_id:state for state in session.exec(select(ConsultationInboxState).where(
+        read_rows=session.exec(select(
+            ConsultationInboxState.case_id,func.max(ConsultationInboxState.last_read_at)
+        ).where(
             ConsultationInboxState.case_id.in_(case_ids),ConsultationInboxState.user_id==user.id
-        )).all()} if case_ids else {}
+        ).group_by(ConsultationInboxState.case_id)).all() if case_ids else []
+        read_by_case={case_id:last_read_at for case_id,last_read_at in read_rows}
         last_by_case={}
         if case_ids:
             ranked=select(ConsultationMessage.id,func.row_number().over(
@@ -1433,7 +1448,7 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Q
             last_by_case={message.case_id:message for message in latest}
         unread_by_case={}
         if case_ids:
-            read_boundary={cid:(inbox_states[cid].last_read_at if cid in inbox_states else None) for cid in case_ids}
+            read_boundary={cid:read_by_case.get(cid) for cid in case_ids}
             for cid in case_ids:
                 boundary=read_boundary[cid]
                 if boundary is None:
@@ -1453,7 +1468,7 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Q
                     ConsultationMessage.case_id.in_(active_ids),
                     ConsultationMessage.sender_user_id!=user.id,
                     ConsultationMessage.created_at>func.coalesce(
-                        select(ConsultationInboxState.last_read_at).where(
+                        select(func.max(ConsultationInboxState.last_read_at)).where(
                             ConsultationInboxState.case_id==ConsultationMessage.case_id,
                             ConsultationInboxState.user_id==user.id
                         ).scalar_subquery(),ConsultationMessage.created_at
