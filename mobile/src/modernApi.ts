@@ -54,7 +54,7 @@ export const replySupportTicket=(t:string,id:number,message:string,key=supportKe
 
 export type Notice={id:number;title:string;message:string;notice_type:string;target_url?:string|null;read_at?:string|null;created_at:string};
 export type Expert={user_id:number;display_name:string;specialty:string;academic_title?:string|null;institution?:string|null;bio?:string|null;availability:string;consultation_price:number;rating_avg?:number|null;review_count:number};
-export type Consultation={id:number;other_user_id:number;other_display_name:string;specialty:string;tooth_region?:string|null;status:string;question:string;requested_at:string;last_message?:string|null;last_message_at?:string|null;last_message_id?:number;messages_deleted_at?:string|null;unread_count:number};
+export type Consultation={id:number;other_user_id:number;other_display_name:string;specialty:string;tooth_region?:string|null;status:string;status_key?:string;status_label?:string;question:string;requested_at:string;last_message?:string|null;last_message_at?:string|null;last_message_id?:number;messages_deleted_at?:string|null;unread_count:number};
 export type ChatMessage={id:number;sender_user_id:number;message_type:string;content:string;reply_to_message_id?:number|null;created_at:string;has_media?:boolean};
 export type AnalysisHistory={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;status:string;clinical_notes?:string|null;created_at:string;is_voice_review?:boolean};
 export type Course={id:number;title:string;description?:string|null;updated_at:string;material_count:number};
