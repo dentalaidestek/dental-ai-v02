@@ -911,3 +911,41 @@ def test_native_tooth_chart_blocks_all_clinical_writes_until_treatment_intent_re
     assert "gate.hasPendingTreatment === true" in presentation
     assert component.count("if(result.patient.id!==patientId)") == 2
     assert component.count("if(updated.patient.id!==patientId)") == 4
+
+
+def test_mobile_patient_detail_exposes_surface_updated_at_for_history_parity(chat):
+    client, engine = chat
+    changed_at = datetime(2026, 11, 17, 9, 15, 0)
+    with Session(engine) as session:
+        session.add(main.Patient(id=8, anonymous_id="SYNTHETIC-SURFACE-HISTORY", owner_user_id=1))
+        session.add(main.Patient(id=9, anonymous_id="SYNTHETIC-SURFACE-OTHER", owner_user_id=2))
+        session.add(main.ToothSurfaceStatus(
+            patient_id=8,
+            tooth_number="11",
+            surface="MESIAL",
+            status="CARIES",
+            note="Synthetic surface note",
+            updated_at=changed_at,
+        ))
+        session.add(main.ToothSurfaceStatus(
+            patient_id=9,
+            tooth_number="11",
+            surface="DISTAL",
+            status="FILLING",
+            note="Other owner record",
+            updated_at=changed_at,
+        ))
+        session.commit()
+
+    own = client.get("/api/mobile/v1/patients/8")
+    assert own.status_code == 200, own.text
+    surfaces = own.json()["surfaces"]
+    assert len(surfaces) == 1
+    assert surfaces[0]["tooth_number"] == "11"
+    assert surfaces[0]["surface"] == "MESIAL"
+    assert surfaces[0]["status"] == "CARIES"
+    assert surfaces[0]["note"] == "Synthetic surface note"
+    assert datetime.fromisoformat(surfaces[0]["updated_at"]).replace(tzinfo=None) == changed_at
+
+    # The same detail contract must not reveal another owner's surface history.
+    assert client.get("/api/mobile/v1/patients/9").status_code == 404
