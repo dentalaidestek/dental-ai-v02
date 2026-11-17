@@ -232,7 +232,7 @@ export async function getLinkPreview(
     (!Number.isSafeInteger(result.cover.id) ||
       result.cover.id < 1 ||
       typeof result.cover.url !== "string" ||
-      !/^\/api\/expert-social\/media\/[1-9][0-9]*$/.test(result.cover.url))
+      result.cover.url !== `/api/expert-social/media/${result.cover.id}`
   ) {
     throw new ApiError(502, "Bağlantı görseli doğrulanamadı.");
   }
