@@ -189,24 +189,23 @@ test('consultation media upload carries the persisted client intent key',async()
 
 test('native consultation drafts persist one encrypted text copy and a stable intent key',()=>{
  const source=fs.readFileSync(require.resolve('../src/ModernScreens.tsx'),'utf8');
- assert.match(source,/SecureStore\\.setItemAsync\\(draftKey,v\\)/);
- assert.match(source,/SecureStore\\.setItemAsync\\(pendingKey,JSON\\.stringify\\(\\{version:1,id:intent\\.id,scope:intent\\.scope,replyTo:intent\\.replyTo\\}\\)\\)/);
- assert.match(source,/getConsultationMessageReceipt/);
- assert.match(source,/editable=\\{!sendBusy&&!pendingMessage&&canCompose&&draftReady\\}/);
+ assert.ok(source.includes('SecureStore.setItemAsync(draftKey,v)'));
+ assert.ok(source.includes('SecureStore.setItemAsync(pendingKey,JSON.stringify({version:1,id:intent.id,scope:intent.scope,replyTo:intent.replyTo}))'));
+ assert.ok(source.includes('getConsultationMessageReceipt'));
+ assert.ok(source.includes('editable={!sendBusy&&!pendingMessage&&canCompose&&draftReady}'));
 });
 
 test('native consultation media intent stores no filename and reconciles before retry',()=>{
  const source=fs.readFileSync(require.resolve('../src/ChatAttachmentComposer.tsx'),'utf8');
- assert.match(source,/SecureStore\\.setItemAsync\\(pendingKey,JSON\\.stringify\\(\\{version:1,\\.\\.\\.intent\\}\\)\\)/);
- assert.match(source,/getConsultationMessageReceipt/);
- assert.doesNotMatch(source,/name:file\\.name/);
- assert.match(source,/Crypto\\.randomUUID\\(\\)/);
+ assert.ok(source.includes('SecureStore.setItemAsync(pendingKey,JSON.stringify({version:1,...intent}))'));
+ assert.ok(source.includes('getConsultationMessageReceipt'));
+ assert.equal(source.includes('name:file.name'),false);
+ assert.ok(source.includes('Crypto.randomUUID()'));
 });
 
 test('web consultation media retries keep the same session-scoped key',()=>{
  const source=fs.readFileSync(require('node:path').join(__dirname,'../../app/templates/expert_case_room.html'),'utf8');
- assert.match(source,/sessionStorage\\.setItem\\(mediaIntentStorageKey/);
- assert.match(source,/pendingMediaIntent\\.key/);
- assert.match(source,/clearAttachment\\(force=false\\)/);
+ assert.ok(source.includes('sessionStorage.setItem(mediaIntentStorageKey'));
+ assert.ok(source.includes('pendingMediaIntent.key'));
+ assert.ok(source.includes('clearAttachment(force=false)'));
 });
-
