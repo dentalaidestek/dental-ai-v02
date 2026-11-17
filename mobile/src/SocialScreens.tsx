@@ -233,7 +233,7 @@ function Composer({
   }
 
   async function previewLink() {
-    if (lock.current || previewBusy || d.draft.attempted) return;
+    if (lock.current || previewBusy) return;
     const url = d.draft.link.trim();
     try {
       const parsed = new URL(url);
