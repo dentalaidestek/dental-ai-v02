@@ -213,7 +213,7 @@ def test_media_message_receipt_replays_same_bytes_and_rejects_changed_bytes(chat
                    data={"client_message_id": key})
     assert first.status_code == 200, first.text
     second = c.post("/api/mobile/v1/consultations/1/attachments",
-                    files={"file": ("voice.wav", payload, "audio/wav")},
+                    files={"file": ("voice-copy.wav", payload, "audio/wav")},
                     data={"client_message_id": key})
     assert second.status_code == 200, second.text
     assert second.json()["message"]["id"] == first.json()["message"]["id"]
@@ -227,4 +227,21 @@ def test_media_message_receipt_replays_same_bytes_and_rejects_changed_bytes(chat
             main.ConsultationMessage.sender_user_id == 1,
         )).all()
         assert len(rows) == 1
+
+def test_chat_retention_removes_message_receipts(chat):
+    c, engine = chat
+    key = "native-retention-receipt-0001"
+    sent = c.post("/api/mobile/v1/consultations/1/messages",
+                  json={"content": "Retained only until policy expiry", "client_message_id": key})
+    assert sent.status_code == 200, sent.text
+    with Session(engine) as session:
+        case = session.get(main.ConsultationCase, 1)
+        main._purge_consultation_messages(session, case, main._utcnow_naive(), actor_id=1)
+        session.commit()
+        assert session.exec(select(main.ConsultationMessageReceipt).where(
+            main.ConsultationMessageReceipt.case_id == 1,
+        )).all() == []
+    receipt = c.get(f"/api/mobile/v1/consultations/1/message-receipt?client_message_id={key}")
+    assert receipt.status_code == 200
+    assert receipt.json() == {"message": None, "deleted": True}
 
