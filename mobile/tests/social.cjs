@@ -17,7 +17,7 @@ test('native Dental Flow link previews use the safe HTTPS endpoint and retain th
   assert.equal(calls[0].credentials,'omit');
   assert.equal(calls[0].headers.Authorization,'Bearer secret');
   assert.deepEqual(JSON.parse(calls[0].body),{url:'https://example.org/article'});
-  await api.createPost('secret',{text:'',link_url:'https://example.org/article',media_ids:[],idempotency_key:'synthetic-key',preview_id:77});
+  await api.createPost('secret',{text:'',link_url:'https://example.org/article',media_ids:[],idempotency_key:'11111111-1111-4111-8111-111111111111',preview_id:77});
   assert.equal(JSON.parse(calls[1].body).preview_id,77);
   assert.equal(JSON.parse(calls[1].body).media_ids.length,0);
   await assert.rejects(()=>api.getLinkPreview('secret','http://example.org/article'),/HTTPS/);
