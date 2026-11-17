@@ -4,7 +4,7 @@ import React,{useCallback,useEffect,useRef,useState}from"react";
 import{ActivityIndicator,AppState,Pressable,ScrollView,Text,TextInput,View}from"react-native";
 import * as SecureStore from "expo-secure-store";
 import{getPatient,getPatients,Patient}from"./api";
-import{getAnalysis,startAnalysisAI,MobileAnalysis}from"./analysisApi";
+import{getAnalysis,startAnalysisAI,MobileAnalysis,analysisPatientLabel}from"./analysisApi";
 import{useRealtime}from"./realtime";
 
 export default function NativeDentalAI({token,userId,initialAnalysisId,initialPatientId}:{token:string;userId?:number;initialAnalysisId?:number;initialPatientId?:number}){
@@ -82,7 +82,7 @@ export default function NativeDentalAI({token,userId,initialAnalysisId,initialPa
  return <View style={{paddingBottom:30}}>
   <Text style={{fontSize:13,fontWeight:"800",color:"#718096",marginBottom:8}}>Hasta seç</Text>
   <TextInput accessibilityLabel="Analiz için hasta ara" placeholder="Hasta adıyla ara" value={patientSearch} onChangeText={setPatientSearch} onSubmitEditing={()=>setPatientQuery(patientSearch.trim())} returnKeyType="search" style={{backgroundColor:"#FFF",borderWidth:1,borderColor:"#E5EAF0",padding:12,borderRadius:12,marginBottom:8,color:"#102033"}}/><Pressable accessibilityRole="button" onPress={()=>setPatientQuery(patientSearch.trim())} style={{alignSelf:"flex-end",paddingVertical:6,paddingHorizontal:12,marginBottom:8}}><Text style={{fontWeight:"800",color:"#071B35"}}>Hasta ara</Text></Pressable>
-  <ScrollView horizontal showsHorizontalScrollIndicator={false}>{choices.map(p=><Pressable key={p.id} onPress={()=>{if(actionLock.current||patientId===p.id)return;selectionGeneration.current++;selectedRecord.current=p;setPatientId(p.id);setAnalysis(null);setErr("");activeId.current=undefined;refreshGeneration.current++;if(userId)void SecureStore.deleteItemAsync("dai.analysis."+userId).catch(()=>{})}} style={{paddingHorizontal:12,paddingVertical:9,borderRadius:12,backgroundColor:patientId===p.id?"#071B35":"#FFF",borderWidth:1,borderColor:"#E5EAF0",marginRight:7}}><Text style={{fontSize:12,fontWeight:"700",color:patientId===p.id?"#FFF":"#102033"}}>{p.first_name} {p.last_name}</Text></Pressable>)}</ScrollView>
+  <ScrollView horizontal showsHorizontalScrollIndicator={false}>{choices.map(p=><Pressable key={p.id} onPress={()=>{if(actionLock.current||patientId===p.id)return;selectionGeneration.current++;selectedRecord.current=p;setPatientId(p.id);setAnalysis(null);setErr("");activeId.current=undefined;refreshGeneration.current++;if(userId)void SecureStore.deleteItemAsync("dai.analysis."+userId).catch(()=>{})}} style={{paddingHorizontal:12,paddingVertical:9,borderRadius:12,backgroundColor:patientId===p.id?"#071B35":"#FFF",borderWidth:1,borderColor:"#E5EAF0",marginRight:7}}><Text style={{fontSize:12,fontWeight:"700",color:patientId===p.id?"#FFF":"#102033"}}>{analysisPatientLabel(p)}</Text></Pressable>)}</ScrollView>
   {!!patientError&&<Text style={{color:"#B42318",marginTop:8}}>{patientError}</Text>}
   {patientBusy&&<ActivityIndicator color="#071B35"/>}
   {patients.length<patientTotal&&<Pressable accessibilityRole="button" disabled={patientBusy} onPress={()=>void load(patients.length)} style={{padding:12,marginTop:8,alignSelf:"center"}}><Text style={{fontWeight:"800",color:"#071B35"}}>Daha fazla hasta ({patients.length}/{patientTotal})</Text></Pressable>}
