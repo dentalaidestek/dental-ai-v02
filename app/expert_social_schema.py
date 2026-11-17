@@ -1,4 +1,4 @@
-"""Social extension migration, independent from worker baseline revision 12."""
+"""Social extension migration, independent from worker baseline revision 14."""
 
 import logging
 
