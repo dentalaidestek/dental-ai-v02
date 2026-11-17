@@ -9,10 +9,11 @@ import * as ImagePicker from"expo-image-picker";
 import * as SecureStore from"expo-secure-store";
 import * as Crypto from "expo-crypto";
 import{ActivityIndicator,Alert,FlatList,Image,Modal,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View}from"react-native";
-import{getAnalysisHistory,getConsultation,getConsultations,getCourses,getAcademicMessages,getExperts,getMedia,deleteMedia,getNotifications,markNotificationRead,askAcademic,sendConsultationMessage,getConsultationMessageReceipt,markConsultationRead,createConsultation,Expert,Consultation,Course,ChatMessage}from"./modernApi";
+import{getAnalysisHistory,getConsultation,getConsultations,getCourses,getAcademicMessages,getExperts,getMedia,deleteMedia,getNotifications,markNotificationRead,markAllNotificationsRead,askAcademic,sendConsultationMessage,getConsultationMessageReceipt,markConsultationRead,createConsultation,Expert,Consultation,Course,ChatMessage}from"./modernApi";
 import{useRealtime}from"./realtime";
 import {usePagedRecords} from "./usePagedRecords";
 import {resolveNativeNotificationTarget} from "./notificationTarget";
+import {applyNotificationReadAllSnapshot} from "./notificationState";
 import {uploadPatientMedia} from "./api";
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",green:"#16803C",red:"#B42318"};
 const card={backgroundColor:C.white,borderRadius:18,borderWidth:1,borderColor:C.line,padding:16,marginBottom:12} as any;
@@ -21,14 +22,14 @@ function Empty({title,sub}:{title:string;sub:string}){return <View style={s.empt
 
 export function Notifications({token}:{token:string}){
  const nav:any=useNavigation();const[d,setD]=useState<any>();const{lastEvent}=useRealtime();
- const[busy,setBusy]=useState(false),[error,setError]=useState("");
+ const[busy,setBusy]=useState(false),[markingAll,setMarkingAll]=useState(false),[error,setError]=useState("");
  const requestGeneration=useRef(0),activeToken=useRef(token);
  // Never allow an earlier account or an older refresh to overwrite this account\u0027s notifications.
  if(activeToken.current!==token){activeToken.current=token;requestGeneration.current++;}
  const load=useCallback(async()=>{const request=++requestGeneration.current;setBusy(true);try{const result=await getNotifications(token);if(request!==requestGeneration.current||activeToken.current!==token)return;setD({...result,accountToken:token});setError("")}catch(e){if(request===requestGeneration.current&&activeToken.current===token)setError(e instanceof Error?e.message:"Bildirimler alınamadı.")}finally{if(request===requestGeneration.current&&activeToken.current===token)setBusy(false)}},[token]);
  useEffect(()=>{setD(undefined);setError("");setBusy(false);return()=>{requestGeneration.current++}},[token]);
  useEffect(()=>{void load()},[load]);
- useEffect(()=>{if(lastEvent&&["NOTICE_CREATED","NOTICE_RESOLVED","MESSAGE_CREATED","CASE_CREATED"].includes(String(lastEvent.event_type||lastEvent.type)))void load()},[lastEvent,load]);
+ useEffect(()=>{if(lastEvent&&["NOTICE_CREATED","NOTICE_RESOLVED","MESSAGE_CREATED","CASE_CREATED","NOTIFICATIONS_READ"].includes(String(lastEvent.event_type||lastEvent.type)))void load()},[lastEvent,load]);
  async function open(item:any){
   const requestToken=token;
   const target=resolveNativeNotificationTarget(item.target_url);
@@ -51,9 +52,28 @@ export function Notifications({token}:{token:string}){
    else nav.navigate(target.route.screen);
   }
  }
+ async function markAllRead(){
+  if(markingAll||busy||activeToken.current!==token||d?.accountToken!==token||!d?.unread)return;
+  const seenBefore=new Date().toISOString();
+  setMarkingAll(true);setError("");
+  try{
+   await markAllNotificationsRead(token,seenBefore);
+   if(activeToken.current!==token)return;
+   setD((old:any)=>{
+    if(old?.accountToken!==token||!Array.isArray(old.items))return old;
+    const items=applyNotificationReadAllSnapshot(old.items,seenBefore);
+    return {...old,items,unread:items.reduce((count:number,item:any)=>count+(item.read_at?0:1),0)};
+   });
+  }catch(e){
+   if(activeToken.current===token)setError(e instanceof Error?e.message:"Bildirimler okundu olarak işaretlenemedi.");
+  }finally{
+   if(activeToken.current===token)setMarkingAll(false);
+  }
+ }
+
  return <FlatList style={s.page} contentContainerStyle={s.pad} data={d?.accountToken===token?d.items:[]} keyExtractor={x=>String(x.id)}
  refreshControl={<RefreshControl refreshing={busy&&(!d||d.accountToken===token)} onRefresh={()=>void load()}/>}
- ListHeaderComponent={<View style={{marginBottom:14}}><Text style={s.big}>Bildirimler</Text><Text style={s.muted}>Yeni mesajlar, danışmanlıklar ve hesap gelişmeleri.</Text>{!!error&&(!d||d.accountToken===token)&&<Text accessibilityRole="alert" style={{color:C.red,marginTop:10}}>{error}</Text>}</View>}
+ ListHeaderComponent={<View style={{marginBottom:14}}><Text style={s.big}>Bildirimler</Text><Text style={s.muted}>Yeni mesajlar, danışmanlıklar ve hesap gelişmeleri.</Text>{d?.accountToken===token&&d.unread>0&&<Pressable accessibilityRole="button" accessibilityLabel="Tüm bildirimleri okundu işaretle" disabled={busy||markingAll} onPress={()=>void markAllRead()} style={[s.btn,{marginTop:12,opacity:busy||markingAll?.55:1}]}><Text style={s.btnT}>{markingAll?"Okundu olarak işaretleniyor…":"Tümünü okundu işaretle"}</Text></Pressable>}{!!error&&(!d||d.accountToken===token)&&<Text accessibilityRole="alert" style={{color:C.red,marginTop:10}}>{error}</Text>}</View>}
  renderItem={({item})=><Pressable accessibilityRole="button" style={[card,!item.read_at&&{borderLeftWidth:4,borderLeftColor:C.navy}]} onPress={()=>void open(item)}>
  <View style={s.row}><Text style={[s.title,{flex:1}]}>{item.title}</Text>{!item.read_at&&<Text style={{color:"#1769AA",fontWeight:"800"}}>Yeni</Text>}</View>
  <Text style={s.body}>{item.message}</Text><Text style={s.meta}>{new Date(item.created_at).toLocaleString("tr-TR")}</Text>
