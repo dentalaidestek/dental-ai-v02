@@ -413,7 +413,7 @@ test('corrupt treatment intent keeps the entire tooth chart read-only',async()=>
 test('native tooth history shows web-equivalent surface status, note and timestamp',async()=>{
  focused=true;lastEvent=null;appListeners=[];
  const detail=patient(8,'Ada');
- detail.surfaces=[{id:5,tooth_number:'11',surface:'MESIAL',status:'CARIES',note:'Mesial clinical note',updated_at:'2026-11-17T09:15:00'}];
+ detail.surfaces=[{id:5,tooth_number:'11',surface:'MESIAL',status:'CARIES',note:'Mesial clinical note',updated_at:'2026-11-17T09:15:00'},{id:6,tooth_number:'11',surface:'BUCCAL',status:'ROOT_CANAL',note:'Buccal clinical note',updated_at:'2026-11-17T10:30:00'}];
  const Chart=chartComponent({getPatient:async()=>detail});
  let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush();await flush()});
@@ -428,6 +428,10 @@ test('native tooth history shows web-equivalent surface status, note and timesta
  assert.match(rendered,/Mesial/);
  assert.match(rendered,/Çürük/);
  assert.match(rendered,/Mesial clinical note/);
+ assert.match(rendered,/Bukkal \/ Vestibül/);
+ assert.match(rendered,/Kanal Tedavisi/);
+ assert.match(rendered,/Buccal clinical note/);
  assert.match(rendered,/09:15/);
+ assert.match(rendered,/10:30/);
  await renderer.act(async()=>tree.unmount());
 });
