@@ -653,3 +653,10 @@ Web-first review covered `expert_following.html`, `_expert_social.html`, `expert
 Native now supports up to four sequential JPEG/PNG/WebP uploads (8 MiB each), persisting each successful media ID before continuing; secure-draft remove/reorder; HTTPS-only calls to the existing SSRF-safe `POST /preview`; bounded preview receipt persistence and validation; preview-aware post creation; metadata/cover link cards; cover exclusion from the gallery; and web-equivalent owner management routing and tab wording. No backend schema, migration, new background polling, patient data flow, merge or deployment.
 
 Regression coverage added to `mobile/tests/social.cjs` and `mobile/tests/socialScreens.cjs`. These tests are committed but not claimed as executed. Full Android typecheck, beta tests, Expo export and backend social pytest remain blocked until GitHub Actions assigns runners. Evidence: `docs/mobile-dental-flow-parity-20261117.md`.
+
+
+### Dental Akış follow-up hardening
+
+Restored preview drafts now require HTTPS without URL credentials/nonstandard ports; cover URLs must exactly match their media IDs. Native preview opening repeats the HTTPS guard. A newly found retry defect was fixed: `attempted=true` drafts now allow the existing "Tekrar dene" action to submit the frozen payload with the same idempotency UUID, while media/link edits remain disabled. Regression tests cover preview URL/cover binding and ambiguous-send retry.
+
+Latest observed head before this tracker update: `d5c415afa37b3f09eb937e1f6471e6f3fb3d78ef`. Android run `44030198756`, Security `44030198821`, Expert Social `44030198735`, Admin `44030198867`, Voice `44030198773`: six inspected jobs had empty step arrays and all six log downloads returned `BlobNotFound 404`. No compiler, Node beta, Gradle or pytest step executed. Evidence: `docs/mobile-dental-flow-parity-20261117.md`.
