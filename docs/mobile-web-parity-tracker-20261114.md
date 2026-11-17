@@ -561,3 +561,11 @@ Implemented:
 Regression tests added (committed, not executed): `tests/test_mobile_chat_actions.py`, `mobile/tests/consultations.cjs`; legacy synthetic key updated in `tests/test_legacy_pr215_repairs.py`.
 
 Open acceptance: PostgreSQL migration/concurrency run, full Node/Python suite, TypeScript 5.9.2, Android build, real Android/iOS process-death and account-isolation tests, push/realtime replay checks, and 60k-user load/storage measurements. No main merge, production deploy, app-store release, or patient-record mutation.
+
+## 2026-11-17 — Expert chat media recovery race
+
+Web-first review of \`app/templates/expert_case_room.html\` and native \`ChatAttachmentComposer.tsx\` found that native camera/document/send controls were active before asynchronous SecureStore intent recovery completed. A process-death retry could therefore race a new request key against an already-committed attachment. Added a restore gate, receipt reconciliation before enabling a new send, and fail-closed handling for corrupt/unreadable local intent. No media bytes, URI, filename or clinical content were added to the stored intent.
+
+Added two mobile regressions to the existing \`consultations.cjs\` beta suite. PostgreSQL migration revision-12 coverage now drops and verifies recreation of all four study tables before revision 14 is recorded. Added a two-worker PostgreSQL same-key consultation message replay test, including changed-payload 409 and one-message/one-receipt assertions. Security recovery path filters now include \`tests/test_postgres_optimization.py\`.
+
+Commits: \`0451e1b\`, \`0fe7915\`, \`e00257b\`, \`a35dd60\`, \`809b608\`, \`e5e1957\`, \`8752d35\`. The new Node/PostgreSQL tests are committed but not yet executed; the latest Actions run still fails before any step with empty step arrays and \`BlobNotFound 404\`. No full typecheck, pytest, Android build or device acceptance is claimed. PR remains Draft; no merge/deploy or clinical record mutation.
