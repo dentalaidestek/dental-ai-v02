@@ -186,13 +186,14 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
  async function reconcilePending(){
   const intent=pending.current,scope=activeScope.current;if(!intent||intent.scope!==intentScope)return false;
   try{const receipt=await getConsultationMessageReceipt(token,id,intent.id);if(scope!==activeScope.current||pending.current?.id!==intent.id||(!receipt.message&&!receipt.deleted))return false;
+   const saved=await SecureStore.getItemAsync(draftKey);if(saved===intent.content)await SecureStore.deleteItemAsync(draftKey);
+   await SecureStore.deleteItemAsync(pendingKey);
    pending.current=null;setPendingMessage(false);setText(current=>current===intent.content?"":current);setReplyTo(null);
-   await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});const saved=await SecureStore.getItemAsync(draftKey).catch(()=>null);if(saved===intent.content)await SecureStore.deleteItemAsync(draftKey).catch(()=>{});
    if(scope===activeScope.current)await load();return true;
   }catch{return false}
  }
  useEffect(()=>{if(draftReady&&isFocused&&connected&&pending.current)void reconcilePending()},[draftReady,isFocused,connected,token,id]);
- useEffect(()=>{if(visibleData?.case?.messages_deleted_at){pending.current=null;setPendingMessage(false);setText("");setReplyTo(null);void SecureStore.deleteItemAsync(pendingKey).catch(()=>{});void SecureStore.deleteItemAsync(draftKey).catch(()=>{})}},[visibleData?.case?.messages_deleted_at,pendingKey,draftKey]);
+ useEffect(()=>{if(visibleData?.case?.messages_deleted_at){pending.current=null;setPendingMessage(false);setText("");setReplyTo(null);void SecureStore.deleteItemAsync(draftKey).then(()=>SecureStore.deleteItemAsync(pendingKey)).catch(()=>{})}},[visibleData?.case?.messages_deleted_at,pendingKey,draftKey]);
  async function send(){
   const scope=activeScope.current,v=text.trim(),reply=replyTo,revisionAtSend=draftRevision.current;if(sending.current||!v||!canCompose||!draftReady)return;
   if(pending.current&&pending.current.scope===intentScope&&(pending.current.content!==v||pending.current.replyTo!==reply)){setSendError("Önce bekleyen mesajın sonucunu doğrulayın.");return}
@@ -206,12 +207,12 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
    const result=await sendConsultationMessage(token,id,v,messageId,reply??undefined);
    if(scope!==activeScope.current)return;
    if(!result?.ok||!result?.message?.id)throw Error("Gönderim doğrulanamadı. Aynı mesaj anahtarı korunuyor.");
-   if(pending.current?.id===messageId)pending.current=null;setPendingMessage(false);
-   await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});
-   setText(current=>current===v?"":current);setReplyTo(null);
-   const saved=await SecureStore.getItemAsync(draftKey).catch(()=>null);
+   const saved=await SecureStore.getItemAsync(draftKey);
    if(scope!==activeScope.current)return;
-   if(saved===v&&draftRevision.current===revisionAtSend)await SecureStore.deleteItemAsync(draftKey).catch(()=>{});
+   if(saved===v&&draftRevision.current===revisionAtSend)await SecureStore.deleteItemAsync(draftKey);
+   await SecureStore.deleteItemAsync(pendingKey);
+   if(pending.current?.id===messageId)pending.current=null;setPendingMessage(false);
+   setText(current=>current===v?"":current);setReplyTo(null);
    if(scope===activeScope.current)await load();
   }catch(e){if(scope===activeScope.current){setSendError(e instanceof Error?e.message:"Mesaj gönderilemedi. Aynı istek anahtarı korunuyor.");void reconcilePending()}}
   finally{if(scope===activeScope.current){sending.current=false;setSendBusy(false)}}
