@@ -206,3 +206,46 @@ test('native editor mirrors web title copy and caps location at 160 characters',
  assert.equal(locationInput.props.maxLength,160);
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('uncertain program edit verifies the server and closes only when the saved fields match',async()=>{
+ const original={id:7,event_type:'APPOINTMENT',title:'Old visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const updated={...original,title:'Updated visit'};
+ let reads=0,writes=0,saved=0;
+ const Editor=component('NativeProgramEditor',{
+  getProgramEvent:async()=>{reads++;return reads===1?original:updated},
+  checkProgramConflicts:async()=>({advisory:true,total:0,items:[]}),
+  saveProgramEvent:async()=>{writes++;throw Object.assign(new Error('timeout'),{status:408})}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),eventId:7,onSaved(){saved++},onClose(){}}));await tick()});
+ await renderer.act(async()=>tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.onChangeText('Updated visit'));
+ await renderer.act(async()=>button(tree,'Değişiklikleri Kaydet').props.onPress());
+ assert.equal(writes,1);
+ assert.ok(button(tree,'Değişikliği sunucuda doğrula'));
+ await renderer.act(async()=>button(tree,'Değişikliği sunucuda doğrula').props.onPress());
+ assert.equal(reads,2);
+ assert.equal(saved,1);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('uncertain program edit does not claim success when the server still has old values',async()=>{
+ const original={id:7,event_type:'APPOINTMENT',title:'Old visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ let reads=0,writes=0,saved=0;
+ const Editor=component('NativeProgramEditor',{
+  getProgramEvent:async()=>{reads++;return original},
+  checkProgramConflicts:async()=>({advisory:true,total:0,items:[]}),
+  saveProgramEvent:async()=>{writes++;throw Object.assign(new Error('timeout'),{status:408})}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),eventId:7,onSaved(){saved++},onClose(){}}));await tick()});
+ await renderer.act(async()=>tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.onChangeText('Updated visit'));
+ await renderer.act(async()=>button(tree,'Değişiklikleri Kaydet').props.onPress());
+ await renderer.act(async()=>button(tree,'Değişikliği sunucuda doğrula').props.onPress());
+ assert.equal(reads,2);
+ assert.equal(saved,0);
+ assert.equal(tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.value,'Updated visit');
+ assert.ok(tree.root.findAllByType('Text').some(node=>text(node).includes('eşleşmiyor')));
+ assert.equal(button(tree,'Değişiklikleri Kaydet').props.disabled,false);
+ await renderer.act(async()=>tree.unmount());
+});
