@@ -526,6 +526,7 @@ class MobileScheduleCreate(BaseModel):
     notification_enabled: bool = True
     recurrence_rule: str = "NONE"
     recurrence_until: str = ""
+    request_key: Optional[str] = None
 
 
 @router.post("/patients")
@@ -602,9 +603,44 @@ def mobile_schedule(user: User = Depends(_mobile_user)):
         }
 
 
+_PROGRAM_CREATE_REQUEST_KEY = re.compile(r"^[A-Za-z0-9_-]{16,96}$")
+
+
+def _program_request_hash(owner_id: int, request_key: str) -> str:
+    if (not isinstance(owner_id, int) or isinstance(owner_id, bool) or owner_id <= 0 or
+            not isinstance(request_key, str) or not _PROGRAM_CREATE_REQUEST_KEY.fullmatch(request_key)):
+        raise ValueError("Invalid Program request key.")
+    return hashlib.sha256(
+        f"dental-ai:program-create:v1:{owner_id}:{request_key}".encode("ascii")
+    ).hexdigest()
+
+
+def _program_payload_hash(owner_id: int, request_key: str, values: dict) -> str:
+    # The random request key is the HMAC key. The database stores only a keyed
+    # fingerprint, never the appointment title, note or patient identifier.
+    encoded = json.dumps(
+        values, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str
+    ).encode("utf-8")
+    message = f"dental-ai:program-create:v1:{owner_id}:".encode("ascii") + encoded
+    return hmac.new(request_key.encode("ascii"), message, hashlib.sha256).hexdigest()
+
+
+def _program_event_receipt_payload(event: ScheduleEvent) -> dict:
+    return {"id": event.id, "event_type": event.event_type, "title": event.title,
+            "start_at": event.start_at, "end_at": event.end_at, "patient_id": event.patient_id,
+            "location": event.location, "status": event.status}
+
+
 @router.post("/schedule")
 def mobile_create_schedule(payload: MobileScheduleCreate, user: User = Depends(_mobile_user)):
     from app import main as web
+    request_hash = payload_hash = None
+    if payload.request_key is not None:
+        try:
+            request_hash = _program_request_hash(user.id, payload.request_key)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Program isteği anahtarını kontrol edin.") from exc
+
     with Session(engine, expire_on_commit=False) as session:
         values, error = _validate_schedule_input(
             session, user, payload.event_type, payload.title, payload.start_at, payload.end_at,
@@ -614,18 +650,60 @@ def mobile_create_schedule(payload: MobileScheduleCreate, user: User = Depends(_
         )
         if error:
             raise HTTPException(status_code=422, detail=error)
+        if request_hash:
+            payload_hash = _program_payload_hash(user.id, payload.request_key, values)
+            existing = session.exec(select(ScheduleEvent).where(
+                ScheduleEvent.owner_user_id == user.id,
+                ScheduleEvent.client_request_hash == request_hash,
+            )).first()
+            if existing:
+                if not hmac.compare_digest(existing.client_payload_hash or "", payload_hash):
+                    raise HTTPException(status_code=409, detail="Bu Program isteği anahtarı farklı bir içerik için kullanılmış.")
+                if existing.status == "DELETED":
+                    raise HTTPException(status_code=410, detail="Bu Program isteği daha önce oluşturulup silinmiş.")
+                return {"event": _program_event_receipt_payload(existing), "replayed": True}
+
         event = ScheduleEvent(owner_user_id=user.id, **values)
-        session.add(event)
-        session.flush()
-        web._sync_program_reminder(session,event)
-        realtime_events=web._resolve_notifications(session,user_id=user.id,notice_type="PROGRAM_REMINDER",related_type="schedule_event",related_id=event.id)
-        realtime_events.append(web._record_program_realtime_event(session,user.id,"PROGRAM_CREATED",event.id))
-        session.commit()
+        if request_hash:
+            event.client_request_hash = request_hash
+            event.client_payload_hash = payload_hash
+        realtime_events = []
+        try:
+            # Event, reminder queue, durable notifications and the idempotency
+            # fingerprint commit together. A unique-index race rolls back all
+            # side effects before the winning receipt is read below.
+            with session.begin_nested():
+                session.add(event)
+                session.flush()
+                web._sync_program_reminder(session, event)
+                realtime_events = web._resolve_notifications(
+                    session, user_id=user.id, notice_type="PROGRAM_REMINDER",
+                    related_type="schedule_event", related_id=event.id,
+                )
+                realtime_events.append(web._record_program_realtime_event(
+                    session, user.id, "PROGRAM_CREATED", event.id
+                ))
+                session.flush()
+            session.commit()
+        except IntegrityError:
+            if not request_hash:
+                raise
+            existing = session.exec(select(ScheduleEvent).where(
+                ScheduleEvent.owner_user_id == user.id,
+                ScheduleEvent.client_request_hash == request_hash,
+            )).first()
+            if not existing:
+                raise HTTPException(status_code=409, detail="Program kaydı doğrulanamadı; takvimi yenileyin.")
+            if not hmac.compare_digest(existing.client_payload_hash or "", payload_hash or ""):
+                raise HTTPException(status_code=409, detail="Bu Program isteği anahtarı farklı bir içerik için kullanılmış.")
+            if existing.status == "DELETED":
+                raise HTTPException(status_code=410, detail="Bu Program isteği daha önce oluşturulup silinmiş.")
+            return {"event": _program_event_receipt_payload(existing), "replayed": True}
+
         web._wake_program_reminder_worker()
-        for realtime in realtime_events:on_loop(_publish_realtime_event,realtime)
-        return {"event": {"id": event.id, "event_type": event.event_type, "title": event.title,
-                          "start_at": event.start_at, "end_at": event.end_at, "patient_id": event.patient_id,
-                          "location": event.location, "status": event.status}}
+        for realtime in realtime_events:
+            on_loop(_publish_realtime_event, realtime)
+        return {"event": _program_event_receipt_payload(event), "replayed": False}
 
 
 
