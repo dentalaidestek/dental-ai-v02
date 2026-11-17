@@ -39,3 +39,13 @@ PR #257 head was `58daa8fd8337d0f4ae661672cc67e2c4f7ef2805`. Current-head workfl
 - Continue performance and 60,000-user load acceptance; no capacity claim is made.
 
 No main merge, production deploy, migration, APK/IPA publication or clinical-record mutation was performed.
+
+
+## Additional recovery hardening — 2026-11-18
+
+A second pass found two more ambiguous-write paths in the native library:
+
+- Course creation previously exposed a manual “I checked the list; allow another create” override after a lost response. That could create a duplicate without a server receipt. The override is removed. The app now keeps a persisted in-memory intent (exact title/description plus IDs already visible), refreshes the owner-scoped library using the exact title, and opens only a new matching course. If no match is visible, creation remains locked. The backend course-create endpoint still has no durable idempotency receipt; safe retry after a confirmed non-creation remains an open backend improvement.
+- Upload recovery previously cleared its local marker after any successful workspace refresh, even if the material was not present. The marker is now structured and bound to user/course, URI, filename, file size when supplied by the picker, and pre-existing material IDs. Recovery requires a newly created same-name/same-size material row before deleting the private cache copy and clearing the marker. A failed lookup or missing row keeps the marker and local file; duplicate filenames in one batch are rejected. Legacy unstructured markers fail closed rather than being silently cleared.
+
+Additional helpers and regressions cover exact course matching, same-name upload receipt matching, file-size mismatch, user/course-bound upload intents, and guarded cache cleanup. The upload recovery match uses the first workspace page (new materials are ordered newest first); if the row is not visible, it intentionally stays locked rather than risking a duplicate.
