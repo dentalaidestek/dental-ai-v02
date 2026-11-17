@@ -20,12 +20,12 @@ test('program payload validates real dates, end order and removes stale patient/
  assert.equal(validWallTime('2025-02-29T10:00'),false);assert.equal(validWallTime('2030-01-07T24:00'),false);assert.equal(wallTimeLabel(base.start_at),'10:00');
 });
 test('program form sends a selected record once despite duplicate taps and disables reminders explicitly',async()=>{
- const calls=[];let release;const Editor=component('NativeProgramEditor',{saveProgramEvent:async(_token,payload)=>{calls.push(payload);return new Promise(resolve=>{release=()=>resolve({id:7,...payload,start_local:payload.start_at})})}});let tree;
+ const calls=[];let release;const Editor=component('NativeProgramEditor',{saveProgramEvent:async(_token,payload,_eventId,requestKey)=>{calls.push({payload,requestKey});return new Promise(resolve=>{release=()=>resolve({id:7,...payload,start_local:payload.start_at})})}});let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),onSaved(){},onClose(){}}));await tick()});
  await renderer.act(async()=>{tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.onChangeText('Actual native appointment');tree.root.findByType('NativePatientSelect').props.onChange({id:8,anonymous_id:'SYNTHETIC',first_name:'Synthetic'})});
  await renderer.act(async()=>button(tree,'Hatırlatma yok').props.onPress());
  await renderer.act(async()=>{const save=button(tree,'Programa Ekle');save.props.onPress();save.props.onPress()});
- assert.equal(calls.length,1);assert.equal(calls[0].patient_id,8);assert.equal(calls[0].reminder_minutes,'NONE');
+ assert.equal(calls.length,1);assert.equal(calls[0].payload.patient_id,8);assert.equal(calls[0].payload.reminder_minutes,'NONE');assert.equal(calls[0].requestKey,'program-request-key-00000001');
  await renderer.act(async()=>release());await renderer.act(async()=>tree.unmount());
 });
 test('calendar hides previous account data while the next account request is pending',async()=>{
