@@ -238,13 +238,13 @@ test('opaque Android image URI cannot bypass unsupported or conflicting MIME che
 
 
 test('analysis detail rejects duplicate and malformed clinical asset identifiers',async()=>{
- const oldFetch=global.fetch;
+ const oldFetch=global.fetch,asset=id=>({id,original_filename:'scan-'+id+'.png',image_type:'PERIAPICAL',has_vision:false});
  try{
-  for(const assets of [[{id:2},{id:2}],[{id:0}],[{id:'4'}],[null]]){
+  for(const assets of [[asset(2),asset(2)],[{...asset(2),id:0}],[{...asset(2),id:'4'}],[null]]){
    global.fetch=async()=>new Response(JSON.stringify({analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7,anonymous_id:'SYNTHETIC-7',age:null,chief_complaint:null},assets}),{status:200});
-   await assert.rejects(()=>api.getAnalysis('token',23),/hasta veya iş kimliği uyuşmayan/);
+   await assert.rejects(()=>api.getAnalysis('token',23),error=>error.status===502);
   }
-  global.fetch=async()=>new Response(JSON.stringify({analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7,anonymous_id:'SYNTHETIC-7',age:null,chief_complaint:null},assets:[{id:2},{id:3}]}),{status:200});
+  global.fetch=async()=>new Response(JSON.stringify({analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7,anonymous_id:'SYNTHETIC-7',age:null,chief_complaint:null},assets:[asset(2),asset(3)]}),{status:200});
   assert.equal((await api.getAnalysis('token',23)).assets.length,2);
  }finally{global.fetch=oldFetch}
 });
@@ -294,4 +294,29 @@ test('analysis workspace accepts only anonymous patient summary fields',async()=
 test('restored analysis patient choice falls back to anonymous ID while patient-list names remain usable',()=>{
  assert.equal(api.analysisPatientLabel({id:7,anonymous_id:'SYNTHETIC-7'}),'SYNTHETIC-7');
  assert.equal(api.analysisPatientLabel({id:7,anonymous_id:'SYNTHETIC-7',first_name:'Ada',last_name:'Lovelace'}),'Ada Lovelace');
+});
+
+
+test('analysis detail rejects storage paths, unsafe filenames and internal job errors',async()=>{
+ const original=global.fetch;
+ const patient={id:7,anonymous_id:'SYNTHETIC-7',age:null,chief_complaint:null};
+ const asset={id:2,original_filename:'scan.png',image_type:'PERIAPICAL',has_vision:true};
+ const analysis={id:23,patient_id:7,status:'VISION_READY'};
+ const valid={analysis,patient,assets:[asset],job:null};
+ const invalid=[
+  {...valid,analysis:{...analysis,result_path:'uploads/private.json'}},
+  {...valid,assets:[{...asset,file_path:'uploads/private.png'}]},
+  {...valid,assets:[{...asset,original_filename:'../private.png'}]},
+  {...valid,assets:Array(5).fill(asset)},
+  {...valid,job:{id:5,kind:'PRELIMINARY',status:'FAILED',retryable:true,error_code:'PRIVATE_PROVIDER_ERROR'}}
+ ];
+ try{
+  for(const payload of invalid){
+   global.fetch=async()=>new Response(JSON.stringify(payload),{status:200});
+   await assert.rejects(()=>api.getAnalysis('token',23),error=>error.status===502);
+  }
+  global.fetch=async()=>new Response(JSON.stringify({...valid,job:{id:5,kind:'PRELIMINARY',status:'DONE',retryable:false}}),{status:200});
+  const result=await api.getAnalysis('token',23);
+  assert.equal(result.job.id,5);
+ }finally{global.fetch=original}
 });

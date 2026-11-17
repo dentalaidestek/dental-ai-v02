@@ -19,10 +19,12 @@ async function call<T>(path:string,token:string,options:RequestInit={}):Promise<
 }
 
 export type AnalysisPatientSummary=Pick<Patient,'id'|'anonymous_id'|'age'|'chief_complaint'>;
+export type MobileAnalysisJob={id:number;kind:'PRELIMINARY'|'FINAL';status:string;retryable:boolean};
 export type MobileAnalysis={
   analysis:{id:number;patient_id:number;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at?:string;is_voice_review?:boolean;legacy_radiograph_available?:boolean};
   patient:AnalysisPatientSummary;
   assets:Array<{id:number;original_filename:string;image_type:string;has_vision:boolean}>;
+  job?:MobileAnalysisJob|null;
   ai_result?:any|null;
 };
 export function analysisPatientLabel(patient:Pick<Patient,'id'|'anonymous_id'|'first_name'|'last_name'>):string{
@@ -36,6 +38,32 @@ function validAnalysisPatient(value:any,expectedId:number):value is AnalysisPati
  return typeof value.anonymous_id==='string'&&value.anonymous_id.length>0&&value.anonymous_id.length<=128&&
   (value.age===null||(Number.isSafeInteger(value.age)&&value.age>=0&&value.age<=130))&&
   (value.chief_complaint===null||(typeof value.chief_complaint==='string'&&value.chief_complaint.length<=4000));
+}
+
+const analysisFields=new Set(['id','patient_id','tooth_number','clinical_notes','status','created_at','is_voice_review','legacy_radiograph_available']);
+const analysisAssetFields=new Set(['id','original_filename','image_type','has_vision']);
+const analysisJobFields=new Set(['id','kind','status','retryable']);
+function validAnalysisEnvelope(value:any,expectedId:number):boolean{
+ if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!analysisFields.has(key)))return false;
+ return value.id===expectedId&&Number.isSafeInteger(value.id)&&Number.isSafeInteger(value.patient_id)&&value.patient_id>0&&
+  typeof value.status==='string'&&value.status.length>0&&value.status.length<=40&&
+  (value.tooth_number===undefined||value.tooth_number===null||typeof value.tooth_number==='string'&&value.tooth_number.length<=128)&&
+  (value.clinical_notes===undefined||value.clinical_notes===null||typeof value.clinical_notes==='string')&&
+  (value.created_at===undefined||typeof value.created_at==='string'&&value.created_at.length<=64)&&
+  (value.is_voice_review===undefined||typeof value.is_voice_review==='boolean')&&
+  (value.legacy_radiograph_available===undefined||typeof value.legacy_radiograph_available==='boolean');
+}
+function validAnalysisAsset(value:any):boolean{
+ if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!analysisAssetFields.has(key)))return false;
+ return Number.isSafeInteger(value.id)&&value.id>0&&typeof value.original_filename==='string'&&
+  value.original_filename.length>0&&value.original_filename.length<=255&&!/[\/\\\x00-\x1f\x7f]/.test(value.original_filename)&&
+  typeof value.image_type==='string'&&/^[A-Z][A-Z0-9_]{0,39}$/.test(value.image_type)&&typeof value.has_vision==='boolean';
+}
+function validAnalysisJob(value:any):boolean{
+ if(value===undefined||value===null)return true;
+ return !!value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).every(key=>analysisJobFields.has(key))&&
+  Number.isSafeInteger(value.id)&&value.id>0&&['PRELIMINARY','FINAL'].includes(value.kind)&&
+  typeof value.status==='string'&&value.status.length>0&&value.status.length<=40&&typeof value.retryable==='boolean';
 }
 
 export function normalizeAnalysisImages(images:Array<{uri:string;name?:string;type?:string}>){
@@ -85,7 +113,17 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
   return result;
 }
 
-export async function getAnalysis(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");const result=await call<MobileAnalysis>("/analyses/"+id,token);if(!result?.analysis||result.analysis.id!==id||!Number.isSafeInteger(result.analysis.patient_id)||result.analysis.patient_id<=0||(result.analysis.legacy_radiograph_available!==undefined&&typeof result.analysis.legacy_radiograph_available!=="boolean")||!validAnalysisPatient(result.patient,result.analysis.patient_id)||!Array.isArray(result.assets)||result.assets.some(asset=>!asset||!Number.isSafeInteger(asset.id)||asset.id<=0)||new Set(result.assets.map(asset=>asset.id)).size!==result.assets.length)throw new ApiError(502,"Analiz yanıtı hasta kapsamı veya veri minimizasyonu sözleşmesini karşılamıyor.");return result;}
+export async function getAnalysis(token:string,id:number){
+ if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");
+ const result=await call<MobileAnalysis>("/analyses/"+id,token);
+ const topFields=new Set(['analysis','patient','assets','job','ai_result']);
+ if(!result||typeof result!=='object'||Array.isArray(result)||Object.keys(result).some(key=>!topFields.has(key))||
+    !validAnalysisEnvelope(result.analysis,id)||!validAnalysisPatient(result.patient,result.analysis.patient_id)||
+    !Array.isArray(result.assets)||result.assets.length>ANALYSIS_MAX_IMAGES||result.assets.some(asset=>!validAnalysisAsset(asset))||
+    new Set(result.assets.map(asset=>asset.id)).size!==result.assets.length||!validAnalysisJob(result.job))
+  throw new ApiError(502,"Analiz yanıtı hasta kapsamı veya veri minimizasyonu sözleşmesini karşılamıyor.");
+ return result;
+}
 export function startAnalysisAI(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");return call<{ok:boolean;status:string}>("/analyses/"+id+"/ai",token,{method:"POST"});}
 
 export type AnalysisHistoryItem={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at:string};
