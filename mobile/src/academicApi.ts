@@ -1,6 +1,23 @@
 import {request} from './api';
 export type Course={id:number;title:string;description?:string;material_count?:number};
 export type Material={id:number;name:string;mime:string;size:number;index_status:string;url:string};
+export type CourseCreateIntent={title:string;description:string;known_ids:number[]};
+export type UploadIntent={version:1;user:number;course:number;name:string;uri:string;known_ids:number[]};
+export function findCreatedCourse(items:Course[],intent:CourseCreateIntent):Course|null{
+ if(!Array.isArray(items)||!intent||!Array.isArray(intent.known_ids))return null;
+ const prior=new Set(intent.known_ids);
+ return items.find(item=>item&&Number.isSafeInteger(item.id)&&!prior.has(item.id)&&item.title===intent.title&&(item.description||'')===intent.description)||null;
+}
+export function findUploadedMaterial(items:Material[],name:string,knownIds:number[]):Material|null{
+ if(!Array.isArray(items)||typeof name!=='string'||!Array.isArray(knownIds))return null;
+ const prior=new Set(knownIds);
+ return items.find(item=>item&&Number.isSafeInteger(item.id)&&!prior.has(item.id)&&item.name===name)||null;
+}
+export function parseUploadIntent(raw:string,user:number,course:number):UploadIntent{
+ const value=JSON.parse(raw);
+ if(value?.version!==1||value.user!==user||value.course!==course||typeof value.name!=='string'||!value.name||typeof value.uri!=='string'||!value.uri.startsWith('file://')||!Array.isArray(value.known_ids)||value.known_ids.some((id:unknown)=>!Number.isSafeInteger(id)||Number(id)<1))throw Error('Bekleyen dosya aktarımı doğrulanamadı. Sunucudaki kaynakları kontrol edin.');
+ return value as UploadIntent;
+}
 export type Workspace={course:Course;materials:Material[];max_file_bytes:number;max_upload_count:number;next_before:number|null};
 export type Run={id:number;status:'QUEUED'|'RUNNING'|'DONE'|'FAILED'|'INTERRUPTED'|'CANCELLED';stage:string;question:string;partial?:string;error?:string};
 export type Question={number:number;stem:string;options:string[];result:null|{selected:string;correct:boolean;correct_choice:string};rationale?:string;source?:string};
