@@ -898,8 +898,12 @@ def test_native_tooth_chart_blocks_all_clinical_writes_until_treatment_intent_re
     presentation = (root / "mobile/src/toothChartPresentation.ts").read_text(encoding="utf-8")
     assert "toothChartClinicalMutationBlocked" in component
     assert "hasPendingTreatment:pendingTreatment!==null" in component
-    assert component.count("if(clinicalMutationBlocked){setErr(") == 2
+    assert component.count("if(clinicalMutationBlocked){setErr(") == 3
     assert "editable={!busy&&!clinicalMutationBlocked} value={note}" in component
+    assert "editable={!clinicalMutationBlocked} value={note}" in component
+    assert "disabled={treatmentBusy||clinicalMutationBlocked}" in component
+    assert component.count("if(result.patient.id!==patientId)") == 2
+    assert component.count("if(updated.patient.id!==patientId)") == 4
     assert "disabled={busy||surfaceBusy||treatmentBusy||clinicalMutationBlocked}" in component
     assert "Güvenli tedavi kaydı kontrol ediliyor." in component
     assert "Bekleyen tedavi taslağı okunamadı." in component
