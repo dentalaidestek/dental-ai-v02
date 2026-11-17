@@ -209,5 +209,46 @@ class PushTransportTests(unittest.TestCase):
             send.assert_not_called()
 
 
+
+    def test_receipt_lookup_deduplicates_and_filters_unrequested_or_invalid_keys(self):
+        receipt_id = str(uuid.UUID(int=124))
+        foreign_id = str(uuid.UUID(int=125))
+        captured = {}
+
+        def fake_open(req, timeout):
+            captured["payload"] = json.loads(req.data)
+            return _Response({"data": {
+                receipt_id: {"status": "ok"},
+                foreign_id: {"status": "error"},
+                "not-a-uuid": {"status": "ok"},
+            }})
+
+        with patch("app.mobile_push.request.urlopen", side_effect=fake_open):
+            result = get_push_receipts([receipt_id, receipt_id])
+
+        self.assertEqual(captured["payload"], {"ids": [receipt_id]})
+        self.assertEqual(result, {"ok": True, "receipts": {receipt_id: {"status": "ok"}}})
+
+    def test_receipt_lookup_http_429_is_safe_and_retryable(self):
+        failure = HTTPError(EXPO_RECEIPTS_URL, 429, "limited", {}, None)
+        with patch("app.mobile_push.request.urlopen", side_effect=failure):
+            result = get_push_receipts([str(uuid.UUID(int=126))])
+
+        self.assertEqual(result, {"ok": False, "receipts": {}, "error_code": "HTTP_429"})
+        self.assertNotIn("limited", json.dumps(result))
+
+    def test_receipt_lookup_timeout_is_safe_and_retryable(self):
+        with patch("app.mobile_push.request.urlopen", side_effect=TimeoutError()):
+            result = get_push_receipts([str(uuid.UUID(int=127))])
+
+        self.assertEqual(result, {"ok": False, "receipts": {}, "error_code": "TRANSPORT"})
+
+    def test_receipt_lookup_rejects_non_object_provider_data(self):
+        with patch("app.mobile_push.request.urlopen", return_value=_Response({"data": []})):
+            result = get_push_receipts([str(uuid.UUID(int=128))])
+
+        self.assertEqual(result, {"ok": False, "receipts": {}, "error_code": "INVALID_RECEIPT_RESPONSE"})
+
+
 if __name__ == "__main__":
     unittest.main()
