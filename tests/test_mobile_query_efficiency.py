@@ -78,7 +78,11 @@ def test_consultation_inbox_uses_latest_restore_state_and_max_read_cursor(mobile
                 case_id=hidden.id, user_id=owner.id, deleted_at=now,
                 recover_until=now + main.timedelta(days=7),
             ),
-            # A peer's deleted inbox state must not hide this owner's case.
+            # The owner has an active state; a peer's deleted state must not
+            # hide this owner's case or replace the owner's read cursor.
+            main.ConsultationInboxState(
+                case_id=other_account_state.id, user_id=owner.id, last_read_at=now,
+            ),
             main.ConsultationInboxState(
                 case_id=other_account_state.id, user_id=outsider.id, deleted_at=now,
                 recover_until=now + main.timedelta(days=7),
