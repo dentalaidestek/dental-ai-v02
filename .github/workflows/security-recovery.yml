@@ -18,6 +18,7 @@ on:
       - 'render.yaml'
       - 'app/work_jobs.py'
       - 'app/mobile_analysis_api.py'
+      - 'app/analysis_upload_receipts.py'
       - 'app/templates/login.html'
       - 'app/templates/expert_profile_edit.html'
       - 'app/static/expert-profile-form.js'
