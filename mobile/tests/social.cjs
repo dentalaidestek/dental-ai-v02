@@ -16,6 +16,10 @@ test('owner moderation refresh uses bearer auth and rejects mismatched or malfor
   await assert.rejects(()=>api.getPost('secret',42),/alanları doğrulanamadı/);
   global.fetch=async()=>new Response(JSON.stringify({...payload,moderation:{...payload.moderation,reason:17}}),{status:200});
   await assert.rejects(()=>api.getPost('secret',42),/inceleme durumu doğrulanamadı/);
+  global.fetch=async()=>new Response(JSON.stringify({...payload,media:[{id:9,url:'https://evil.example/private.jpg'}]}),{status:200});
+  await assert.rejects(()=>api.getPost('secret',42),/alanları doğrulanamadı/);
+  global.fetch=async()=>new Response(JSON.stringify({...payload,owned:false}),{status:200});
+  await assert.rejects(()=>api.getPost('secret',42),/sahibi doğrulanamadı/);
  }finally{global.fetch=original;}
 });
 
