@@ -1446,14 +1446,21 @@ def _event_occurrences(event: ScheduleEvent, range_start: datetime, range_end: d
     return result
 
 
-def _user_schedule_occurrences(session: Session, user_id: int, range_start: datetime, range_end: datetime):
+def _user_schedule_occurrences(
+    session: Session,
+    user_id: int,
+    range_start: datetime,
+    range_end: datetime,
+    snapshot_at: Optional[datetime] = None,
+):
+    """Expand the owner's events; optionally freeze the row set at a UTC watermark."""
     range_end_utc = (
         range_end.replace(tzinfo=APP_TIMEZONE)
         .astimezone(timezone.utc)
         .replace(tzinfo=None)
     )
     range_start_utc = range_start.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
-    events = session.exec(
+    query = (
         select(ScheduleEvent)
         .where(ScheduleEvent.owner_user_id == user_id)
         .where(ScheduleEvent.status != "DELETED")
@@ -1467,8 +1474,11 @@ def _user_schedule_occurrences(session: Session, user_id: int, range_start: date
                 ScheduleEvent.recurrence_until >= range_start.date().isoformat(),
             )
         )
-        .order_by(ScheduleEvent.start_at)
-    ).all()
+    )
+    if snapshot_at is not None:
+        # ScheduleEvent timestamps are stored as naive UTC values.
+        query = query.where(ScheduleEvent.created_at <= snapshot_at).where(ScheduleEvent.updated_at <= snapshot_at)
+    events = session.exec(query.order_by(ScheduleEvent.start_at)).all()
 
     occurrences = []
     for event in events:
