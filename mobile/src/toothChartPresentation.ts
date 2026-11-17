@@ -15,3 +15,18 @@ export function toothChartPatientSummary(patient: ToothChartPatientIdentity): st
     : "";
   return age ? `${name} · ${age}` : name;
 }
+
+export type ToothChartMutationGate = Readonly<{
+  treatmentIntentReady: boolean;
+  treatmentIntentBlocked: boolean;
+  treatmentUncertain: boolean;
+  hasPendingTreatment: boolean;
+}>;
+
+/** Do not permit tooth/surface writes until the durable treatment intent is known and settled. */
+export function toothChartClinicalMutationBlocked(gate: ToothChartMutationGate): boolean {
+  return gate.treatmentIntentReady !== true ||
+    gate.treatmentIntentBlocked === true ||
+    gate.treatmentUncertain === true ||
+    gate.hasPendingTreatment === true;
+}
