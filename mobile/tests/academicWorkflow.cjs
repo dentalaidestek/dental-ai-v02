@@ -154,6 +154,7 @@ test('Academic upload receipt matches only a newly created same-name material',(
  ];
  assert.equal(a.findUploadedMaterial(items,'lecture.pdf',[7],100).id,11);
  assert.equal(a.findUploadedMaterial(items,'lecture.pdf',[7,11],100),null);
+ assert.equal(a.findUploadedMaterial(items,'lecture.pdf',[7],101),null);
 });
 
 test('persisted upload intent is bound to the same user and course',()=>{
@@ -162,6 +163,7 @@ test('persisted upload intent is bound to the same user and course',()=>{
  assert.throws(()=>a.parseUploadIntent(JSON.stringify(value),2,3));
  assert.throws(()=>a.parseUploadIntent(JSON.stringify(value),1,4));
  assert.throws(()=>a.parseUploadIntent(JSON.stringify({...value,known_ids:['2']}),1,3));
+ assert.throws(()=>a.parseUploadIntent(JSON.stringify({...value,size:0}),1,3));
 });
 
 
@@ -169,5 +171,6 @@ test('Academic upload recovery requires a newly created same-name and same-size 
  const source=fs.readFileSync(require.resolve('../src/NativeAcademic.tsx'),'utf8');
  assert.ok(source.includes('A.findUploadedMaterial(fresh.materials,uploadIntent.name,uploadIntent.known_ids,uploadIntent.size)'));
  assert.ok(source.includes('removeAcademicCacheFile(uploadIntent.uri)'));
+ assert.ok(source.includes('Aynı dosya adını tek aktarımda birden fazla kez seçmeyin'));
  assert.ok(!source.includes('Kaynakları Kontrol Ettim'));
 });
