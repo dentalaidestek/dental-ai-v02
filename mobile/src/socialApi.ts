@@ -31,6 +31,8 @@ export type SocialPost = {
   author_specialty?: string;
   author_followed?: boolean;
   author_support_available?: boolean;
+  cover_media_id?: number | null;
+  preview?: SocialLinkPreviewData | null;
   text: string;
   status: string;
   version: number;
@@ -60,6 +62,19 @@ export type SocialComment = {
 };
 export type SocialPage<T> = { items: T[]; next_cursor: number | null };
 export type SocialFeedPage = SocialPage<SocialPost> & { specialties: string[] };
+export type SocialLinkPreviewData = {
+  url?: string;
+  domain?: string;
+  site_name?: string;
+  title?: string;
+  description?: string;
+};
+export type SocialLinkPreview = SocialLinkPreviewData & {
+  available: boolean;
+  id?: number;
+  message?: string;
+  cover?: { id: number; url: string } | null;
+};
 const SOCIAL_SPECIALTY_FALLBACK = [
   "Endodonti",
   "Ortodonti",
@@ -172,6 +187,58 @@ export const getFeed = async (
   }
   return { ...page, specialties };
 };
+export async function getLinkPreview(
+  token: string,
+  url: string,
+): Promise<SocialLinkPreview> {
+  if (typeof url !== "string" || url !== url.trim() || url.length > 2048) {
+    throw new Error("Geçerli bir HTTPS bağlantısı girin.");
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("Geçerli bir HTTPS bağlantısı girin.");
+  }
+  if (parsed.protocol !== "https:" || !parsed.hostname) {
+    throw new Error("Bağlantı önizlemesi yalnızca HTTPS adresleri için kullanılabilir.");
+  }
+  const result = await socialRequest<SocialLinkPreview>(token, "/preview", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+  if (
+    !result ||
+    typeof result.available !== "boolean" ||
+    typeof result.url !== "string"
+  ) {
+    throw new ApiError(502, "Bağlantı önizlemesi yanıtı doğrulanamadı.");
+  }
+  try {
+    const resolved = new URL(result.url);
+    if (resolved.protocol !== "https:" || !resolved.hostname) throw new Error();
+  } catch {
+    throw new ApiError(502, "Bağlantı önizlemesi güvenli bir adres döndürmedi.");
+  }
+  if (
+    result.available &&
+    (!Number.isSafeInteger(result.id) || (result.id as number) < 1)
+  ) {
+    throw new ApiError(502, "Bağlantı önizlemesi kimliği doğrulanamadı.");
+  }
+  if (
+    result.cover !== undefined &&
+    result.cover !== null &&
+    (!Number.isSafeInteger(result.cover.id) ||
+      result.cover.id < 1 ||
+      typeof result.cover.url !== "string" ||
+      !/^\\/api\\/expert-social\\/media\\/[1-9][0-9]*$/.test(result.cover.url))
+  ) {
+    throw new ApiError(502, "Bağlantı görseli doğrulanamadı.");
+  }
+  return result;
+}
+
 export function socialPostUrl(authorId: number, postId: number): string {
   if (
     !Number.isSafeInteger(authorId) ||
@@ -226,6 +293,8 @@ export const createPost = (
     preview_id?: number;
     media_ids: number[];
     idempotency_key: string;
+    preview_id?: number;
+    cover_media_id?: number;
   },
 ) =>
   socialRequest<SocialPost>(t, "/posts", {
