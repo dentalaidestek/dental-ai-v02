@@ -164,6 +164,7 @@ function AppContent(){
  useEffect(()=>{void restore()},[restore]);
  useEffect(()=>{if(!session)return;let active=true;const token=session.token;const stop=subscribeSessionExpiry(token,()=>{setBoot(true);void SecureStore.deleteItemAsync("dentalai_token").catch(()=>{}).finally(()=>{if(active){setSession(current=>current?.token===token?null:current);setBoot(false)}})});return()=>{active=false;stop()}},[session?.token]);
  async function finishSignOut(){
+  pendingNativeNotificationRoute=null;
   if(session){try{await logout(session.token)}catch{}}
   await SecureStore.deleteItemAsync("dentalai_token");setSession(null);
  }
