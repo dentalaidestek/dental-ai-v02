@@ -149,24 +149,38 @@ def program_range(
             raise HTTPException(status_code=409, detail='Takvim bu sırada değişti. Yenileyip tekrar deneyin.')
 
     counts = {}
+    types_by_day = {}
     for item in occurrences:
         key = item['start_local'].date().isoformat()
         counts[key] = counts.get(key, 0) + 1
+        types_by_day.setdefault(key, []).append(item['event_type'])
+
+    def day_markers(day_value: date):
+        event_types = types_by_day.get(day_value.isoformat(), [])
+        return {'event_types': event_types[:3], 'has_more': len(event_types) > 3}
     if view == 'month':
         days = [
-            {'date': (grid_start + timedelta(days=i)).isoformat(), 'label': str((grid_start + timedelta(days=i)).day),
-             'in_month': (grid_start + timedelta(days=i)).month == focus.month,
-             'count': counts.get((grid_start + timedelta(days=i)).isoformat(), 0)}
+            {
+                'date': (grid_start + timedelta(days=i)).isoformat(),
+                'label': str((grid_start + timedelta(days=i)).day),
+                'in_month': (grid_start + timedelta(days=i)).month == focus.month,
+                'count': counts.get((grid_start + timedelta(days=i)).isoformat(), 0),
+                **day_markers(grid_start + timedelta(days=i)),
+            }
             for i in range(42)
         ]
     else:
         days = [
-            {'date': item['date'].isoformat(), 'label': item['label'], 'in_month': True,
-             'count': counts.get(item['date'].isoformat(), 0)}
+            {
+                'date': item['date'].isoformat(), 'label': item['label'], 'in_month': True,
+                'count': counts.get(item['date'].isoformat(), 0), **day_markers(item['date']),
+            }
             for item in web._program_week_days(focus)
         ] if view == 'week' else [
-            {'date': focus.isoformat(), 'label': str(focus.day), 'in_month': True,
-             'count': counts.get(focus.isoformat(), 0)}
+            {
+                'date': focus.isoformat(), 'label': str(focus.day), 'in_month': True,
+                'count': counts.get(focus.isoformat(), 0), **day_markers(focus),
+            }
         ]
 
     selected = sorted(

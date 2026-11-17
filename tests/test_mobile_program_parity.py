@@ -231,3 +231,24 @@ def test_program_cursor_rejects_scope_changes_and_invalidates_mutated_snapshots(
         s.commit()
     stale_edit=client.get('/api/mobile/v1/program',params={'view':'today','day':'2030-01-07','cursor':refreshed_cursor})
     assert stale_edit.status_code==409
+
+
+
+def test_month_calendar_exposes_the_same_first_three_event_markers_as_web(program):
+    client,engine=program
+    old=datetime(2020,1,1,0,0)
+    types=['CLASS','CLINIC','EXAM','APPOINTMENT','TASK']
+    with Session(engine) as s:
+        for index,event_type in enumerate(types):
+            s.add(main.ScheduleEvent(
+                id=1000+index,owner_user_id=1,event_type=event_type,
+                title='Synthetic month marker',start_at=datetime(2030,1,7,7,index*10),
+                created_at=old,updated_at=old,
+            ))
+        s.commit()
+    response=client.get('/api/mobile/v1/program?view=month&day=2030-01-07')
+    assert response.status_code==200,response.text
+    day=next(item for item in response.json()['days'] if item['date']=='2030-01-07')
+    assert day['count']==5
+    assert day['event_types']==types[:3]
+    assert day['has_more'] is True
