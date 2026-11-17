@@ -909,4 +909,5 @@ def test_native_tooth_chart_blocks_all_clinical_writes_until_treatment_intent_re
     assert "Bekleyen tedavi taslağı okunamadı." in component
     assert "gate.treatmentIntentReady !== true" in presentation
     assert "gate.hasPendingTreatment === true" in presentation
-    assert "if(result.patient.id!==patientId)" in component
+    assert component.count("if(result.patient.id!==patientId)") == 2
+    assert component.count("if(updated.patient.id!==patientId)") == 4
