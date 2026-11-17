@@ -87,6 +87,9 @@ test('Expo SDK 54 push registration is explicit, account-scoped and token-safe',
  assert.ok(push.includes('refreshNativePushRegistration'));
  assert.ok(push.includes('SecureStore.setItemAsync(enabledKey(userId), "1")'));
  assert.ok(push.includes('registerPushDevice(token, registration.deviceId, registration.token, registration.platform)'));
+ assert.ok(push.includes('registered.delivery_enabled ? "1" : "0"'));
+ assert.ok(settings.includes('state.deliveryEnabled'));
+ assert.ok(settings.includes('sunucu push dağıtımı henüz etkinleştirilmemiş'));
  assert.ok(!push.includes('console.log'));
  assert.ok(app.includes('subscribeToNativePushResponses'));
  assert.ok(app.includes('refreshNativePushRegistration(session.token,session.user.id)'));
