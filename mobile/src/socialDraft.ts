@@ -152,6 +152,21 @@ export async function readDraft(
     Number.isSafeInteger(d.preview_id) && d.preview_id > 0
       ? d.preview_id as number
       : undefined;
+  let previewUrlSafe = false;
+  if (rawPreview && typeof rawPreview.url === "string") {
+    try {
+      const parsed = new URL(rawPreview.url);
+      previewUrlSafe =
+        parsed.protocol === "https:" &&
+        !!parsed.hostname &&
+        !parsed.username &&
+        !parsed.password &&
+        (!parsed.port || parsed.port === "443") &&
+        rawPreview.url === d.link;
+    } catch {
+      previewUrlSafe = false;
+    }
+  }
   const validPreview =
     previewId !== undefined &&
     rawPreview &&
@@ -159,8 +174,7 @@ export async function readDraft(
     !Array.isArray(rawPreview) &&
     rawPreview.available === true &&
     rawPreview.id === previewId &&
-    typeof rawPreview.url === "string" &&
-    rawPreview.url === d.link;
+    previewUrlSafe;
   const safeText = (value: unknown, max: number) =>
     typeof value === "string" ? value.slice(0, max) : undefined;
   const safeCover =
@@ -170,7 +184,7 @@ export async function readDraft(
     Number.isSafeInteger(rawPreview.cover.id) &&
     rawPreview.cover.id > 0 &&
     typeof rawPreview.cover.url === "string" &&
-    /^\/api\/expert-social\/media\/[1-9][0-9]*$/.test(rawPreview.cover.url)
+    rawPreview.cover.url === `/api/expert-social/media/${rawPreview.cover.id}`
       ? { id: rawPreview.cover.id as number, url: rawPreview.cover.url }
       : null;
   const preview: DraftPreview | null = validPreview
