@@ -84,6 +84,9 @@ test('Expo SDK 54 push registration is explicit, account-scoped and token-safe',
  assert.ok(settings.includes('disableNativePush(token, userId)'));
  assert.ok(push.includes('Notifications.requestPermissionsAsync()'));
  assert.ok(push.includes('Notifications.getExpoPushTokenAsync({ projectId })'));
+ const projectPreflight=push.indexOf('if (!projectId)');
+ const permissionRequest=push.indexOf('Notifications.requestPermissionsAsync()');
+ assert.ok(projectPreflight>=0&&permissionRequest>projectPreflight);
  assert.ok(push.includes('refreshNativePushRegistration'));
  assert.ok(push.includes('SecureStore.setItemAsync(enabledKey(userId), "1")'));
  assert.ok(push.includes('registerPushDevice(token, registration.deviceId, registration.token, registration.platform)'));
@@ -94,6 +97,7 @@ test('Expo SDK 54 push registration is explicit, account-scoped and token-safe',
  assert.ok(app.includes('subscribeToNativePushResponses'));
  assert.ok(app.includes('refreshNativePushRegistration(session.token,session.user.id)'));
  assert.ok(app.includes('unregisterNativePushForLogout(session.token,session.user.id)'));
+ assert.ok(app.includes('pendingNativeNotificationRoute=null'));
 });
 
 test('native push asks permission only after an explicit account action and refreshes on foreground',()=>{
