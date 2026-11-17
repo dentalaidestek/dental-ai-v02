@@ -79,3 +79,20 @@ test("message merge is ascending and idempotent across socket, receipt and HTTP 
  ]);
  assert.deepEqual(result,[{id:1,content:"Bir"},{id:2,content:"İki güncel"},{id:3,content:"Üç"}]);
 });
+
+test("native consultation chat catches up only messages after its last verified ID",()=>{
+ const source=fs.readFileSync(require.resolve("../src/ModernScreens.tsx"),"utf8");
+ assert.ok(source.includes("getConsultationUpdates(token,id,cursor)"));
+ assert.ok(source.includes('if(eventCase===id&&eventType==="MESSAGE_CREATED")'));
+ assert.ok(source.includes("messageId>messageCursor.current)void catchUpMessages()"));
+ assert.ok(source.includes("mergeConsultationMessages(previous.messages||[],page.messages||[])"));
+});
+
+test("consultation inbox applies message previews locally instead of reloading the first page per message",()=>{
+ const source=fs.readFileSync(require.resolve("../src/ModernScreens.tsx"),"utf8");
+ const start=source.indexOf("export function Consultations(");
+ const end=source.indexOf("export function ConsultationChat(",start);
+ const inbox=source.slice(start,end);
+ assert.ok(inbox.includes("applyConsultationInboxEvent(data,lastEvent,userId)"));
+ assert.equal(inbox.includes('if(type==="MESSAGE_CREATED"&&caseId){void load()}'),false);
+});
