@@ -12,7 +12,7 @@ function chartComponent(api,storage=new Map()){
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeToothChart.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2020}}).outputText;
  const native={AppState:{addEventListener:(_event,listener)=>{appListeners.push(listener);return{remove(){appListeners=appListeners.filter(x=>x!==listener)}}}},...Object.fromEntries(['ActivityIndicator','Image','Pressable','ScrollView','Text','TextInput','View'].map(name=>[name,name]))};
  const exports={};let sequence=0;
- const secure={getItemAsync:async key=>storage.has(key)?storage.get(key):null,setItemAsync:async(key,value)=>storage.set(key,value),deleteItemAsync:async key=>storage.delete(key)};
+ const secure={getItemAsync:async key=>{const custom=storage.get('__getItemAsync');return typeof custom==='function'?custom(key):storage.has(key)?storage.get(key):null},setItemAsync:async(key,value)=>storage.set(key,value),deleteItemAsync:async key=>storage.delete(key)};
  const crypto={randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,"0")}`};
  vm.runInNewContext(code,{exports,require:name=>{
   if(name==='react')return{...React,default:React};
@@ -343,5 +343,51 @@ test('pending treatment intent prevents closing the selected tooth panel',async(
  const close=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş panelini kapat');
  assert.ok(close);
  assert.equal(close.props.disabled,true,'a pending durable intent must not be hidden behind a closed tooth panel');
+ await press('Diş Bilgisi');
+ const status=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş durumu: Çürük');
+ const pin=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Mesial yüzeyini seç');
+ const note=tree.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Diş klinik notu');
+ const save=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children).includes('Durumu Kaydet')));
+ assert.equal(status.props.disabled,true,'tooth status cannot change while a treatment receipt is unresolved');
+ assert.equal(pin.props.disabled,true,'surface selection cannot change while a treatment receipt is unresolved');
+ assert.equal(note.props.editable,false,'clinical notes remain read-only while a treatment receipt is unresolved');
+ assert.equal(save.props.disabled,true,'tooth status cannot be saved while a treatment receipt is unresolved');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('tooth chart clinical mutation gate stays closed until the durable treatment intent is known',()=>{
+ const {toothChartClinicalMutationBlocked}=require('../src/toothChartPresentation.ts');
+ const ready={treatmentIntentReady:true,treatmentIntentBlocked:false,treatmentUncertain:false,hasPendingTreatment:false};
+ assert.equal(toothChartClinicalMutationBlocked(ready),false);
+ for(const patch of [
+  {treatmentIntentReady:false},{treatmentIntentBlocked:true},
+  {treatmentUncertain:true},{hasPendingTreatment:true}
+ ]) assert.equal(toothChartClinicalMutationBlocked({...ready,...patch}),true,JSON.stringify(patch));
+});
+
+test('tooth chart remains read-only while SecureStore treatment intent restoration is pending',async()=>{
+ focused=true;lastEvent=null;appListeners=[];
+ const read=deferred(),storage=new Map();
+ storage.set('__getItemAsync',()=>read.promise);
+ const Chart=chartComponent({getPatient:async()=>patient(8)},storage);let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush();});
+ assert.ok(flat(tree.toJSON()).includes('Güvenli tedavi kaydı kontrol ediliyor'));
+ const teeth=tree.root.findAllByType('Pressable').filter(node=>String(node.props.accessibilityLabel||'').startsWith('Diş ')&&/^Diş \d{2},/.test(node.props.accessibilityLabel));
+ assert.ok(teeth.length>0);
+ assert.ok(teeth.every(node=>node.props.disabled===true),'tooth selection must stay locked until SecureStore restore finishes');
+ read.resolve(null);
+ await renderer.act(async()=>{await flush();await flush()});
+ const available=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş 11, Sağlıklı');
+ assert.equal(available.props.disabled,false,'the chart unlocks after an empty, successful restore');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('tooth chart rejects a patient response outside the requested patient scope',async()=>{
+ focused=true;lastEvent=null;appListeners=[];
+ const Chart=chartComponent({getPatient:async()=>patient(9)});let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
+ const content=flat(tree.toJSON());
+ assert.ok(content.includes('Sunucu farklı bir hasta kaydı döndürdü.'));
+ assert.ok(!content.includes('Synthetic'),'a different patient's chart must never render');
  await renderer.act(async()=>tree.unmount());
 });
