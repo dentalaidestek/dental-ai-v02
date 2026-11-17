@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState} from "react";
-import {ActivityIndicator,Alert,Image,Pressable,Text,View} from "react-native";
+import {ActivityIndicator,Image,Pressable,Text,View} from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
