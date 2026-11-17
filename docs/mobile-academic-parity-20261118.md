@@ -52,3 +52,10 @@ Additional helpers and regressions cover exact course matching, same-name upload
 
 
 Course creation intent persistence is also covered across an app restart: the intent is written before the POST, bound to the user ID, and removed only after a new exact-match course row is found or the successful create response is reconciled. A malformed saved intent remains fail-closed.
+
+
+## Latest CI retry evidence — code-bearing head 7c3c8ec
+
+- Android run `44197159856`: typecheck job `134441492458` failed before any step. Its explicit retry `134441669316` also completed in seconds with `runner_id=0`, empty runner name, `steps=[]`, and log download `BlobNotFound 404`.
+- Security Recovery run `44197159784`: `native-academic-security` job `134441492816` failed before any step. Retry `134441687400` likewise ended with `runner_id=0`, empty runner name, `steps=[]`, and `BlobNotFound 404`.
+- Thus the new Academic parser, UI and upload-security regressions still have not executed on GitHub Actions. The source-level syntax fixes are committed, but Android typecheck and Node regression acceptance remain unverified until a runner is allocated.
