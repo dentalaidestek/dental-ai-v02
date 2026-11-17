@@ -50,7 +50,8 @@ async function deleteLegacyAnalysisSource(uri:string):Promise<void>{
   if(!FS.cacheDirectory||!uri.startsWith(FS.cacheDirectory+LEGACY_ANALYSIS_PREFIX)||uri.includes('..'))
     throw Error('Eski klinik görüntü önbellek yolu doğrulanamadı.');
   const name=uri.slice(FS.cacheDirectory.length);
-  if(!/^dai-analysis-[A-Za-z0-9_-]{8,160}\\.[A-Za-z0-9]{1,8}$/.test(name))
+  const dot=name.lastIndexOf('.'),stem=name.slice(0,dot),extension=name.slice(dot+1);
+  if(dot<1||!stem.startsWith(LEGACY_ANALYSIS_PREFIX)||! /^[A-Za-z0-9_-]{8,160}$/.test(stem.slice(LEGACY_ANALYSIS_PREFIX.length))||! /^[A-Za-z0-9]{1,8}$/.test(extension))
     throw Error('Eski klinik görüntü dosya adı doğrulanamadı.');
   await FS.deleteAsync(uri,{idempotent:true});
   const remaining=await FS.getInfoAsync(uri);
