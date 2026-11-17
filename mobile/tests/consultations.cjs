@@ -168,3 +168,22 @@ test('consultation text sends carry the stable client intent key and reply targe
  });
 });
 
+test('consultation media upload carries the persisted client intent key',async()=>{
+ const OriginalFormData=global.FormData;
+ class TestFormData{constructor(){this.entries=[]}append(name,value){this.entries.push([name,value])}}
+ global.FormData=TestFormData;
+ try{
+  await withFetch(async(url,init)=>{
+   assert.ok(url.includes('/consultations/42/attachments'));
+   assert.equal(init.method,'POST');
+   const entries=init.body.entries;
+   assert.ok(entries.some(([name,value])=>name==='client_message_id'&&value==='native-media-send-0001'));
+   assert.ok(entries.some(([name,value])=>name==='file'&&value.name==='case.pdf'));
+   return json({ok:true,message:{id:93,sender_user_id:10,message_type:'FILE',created_at:'2026-11-17T00:00:00'}});
+  },async()=>{
+   const result=await api.sendChatFile('secret',42,{uri:'file:///case.pdf',name:'case.pdf',type:'application/pdf',size:120},undefined,'native-media-send-0001');
+   assert.equal(result.message.id,93);
+  });
+ }finally{global.FormData=OriginalFormData}
+});
+
