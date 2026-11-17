@@ -15,7 +15,7 @@ from sqlalchemy import delete, or_, update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.mobile_push import _safe_error_code, get_push_receipts, is_valid_expo_push_token, token_fingerprint
+from app.mobile_push import _receipt_id, _safe_error_code, get_push_receipts, is_valid_expo_push_token, token_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -187,13 +187,14 @@ def _schedule_receipt_retry(row, stamp: datetime, error_code: str) -> None:
 
 
 def poll_due_mobile_push_receipts(engine, *, limit: int = RECEIPT_BATCH_LIMIT) -> int:
-    """Claim at most 100 due tickets, fetch receipts outside the DB transaction, then reconcile."""
+    """Claim at most RECEIPT_BATCH_LIMIT due tickets and reconcile outside the DB transaction."""
     from app.main import MobilePushDelivery
 
-    if not isinstance(limit, int) or limit < 1 or limit > RECEIPT_BATCH_LIMIT:
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > RECEIPT_BATCH_LIMIT:
         raise ValueError(f"Receipt polling limit must be between 1 and {RECEIPT_BATCH_LIMIT}")
     stamp = _now()
     claimed = []
+    invalid_ticket_count = 0
     with Session(engine, expire_on_commit=False) as session:
         rows = session.exec(
             select(MobilePushDelivery)
@@ -207,17 +208,28 @@ def poll_due_mobile_push_receipts(engine, *, limit: int = RECEIPT_BATCH_LIMIT) -
             .with_for_update(skip_locked=True)
         ).all()
         for row in rows:
+            normalized_ticket_id = _receipt_id(row.ticket_id)
+            if normalized_ticket_id is None:
+                # One malformed legacy row must not poison the entire provider batch.
+                row.status = "RECEIPT_ERROR"
+                row.error_code = "INVALID_TICKET"
+                row.checked_at = stamp
+                row.updated_at = stamp
+                row.lease_token = None
+                row.lease_until = None
+                invalid_ticket_count += 1
+                continue
             lease_token = secrets.token_hex(24)
             row.status = "CHECKING"
             row.lease_token = lease_token
             row.lease_until = stamp + RECEIPT_LEASE
             row.attempts += 1
             row.updated_at = stamp
-            claimed.append({"id": row.id, "ticket_id": row.ticket_id, "lease_token": lease_token})
+            claimed.append({"id": row.id, "ticket_id": normalized_ticket_id, "lease_token": lease_token})
         session.commit()
 
     if not claimed:
-        return 0
+        return invalid_ticket_count
 
     try:
         response = get_push_receipts([item["ticket_id"] for item in claimed if item["ticket_id"]])
@@ -262,7 +274,7 @@ def poll_due_mobile_push_receipts(engine, *, limit: int = RECEIPT_BATCH_LIMIT) -
             row.lease_until = None
             processed += 1
         session.commit()
-    return processed
+    return processed + invalid_ticket_count
 
 
 def _maintain_receipt_rows(engine, *, limit: int = MAINTENANCE_BATCH_LIMIT) -> int:
@@ -275,7 +287,10 @@ def _maintain_receipt_rows(engine, *, limit: int = MAINTENANCE_BATCH_LIMIT) -> i
     with Session(engine) as session:
         stale_sending = session.exec(
             select(MobilePushDelivery.id)
-            .where(MobilePushDelivery.status == "SENDING", MobilePushDelivery.lease_until <= stamp)
+            .where(
+                MobilePushDelivery.status == "SENDING",
+                or_(MobilePushDelivery.lease_until == None, MobilePushDelivery.lease_until <= stamp),
+            )
             .order_by(MobilePushDelivery.id).limit(limit)
         ).all()
         if stale_sending:
@@ -289,7 +304,10 @@ def _maintain_receipt_rows(engine, *, limit: int = MAINTENANCE_BATCH_LIMIT) -> i
 
         stale_checking = session.exec(
             select(MobilePushDelivery.id)
-            .where(MobilePushDelivery.status == "CHECKING", MobilePushDelivery.lease_until <= stamp)
+            .where(
+                MobilePushDelivery.status == "CHECKING",
+                or_(MobilePushDelivery.lease_until == None, MobilePushDelivery.lease_until <= stamp),
+            )
             .order_by(MobilePushDelivery.id).limit(limit)
         ).all()
         if stale_checking:
