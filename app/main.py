@@ -117,7 +117,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSON
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from sqlmodel import Field, Session, SQLModel, create_engine, select
-from sqlalchemy import String, UniqueConstraint, cast, delete, func, or_ as sa_or, text
+from sqlalchemy import Index, String, cast, delete, func, or_ as sa_or, text
 from sqlalchemy.exc import IntegrityError
 
 try:
@@ -908,8 +908,8 @@ class ScheduleEvent(SQLModel, table=True):
     # Native create retries use the event row itself as a durable receipt. Web
     # events leave both fields NULL; the unique owner/key pair permits many NULLs.
     __table_args__ = (
-        UniqueConstraint("owner_user_id", "client_request_hash",
-                         name="uq_scheduleevent_owner_client_request"),
+        Index("uq_scheduleevent_owner_client_request", "owner_user_id",
+              "client_request_hash", unique=True),
     )
     id: Optional[int] = Field(default=None, primary_key=True)
     owner_user_id: int = Field(index=True)
