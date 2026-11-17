@@ -2487,8 +2487,15 @@ def mobile_patient_media(patient_id: int, before: Optional[int] = Query(None, ge
 def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Depends(_mobile_user)):
     with Session(engine, expire_on_commit=False) as session:
         patient = session.get(Patient, patient_id)
+        if not patient or patient.owner_user_id != user.id:
+            raise HTTPException(status_code=404, detail="Klinik görüntü bulunamadı.")
         media = session.get(PatientMedia, media_id)
-        if not patient or not media or media.patient_id != patient_id or patient.owner_user_id != user.id or media.owner_user_id != user.id:
+        if media is None:
+            # A native client may lose the DELETE response after the database
+            # commit. Replaying the same owner-scoped delete must confirm that
+            # outcome instead of leaving the gallery permanently uncertain.
+            return {"ok": True, "media_id": media_id, "already_deleted": True, "storage_cleanup_pending": False}
+        if media.patient_id != patient_id or media.owner_user_id != user.id:
             raise HTTPException(status_code=404, detail="Klinik görüntü bulunamadı.")
         file_path = media.file_path
         session.delete(media)
@@ -2505,7 +2512,7 @@ def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Dep
         import logging
         logging.getLogger(__name__).exception("Patient media storage cleanup failed for media_id=%s", media_id)
         cleanup_pending = True
-    return {"ok": True, "media_id": media_id, "storage_cleanup_pending": cleanup_pending}
+    return {"ok": True, "media_id": media_id, "already_deleted": False, "storage_cleanup_pending": cleanup_pending}
 
 
 @router.get("/patients/{patient_id}/media/{media_id}/file")
