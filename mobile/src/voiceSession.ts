@@ -1,4 +1,4 @@
-export type VoiceSegment={id:string;uri:string;ready:boolean};
+export type VoiceSegment={id:string;uri:string;ready:boolean;transcribed?:boolean};
 export type VoiceDraft={version:1;userId:number;patientId:number;transcript:string;segments:VoiceSegment[];updatedAt:number;ended:boolean;audioStarted?:boolean;elapsedMs?:number};
 export const VOICE_TEXT_LIMIT=72000;
 export const VOICE_TEXT_BYTE_LIMIT=216000;
@@ -75,7 +75,7 @@ export function formatVoiceElapsed(milliseconds:number):string{
 }
 export function parseVoiceDraft(raw:string|null,userId:number,patientId:number,now=Date.now()):VoiceDraft|null{
  if(!raw)return null;let p:VoiceDraft;try{p=JSON.parse(raw)}catch{throw Error('Muayene taslağı okunamadı.')}
- if(!p||p.version!==1||p.userId!==userId||p.patientId!==patientId||typeof p.transcript!=='string'||p.transcript.length>VOICE_TEXT_LIMIT||voiceUtf8Bytes(p.transcript)>VOICE_TEXT_BYTE_LIMIT||!Array.isArray(p.segments)||p.segments.length>8||new Set(p.segments.map(s=>s.id)).size!==p.segments.length||p.segments.some(s=>!s||typeof s.id!=='string'||typeof s.uri!=='string'||!s.uri.startsWith('file://')||typeof s.ready!=='boolean')||!Number.isFinite(p.updatedAt)||typeof p.ended!=='boolean'||p.audioStarted!==undefined&&typeof p.audioStarted!=='boolean'||p.elapsedMs!==undefined&&(!Number.isFinite(p.elapsedMs)||p.elapsedMs<0||p.elapsedMs>24*60*60*1000))throw Error('Muayene taslağının hesabı, hastası veya içeriği doğrulanamadı.');
+ if(!p||p.version!==1||p.userId!==userId||p.patientId!==patientId||typeof p.transcript!=='string'||p.transcript.length>VOICE_TEXT_LIMIT||voiceUtf8Bytes(p.transcript)>VOICE_TEXT_BYTE_LIMIT||!Array.isArray(p.segments)||p.segments.length>8||new Set(p.segments.map(s=>s.id)).size!==p.segments.length||p.segments.some(s=>!s||typeof s.id!=='string'||typeof s.uri!=='string'||!s.uri.startsWith('file://')||typeof s.ready!=='boolean'||s.transcribed!==undefined&&typeof s.transcribed!=='boolean'||s.transcribed===true&&s.ready)||!Number.isFinite(p.updatedAt)||typeof p.ended!=='boolean'||p.audioStarted!==undefined&&typeof p.audioStarted!=='boolean'||p.elapsedMs!==undefined&&(!Number.isFinite(p.elapsedMs)||p.elapsedMs<0||p.elapsedMs>24*60*60*1000))throw Error('Muayene taslağının hesabı, hastası veya içeriği doğrulanamadı.');
  return now-p.updatedAt>24*60*60*1000?null:{...p,elapsedMs:p.elapsedMs??0};
 }
 export function appendVoiceSegment(draft:VoiceDraft,id:string,transcript:string):VoiceDraft{
@@ -84,4 +84,34 @@ export function appendVoiceSegment(draft:VoiceDraft,id:string,transcript:string)
  const next=[draft.transcript.trim(),transcript.trim()].filter(Boolean).join('\n');
  if(next.length>VOICE_TEXT_LIMIT||voiceUtf8Bytes(next)>VOICE_TEXT_BYTE_LIMIT)throw Error('Muayene metni 72.000 karakter / 216 KB sınırına ulaştı. Ses dosyası korunuyor; metni kontrol edip muayeneyi bitirin.');
  return {...draft,transcript:next,segments:draft.segments.filter(s=>s.id!==id),updatedAt:Date.now()};
+}
+
+
+/**
+ * Persist the transcript before deleting its source audio. A transcribed segment
+ * remains as a cleanup receipt until the app confirms that the private cache file
+ * is gone. Replaying this helper for the same segment never appends text twice.
+ */
+export function markVoiceSegmentTranscribed(draft:VoiceDraft,id:string,transcript:string):VoiceDraft{
+ const segment=draft.segments.find(item=>item.id===id);
+ if(!segment||segment.transcribed)return draft;
+ if(!segment.ready)throw Error('Ses bölümü tamamlanmadan yazıya çevrilemez.');
+ if(typeof transcript!=='string'||!transcript.trim())throw Error('Ses kaydından konuşma metni alınamadı.');
+ const next=[draft.transcript.trim(),transcript.trim()].filter(Boolean).join('\\n');
+ if(next.length>VOICE_TEXT_LIMIT||voiceUtf8Bytes(next)>VOICE_TEXT_BYTE_LIMIT)
+  throw Error('Muayene metni 72.000 karakter / 216 KB sınırına ulaştı. Ses dosyası korunuyor; metni kontrol edip muayeneyi bitirin.');
+ return {
+  ...draft,
+  transcript:next,
+  segments:draft.segments.map(item=>item.id===id?{...item,ready:false,transcribed:true}:item),
+  updatedAt:Date.now()
+ };
+}
+
+/** Remove only a segment whose transcript has already been persisted. */
+export function removeVoiceSegment(draft:VoiceDraft,id:string):VoiceDraft{
+ const segment=draft.segments.find(item=>item.id===id);
+ if(!segment)return draft;
+ if(!segment.transcribed)throw Error('Yazıya çevrilmemiş ses bölümü taslaktan kaldırılamaz.');
+ return {...draft,segments:draft.segments.filter(item=>item.id!==id),updatedAt:Date.now()};
 }
