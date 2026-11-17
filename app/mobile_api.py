@@ -59,7 +59,7 @@ from app.main import (
     classify_dental_image,
     AdminNotice, SupportTicket, SupportTicketMessage, SupportTicketReadState, StudyCourse, StudyMaterial, StudyChatMessage,
     ConsultationCase, ConsultationMessage, ConsultationInboxState, ExpertProfile, E2EEDeviceKey,
-    _socket_case_authorized,
+    _consultation_display_status, _socket_case_authorized,
     expert_support_request_create, expert_support_message, study_ai_ask,
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, storage_delete, _record_patient_realtime_events,
     _patient_edit_revision,
@@ -1405,6 +1405,7 @@ def mobile_experts(user:User=Depends(_mobile_user),specialty:str=Query("",max_le
 
 @router.get("/consultations")
 def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Query(None,ge=1)):
+    now = _utcnow_naive()
     with Session(engine,expire_on_commit=False) as session:
         scope=(ConsultationCase.requester_user_id==user.id)|(ConsultationCase.expert_user_id==user.id)
         query=select(ConsultationCase).where(scope)
@@ -1461,10 +1462,12 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Q
                 unread_by_case.update({cid:int(count) for cid,count in unread_rows})
         items=[]
         for c in cases:
+            status_key,status_label=_consultation_display_status(c,user.id,now)
             other_id=c.expert_user_id if c.requester_user_id==user.id else c.requester_user_id
             other=peers.get(other_id)
             last=None if c.messages_deleted_at is not None else last_by_case.get(c.id)
-            items.append({"id":c.id,"status":c.status,"specialty":c.specialty,"tooth_region":c.tooth_region,
+            items.append({"id":c.id,"status":c.status,"status_key":status_key,"status_label":status_label,
+                "specialty":c.specialty,"tooth_region":c.tooth_region,
                 "question":c.question,"requested_at":c.requested_at,"other_user_id":other_id,
                 "other_display_name":other.display_name if other else "Kullanıcı",
                 "last_message":last.content if last else None,"last_message_at":last.created_at if last else None,
