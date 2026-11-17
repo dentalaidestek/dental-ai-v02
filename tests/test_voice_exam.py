@@ -159,7 +159,7 @@ def test_reviewed_voice_history_reads_only_explicitly_saved_anamnesis(app_client
     for name, value in approved.items():
         assert body['fields'][name]['value'] == value
         assert body['fields'][name]['analysis_id'] == analysis_id
-    assert 'güncel kullanım' in body['notice']
+    assert 'Güncel kullanım' in body['notice']
     assert client.get('/patients/2/voice-exam/history').status_code == 404
 
 
