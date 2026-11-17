@@ -41,3 +41,5 @@ Separated the state into `profileUncertain` and `treatmentUncertain`. Patient ed
 A second destructive-alert review found that the nested native confirmation could outlive the screen/account scope. Both the initial and final delete callbacks now require the original patient/account scope to remain current. The final confirmation still rechecks the live mutation gate.
 
 Additional renderer regressions cover pending-treatment/profile-edit isolation, profile uncertainty preventing treatment writes, and discarding a second delete confirmation after account/patient switch. The Python source invariant now checks both uncertainty states and both stale-scope guards. These new tests are committed; full React renderer and Python execution remain blocked by unavailable package/runtime and GitHub runner execution.
+
+A final lifecycle pass added focus awareness to the destructive dialog. Both confirmation callbacks now require the original patient/account scope and the profile screen to remain focused; navigating to another patient/account or blurring the profile discards the pending confirmation. Renderer coverage was added for blur as well as account/patient switch.
