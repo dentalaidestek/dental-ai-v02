@@ -623,6 +623,7 @@ body.study-chat-active #studyChat .study-answer-actions svg{display:block!import
                 partial.innerHTML=safeMarkdown(run.partial);
             }
             if (run.status==='DONE') {
+                const cancel=pending.querySelector('.study-cancel-run');if(cancel)cancel.remove();
                 pending.dataset.messageId=run.message_id;
                 pending.classList.remove('pending');
                 if(run.quiz) renderInteractiveQuiz(run.quiz);
@@ -633,6 +634,7 @@ body.study-chat-active #studyChat .study-answer-actions svg{display:block!import
                 scrollChatBottom();return;
             }
             if (!['QUEUED','RUNNING'].includes(run.status)) {
+                const cancel=pending.querySelector('.study-cancel-run');if(cancel)cancel.remove();
                 pending.remove();userMessage.remove();
                 if (!input.value.trim()) input.value=run.question || '';
                 status.textContent=run.error || 'Çalışma tamamlanamadı.';
