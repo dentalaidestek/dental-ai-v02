@@ -23,7 +23,7 @@ Reviewed the real web notification/account flow before changing native code:
 - Added `POST /api/mobile/v1/notifications/read-all` with bearer-authenticated owner scope.
 - The endpoint accepts a client-captured `seen_before` timestamp, normalizes offset-aware values to UTC, clamps future values to server time, and marks only active unread notices created at or before the cutoff.
 - Existing `read_at` values are preserved. Notices created after the cutoff, resolved notices and another user's notices remain untouched.
-- A durable `NOTIFICATIONS_READ` realtime event is recorded only when at least one notice changes. Replaying the same cutoff is idempotent and emits no second event.
+- The endpoint returns the exact remaining active-unread count after the update, so the native badge does not derive a total from its 20 visible cards. A durable `NOTIFICATIONS_READ` realtime event carries that count and is recorded only when at least one notice changes. Replaying the same cutoff is idempotent and emits no second event.
 - Added the native API adapter and a pure local snapshot helper so the list only optimistically reads items at or before the same cutoff. SQLModel's naive server datetimes are interpreted as UTC (matching the web client), while explicit offsets are respected; this prevents a +03:00 device timezone from leaving older notices visually unread.
 - Added an explicit “Tümünü okundu işaretle” action. It does not mark notices read merely because the user opened the native screen; this keeps the action deliberate while preserving the web cutoff semantics.
 - Home refreshes its unread badge when it regains focus, and the notification list reconciles `NOTIFICATIONS_READ` events.
