@@ -8,12 +8,14 @@ import { resolveExpoPushTarget, NativeNotificationTarget } from "./notificationT
 
 const DEVICE_ID_KEY = "dai.push.device_id";
 const ENABLED_USER_KEY = (userId: number) => "dai.push.enabled." + String(userId);
+const DELIVERY_USER_KEY = (userId: number) => "dai.push.delivery." + String(userId);
 const EXPO_TOKEN_PATTERN = /^(?:Expo|Exponent)PushToken\\[[A-Za-z0-9_-]{8,128}\\]$/;
 
 export type NativePushState = {
   supported: boolean;
   configured: boolean;
   enabled: boolean;
+  deliveryEnabled: boolean;
   permission: string;
   canAskAgain: boolean;
 };
@@ -33,7 +35,7 @@ function easProjectId(): string {
 
 async function deviceId(): Promise<string> {
   const existing = (await SecureStore.getItemAsync(DEVICE_ID_KEY))?.trim();
-  if (existing && /^[0-9a-f-]{36}$/i.test(existing)) return existing;
+  if (existing && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(existing)) return existing;
   const created = Crypto.randomUUID();
   await SecureStore.setItemAsync(DEVICE_ID_KEY, created);
   return created;
@@ -46,14 +48,18 @@ function enabledKey(userId: number): string {
 
 export async function getNativePushState(userId: number): Promise<NativePushState> {
   if (Platform.OS !== "android" && Platform.OS !== "ios") {
-    return { supported: false, configured: false, enabled: false, permission: "unsupported", canAskAgain: false };
+    return { supported: false, configured: false, enabled: false, deliveryEnabled: false, permission: "unsupported", canAskAgain: false };
   }
   const permission = await Notifications.getPermissionsAsync();
-  const optedIn = (await SecureStore.getItemAsync(enabledKey(userId))) === "1";
+  const [optedIn, deliveryEnabled] = await Promise.all([
+    SecureStore.getItemAsync(enabledKey(userId)),
+    SecureStore.getItemAsync(DELIVERY_USER_KEY(userId)),
+  ]);
   return {
     supported: true,
     configured: !!easProjectId(),
-    enabled: optedIn && permission.granted,
+    enabled: optedIn === "1" && permission.granted,
+    deliveryEnabled: optedIn === "1" && deliveryEnabled === "1",
     permission: permission.status,
     canAskAgain: permission.canAskAgain,
   };
@@ -94,8 +100,9 @@ async function expoToken(): Promise<{ deviceId: string; token: string; platform:
 /** Called only from the explicit account setting; never prompts during app startup. */
 export async function enableNativePush(token: string, userId: number): Promise<NativePushState> {
   const registration = await expoToken();
-  await registerPushDevice(token, registration.deviceId, registration.token, registration.platform);
+  const registered = await registerPushDevice(token, registration.deviceId, registration.token, registration.platform);
   await SecureStore.setItemAsync(enabledKey(userId), "1");
+  await SecureStore.setItemAsync(DELIVERY_USER_KEY(userId), registered.delivery_enabled ? "1" : "0");
   return getNativePushState(userId);
 }
 
@@ -110,12 +117,14 @@ export async function refreshNativePushRegistration(token: string, userId: numbe
   if (!permission.granted) {
     if (currentDeviceId) await unregisterPushDevice(token, currentDeviceId);
     await SecureStore.deleteItemAsync(enabledKey(userId));
+    await SecureStore.deleteItemAsync(DELIVERY_USER_KEY(userId));
     return false;
   }
   if (!easProjectId()) return false;
 
   const registration = await expoToken();
-  await registerPushDevice(token, registration.deviceId, registration.token, registration.platform);
+  const registered = await registerPushDevice(token, registration.deviceId, registration.token, registration.platform);
+  await SecureStore.setItemAsync(DELIVERY_USER_KEY(userId), registered.delivery_enabled ? "1" : "0");
   return true;
 }
 
@@ -123,6 +132,7 @@ export async function disableNativePush(token: string, userId: number): Promise<
   const currentDeviceId = await SecureStore.getItemAsync(DEVICE_ID_KEY);
   if (currentDeviceId) await unregisterPushDevice(token, currentDeviceId);
   await SecureStore.deleteItemAsync(enabledKey(userId));
+  await SecureStore.deleteItemAsync(DELIVERY_USER_KEY(userId));
   return getNativePushState(userId);
 }
 
@@ -131,6 +141,7 @@ export async function unregisterNativePushForLogout(token: string, userId: numbe
   const currentDeviceId = await SecureStore.getItemAsync(DEVICE_ID_KEY);
   if (currentDeviceId) await unregisterPushDevice(token, currentDeviceId);
   await SecureStore.deleteItemAsync(enabledKey(userId));
+  await SecureStore.deleteItemAsync(DELIVERY_USER_KEY(userId));
 }
 
 export function subscribeToNativePushResponses(
