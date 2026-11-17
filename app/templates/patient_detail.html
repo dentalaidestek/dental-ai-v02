@@ -326,6 +326,39 @@
         {% endif %}
     </section>
 
+    {% if voice_history and voice_history.fields %}
+    <section class="card patient-section-card patient-voice-history-card">
+        <div class="patient-section-heading">
+            <div>
+                <div class="workspace-section-kicker">Sesli Muayene</div>
+                <h2>Hekim Onaylı Anamnez</h2>
+                <p>Yalnızca hekim tarafından seçilip kaydedilen hasta beyanları.</p>
+            </div>
+        </div>
+        {% for key, label in [
+            ("medical_history", "Sistemik hastalıklar / sağlık geçmişi"),
+            ("medications", "İlaç beyanları"),
+            ("allergies", "Alerji beyanları"),
+            ("family_history", "Aile sağlık öyküsü"),
+            ("dental_history", "Önceki diş tedavileri"),
+            ("oral_habits", "Ağız bakımı ve alışkanlıklar"),
+            ("materials", "Konuşulan materyaller")
+        ] %}
+        {% set field = voice_history.fields.get(key) %}
+        {% if field %}
+        <article class="patient-history-row">
+            <div class="patient-history-main">
+                <div class="patient-history-title">{{ label }}</div>
+                <p class="analysis-muted">{{ field.value }}</p>
+                <div class="patient-history-meta"><span>Sesli muayene #{{ field.analysis_id }}</span></div>
+            </div>
+        </article>
+        {% endif %}
+        {% endfor %}
+        <p class="analysis-muted">{{ voice_history.notice }}</p>
+    </section>
+    {% endif %}
+
     <section class="card patient-section-card">
         <div class="patient-section-heading">
             <div>
