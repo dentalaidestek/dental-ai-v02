@@ -258,3 +258,81 @@ test('invalid native patient phone is blocked before mutation and valid Turkish 
  assert.equal(writes[0].expected_revision,'a'.repeat(64));
  await renderer.act(async()=>tree.unmount());
 });
+
+test('patient edit reconciliation compares every web-editable field after trim/null normalization',()=>{
+ const matches=presentationExports.patientProfileEditMatches;
+ const draft={first_name:' Ada ',last_name:' Kaya ',phone:' 05123456789 ',birth_date:'2000-02-29',tc_kimlik_no:' 12345678901 ',address:' Ankara ',chief_complaint:' Ağrı '};
+ const current={first_name:'Ada',last_name:'Kaya',phone:'05123456789',birth_date:'2000-02-29',tc_kimlik_no:'12345678901',address:'Ankara',chief_complaint:'Ağrı'};
+ assert.equal(matches(draft,current),true);
+ assert.equal(matches({...draft,address:'İzmir'},current),false,'address must participate in reconciliation');
+ assert.equal(matches({...draft,chief_complaint:'Başka şikâyet'},current),false,'chief complaint must participate in reconciliation');
+ assert.equal(matches({...draft,birth_date:'2000-02-28'},current),false,'birth date must participate in reconciliation');
+});
+
+test('patient deletion gate requires all profile and treatment intents to be known and settled',()=>{
+ const can=presentationExports.patientProfileCanDeletePatient;
+ const ready={busy:false,uncertain:false,treatmentIntentReady:true,treatmentIntentBlocked:false,hasPendingTreatment:false};
+ assert.equal(can(ready),true);
+ for(const patch of [
+  {busy:true},{uncertain:true},{treatmentIntentReady:false},
+  {treatmentIntentBlocked:true},{hasPendingTreatment:true}
+ ]) assert.equal(can({...ready,...patch}),false,JSON.stringify(patch));
+});
+
+test('pending or unreadable secure treatment intent disables patient deletion',async()=>{
+ const pending={userId:1,patientId:8,operation:'CREATE',treatmentId:null,requestKey:'synthetic-treatment-request-0001',expectedRevision:null,payload:{treatment_name:'Synthetic treatment',tooth_number:'',treatment_date:'',material:'',doctor_note:'',result:''}};
+ for(const raw of [JSON.stringify(pending),'not-json']){
+  const storage=new Map([['dai.treatment.1.8',raw]]);
+  const Profile=component({getPatient:async()=>patient(8)},'NativePatientProfile',storage);let tree;
+  await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+  const info=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Bilgileri')));
+  await renderer.act(async()=>info.props.onPress());
+  const remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
+  assert.ok(remove,'web-equivalent patient delete action remains visible');
+  assert.equal(remove.props.disabled,true,'unresolved or unreadable clinical intent must fail closed');
+  assert.ok(text(tree.toJSON()).includes('güvenli durum kontrolü tamamlanana kadar devre dışıdır'));
+  await renderer.act(async()=>tree.unmount());
+ }
+});
+
+test('ambiguous patient edit stays locked until a successful server read reconciles the draft',async()=>{
+ let reads=0;
+ const saved={...patient(8),patient:{...patient(8).patient,first_name:'Saved'},edit_revision:'b'.repeat(64)};
+ const Profile=component({
+  getPatient:async()=>reads++===0?patient(8):saved,
+  editPatient:async()=>{throw Object.assign(new Error('Sunucu yanıtı belirsiz'),{status:503})}
+ });let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ await press('Hasta Bilgileri');
+ const name=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad');
+ await renderer.act(async()=>name.props.onChangeText('Saved'));
+ await press('Değişiklikleri Kaydet');
+ assert.ok(text(tree.toJSON()).includes('Sunucu yanıtı belirsiz'));
+ assert.ok(text(tree.toJSON()).includes('Sunucudaki profil kaydını karşılaştır'));
+ let remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
+ assert.equal(remove.props.disabled,true,'an ambiguous profile write blocks deletion');
+ await press('Sunucudaki profil kaydını karşılaştır');
+ assert.ok(text(tree.toJSON()).includes('Hasta bilgileri sunucuda doğrulandı'));
+ assert.ok(!text(tree.toJSON()).includes('Sunucudaki profil kaydını karşılaştır'));
+ await press('Hasta Bilgileri');
+ remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
+ assert.equal(remove.props.disabled,false,'a successful read that matches every field resolves the uncertain write');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('failed patient edit reconciliation preserves uncertainty and keeps deletion disabled',async()=>{
+ let reads=0;
+ const Profile=component({
+  getPatient:async()=>{reads++;if(reads===1)return patient(8);throw new Error('Offline')},
+  editPatient:async()=>{throw Object.assign(new Error('Sunucu yanıtı belirsiz'),{status:503})}
+ });let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ await press('Hasta Bilgileri');await press('Değişiklikleri Kaydet');
+ await press('Sunucudaki profil kaydını karşılaştır');
+ assert.ok(text(tree.toJSON()).includes('Belirsizlik korunuyor'));
+ const remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
+ assert.equal(remove.props.disabled,true);
+ await renderer.act(async()=>tree.unmount());
+});
