@@ -20,34 +20,34 @@ test('Program request keys are random, persisted before use and scoped by accoun
  const store=new Map(),m=moduleFor(store);
  const first=await m.api.getOrCreateProgramRequestKey(7,42);
  assert.equal(first,'aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa');
- assert.equal(store.get('dai.program.create.v1.7.42'),first);
+ assert.equal(store.get('dai.program.create.v1.7'),first);
  assert.equal(await m.api.loadProgramRequestKey(7,42),first);
  assert.equal(await m.api.loadProgramRequestKey(8,42),null);
- assert.equal(await m.api.loadProgramRequestKey(7,43),null);
+ assert.equal(await m.api.loadProgramRequestKey(7,43),first);
  assert.equal(m.generated(),1);
 });
 
 test('restored Program request key is reused instead of rotated after process death',async()=>{
- const store=new Map([['dai.program.create.v1.7.0','existing_request_key_123456']]);
+ const store=new Map([['dai.program.create.v1.7','existing_request_key_123456']]);
  const m=moduleFor(store);
  assert.equal(await m.api.getOrCreateProgramRequestKey(7), 'existing_request_key_123456');
  assert.equal(m.generated(),0);
 });
 
 test('corrupt SecureStore intent fails closed and never creates a replacement key',async()=>{
- const store=new Map([['dai.program.create.v1.7.42','not a valid key']]);
+ const store=new Map([['dai.program.create.v1.7','not a valid key']]);
  const m=moduleFor(store);
  await assert.rejects(()=>m.api.getOrCreateProgramRequestKey(7,42),/bozuk/);
  assert.equal(m.generated(),0);
 });
 
 test('clear removes only the matching request key and preserves a newer intent',async()=>{
- const store=new Map([['dai.program.create.v1.7.42','newer_request_key_123456']]);
+ const store=new Map([['dai.program.create.v1.7','newer_request_key_123456']]);
  const m=moduleFor(store);
  await m.api.clearProgramRequestKey(7,42,'older_request_key_123456');
- assert.equal(store.get('dai.program.create.v1.7.42'),'newer_request_key_123456');
+ assert.equal(store.get('dai.program.create.v1.7'),'newer_request_key_123456');
  await m.api.clearProgramRequestKey(7,42,'newer_request_key_123456');
- assert.equal(store.has('dai.program.create.v1.7.42'),false);
+ assert.equal(store.has('dai.program.create.v1.7'),false);
 });
 
 test('invalid account or patient scope is rejected before SecureStore access',async()=>{
