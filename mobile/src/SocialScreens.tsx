@@ -160,7 +160,7 @@ function Composer({
     previewGeneration = useRef(0),
     lock = useRef(false);
   const selectedCoverId =
-    d.draft.link.trim() &&
+    d.draft.link.trim().length > 0 &&
     typeof d.draft.cover_media_id === "number" &&
     Number.isSafeInteger(d.draft.cover_media_id) &&
     d.draft.media_ids.includes(d.draft.cover_media_id)
