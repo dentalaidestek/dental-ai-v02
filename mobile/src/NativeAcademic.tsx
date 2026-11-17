@@ -34,8 +34,8 @@ function CourseView({token,userId,course,back}:{token:string;userId:number;cours
   if(q.status==='fulfilled')setQuizzes(q.value.quizzes);else{setQuizzes([]);advisory.push('Soru geçmişi: '+failure(q.reason))}
   if(i.status==='fulfilled')setIndex(i.value);else{setIndex(null);advisory.push('Kaynak durumu: '+failure(i.reason))}
   if(l.status==='fulfilled')setLearning(l.value.learning);else{setLearning(null);advisory.push('Çalışma özeti: '+failure(l.reason))}
-  if(alive.current){setError([...blocking,...advisory].join('\\n'));setBroken(blocking.length>0)}
-  if(blocking.length)throw Error(blocking.join('\\n'));
+  if(alive.current){setError([...blocking,...advisory].join('\n'));setBroken(blocking.length>0)}
+  if(blocking.length)throw Error(blocking.join('\n'));
  }
  async function restore(){const raw=await store.getItemAsync(key);if(raw){const saved=A.parseIntent(raw,userId,course.id);if(alive.current){setIntent(saved);setQuestion(saved.message)}const r=await A.receipt(token,course.id,saved.request_key);accept(r);if(r){await store.deleteItemAsync(key);if(alive.current){setIntent(null);setQuestion('')}}}else accept(await A.activeRun(token,course.id));}
  useEffect(()=>{const sub=AppState.addEventListener('change',state=>setForeground(state==='active'));void(async()=>{try{const upload=await SecureStore.getItemAsync(uploadKey);if(alive.current&&upload)setUploadUnknown(upload);await Promise.all([refresh(),restore()]);if(alive.current)setReady(true)}catch(e){if(alive.current){setError(failure(e));setBroken(true)}}})();return()=>{alive.current=false;sub.remove();controller.current?.abort()}},[]);
