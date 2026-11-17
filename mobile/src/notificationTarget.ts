@@ -5,7 +5,8 @@ export type NativeNotificationRoute =
   | { screen: "Program" }
   | { screen: "ExpertDirectory" }
   | { screen: "ExpertManagement" }
-  | { screen: "SupportRequests"; params: { ticketId?: number } };
+  | { screen: "SupportRequests"; params: { ticketId?: number } }
+  | { screen: "Notifications"; params: { noticeId: number } };
 
 export type NativeNotificationTarget =
   | { kind: "none" }
@@ -16,6 +17,33 @@ function positiveId(raw: string): number | null {
   if (!/^\d{1,15}$/.test(raw)) return null;
   const id = Number(raw);
   return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+function positivePushId(raw: unknown): number | null {
+  if (typeof raw === "number") return Number.isSafeInteger(raw) && raw > 0 ? raw : null;
+  if (typeof raw === "string") return positiveId(raw);
+  return null;
+}
+
+/** Resolve only the minimal, server-authored Expo payloads used by mobile push. */
+export function resolveExpoPushTarget(value: unknown): NativeNotificationTarget {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { kind: "unsupported", path: "push" };
+  }
+  const data = value as Record<string, unknown>;
+  if (data.kind === "notification") {
+    const noticeId = positivePushId(data.notice_id);
+    return noticeId
+      ? { kind: "navigate", route: { screen: "Notifications", params: { noticeId } } }
+      : { kind: "unsupported", path: "push:notification" };
+  }
+  if (data.kind === "consultation") {
+    const caseId = positivePushId(data.case_id);
+    return caseId
+      ? { kind: "navigate", route: { screen: "ConsultationChat", params: { id: caseId } } }
+      : { kind: "unsupported", path: "push:consultation" };
+  }
+  return { kind: "unsupported", path: "push" };
 }
 
 function queryParam(raw: string, key: string): string | null {
