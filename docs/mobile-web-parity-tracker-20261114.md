@@ -623,3 +623,14 @@ Evidence and exact remaining acceptance: `docs/mobile-voice-exam-parity-20261117
 - **Release gate:** schema revision 15 requires `python -m app.migrate` before app startup. No merge or deploy was performed.
 - **Still open:** full Android typecheck and integration suites (GitHub runner did not execute steps), stable snapshot pagination, native OS push/deep-link delivery, and 60k-user load certification.
 - **Evidence:** `docs/mobile-program-idempotency-20261117.md`.
+
+
+## 2026-11-17 — AI analysis privacy and receipt fingerprint hardening
+
+- Web-first review covered `analysis_new.html`, `analysis_viewer.html`, the mobile analysis API and native analysis detail/upload flow.
+- Found and fixed unnecessary direct patient identifiers in the mobile analysis workspace response. It now returns only internal scope ID, anonymous ID, age and chief complaint; native rejects extra fields and falls back to anonymous ID for a restored patient choice.
+- Found and fixed an unkeyed SHA-256 fingerprint in `UPLOAD_RECEIPT.source_hash`. New receipts use HMAC-SHA256 with the dedicated `PATIENT_MEDIA_RECEIPT_KEY`, a separate analysis-upload domain and owner/patient scope. Legacy receipts upgrade lazily on authenticated lookup/replay.
+- Missing receipt key fails closed with 503 before clinical allocation; changed same-key content remains 409. No schema migration or periodic scan.
+- Added Python receipt/privacy tests and native analysis-response tests; registered the helper in Security recovery.
+- Evidence: `docs/mobile-analysis-receipt-privacy-20261117.md`. Tests are committed but full repository execution remains blocked by current-head Actions jobs failing before runner allocation; no green CI is claimed.
+- Deployment prerequisite: configure the stable 64-hex `PATIENT_MEDIA_RECEIPT_KEY` secret. No main merge, production deploy, store build or clinical record mutation.
