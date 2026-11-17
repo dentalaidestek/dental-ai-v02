@@ -48,6 +48,7 @@ on:
       - 'tests/test_blueprint_boundaries.py'
       - 'tests/test_mobile_boot.py'
       - 'tests/test_mobile_chat_actions.py'
+      - 'tests/test_postgres_optimization.py'
       - 'app/expert_social_api.py'
       - 'app/expert_social_relationships.py'
       - 'tests/expert_social/test_dental_flow.py'
