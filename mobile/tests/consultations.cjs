@@ -233,3 +233,58 @@ test('corrupt consultation media intent fails closed and offers local recovery w
  assert.equal(invalidBranch.includes('deleteItemAsync(pendingKey)'),false);
  assert.ok(source.includes('setRestoreAttempt(value=>value+1)'));
 });
+
+test('consultation inbox normalizes the latest message ID for realtime deduplication',async()=>{
+ await withFetch(async()=>json({items:[{...consultation(42,'2026-11-17T08:00:00'),last_message_id:91}],next_before:null}),async()=>{
+  const page=await api.getConsultations('token');
+  assert.equal(page.items[0].last_message_id,91);
+ });
+});
+
+test('incremental consultation sync requests only messages after the supplied cursor',async()=>{
+ await withFetch(async(url,init)=>{
+  assert.ok(url.includes('/consultations/42/messages-live?after_id=10'));
+  assert.equal(init.method,'GET');
+  assert.equal(init.headers.Authorization,'Bearer token');
+  return json({case:{id:42,status:'ACTIVE'},messages:[
+   {id:11,sender_user_id:19,message_type:'TEXT',content:'Yeni',created_at:'2026-11-17T08:00:00'},
+   {id:12,sender_user_id:19,message_type:'TEXT',content:'Yeni 2',created_at:'2026-11-17T08:01:00'}
+  ],has_more:true,next_after:12});
+ },async()=>{
+  const page=await api.getConsultationUpdates('token',42,10);
+  assert.deepEqual(page.messages.map(item=>item.id),[11,12]);
+  assert.equal(page.next_after,12);
+  assert.equal(page.has_more,true);
+ });
+});
+
+test('incremental consultation sync accepts an empty terminal page',async()=>{
+ await withFetch(async()=>json({case:{id:42,status:'ACTIVE'},messages:[],has_more:false,next_after:null}),async()=>{
+  const page=await api.getConsultationUpdates('token',42,12);
+  assert.deepEqual(page.messages,[]);
+  assert.equal(page.next_after,null);
+ });
+});
+
+test('incremental consultation sync rejects repeated, out-of-order and foreign message pages',async()=>{
+ const base={case:{id:42,status:'ACTIVE'},has_more:false,next_after:null};
+ await withFetch(async()=>json({...base,messages:[
+  {id:12,sender_user_id:19,message_type:'TEXT',content:'A',created_at:'2026-11-17'},
+  {id:12,sender_user_id:19,message_type:'TEXT',content:'B',created_at:'2026-11-17'}
+ ]}),async()=>assert.rejects(()=>api.getConsultationUpdates('token',42,10),/geçersiz sayfa/));
+ await withFetch(async()=>json({...base,messages:[
+  {id:12,sender_user_id:19,message_type:'TEXT',content:'A',created_at:'2026-11-17'},
+  {id:11,sender_user_id:19,message_type:'TEXT',content:'B',created_at:'2026-11-17'}
+ ]}),async()=>assert.rejects(()=>api.getConsultationUpdates('token',42,10),/geçersiz sayfa/));
+ await withFetch(async()=>json({...base,case:{id:43,status:'ACTIVE'},messages:[]}),async()=>{
+  await assert.rejects(()=>api.getConsultationUpdates('token',42,10),/geçersiz sayfa/);
+ });
+});
+
+test('incremental consultation sync requires an advancing cursor for nonterminal pages',async()=>{
+ await withFetch(async()=>json({case:{id:42,status:'ACTIVE'},messages:[
+  {id:11,sender_user_id:19,message_type:'TEXT',content:'Yeni',created_at:'2026-11-17T08:00:00'}
+ ],has_more:true,next_after:10}),async()=>{
+  await assert.rejects(()=>api.getConsultationUpdates('token',42,10),/geçersiz sayfa/);
+ });
+});
