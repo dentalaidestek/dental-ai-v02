@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 RECEIPT_FIRST_CHECK = timedelta(minutes=15)
 RECEIPT_TTL = timedelta(hours=24)
 RECEIPT_MAX_ATTEMPTS = 8
-RECEIPT_BATCH_LIMIT = 100
+RECEIPT_BATCH_LIMIT = 500
 MAINTENANCE_BATCH_LIMIT = 1000
 SENDING_LEASE = timedelta(minutes=2)
 RECEIPT_LEASE = timedelta(seconds=45)
