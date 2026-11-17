@@ -1468,6 +1468,7 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Q
                 "question":c.question,"requested_at":c.requested_at,"other_user_id":other_id,
                 "other_display_name":other.display_name if other else "Kullanıcı",
                 "last_message":last.content if last else None,"last_message_at":last.created_at if last else None,
+                "last_message_id":last.id if last else 0,
                 "messages_deleted_at":c.messages_deleted_at,"unread_count":0 if c.messages_deleted_at is not None else unread_by_case.get(c.id,0)})
         return {"items":items,"next_before":cases[-1].id if len(page)>50 else None}
 
@@ -1494,6 +1495,63 @@ def mobile_consultation(case_id:int,before:Optional[int]=Query(None,ge=1),limit:
             "requested_at":c.requested_at,"expert_user_id":c.expert_user_id,"requester_user_id":c.requester_user_id,**_mobile_chat_context(session,c,user)},
             "messages":[{"id":m.id,"sender_user_id":m.sender_user_id,"message_type":m.message_type,
             "content":m.content,"reply_to_message_id":m.reply_to_message_id,"created_at":m.created_at,"has_media":bool(m.media_path)} for m in msgs]}
+
+@router.get("/consultations/{case_id}/messages-live")
+def mobile_consultation_messages_live(
+    case_id: int,
+    after_id: int = Query(0, ge=0, le=2**63 - 1),
+    limit: int = Query(100, ge=1, le=100),
+    user: User = Depends(_mobile_user),
+):
+    """Return only messages newer than the caller's verified per-case cursor."""
+    with Session(engine, expire_on_commit=False) as session:
+        case = session.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+            raise HTTPException(status_code=404, detail="Görüşme bulunamadı.")
+        case_payload = {
+            "id": case.id,
+            "status": case.status,
+            "specialty": case.specialty,
+            "tooth_region": case.tooth_region,
+            "messages_deleted_at": case.messages_deleted_at,
+            "expert_response_deadline": case.expert_response_deadline,
+            "requester_decision_deadline": case.requester_decision_deadline,
+            "consultation_start_deadline": case.consultation_start_deadline,
+            "completion_confirmation_deadline": case.completion_confirmation_deadline,
+            "proposed_start_label": case.proposed_start_label,
+            "expert_proposal_note": case.expert_proposal_note,
+        }
+        if case.messages_deleted_at is not None:
+            return {"case": case_payload, "messages": [], "has_more": False, "next_after": None}
+        rows = session.exec(
+            select(ConsultationMessage)
+            .where(
+                ConsultationMessage.case_id == case.id,
+                ConsultationMessage.id > after_id,
+            )
+            .order_by(ConsultationMessage.id.asc())
+            .limit(limit + 1)
+        ).all()
+        has_more = len(rows) > limit
+        messages = rows[:limit]
+        return {
+            "case": case_payload,
+            "messages": [
+                {
+                    "id": message.id,
+                    "sender_user_id": message.sender_user_id,
+                    "message_type": message.message_type,
+                    "content": message.content,
+                    "reply_to_message_id": message.reply_to_message_id,
+                    "created_at": message.created_at,
+                    "has_media": bool(message.media_path),
+                }
+                for message in messages
+            ],
+            "has_more": has_more,
+            "next_after": messages[-1].id if has_more and messages else None,
+        }
+
 
 class MobileConsultationReadRequest(BaseModel):
     through_id: int
