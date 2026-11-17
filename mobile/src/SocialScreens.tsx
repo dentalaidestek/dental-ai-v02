@@ -374,11 +374,24 @@ function Composer({
               <Pressable
                 accessibilityRole="link"
                 accessibilityLabel="Bağlantı önizlemesini aç"
-                onPress={() =>
-                  void Linking.openURL(d.draft.link).catch((e) =>
-                    setError(message(e)),
-                  )
-                }
+                onPress={() => {
+                  try {
+                    const parsed = new URL(d.draft.link);
+                    if (
+                      parsed.protocol !== "https:" ||
+                      !parsed.hostname ||
+                      parsed.username ||
+                      parsed.password ||
+                      (parsed.port && parsed.port !== "443")
+                    )
+                      throw new Error();
+                    void Linking.openURL(parsed.href).catch((e) =>
+                      setError(message(e)),
+                    );
+                  } catch {
+                    setError("Güvenli HTTPS bağlantısı açılamadı.");
+                  }
+                }}
                 style={s.previewCard}
               >
                 {d.draft.preview.cover?.url && (
