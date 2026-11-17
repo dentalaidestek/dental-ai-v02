@@ -396,6 +396,7 @@ def test_consultation_receipt_revision_12_creates_both_receipt_tables(pg):
     engine, _, _ = pg
     with engine.begin() as connection:
         connection.execute(text('DROP TABLE IF EXISTS consultationmessagereceipt'))
+        connection.execute(text('DROP TABLE IF EXISTS studyrun, studyattempt, studyreview, studylearningstate CASCADE'))
         mobile_api.MobileSupportMutationReceipt.__table__.drop(connection, checkfirst=True)
         connection.execute(text('CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
         connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,12)'))
