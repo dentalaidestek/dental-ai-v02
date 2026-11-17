@@ -130,7 +130,7 @@ test('required workspace failure keeps Academic actions fail-closed',async()=>{
 
 
 test('course creation reconciliation selects only a new exact title and description match',()=>{
- const a=api(),intent={title:'Synthetic course',description:'Description',known_ids:[3,4]};
+ const a=api(),intent={version:1,user:1,title:'Synthetic course',description:'Description',known_ids:[3,4]};
  const found=a.findCreatedCourse([
   {id:4,title:'Synthetic course',description:'Description'},
   {id:8,title:'Synthetic course',description:'Description'},
@@ -173,4 +173,37 @@ test('Academic upload recovery requires a newly created same-name and same-size 
  assert.ok(source.includes('removeAcademicCacheFile(uploadIntent.uri)'));
  assert.ok(source.includes('Aynı dosya adını tek aktarımda birden fazla kez seçmeyin'));
  assert.ok(!source.includes('Kaynakları Kontrol Ettim'));
+});
+
+
+test('persisted Academic course creation intent is account-bound',()=>{
+ const a=api(),intent={version:1,user:1,title:'Synthetic course',description:'',known_ids:[3,4]};
+ assert.equal(a.parseCourseCreateIntent(JSON.stringify(intent),1).title,intent.title);
+ assert.throws(()=>a.parseCourseCreateIntent(JSON.stringify(intent),2));
+ assert.throws(()=>a.parseCourseCreateIntent(JSON.stringify({...intent,known_ids:['3']}),1));
+});
+
+test('uncertain Academic course creation survives restart and opens only after a new matching server row',async()=>{
+ const h=ui({
+  library:async()=>({items:[],next_before:null}),
+  createCourse:async()=>{throw Error('Synthetic lost create response')}
+ });
+ let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1})));
+ await renderer.act(async()=>button(tree,'Yeni Ders').props.onPress());
+ await renderer.act(async()=>tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ders adı').props.onChangeText('Recovered title'));
+ await renderer.act(async()=>{button(tree,'Dersi Oluştur').props.onPress();await new Promise(r=>setImmediate(r))});
+ const key='dai.academic.course-create.1';
+ assert.ok(h.storage.has(key));
+ assert.equal(button(tree,'Dersi Oluştur').props.disabled,true);
+ await renderer.act(async()=>tree.unmount());
+
+ let reopened;
+ await renderer.act(async()=>reopened=renderer.create(React.createElement(h.Component,{token:'A',userId:1})));
+ assert.ok(h.storage.has(key));
+ assert.equal(button(reopened,'Dersi Oluştur').props.disabled,true);
+ h.endpoint.library=async()=>({items:[{id:91,title:'Recovered title',description:''}],next_before:null});
+ await renderer.act(async()=>{button(reopened,'Ders Listesini Yeniden Kontrol Et').props.onPress();await new Promise(r=>setImmediate(r))});
+ assert.equal(h.storage.has(key),false);
+ await renderer.act(async()=>reopened.unmount());
 });
