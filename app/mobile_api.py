@@ -686,6 +686,9 @@ def mobile_create_schedule(payload: MobileScheduleCreate, user: User = Depends(_
                 session.flush()
             session.commit()
         except IntegrityError:
+            # Recover the outer transaction as well: a commit-time disconnect or
+            # deferred unique check must be followed by a fresh receipt lookup.
+            session.rollback()
             if not request_hash:
                 raise
             existing = session.exec(select(ScheduleEvent).where(
