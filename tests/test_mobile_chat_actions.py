@@ -207,7 +207,7 @@ def test_media_message_receipt_replays_same_bytes_and_rejects_changed_bytes(chat
             output.writeframes(sample * 80)
         return raw.getvalue()
     key = "native-media-receipt-0001"
-    payload = wav(b"\\x00\\x00")
+    payload = wav(b"\x00\x00")
     first = c.post("/api/mobile/v1/consultations/1/attachments",
                    files={"file": ("voice.wav", payload, "audio/wav")},
                    data={"client_message_id": key})
@@ -218,7 +218,7 @@ def test_media_message_receipt_replays_same_bytes_and_rejects_changed_bytes(chat
     assert second.status_code == 200, second.text
     assert second.json()["message"]["id"] == first.json()["message"]["id"]
     conflict = c.post("/api/mobile/v1/consultations/1/attachments",
-                      files={"file": ("voice.wav", wav(b"\\x01\\x00"), "audio/wav")},
+                      files={"file": ("voice.wav", wav(b"\x01\x00"), "audio/wav")},
                       data={"client_message_id": key})
     assert conflict.status_code == 409
     with Session(engine) as session:
