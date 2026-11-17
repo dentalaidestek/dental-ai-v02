@@ -193,6 +193,10 @@ test('native consultation drafts persist one encrypted text copy and a stable in
  assert.ok(source.includes('SecureStore.setItemAsync(pendingKey,JSON.stringify({version:1,id:intent.id,scope:intent.scope,replyTo:intent.replyTo}))'));
  assert.ok(source.includes('getConsultationMessageReceipt'));
  assert.ok(source.includes('editable={!sendBusy&&!pendingMessage&&canCompose&&draftReady}'));
+ const draftDelete=source.indexOf('await SecureStore.deleteItemAsync(draftKey)');
+ const pendingDelete=source.indexOf('await SecureStore.deleteItemAsync(pendingKey)');
+ assert.ok(draftDelete>=0&&pendingDelete>draftDelete);
+ assert.equal(source.includes('content:intent.content'),false);
 });
 
 test('native consultation media intent stores no filename and reconciles before retry',()=>{
