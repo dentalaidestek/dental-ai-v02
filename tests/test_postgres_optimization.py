@@ -1,5 +1,6 @@
 """Real PostgreSQL locking tests; set DENTAL_TEST_DATABASE_URL to a disposable DB."""
 import asyncio
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 import os
@@ -148,7 +149,7 @@ def test_release_migration_preserves_existing_records_and_repeats_on_postgres(pg
     with engine.connect() as connection:
         assert connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all() == before
         assert set(connection.execute(text('SELECT id FROM guestanalysis')).scalars()) == {resource.id for resource in resources}
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 15
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 16
         assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('authratebucket')")).scalar_one() is not None
@@ -173,7 +174,7 @@ def test_program_idempotency_migration_upgrades_revision14_without_baseline_repl
         ))}
         assert {'client_request_hash','client_payload_hash'} <= columns
         assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one()==15
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one()==16
 
 
 def test_program_create_receipt_is_atomic_under_concurrent_postgres_requests(pg, monkeypatch):
@@ -444,7 +445,7 @@ def test_consultation_receipt_revision_13_upgrade_on_postgres(pg):
     migrate.require_schema(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 15
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 16
         assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
 
 
@@ -463,10 +464,10 @@ def test_consultation_receipt_revision_12_creates_both_receipt_tables(pg):
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('mobilesupportmutationreceipt')")).scalar_one() is not None
         # The study tables are additive revision-12 objects. The receipt upgrade
-        # advances through revision 14 to the current revision 15, so they must be created before those bumps.
+        # advances through revisions 14 and 15 to the current revision 16, so they must be created before those bumps.
         for table in ('studylearningstate', 'studyreview', 'studyattempt', 'studyrun'):
             assert connection.execute(text("SELECT to_regclass(:name)"), {'name': table}).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 15
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 16
 
 def test_consultation_message_same_key_replays_once_under_concurrent_postgres_writes(pg, monkeypatch):
     from fastapi.testclient import TestClient
@@ -680,3 +681,140 @@ def test_mobile_push_installation_advisory_lock_serializes_account_switches(pg):
         second.result(timeout=5)
 
     assert second_locked.is_set()
+
+
+def test_program_query_index_migration_upgrades_revision15_online(pg):
+    from app import migrate
+    engine, _, _ = pg
+    index_names = (
+        'ix_scheduleevent_owner_start_at',
+        'ix_scheduleevent_owner_created_at',
+        'ix_scheduleevent_owner_updated_at',
+        'ix_programreminderjob_status_run_at',
+        'ix_programreminderjob_event_status',
+        'ix_programreminderjob_owner_status',
+    )
+    with engine.begin() as connection:
+        connection.execute(text('CREATE TABLE IF NOT EXISTS dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
+        connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,15) ON CONFLICT(id) DO UPDATE SET version=15'))
+        for name in index_names:
+            connection.execute(text(f'DROP INDEX IF EXISTS {name}'))
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 16
+        for name in index_names:
+            assert connection.execute(
+                text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
+                {'name': name},
+            ).scalar_one() is True
+
+
+def _explain_analyze_index_names(connection, statement, params=None):
+    result = connection.execute(
+        text('EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ' + statement),
+        params or {},
+    ).scalar_one()
+    if isinstance(result, str):
+        result = json.loads(result)
+    root = result[0]['Plan'] if isinstance(result, list) else result['Plan']
+    names = set()
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        if node.get('Index Name'):
+            names.add(node['Index Name'])
+        pending.extend(node.get('Plans') or [])
+    return names
+
+
+def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
+    engine, _, _ = pg
+    # Synthetic only: 60k distinct accounts plus a deliberately busy account
+    # with enough history to make owner-scoped index selection measurable.
+    with engine.begin() as connection:
+        connection.execute(text("""
+            INSERT INTO scheduleevent
+                (owner_user_id,event_type,title,start_at,end_at,patient_id,location,notes,
+                 status,reminder_minutes,notification_enabled,recurrence_rule,recurrence_until,
+                 timezone_name,created_at,updated_at,client_request_hash,client_payload_hash)
+            SELECT 100000 + n,'APPOINTMENT','Synthetic scale event',
+                   date_trunc('day',now()) + ((n % 28) * interval '1 day'),
+                   NULL,NULL,NULL,NULL,'ACTIVE',30,true,'NONE',NULL,'Europe/Istanbul',
+                   now() - interval '30 days',now() - interval '30 days',NULL,NULL
+            FROM generate_series(1,60000) AS n
+        """))
+        connection.execute(text("""
+            INSERT INTO scheduleevent
+                (owner_user_id,event_type,title,start_at,end_at,patient_id,location,notes,
+                 status,reminder_minutes,notification_enabled,recurrence_rule,recurrence_until,
+                 timezone_name,created_at,updated_at,client_request_hash,client_payload_hash)
+            SELECT 42,'APPOINTMENT','Synthetic busy-account event',
+                   date_trunc('day',now()) + ((n % 28) * interval '1 day'),
+                   NULL,NULL,NULL,NULL,'ACTIVE',30,true,'NONE',NULL,'Europe/Istanbul',
+                   now() - interval '30 days',
+                   CASE WHEN n=2000 THEN now() + interval '1 second' ELSE now() - interval '30 days' END,
+                   NULL,NULL
+            FROM generate_series(1,2000) AS n
+        """))
+        connection.execute(text("""
+            INSERT INTO programreminderjob
+                (schedule_event_id,owner_user_id,occurrence_start_at,run_at,reminder_minutes,
+                 event_updated_at,dedup_key,status,attempts,last_error,created_at,completed_at)
+            SELECT 100000+n,100000+n,now()+interval '2 days',now()+interval '2 days',30,
+                   now()-interval '30 days','scale-future-' || n,'PENDING',0,NULL,
+                   now()-interval '30 days',NULL
+            FROM generate_series(1,60000) AS n
+        """))
+        connection.execute(text("""
+            INSERT INTO programreminderjob
+                (schedule_event_id,owner_user_id,occurrence_start_at,run_at,reminder_minutes,
+                 event_updated_at,dedup_key,status,attempts,last_error,created_at,completed_at)
+            SELECT 900000+n,42,now()-interval '1 hour',now()-interval '30 minutes',30,
+                   now()-interval '30 days','scale-due-' || n,'PENDING',0,NULL,
+                   now()-interval '30 days',NULL
+            FROM generate_series(1,1000) AS n
+        """))
+        connection.execute(text('ANALYZE scheduleevent'))
+        connection.execute(text('ANALYZE programreminderjob'))
+
+    range_plan = _explain_analyze_index_names(
+        engine,
+        """
+        SELECT id FROM scheduleevent
+        WHERE owner_user_id=:owner
+          AND status <> 'DELETED'
+          AND start_at <= :range_end
+          AND (recurrence_rule='WEEKLY' OR start_at >= :range_start OR end_at >= :range_start)
+          AND (recurrence_rule <> 'WEEKLY' OR recurrence_until IS NULL
+               OR recurrence_until='' OR recurrence_until >= :range_date)
+        ORDER BY start_at LIMIT 50
+        """,
+        {
+            'owner': 42,
+            'range_start': __import__('datetime').datetime.now() - timedelta(days=1),
+            'range_end': __import__('datetime').datetime.now() + timedelta(days=30),
+            'range_date': __import__('datetime').date.today().isoformat(),
+        },
+    )
+    snapshot_plan = _explain_analyze_index_names(
+        engine,
+        """
+        SELECT id FROM scheduleevent
+        WHERE owner_user_id=:owner
+          AND (created_at > :snapshot OR updated_at > :snapshot)
+        LIMIT 1
+        """,
+        {'owner': 42, 'snapshot': __import__('datetime').datetime.now() - timedelta(days=1)},
+    )
+    reminder_plan = _explain_analyze_index_names(
+        engine,
+        """
+        SELECT id FROM programreminderjob
+        WHERE status='PENDING' AND run_at <= now()
+        ORDER BY run_at LIMIT 100
+        """,
+    )
+    assert 'ix_scheduleevent_owner_start_at' in range_plan
+    assert {'ix_scheduleevent_owner_created_at','ix_scheduleevent_owner_updated_at'} & snapshot_plan
+    assert 'ix_programreminderjob_status_run_at' in reminder_plan
