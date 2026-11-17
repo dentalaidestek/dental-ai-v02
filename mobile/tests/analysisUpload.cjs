@@ -197,3 +197,17 @@ test('failed local vault cleanup keeps the receipt intent until cleanup can be r
  assert.equal(h.calls.length,0,'receipt recovery must not create a second paid upload');
  await renderer.act(async()=>t.unmount());
 });
+
+test('legacy plaintext deletion failure keeps both encrypted and legacy references in the durable intent',async()=>{
+ const h=ui({clearLegacyAnalysisSources:async()=>{throw Error('Synthetic legacy cache deletion failure')}},JSON.stringify(intent));
+ const t=await mount(h);
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ const raw=h.storage.get('dai.analysis.upload.1.8');
+ assert.ok(raw,'migration receipt must be persisted before legacy plaintext deletion');
+ const saved=JSON.parse(raw);
+ assert.ok(saved.images[0].encryptedUri,'encrypted replacement is durably referenced');
+ assert.equal(saved.images[0].legacyUri,intent.images[0].uri,'old plaintext URI remains available for a safe retry');
+ assert.ok(button(t,'Eski Taslağı Kontrol Et / Temizle'));
+ assert.equal(h.calls.length,0,'no analysis request starts while legacy plaintext cleanup is unresolved');
+ await renderer.act(async()=>t.unmount());
+});
