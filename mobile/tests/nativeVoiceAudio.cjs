@@ -6,10 +6,11 @@ require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f
 }).outputText,f);
 
 let responseBody={ok:true,revision:'b'.repeat(64),transcript:'Soğukla kısa süreli ağrı.',replayed:false};
-let captured=null,uploads=0,info={exists:true,size:1024};
+let captured=null,uploads=0,fileReads=0,info={exists:true,size:1024};
 const fakeFileSystem={
+ cacheDirectory:'file:///cache/',
  FileSystemUploadType:{BINARY_CONTENT:1},
- getInfoAsync:async()=>info,
+ getInfoAsync:async()=>{fileReads++;return info},
  createUploadTask:(url,uri,options)=>{
   captured={url,uri,options};uploads++;
   return {uploadAsync:async()=>({status:responseBody.status||200,body:JSON.stringify(responseBody)}),cancelAsync:async()=>{}};
@@ -39,6 +40,54 @@ test('native ASR upload binds the persisted segment key to the patient-scoped bi
  assert.equal(captured.options.headers.Authorization,'Bearer token');
  assert.equal(captured.options.uploadType,1);
  assert.equal(captured.url.includes(REQUEST),false);
+});
+
+test('ASR upload rejects paths outside the private cache before reading or uploading a file',async()=>{
+ const allowed='file:///cache/clip.m4a';
+ assert.equal(api.isPrivateVoiceRecordingUri(allowed),true);
+ const invalid=[
+  'file:///Documents/secret.m4a',
+  'file:///cache/../Documents/secret.m4a',
+  'file:///cache/%2e%2e/Documents/secret.m4a',
+  'file:///cache/nested/clip.m4a',
+  'file:///cache-elsewhere/clip.m4a',
+  'file:///cache/clip.m4a?download=1',
+  'file:///cache/clip.wav'
+ ];
+ for(const uri of invalid)assert.equal(api.isPrivateVoiceRecordingUri(uri),false,uri);
+ assert.equal(api.isPrivateVoiceRecordingUri(allowed,'file:///cache'),false);
+ const reads=fileReads,before=uploads;
+ for(const uri of invalid)await assert.rejects(
+  ()=>api.transcribeNativeRecording('token',42,uri,REQUEST),
+  /özel önbelleğinde doğrulanamadı/
+ );
+ assert.equal(fileReads,reads);
+ assert.equal(uploads,before);
+});
+
+test('persisted voice drafts reject traversal, encoded paths and malformed segment rows',()=>{
+ const session=require('../src/voiceSession.ts');
+ const base={...session.newVoiceDraft(1,42,1000),segments:[{id:'segment-1',uri:'file:///cache/clip.m4a',ready:true}]};
+ assert.ok(session.parseVoiceDraft(JSON.stringify(base),1,42,2000));
+ const invalid=[
+  'file:///cache/../Documents/secret.m4a',
+  'file:///cache/%2e%2e/Documents/secret.m4a',
+  'file:///cache/clip.m4a?x=1',
+  'file:///cache/clip.wav',
+  'file://relative/cache/clip.m4a'
+ ];
+ for(const uri of invalid)assert.throws(
+  ()=>session.parseVoiceDraft(JSON.stringify({...base,segments:[{...base.segments[0],uri}]}),1,42,2000),
+  /içeriği doğrulanamadı/
+ );
+ assert.throws(()=>session.parseVoiceDraft(JSON.stringify({...base,segments:[null]}),1,42,2000),/içeriği doğrulanamadı/);
+});
+
+test('recorder deletion and draft reset use the same private-cache guard',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../src/NativeVoiceRecorder.tsx'),'utf8');
+ assert.match(source,/if\(!isPrivateVoiceRecordingUri\(uri\)\)throw Error/);
+ assert.match(source,/for\(const segment of draft\.current\.segments\)if\(isPrivateVoiceRecordingUri\(segment\.uri\)\)await removeFile\(segment\.uri\)/);
+ assert.match(source,/Taslak temizlendi\. Uygulama önbelleği dışında kalan doğrulanamayan dosyaya dokunulmadı\./);
 });
 
 test('invalid segment key or local audio never starts an upload',async()=>{
