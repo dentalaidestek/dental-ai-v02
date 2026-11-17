@@ -130,3 +130,25 @@ def test_native_academic_run_cancel_is_owner_course_scoped_and_idempotent(chat,m
     assert cancelled.json()['run']['partial']==''
     repeated=client.post(cancel_path)
     assert repeated.status_code==200 and repeated.json()['run']['status']=='CANCELLED'
+
+
+def test_cancelled_academic_run_rejects_late_completion(chat,monkeypatch):
+    import pytest
+    from app import academic_study_runs
+    client,engine=chat;course(engine)
+    monkeypatch.setattr(main,'course_v2_ready',lambda *a,**kw:True)
+    monkeypatch.setattr(academic_study_runs,'wake',lambda *a,**kw:None)
+    path='/api/mobile/v1/academic/courses/1/runs'
+    created=client.post(path,json={'message':'Synthetic cancellable work','request_key':'synthetic-late-cancel-0001'})
+    assert created.status_code==202,created.text
+    ident=created.json()['run']['id']
+    with Session(engine) as s:
+        row=s.get(academic_study_runs.StudyRun,ident)
+        row.status='RUNNING';row.partial_text='Synthetic visible checkpoint';s.add(row);s.commit()
+    cancelled=client.post(path+f'/{ident}/cancel')
+    assert cancelled.status_code==200,cancelled.text
+    assert cancelled.json()['run']['status']=='CANCELLED'
+    assert cancelled.json()['run']['partial']==''
+    with Session(engine) as s:
+        with pytest.raises(ValueError,match='iptal edildi|sohbet değişti'):
+            academic_study_runs.complete_in_transaction(s,run_id=ident,owner=1,course=1,message_id=999)
