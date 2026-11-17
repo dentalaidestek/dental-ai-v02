@@ -72,3 +72,21 @@ def test_corrupt_saved_result_is_an_error_not_empty_success(chat,monkeypatch,tmp
     response=c.get('/api/mobile/v1/analyses/1/clinical');assert response.status_code==502
     assert 'not-json' not in response.text
     with Session(engine) as s:assert not s.exec(select(work_jobs.WorkJob)).all()
+
+
+def test_clinical_workspace_returns_modality_only_asset_metadata(chat,monkeypatch,tmp_path):
+    c,engine,_=setup(chat,monkeypatch,tmp_path)
+    with Session(engine) as s:
+        s.add(main.ImageAsset(
+            id=4,analysis_id=1,original_filename='patient-secret-name.png',
+            stored_filename='analysis_1_private.png',file_path='uploads/analysis_1_private.png',
+            image_type='PERIAPICAL',vision_snapshot_json=None,
+        ))
+        s.commit()
+    response=c.get('/api/mobile/v1/analyses/1/clinical')
+    assert response.status_code==200,response.text
+    asset=response.json()['assets'][0]
+    assert set(asset)=={'id','image_type','has_vision','url'}
+    assert asset['image_type']=='PERIAPICAL'
+    assert 'patient-secret-name.png' not in response.text
+    assert 'uploads/analysis_1_private.png' not in response.text

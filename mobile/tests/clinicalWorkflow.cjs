@@ -44,7 +44,7 @@ test('clinical result does not expose the raw internal patient database id',asyn
 
 
 test('clinical workspace rejects duplicate or malformed asset metadata before rendering',async()=>{
- const asset={id:4,name:'synthetic.png',image_type:'BITEWING',has_vision:true,url:'/api/mobile/v1/analyses/1/assets/4'};
+ const asset={id:4,image_type:'BITEWING',has_vision:true,url:'/api/mobile/v1/analyses/1/assets/4'};
  const duplicate=api(async()=>({...base,assets:[asset,asset]}));
  await assert.rejects(()=>duplicate.getClinical('A',1),/Klinik sonuç doğrulanamadı/);
  const malformed=api(async()=>({...base,assets:[{...asset,id:0}]}));
@@ -114,4 +114,24 @@ test('clinical note intent validation is account, analysis and FDI scoped',()=>{
  assert.throws(()=>a.parseClinicalNoteIntent(raw,2,1),/doğrulanamadı/);
  assert.throws(()=>a.parseClinicalNoteIntent(JSON.stringify({user:1,analysis:1,note:'',finding:'',tooth:'59'}),1,1),/doğrulanamadı/);
  assert.equal(a.clinicalNoteLine({user:1,analysis:1,note:'Extra',finding:'Manual',tooth:'36'}),'[Diş 36] Manuel bulgu: Manual — Extra');
+});
+
+
+test('clinical workspace exposes modality-only asset metadata and rejects filenames or storage paths',async()=>{
+ const asset={id:4,image_type:'PERIAPICAL',has_vision:true,url:'/api/mobile/v1/analyses/1/assets/4'};
+ const valid=api(async()=>({...base,assets:[asset]}));
+ const workspace=await valid.getClinical('A',1);
+ assert.deepEqual(Object.keys(workspace.assets[0]).sort(),['has_vision','id','image_type','url']);
+ for(const unsafe of [{...asset,name:'patient-secret.png'},{...asset,file_path:'uploads/private.png'},{...asset,image_type:'../private'}]){
+  const invalid=api(async()=>({...base,assets:[unsafe]}));
+  await assert.rejects(()=>invalid.getClinical('A',1),/Klinik sonuç doğrulanamadı/);
+ }
+});
+
+test('native clinical image cards use modality labels rather than uploaded filenames',async()=>{
+ const h=harness({getClinical:async()=>({...base,assets:[{id:4,image_type:'PERIAPICAL',has_vision:true,url:'/api/mobile/v1/analyses/1/assets/4'}]})});
+ const t=await open(h),rendered=text(t.toJSON());
+ assert.ok(rendered.includes('Periapikal'));
+ assert.ok(!rendered.includes('patient-secret.png'));
+ await renderer.act(async()=>t.unmount());
 });
