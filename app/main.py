@@ -293,6 +293,29 @@ class MobilePushDevice(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow_naive)
 
 
+class MobilePushDelivery(SQLModel, table=True):
+    """Minimal per-event/device Expo receipt state; never stores notification content or raw tokens."""
+    __table_args__ = (
+        Index("uq_mobilepushdelivery_event_device", "event_id", "device_id", unique=True),
+        Index("ix_mobilepushdelivery_due", "status", "next_check_at", "lease_until", "id"),
+    )
+    id: Optional[int] = Field(default=None, primary_key=True)
+    event_id: int = Field(index=True)
+    user_id: int = Field(index=True)
+    device_id: str = Field(index=True)
+    token_fingerprint: str
+    ticket_id: Optional[str] = Field(default=None, unique=True, index=True)
+    status: str = Field(default="SENDING", index=True)
+    error_code: Optional[str] = None
+    attempts: int = 0
+    next_check_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    lease_token: Optional[str] = None
+    lease_until: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    updated_at: datetime = Field(default_factory=_utcnow_naive)
+    checked_at: Optional[datetime] = None
+
+
 class AdminNotice(SQLModel, table=True):
     """Durable non-message notification.
 
@@ -9359,8 +9382,8 @@ async def _deliver_web_push_for_notice(event: RealtimeEvent) -> None:
 
 
 async def _deliver_mobile_push_for_event(event: RealtimeEvent) -> None:
-    """Mirror the existing web event policy; never invent a second notification rule."""
-    if event.event_type not in {"NOTICE_CREATED", "MESSAGE_CREATED"}:
+    """Mirror web event policy while recording only owner/device-scoped Expo receipts."""
+    if event.event_type not in {"NOTICE_CREATED", "MESSAGE_CREATED"} or not event.id:
         return
     try:
         payload = json.loads(event.payload_json or "{}")
@@ -9369,7 +9392,13 @@ async def _deliver_mobile_push_for_event(event: RealtimeEvent) -> None:
     if event.event_type == "MESSAGE_CREATED" and payload.get("is_outgoing"):
         return
     try:
-        from app.mobile_push import send_push_tokens
+        from app.mobile_push import is_enabled, send_push_tokens
+        from app.mobile_push_receipts import (
+            complete_mobile_push_deliveries,
+            reserve_mobile_push_deliveries,
+        )
+        if not is_enabled():
+            return
         with Session(engine, expire_on_commit=False) as session:
             if event.event_type == "NOTICE_CREATED":
                 notice = session.get(AdminNotice, int(event.entity_id)) if event.entity_id else None
@@ -9380,11 +9409,22 @@ async def _deliver_mobile_push_for_event(event: RealtimeEvent) -> None:
             else:
                 title, body = "Dental AI", "Yeni bir uzman mesajınız var."
                 route = {"kind": "consultation", "case_id": payload.get("case_id")}
-            tokens = [device.expo_push_token for device in session.exec(
-                select(MobilePushDevice).where(MobilePushDevice.user_id == event.user_id,
-                                               MobilePushDevice.enabled == True)).all()]
-        if tokens:
-            await asyncio.to_thread(send_push_tokens, tokens, title=title, body=body, data=route)
+            devices = session.exec(select(MobilePushDevice).where(
+                MobilePushDevice.user_id == event.user_id,
+                MobilePushDevice.enabled == True,
+            ).order_by(MobilePushDevice.id).limit(10)).all()
+        if not devices:
+            return
+        reserved = reserve_mobile_push_deliveries(
+            engine, event_id=int(event.id), user_id=int(event.user_id), devices=devices,
+        )
+        if not reserved:
+            return
+        result = await asyncio.to_thread(
+            send_push_tokens, [item["token"] for item in reserved],
+            title=title, body=body, data=route,
+        )
+        complete_mobile_push_deliveries(engine, reserved, result)
     except Exception:
         logger.exception("Mobile push delivery failed for event %s", event.id)
 
