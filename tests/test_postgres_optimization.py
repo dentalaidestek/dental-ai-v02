@@ -2,7 +2,7 @@
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import date, datetime, timedelta, timezone
 import os
 import uuid
 
@@ -733,13 +733,14 @@ def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
     # Synthetic only: 60k distinct accounts plus a deliberately busy account
     # with enough history to make owner-scoped index selection measurable.
     with engine.begin() as connection:
+        connection.execute(text("SET LOCAL TIME ZONE 'UTC'"))
         connection.execute(text("""
             INSERT INTO scheduleevent
                 (owner_user_id,event_type,title,start_at,end_at,patient_id,location,notes,
                  status,reminder_minutes,notification_enabled,recurrence_rule,recurrence_until,
                  timezone_name,created_at,updated_at,client_request_hash,client_payload_hash)
             SELECT 100000 + n,'APPOINTMENT','Synthetic scale event',
-                   date_trunc('day',now()) + ((n % 28) * interval '1 day'),
+                   date_trunc('day',timezone('UTC',now())) + ((n % 28) * interval '1 day'),
                    NULL,NULL,NULL,NULL,'ACTIVE',30,true,'NONE',NULL,'Europe/Istanbul',
                    now() - interval '30 days',now() - interval '30 days',NULL,NULL
             FROM generate_series(1,60000) AS n
@@ -750,7 +751,7 @@ def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
                  status,reminder_minutes,notification_enabled,recurrence_rule,recurrence_until,
                  timezone_name,created_at,updated_at,client_request_hash,client_payload_hash)
             SELECT 42,'APPOINTMENT','Synthetic busy-account event',
-                   date_trunc('day',now()) + ((n % 28) * interval '1 day'),
+                   date_trunc('day',timezone('UTC',now())) + ((n % 28) * interval '1 day'),
                    NULL,NULL,NULL,NULL,'ACTIVE',30,true,'NONE',NULL,'Europe/Istanbul',
                    now() - interval '30 days',
                    CASE WHEN n=2000 THEN now() + interval '1 second' ELSE now() - interval '30 days' END,
@@ -792,9 +793,9 @@ def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
         """,
         {
             'owner': 42,
-            'range_start': __import__('datetime').datetime.now() - timedelta(days=1),
-            'range_end': __import__('datetime').datetime.now() + timedelta(days=30),
-            'range_date': __import__('datetime').date.today().isoformat(),
+            'range_start': datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1),
+            'range_end': datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30),
+            'range_date': datetime.now(timezone.utc).date().isoformat(),
         },
     )
     snapshot_plan = _explain_analyze_index_names(
@@ -805,7 +806,7 @@ def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
           AND (created_at > :snapshot OR updated_at > :snapshot)
         LIMIT 1
         """,
-        {'owner': 42, 'snapshot': __import__('datetime').datetime.now() - timedelta(days=1)},
+        {'owner': 42, 'snapshot': datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)},
     )
     reminder_plan = _explain_analyze_index_names(
         engine,
