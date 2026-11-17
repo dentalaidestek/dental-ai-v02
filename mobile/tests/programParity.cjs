@@ -50,6 +50,23 @@ test('program API refuses mismatched days, malformed pages and another event rec
  }finally{global.fetch=original}
 });
 
+test('program API sends a stable request key and reconciles the server receipt',async()=>{
+ const api=require('../src/programApi.ts'),original=global.fetch;
+ const draft={event_type:'APPOINTMENT',title:'Synthetic API visit',start_at:'2030-01-07T10:00',end_at:'2030-01-07T10:30',patient_id:8,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const event={id:7,event_type:'APPOINTMENT',title:draft.title,status:'ACTIVE',start_local:draft.start_at,end_local:draft.end_at,patient_id:8,patient_name:'Synthetic',location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ try{
+  let body,url;
+  global.fetch=async(path,options)=>{url=String(path);body=JSON.parse(options.body);return new Response(JSON.stringify({event}),{status:200})};
+  const saved=await api.saveProgramEvent('token',draft,undefined,'program-create-request-000001');
+  assert.equal(saved.id,7);assert.equal(body.request_key,'program-create-request-000001');
+  assert.equal(url.includes('/program/events'),true);
+  global.fetch=async(path)=>{url=String(path);return new Response(JSON.stringify({state:'FOUND',event}),{status:200})};
+  const receipt=await api.getProgramMutation('token','program-create-request-000001');
+  assert.equal(receipt.state,'FOUND');assert.equal(receipt.event.id,7);
+  assert.ok(url.includes('/program/mutations/program-create-request-000001'));
+ }finally{global.fetch=original}
+});
+
 test('patient-profile appointment verifies its patient and uses the full common program form',async()=>{
  const saved=[];const Editor=component('NativeProgramEditor',{saveProgramEvent:async(_token,payload)=>{saved.push(payload);return{id:7,...payload,start_local:payload.start_at}}});let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),initialPatientId:8,onSaved(){},onClose(){}}));await tick()});
@@ -61,7 +78,7 @@ test('patient-profile appointment verifies its patient and uses the full common 
 
 test('overlap advice needs an explicit confirmation before a program mutation',async()=>{
  let choice=0,writes=0;const Editor=component('NativeProgramEditor',{checkProgramConflicts:async()=>({advisory:true,total:1,items:[]}),onAlert:(_title,_message,buttons)=>buttons[choice].onPress(),saveProgramEvent:async(_token,payload)=>{writes++;return{id:7,...payload,start_local:payload.start_at}}});let tree;
- await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',page:page(),initialPatientId:8,onSaved(){},onClose(){}}))});
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),initialPatientId:8,onSaved(){},onClose(){}}));await tick()});
  await renderer.act(async()=>button(tree,'Programa Ekle').props.onPress());assert.equal(writes,0);
  choice=1;
  await renderer.act(async()=>button(tree,'Programa Ekle').props.onPress());assert.equal(writes,1);
@@ -70,7 +87,7 @@ test('overlap advice needs an explicit confirmation before a program mutation',a
 
 test('calendar switches to the real month grid and opens the shared editor',async()=>{
  const calls=[];const Program=component('NativeProgram',{getProgram:async(_token,view,day)=>{calls.push({view,day});return page(view)}});let tree;
- await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'one'}))});
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'one',userId:1}))});
  await renderer.act(async()=>button(tree,'Ay').props.onPress());
  assert.equal(calls.at(-1).view,'month');
  assert.equal(tree.root.findAllByType('Pressable').filter(node=>typeof node.props.accessibilityLabel==='string'&&node.props.accessibilityLabel.includes('kayıt')).length,42);
