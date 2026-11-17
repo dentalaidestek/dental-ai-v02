@@ -85,15 +85,23 @@ def test_mobile_consultation_live_messages_are_incremental_and_case_scoped(monke
 
         inbox = client.get("/api/mobile/v1/consultations", headers=headers)
         assert inbox.status_code == 200, inbox.text
+        assert inbox.headers["cache-control"] == "private, no-store"
+        assert "authorization" in inbox.headers.get("vary", "").lower()
         row = next(item for item in inbox.json()["items"] if item["id"] == case_id)
         assert row["last_message_id"] == message_ids[-1]
         assert row["last_message"] == "Dördüncü mesaj"
+
+        snapshot = client.get(f"/api/mobile/v1/consultations/{case_id}", headers=headers)
+        assert snapshot.status_code == 200, snapshot.text
+        assert snapshot.headers["cache-control"] == "private, no-store"
 
         first = client.get(
             f"/api/mobile/v1/consultations/{case_id}/messages-live?after_id={message_ids[0]}&limit=2",
             headers=headers,
         )
         assert first.status_code == 200, first.text
+        assert first.headers["cache-control"] == "private, no-store"
+        assert "authorization" in first.headers.get("vary", "").lower()
         first_body = first.json()
         assert [item["id"] for item in first_body["messages"]] == message_ids[1:3]
         assert first_body["has_more"] is True
@@ -106,6 +114,7 @@ def test_mobile_consultation_live_messages_are_incremental_and_case_scoped(monke
             headers=headers,
         )
         assert second.status_code == 200, second.text
+        assert second.headers["cache-control"] == "private, no-store"
         assert [item["id"] for item in second.json()["messages"]] == [message_ids[3]]
         assert second.json()["has_more"] is False
         assert second.json()["next_after"] is None
@@ -115,6 +124,7 @@ def test_mobile_consultation_live_messages_are_incremental_and_case_scoped(monke
             headers=headers,
         )
         assert empty.status_code == 200
+        assert empty.headers["cache-control"] == "private, no-store"
         assert empty.json()["messages"] == []
         assert empty.json()["has_more"] is False
 
