@@ -83,7 +83,48 @@ def test_event_device_reservation_is_idempotent_and_stores_no_raw_token(tmp_path
     assert len(rows) == 1
     assert rows[0].token_fingerprint == token_fingerprint(token)
     assert not hasattr(rows[0], "expo_push_token")
-    assert not ({"title", "body", "message", "payload_json"} & set(rows[0].model_fields_set))
+    columns = set(rows[0].__table__.columns.keys())
+    assert not ({"expo_push_token", "title", "body", "message", "payload_json"} & columns)
+
+
+def test_disabled_transport_does_not_leave_a_receipt_poll_pending(tmp_path):
+    engine, user_id, device_id, token = _engine(tmp_path)
+    with Session(engine) as session:
+        device = session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.user_id == user_id,
+            main.MobilePushDevice.device_id == device_id,
+        )).one()
+    reserved = reserve_mobile_push_deliveries(
+        engine, event_id=441, user_id=user_id, devices=[device],
+    )
+    complete_mobile_push_deliveries(engine, reserved, {
+        "enabled": False, "tickets": [], "errors": [],
+    })
+    with Session(engine) as session:
+        row = session.exec(select(main.MobilePushDelivery)).one()
+    assert row.status == "SEND_DISABLED"
+    assert row.error_code == "PUSH_DISABLED"
+    assert row.ticket_id is None
+
+
+def test_definite_http_rejection_is_not_marked_as_ambiguous(tmp_path):
+    engine, user_id, device_id, token = _engine(tmp_path)
+    with Session(engine) as session:
+        device = session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.user_id == user_id,
+            main.MobilePushDevice.device_id == device_id,
+        )).one()
+    reserved = reserve_mobile_push_deliveries(
+        engine, event_id=442, user_id=user_id, devices=[device],
+    )
+    complete_mobile_push_deliveries(engine, reserved, {
+        "enabled": True, "tickets": [],
+        "errors": [{"error_code": "HTTP_429", "ambiguous": False}],
+    })
+    with Session(engine) as session:
+        row = session.exec(select(main.MobilePushDelivery)).one()
+    assert row.status == "SEND_FAILED"
+    assert row.error_code == "HTTP_429"
 
 
 def test_ticket_acknowledgement_is_durable_and_schedules_first_receipt_check(tmp_path):
