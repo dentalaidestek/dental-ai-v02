@@ -361,3 +361,27 @@ test('Dental Flow translates network failures into actionable API errors',async(
   await assert.rejects(()=>api.getFeed('token','discover'),error=>error.status===503&&/bağlanılamadı/.test(error.message));
  }finally{global.fetch=original}
 });
+
+test('restored Dental Flow cover must reference one of the saved uploads and an active link',async()=>{
+ const base={id:'cover-draft',text:'',link:'https://example.org/article',media_ids:[11,12],attempted:false,preview_id:77,preview:{available:true,id:77,url:'https://example.org/article',cover:null},cover_media_id:12};
+ const valid=await readDraft({getItemAsync:async()=>JSON.stringify(base)},'draft');
+ assert.equal(valid.cover_media_id,12);
+ for(const cover_media_id of [0,13,'12',null]){
+  const restored=await readDraft({getItemAsync:async()=>JSON.stringify({...base,cover_media_id})},'draft');
+  assert.equal(restored.cover_media_id,undefined);
+ }
+ const noLink=await readDraft({getItemAsync:async()=>JSON.stringify({...base,link:'',cover_media_id:12,preview_id:undefined,preview:null})},'draft');
+ assert.equal(noLink.cover_media_id,undefined);
+});
+
+
+test('Dental Flow custom cover is sent only when it belongs to the post media',async()=>{
+ const original=global.fetch,calls=[];
+ global.fetch=async(url,init)=>{calls.push({url,...init});return new Response(JSON.stringify({id:90}),{status:201});};
+ try{
+  await api.createPost('secret',{text:'',link_url:'https://example.org/article',preview_id:77,media_ids:[11,12],idempotency_key:'11111111-1111-4111-8111-111111111111',cover_media_id:12});
+  assert.equal(JSON.parse(calls[0].body).cover_media_id,12);
+  await assert.rejects(()=>api.createPost('secret',{text:'',link_url:'https://example.org/article',media_ids:[11],idempotency_key:'22222222-2222-4222-8222-222222222222',cover_media_id:12}),/Bağlantı kapağı/);
+  assert.equal(calls.length,1,'invalid cover must be rejected before network access');
+ }finally{global.fetch=original;}
+});
