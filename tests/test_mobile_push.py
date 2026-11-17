@@ -112,6 +112,31 @@ class PushTransportTests(unittest.TestCase):
         self.assertEqual(result["sent"], 1000)
         self.assertEqual(result["truncated"], 5)
 
+    def test_push_payload_rejects_clinical_text_and_non_route_fields(self):
+        captured = []
+        def fake_open(req, timeout):
+            captured.extend(json.loads(req.data))
+            return _Response({"data": [{"status": "ok", "id": str(uuid.UUID(int=55))}]})
+
+        with patch.dict(os.environ, {"MOBILE_PUSH_ENABLED": "true"}), patch(
+            "app.mobile_push.request.urlopen", side_effect=fake_open
+        ):
+            send_push_tokens(
+                [token(1)],
+                title="Hasta adı: Gizli",
+                body="Klinik tanı ve ilaç bilgisi",
+                data={
+                    "kind": "consultation", "case_id": 42,
+                    "patient_name": "Gizli", "clinical_notes": "Gizli",
+                },
+            )
+
+        self.assertEqual(captured[0]["title"], "Dental AI")
+        self.assertEqual(captured[0]["body"], "Yeni bir bildiriminiz var.")
+        self.assertEqual(captured[0]["data"], {"kind": "consultation", "case_id": 42})
+        self.assertNotIn("Gizli", json.dumps(captured))
+        self.assertNotIn("Klinik tanı", json.dumps(captured))
+
     def test_ticket_level_device_not_registered_is_returned_as_safe_code(self):
         with patch.dict(os.environ, {"MOBILE_PUSH_ENABLED": "true"}), patch(
             "app.mobile_push.request.urlopen",
