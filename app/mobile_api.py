@@ -1403,8 +1403,19 @@ def mobile_experts(user:User=Depends(_mobile_user),specialty:str=Query("",max_le
                 "availability":p.availability,"consultation_price":p.consultation_price})
         return {"items":items}
 
+def _mobile_private_no_store(response: Response) -> None:
+    """Prevent shared or persistent caching of participant-scoped clinical data."""
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Pragma"] = "no-cache"
+    vary = [part.strip() for part in response.headers.get("Vary", "").split(",") if part.strip()]
+    if not any(part.lower() == "authorization" for part in vary):
+        vary.append("Authorization")
+    response.headers["Vary"] = ", ".join(vary)
+
+
 @router.get("/consultations")
-def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Query(None,ge=1)):
+def mobile_consultations(response: Response, user:User=Depends(_mobile_user), before:Optional[int]=Query(None,ge=1)):
+    _mobile_private_no_store(response)
     now = _utcnow_naive()
     with Session(engine,expire_on_commit=False) as session:
         scope=(ConsultationCase.requester_user_id==user.id)|(ConsultationCase.expert_user_id==user.id)
@@ -1491,7 +1502,8 @@ def mobile_consultations(user:User=Depends(_mobile_user), before:Optional[int]=Q
         return {"items":items,"next_before":cases[-1].id if len(page)>50 else None}
 
 @router.get("/consultations/{case_id}")
-def mobile_consultation(case_id:int,before:Optional[int]=Query(None,ge=1),limit:int=Query(100,ge=1,le=100),user:User=Depends(_mobile_user)):
+def mobile_consultation(case_id:int,response:Response,before:Optional[int]=Query(None,ge=1),limit:int=Query(100,ge=1,le=100),user:User=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
     with Session(engine,expire_on_commit=False) as session:
         c=session.get(ConsultationCase,case_id)
         if not c or user.id not in {c.requester_user_id,c.expert_user_id}:
@@ -1517,11 +1529,13 @@ def mobile_consultation(case_id:int,before:Optional[int]=Query(None,ge=1),limit:
 @router.get("/consultations/{case_id}/messages-live")
 def mobile_consultation_messages_live(
     case_id: int,
+    response: Response,
     after_id: int = Query(0, ge=0, le=2**63 - 1),
     limit: int = Query(100, ge=1, le=100),
     user: User = Depends(_mobile_user),
 ):
     """Return only messages newer than the caller's verified per-case cursor."""
+    _mobile_private_no_store(response)
     with Session(engine, expire_on_commit=False) as session:
         case = session.get(ConsultationCase, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
@@ -2006,7 +2020,7 @@ def mobile_consultation_message_receipt(
         case = session.get(ConsultationCase, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             raise HTTPException(status_code=404, detail="Görüşme bulunamadı.")
-        response.headers["Cache-Control"] = "private, no-store"
+        _mobile_private_no_store(response)
         if case.messages_deleted_at:
             return {"message": None, "deleted": True}
         receipt = session.exec(select(web.ConsultationMessageReceipt).where(
