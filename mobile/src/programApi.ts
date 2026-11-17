@@ -13,7 +13,16 @@ export async function getProgram(token:string,view:ProgramView,day?:string,offse
  return result;
 }
 export async function getProgramEvent(token:string,eventId:number){const result=await request<{event:ProgramEvent}>(`/program/events/${id(eventId)}`,token);if(!eventValid(result.event)||result.event.id!==eventId)throw Error('Program kaydı doğrulanamadı.');return result.event;}
-export async function saveProgramEvent(token:string,draft:ProgramDraft,eventId?:number){const values=programPayload(draft);const result=await request<{event:ProgramEvent}>('/program/events'+(eventId!==undefined?`/${id(eventId)}`:''),token,{method:eventId!==undefined?'PUT':'POST',body:JSON.stringify(values)});if(!eventValid(result.event)||eventId!==undefined&&result.event.id!==eventId||result.event.start_local!==values.start_at||values.patient_id!==undefined&&result.event.patient_id!==values.patient_id)throw Error('Program kaydı sunucudan doğrulanamadı. Yeniden göndermeden önce takvimi kontrol edin.');return result.event;}
+const requestKeyValid=(value:string)=>/^[A-Za-z0-9_-]{16,96}$/.test(value);
+export async function getProgramMutation(token:string,requestKey:string){
+ if(!requestKeyValid(requestKey))throw Error('Geçersiz Program istek anahtarı.');
+ const result=await request<{state:'NOT_FOUND'|'DELETED'|'FOUND';event?:ProgramEvent;event_id?:number}>(`/program/mutations/${requestKey}`,token);
+ if(result.state==='NOT_FOUND')return result;
+ if(result.state==='DELETED'&&Number.isSafeInteger(result.event_id)&&result.event_id!>0)return result;
+ if(result.state==='FOUND'&&eventValid(result.event))return result;
+ throw Error('Bekleyen Program kaydı sunucuda doğrulanamadı.');
+}
+export async function saveProgramEvent(token:string,draft:ProgramDraft,eventId?:number,requestKey?:string){const values=programPayload(draft);if(eventId===undefined&&(!requestKey||!requestKeyValid(requestKey)))throw Error('Yeni Program kaydı için güvenli istek anahtarı gerekli.');const body=eventId===undefined?{...values,request_key:requestKey}:values;const result=await request<{event:ProgramEvent}>('/program/events'+(eventId!==undefined?`/${id(eventId)}`:''),token,{method:eventId!==undefined?'PUT':'POST',body:JSON.stringify(body)});if(!eventValid(result.event)||eventId!==undefined&&result.event.id!==eventId||result.event.start_local!==values.start_at||values.patient_id!==undefined&&result.event.patient_id!==values.patient_id)throw Error('Program kaydı sunucudan doğrulanamadı. Yeniden göndermeden önce takvimi kontrol edin.');return result.event;}
 export async function programAction(token:string,eventId:number,action:'complete'|'delete'|'copy',days?:string[]){if(action==='copy'&&(!days?.length||days.length>7||days.some(day=>!/^\d{4}-\d{2}-\d{2}$/.test(day))))throw Error('Kopyalanacak günleri seçin.');const result=await request<{ok:boolean}>(`/program/events/${id(eventId)}`+(action==='delete'?'':`/${action}`),token,{method:action==='delete'?'DELETE':'POST',...(action==='copy'?{body:JSON.stringify({days})}:{})});if(result.ok!==true)throw Error('Program işlemi doğrulanamadı. Takvimi yenileyin.');return result;}
 
 export async function checkProgramConflicts(token:string,draft:ProgramDraft,eventId?:number){
