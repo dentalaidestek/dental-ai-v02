@@ -58,3 +58,13 @@ test('switching patient invalidates a late anamnesis response from the previous 
  assert.equal(rendered.includes('Eski hasta özel anamnez metni'),false);
  await renderer.act(async()=>tree.unmount());
 });
+test('failed profile refresh hides the previously loaded clinical values',async()=>{
+ let calls=0;const api=mount(async()=>{calls++;if(calls===1)return history('Önceki onaylı ilaç beyanı');throw Error('Güncel anamnez yenilenemedi')});let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(api.Component,{token:'owner-token',patientId:8}));await new Promise(resolve=>setImmediate(resolve))});
+ assert.ok(content(tree.toJSON()).includes('Önceki onaylı ilaç beyanı'));
+ await renderer.act(async()=>{press(tree,'Anamnezi yenile').props.onPress();await new Promise(resolve=>setImmediate(resolve))});
+ const rendered=content(tree.toJSON());
+ assert.ok(rendered.includes('Güncel anamnez yenilenemedi'));
+ assert.equal(rendered.includes('Önceki onaylı ilaç beyanı'),false);
+ await renderer.act(async()=>tree.unmount());
+});
