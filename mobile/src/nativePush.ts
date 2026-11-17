@@ -162,13 +162,13 @@ export async function refreshNativePushRegistration(token: string, userId: numbe
   if (!easProjectId()) return false;
 
   const registration = await expoToken();
-  const registered = await registerPushDevice(token, registration.deviceId, registration.token, registration.platform);
+  const registered = await registerPushDevice(token, registration.deviceId, registration.token, registration.platform, registration.installationProof);
   await SecureStore.setItemAsync(DELIVERY_USER_KEY(userId), registered.delivery_enabled ? "1" : "0");
   return true;
 }
 
 export async function disableNativePush(token: string, userId: number): Promise<NativePushState> {
-  const currentDeviceId = await SecureStore.getItemAsync(DEVICE_ID_KEY);
+  const currentDeviceId = await storedDeviceId();
   if (currentDeviceId) await unregisterPushDevice(token, currentDeviceId);
   await SecureStore.deleteItemAsync(enabledKey(userId));
   await SecureStore.deleteItemAsync(DELIVERY_USER_KEY(userId));
@@ -177,7 +177,7 @@ export async function disableNativePush(token: string, userId: number): Promise<
 
 /** Logout revokes this account/device pair before the session is discarded. */
 export async function unregisterNativePushForLogout(token: string, userId: number): Promise<void> {
-  const currentDeviceId = await SecureStore.getItemAsync(DEVICE_ID_KEY);
+  const currentDeviceId = await storedDeviceId();
   if (currentDeviceId) await unregisterPushDevice(token, currentDeviceId);
   await SecureStore.deleteItemAsync(enabledKey(userId));
   await SecureStore.deleteItemAsync(DELIVERY_USER_KEY(userId));
