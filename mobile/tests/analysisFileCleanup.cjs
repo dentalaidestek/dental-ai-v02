@@ -36,12 +36,13 @@ test('legacy plaintext URI remains durable until the encrypted intent can be sto
  assert.ok(h.files.has(legacy),'migration must not delete the only old reference before SecureStore is updated');
  assert.deepEqual(h.deleted,[]);
 });
-test('legacy cache deletion is verified and failures remain visible to the caller',async()=>{
- const h=harness();
+test('legacy cache deletion failures remain visible to the caller',async()=>{
+ const h=harness({deleteCache:async()=>{throw Error('Synthetic legacy deletion failure')}});
  await assert.rejects(
   h.api.clearLegacyAnalysisSources([{uri:encrypted,encryptedUri:encrypted,legacyUri:legacy}]),
-  /Eski klinik görüntü önbellek yolu|/
+  /Synthetic legacy deletion failure/
  );
+ assert.ok(h.files.has(legacy),'failed cleanup must not erase the only retained legacy source');
 });
 test('encrypted vault cleanup failure is not silently swallowed',async()=>{
  const h=harness({deleteVault:async()=>{throw Error('Synthetic vault deletion failure')}});
