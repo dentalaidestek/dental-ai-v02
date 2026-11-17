@@ -293,6 +293,8 @@ test('pending or unreadable secure treatment intent disables patient deletion',a
   const remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
   assert.ok(remove,'web-equivalent patient delete action remains visible');
   assert.equal(remove.props.disabled,true,'unresolved or unreadable clinical intent must fail closed');
+  const newTreatment=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Yeni Tedavi')));
+  assert.equal(newTreatment.props.disabled,true,'new clinical mutations must wait for secure intent recovery');
   assert.ok(text(tree.toJSON()).includes('güvenli durum kontrolü tamamlanana kadar devre dışıdır'));
   await renderer.act(async()=>tree.unmount());
  }
@@ -352,6 +354,8 @@ test('restored treatment intent blocks profile edits until its exact receipt is 
  assert.equal(save.props.disabled,true);
  const inputs=tree.root.findAllByType('TextInput');
  assert.ok(inputs.every(input=>input.props.editable===false),'profile fields stay read-only while treatment receipt is unresolved');
+ const newTreatment=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Yeni Tedavi')));
+ assert.equal(newTreatment.props.disabled,true);
  assert.equal(writes,0);
  await renderer.act(async()=>tree.unmount());
 });
