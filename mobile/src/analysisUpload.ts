@@ -4,6 +4,13 @@ import {revalidateSession} from './sessionExpiry';
 export type UploadImage={uri:string;name:string;type:string;encryptedUri?:string;previewUri?:string;legacyUri?:string};
 export type UploadIntent={userId:number;patientId:number;requestKey:string;toothNumber:string;clinicalNotes:string;images:UploadImage[];existingMediaIds?:number[]};
 export type UploadReceipt={analysis_id:number;patient_id:number;job_id:number;status:string};
+function validLegacyAnalysisUri(value:unknown):value is string{
+ if(typeof value!=='string'||!value.startsWith('file://')||value.length>4096||value.split('/').includes('..')||Array.from(value).some(char=>char.charCodeAt(0)<32))return false;
+ const name=value.split('/').pop()||'',dot=name.lastIndexOf('.');
+ if(dot<1)return false;
+ const stem=name.slice(0,dot),extension=name.slice(dot+1);
+ return stem.startsWith('dai-analysis-')&&/^[A-Za-z0-9_-]{8,160}$/.test(stem.slice('dai-analysis-'.length))&&/^[A-Za-z0-9]{1,8}$/.test(extension);
+}
 export function parseUploadIntent(raw:string,userId:number,patientId:number):UploadIntent{
  const v=JSON.parse(raw);if(v.userId!==userId||v.patientId!==patientId||!Number.isSafeInteger(userId)||userId<1||!Number.isSafeInteger(patientId)||patientId<1||typeof v.requestKey!=='string'||!/^[-_A-Za-z0-9]{16,80}$/.test(v.requestKey)||typeof v.toothNumber!=='string'||typeof v.clinicalNotes!=='string'||v.clinicalNotes.length>4000)throw Error('Bekleyen yükleme hesabı veya hasta kaydı doğrulanamadı.');
  validateUploadFields(v.toothNumber,v.clinicalNotes);
@@ -13,13 +20,8 @@ export function parseUploadIntent(raw:string,userId:number,patientId:number):Upl
  const images=v.images.length?normalizeAnalysisImages(v.images):[];
  const mediaCount=existingMediaIds.length+images.length;if(mediaCount>ANALYSIS_MAX_IMAGES)throw Error(`Kayıtlı ve yeni görüntülerin toplamı en fazla ${ANALYSIS_MAX_IMAGES} olabilir.`);if(mediaCount===0&&!v.toothNumber.split(',').some((tooth:string)=>tooth.trim())&&!v.clinicalNotes.trim())throw Error('Görüntü olmadan analiz başlatmak için diş numarası veya klinik bilgi girin.');
  if(images.some(i=>!i.uri.startsWith('file://')||i.uri.length>4096||i.uri.split('/').includes('..')||/[\x00-\x1f]/.test(i.uri)))throw Error('Bekleyen yüklemede yalnızca yerel uygulama dosyaları kullanılabilir.');
- if(images.some(i=>i.legacyUri!==undefined&&(
-  typeof i.legacyUri!=='string'||!i.encryptedUri||i.uri!==i.encryptedUri||
-  !i.legacyUri.startsWith('file://')||i.legacyUri.length>4096||
-  i.legacyUri.split('/').includes('..')||/[\\x00-\\x1f]/.test(i.legacyUri)||
-  !/\\/dai-analysis-[A-Za-z0-9_-]{8,160}\\.[A-Za-z0-9]{1,8}$/.test(i.legacyUri)
- )))throw Error('Eski klinik görüntü temizleme kaydı doğrulanamadı. Bekleyen yükleme korundu.');
- return{...v,existingMediaIds,images};
+ if(images.some(i=>i.legacyUri!==undefined&&(!i.encryptedUri||i.uri!==i.encryptedUri||!validLegacyAnalysisUri(i.legacyUri))))throw Error('Eski klinik görüntü temizleme kaydı doğrulanamadı. Bekleyen yükleme korundu.');
+  return{...v,existingMediaIds,images};
 }
 export function validateUploadFields(tooth:string,notes:string){const teeth=tooth.split(',').map(t=>t.trim()).filter(Boolean);if(teeth.length>32||new Set(teeth).size!==teeth.length||teeth.some(t=>!/^(?:[1-4][1-8]|[5-8][1-5])$/.test(t)))throw Error('Geçerli FDI diş numaralarını virgülle ayırarak yazın.');if(notes.length>4000)throw Error('Klinik not en fazla 4000 karakter olabilir.');}
 export function canStartAnalysis(tooth:string,notes:string,savedIds:number[],files:UploadImage[]){return savedIds.length+files.length>0||Boolean(tooth.split(',').some(value=>value.trim())||notes.trim());}
