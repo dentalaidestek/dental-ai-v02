@@ -235,7 +235,7 @@ def reviewed_history_payload(session, main, user, patient_id, fingerprint=None):
                WorkJob.resource_type == 'ANALYSIS', WorkJob.kind == 'VOICE_REVIEW', WorkJob.status == 'DONE')
         .order_by(main.Analysis.id.desc()).limit(12)).all()
     for row in rows:
-        for paragraph in (row.clinical_notes or '').split('\\n\\n'):
+        for paragraph in (row.clinical_notes or '').split('\n\n'):
             for name, label in labels.items():
                 prefix = label + ': '
                 if name not in fields and paragraph.startswith(prefix):
