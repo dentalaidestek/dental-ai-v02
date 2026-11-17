@@ -54,7 +54,7 @@ export const replySupportTicket=(t:string,id:number,message:string,key=supportKe
 
 export type Notice={id:number;title:string;message:string;notice_type:string;target_url?:string|null;read_at?:string|null;created_at:string};
 export type Expert={user_id:number;display_name:string;specialty:string;academic_title?:string|null;institution?:string|null;bio?:string|null;availability:string;consultation_price:number;rating_avg?:number|null;review_count:number};
-export type Consultation={id:number;other_user_id:number;other_display_name:string;specialty:string;tooth_region?:string|null;status:string;question:string;requested_at:string;last_message?:string|null;last_message_at?:string|null;messages_deleted_at?:string|null;unread_count:number};
+export type Consultation={id:number;other_user_id:number;other_display_name:string;specialty:string;tooth_region?:string|null;status:string;question:string;requested_at:string;last_message?:string|null;last_message_at?:string|null;last_message_id?:number;messages_deleted_at?:string|null;unread_count:number};
 export type ChatMessage={id:number;sender_user_id:number;message_type:string;content:string;reply_to_message_id?:number|null;created_at:string;has_media?:boolean};
 export type AnalysisHistory={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;status:string;clinical_notes?:string|null;created_at:string;is_voice_review?:boolean};
 export type Course={id:number;title:string;description?:string|null;updated_at:string;material_count:number};
@@ -147,13 +147,14 @@ export const getConsultations=async(t:string,before?:number)=>{
  if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz görüşme sayfa kimliği.");
  const r=await req<{items:any[];next_before?:number|null}>("/consultations"+(before!==undefined?"?before="+encodeURIComponent(before):""),t);
  const cursor=r?.next_before??null;
- if(!Array.isArray(r?.items)||r.items.length>50||r.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0)||
+ if(!Array.isArray(r?.items)||r.items.length>50||r.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0||
+   (item.last_message_id!==undefined&&(!Number.isSafeInteger(item.last_message_id)||item.last_message_id<0)))||
    new Set(r.items.map(item=>item.id)).size!==r.items.length||
    (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0||!r.items.some(item=>item.id===cursor)))||
    (r.items.length===0&&cursor!==null)||
    (before!==undefined&&(r.items.some(item=>item.id===before)||cursor===before)))
   throw Error("Uzman görüşmeleri sunucusundan geçersiz liste alındı. Tekrar deneyin.");
- return {next_before:cursor,items:r.items.map(item=>({...item,other_display_name:String(item.other_display_name||item.other_name||"Kullanıcı"),unread_count:Math.max(0,Number(item.unread_count)||0)})) as Consultation[]};
+ return {next_before:cursor,items:r.items.map(item=>({...item,other_display_name:String(item.other_display_name||item.other_name||"Kullanıcı"),last_message_id:Number.isSafeInteger(item.last_message_id)?item.last_message_id:0,unread_count:Math.max(0,Number(item.unread_count)||0)})) as Consultation[]};
 };
 export const getConsultation=async(t:string,id:number,before?:number)=>{
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz görüşme kimliği.");
@@ -168,6 +169,25 @@ export const getConsultation=async(t:string,id:number,before?:number)=>{
   (before!==undefined&&cursor!==null&&cursor>=before))
   throw Error("Görüşme sunucusundan geçersiz mesaj sayfası alındı.");
  return {...result,next_before:cursor};
+};
+export const getConsultationUpdates=async(t:string,id:number,afterId:number)=>{
+ if(!Number.isSafeInteger(id)||id<=0||!Number.isSafeInteger(afterId)||afterId<0)
+  throw Error("Geçersiz görüşme veya devam mesajı.");
+ const result=await req<{case:any;messages:ChatMessage[];has_more:boolean;next_after?:number|null}>(`/consultations/${id}/messages-live?after_id=${encodeURIComponent(afterId)}`,t);
+ const cursor=result?.next_after??null;
+ if(!result?.case||result.case.id!==id||typeof result.case.status!=="string"||
+    !Array.isArray(result.messages)||result.messages.length>100||typeof result.has_more!=="boolean"||
+    result.messages.some((m,i)=>!m||!Number.isSafeInteger(m.id)||m.id<=afterId||
+      !Number.isSafeInteger(m.sender_user_id)||m.sender_user_id<=0||
+      typeof m.message_type!=="string"||typeof m.created_at!=="string"||
+      (m.content!==null&&m.content!==undefined&&typeof m.content!=="string")||
+      (m.reply_to_message_id!==null&&m.reply_to_message_id!==undefined&&(!Number.isSafeInteger(m.reply_to_message_id)||m.reply_to_message_id<=0))||
+      (i>0&&m.id<=result.messages[i-1].id))||
+    new Set(result.messages.map(m=>m.id)).size!==result.messages.length||
+    (result.has_more&&(cursor===null||!result.messages.length||!Number.isSafeInteger(cursor)||cursor!==result.messages[result.messages.length-1].id||cursor<=afterId))||
+    (!result.has_more&&cursor!==null))
+  throw Error("Görüşme yeni mesaj akışından geçersiz sayfa alındı.");
+ return {...result,next_after:cursor};
 };
 export const markConsultationRead=(t:string,id:number,throughId:number)=>{
  if(!Number.isSafeInteger(id)||id<=0||!Number.isSafeInteger(throughId)||throughId<=0)
