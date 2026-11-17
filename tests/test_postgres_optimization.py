@@ -540,3 +540,101 @@ def test_consultation_message_same_key_replays_once_under_concurrent_postgres_wr
         )).all()
     assert len(messages) == 1
     assert len(receipts) == 1
+
+
+def test_mobile_push_reservation_is_idempotent_under_concurrent_postgres_workers(pg):
+    from app.mobile_push_receipts import reserve_mobile_push_deliveries
+    from threading import Barrier
+
+    engine, _, resources = pg
+    user_id = resources[0].owner_user_id
+    device_id = str(uuid.uuid4())
+    token = "ExpoPushToken[postgresdevice123456]"
+    with Session(engine) as session:
+        session.add(main.MobilePushDevice(
+            user_id=user_id, device_id=device_id, expo_push_token=token,
+            platform="android", enabled=True,
+        ))
+        session.commit()
+
+    candidate = main.MobilePushDevice(
+        user_id=user_id, device_id=device_id, expo_push_token=token,
+        platform="android", enabled=True,
+    )
+    barrier = Barrier(2)
+
+    def reserve(_):
+        barrier.wait(timeout=5)
+        return reserve_mobile_push_deliveries(
+            engine, event_id=93001, user_id=user_id, devices=[candidate],
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(reserve, range(2)))
+
+    assert sum(len(result) for result in results) == 1
+    with Session(engine) as session:
+        rows = session.exec(select(main.MobilePushDelivery).where(
+            main.MobilePushDelivery.event_id == 93001,
+            main.MobilePushDelivery.device_id == device_id,
+        )).all()
+    assert len(rows) == 1
+    assert rows[0].user_id == user_id
+    assert rows[0].token_fingerprint
+    assert rows[0].status == "SENDING"
+
+
+def test_mobile_push_receipt_claim_uses_postgres_skip_locked(pg, monkeypatch):
+    from threading import Event
+    import app.mobile_push_receipts as receipts
+
+    engine, _, resources = pg
+    user_id = resources[0].owner_user_id
+    device_id = str(uuid.uuid4())
+    ticket_id = str(uuid.uuid4())
+    stamp = main._utcnow_naive()
+    with Session(engine) as session:
+        session.add(main.MobilePushDelivery(
+            event_id=93002, user_id=user_id, device_id=device_id,
+            token_fingerprint="f" * 64, ticket_id=ticket_id,
+            status="PENDING_RECEIPT", attempts=0,
+            next_check_at=stamp - timedelta(minutes=1),
+            created_at=stamp - timedelta(minutes=20),
+            updated_at=stamp - timedelta(minutes=1),
+        ))
+        session.commit()
+
+    locked = Event()
+    release = Event()
+    original_token_hex = receipts.secrets.token_hex
+
+    def pause_after_row_lock(length):
+        locked.set()
+        if not release.wait(timeout=8):
+            raise TimeoutError("test did not release the first receipt claimant")
+        return original_token_hex(length)
+
+    monkeypatch.setattr(receipts.secrets, "token_hex", pause_after_row_lock)
+    monkeypatch.setattr(receipts, "get_push_receipts", lambda ids: {
+        "ok": True, "receipts": {ticket_id: {"status": "ok"}},
+    })
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(receipts.poll_due_mobile_push_receipts, engine)
+        assert locked.wait(timeout=5)
+        second = executor.submit(receipts.poll_due_mobile_push_receipts, engine)
+        try:
+            # The second worker must skip the row lock rather than wait for the
+            # first worker's provider round-trip and then race to claim it.
+            assert second.result(timeout=2) == 0
+        finally:
+            release.set()
+        assert first.result(timeout=8) == 1
+
+    with Session(engine) as session:
+        row = session.exec(select(main.MobilePushDelivery).where(
+            main.MobilePushDelivery.event_id == 93002,
+        )).one()
+    assert row.status == "PROVIDER_ACCEPTED"
+    assert row.attempts == 1
+    assert row.lease_token is None and row.lease_until is None
