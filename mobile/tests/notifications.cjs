@@ -38,6 +38,7 @@ test('native notification center exposes explicit mark-all and reconciles remote
  assert.ok(source.includes('"NOTIFICATIONS_READ"'));
  assert.ok(source.includes('Tümünü okundu işaretle'));
  assert.ok(source.includes('applyNotificationReadAllSnapshot'));
+ assert.ok(source.includes('unread:result.unread_count'));
 });
 
 test('home unread badge refreshes when returning from notification center',()=>{
