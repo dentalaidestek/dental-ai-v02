@@ -62,7 +62,16 @@ export const registerPushDevice=(t:string,deviceId:string,expoPushToken:string,p
  req<{ok:boolean}>("/push/devices",t,{method:"POST",body:JSON.stringify({device_id:deviceId,expo_push_token:expoPushToken,platform})});
 export const unregisterPushDevice=(t:string,deviceId:string)=>
  req<{ok:boolean}>("/push/devices/"+encodeURIComponent(deviceId),t,{method:"DELETE"});
-export const getNotifications=async(t:string)=>{const r=await req<any>("/notifications",t);const items=r?.items??r?.notifications;if(!Array.isArray(items)||items.some((n:unknown)=>!n||typeof n!=="object"||!Number.isSafeInteger((n as Notice).id)||typeof (n as Notice).title!=="string"||typeof (n as Notice).message!=="string"))throw Error("Bildirim sunucusundan geçersiz liste alındı. Tekrar deneyin.");const unread=Number(r?.unread??r?.unread_count??0);if(!Number.isSafeInteger(unread)||unread<0)throw Error("Bildirim sunucusundan geçersiz okunmamış sayısı alındı.");return {items:items.map((n:Notice&{is_read?:boolean})=>({...n,read_at:n.read_at||(n.is_read?n.created_at:null)})) as Notice[],unread}};
+export const getNotifications=async(t:string,noticeId?:number)=>{
+ if(noticeId!==undefined&&(!Number.isSafeInteger(noticeId)||noticeId<=0))throw Error("Geçersiz bildirim kimliği.");
+ const r=await req<any>("/notifications"+(noticeId!==undefined?"?notice_id="+encodeURIComponent(noticeId):""),t);
+ const items=r?.items??r?.notifications;
+ if(!Array.isArray(items)||items.some((n:unknown)=>!n||typeof n!=="object"||!Number.isSafeInteger((n as Notice).id)||typeof (n as Notice).title!=="string"||typeof (n as Notice).message!=="string"))
+  throw Error("Bildirim sunucusundan geçersiz liste alındı. Tekrar deneyin.");
+ const unread=Number(r?.unread??r?.unread_count??0);
+ if(!Number.isSafeInteger(unread)||unread<0)throw Error("Bildirim sunucusundan geçersiz okunmamış sayısı alındı.");
+ return {items:items.map((n:Notice&{is_read?:boolean})=>({...n,read_at:n.read_at||(n.is_read?n.created_at:null)})) as Notice[],unread};
+};
 export const markNotificationRead=(t:string,id:number)=>{
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz bildirim kimliği.");
  return req<{ok:boolean}>("/notifications/"+id+"/read",t,{method:"POST"});
