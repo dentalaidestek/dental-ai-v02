@@ -74,6 +74,31 @@ def _safe_error_code(value: object) -> str:
     return "OTHER"
 
 
+def _safe_notification_content(title, body):
+    allowed = {
+        ("Dental AI", "Yeni bir bildiriminiz var."),
+        ("Dental AI", "Yeni bir uzman mesajınız var."),
+    }
+    pair = (title, body)
+    return pair if pair in allowed else ("Dental AI", "Yeni bir bildiriminiz var.")
+
+
+def _safe_route_data(data):
+    if not isinstance(data, dict):
+        return {}
+    kind = data.get("kind")
+    key = "notice_id" if kind == "notification" else "case_id" if kind == "consultation" else None
+    if key is None:
+        return {}
+    try:
+        identifier = int(data.get(key))
+    except (TypeError, ValueError, OverflowError):
+        return {}
+    if identifier <= 0:
+        return {}
+    return {"kind": kind, key: identifier}
+
+
 def _headers() -> dict[str, str]:
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     access_token = os.getenv("EXPO_ACCESS_TOKEN", "").strip()
@@ -87,6 +112,8 @@ def send_push_tokens(tokens, *, title="Dental AI", body="Yeni bir bildiriminiz v
     if not is_enabled():
         return {"enabled": False, "sent": 0, "tickets": [], "errors": []}
 
+    title, body = _safe_notification_content(title, body)
+    safe_data = _safe_route_data(data)
     unique = []
     seen = set()
     valid_unique_count = 0
@@ -104,7 +131,7 @@ def send_push_tokens(tokens, *, title="Dental AI", body="Yeni bir bildiriminiz v
         batch_tokens = unique[offset:offset + MAX_SEND_BATCH]
         batch = [
             {"to": token, "title": str(title)[:120], "body": str(body)[:180],
-             "sound": "default", "data": data if isinstance(data, dict) else {}}
+             "sound": "default", "data": safe_data}
             for token in batch_tokens
         ]
         try:
