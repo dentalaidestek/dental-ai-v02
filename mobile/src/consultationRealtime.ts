@@ -3,7 +3,7 @@ export type ConsultationRealtimeEvent={
 };
 export type ConsultationInboxRow={
  id:number;status?:string;last_message?:string|null;last_message_at?:string|null;
- last_message_id?:number;unread_count?:number;[key:string]:any;
+ last_message_id?:number;unread_count?:number;
 };
 export function applyConsultationInboxEvent<T extends ConsultationInboxRow>(
  items:T[],event:ConsultationRealtimeEvent,userId:number
