@@ -7,10 +7,11 @@ import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import {ChatFile,validateChatFile} from "./chatFiles";
 import {getConsultationMessageReceipt,sendChatFile} from "./modernApi";
+import type {ChatMessage} from "./modernApi";
 import NativeImageEditor from "./NativeImageEditor";
 
 function Button({title,onPress,disabled=false}:{title:string;onPress:()=>void;disabled?:boolean}){return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={{padding:12,minHeight:44,opacity:disabled ? 0.5 : 1}}><Text style={{color:"#071B35",fontWeight:"700"}}>{title}</Text></Pressable>}
-export default function ChatAttachmentComposer({token,userId,caseId,replyTo,disabled,onSent,onRefresh,prepared,deleted=false}:{token:string;userId:number;caseId:number;replyTo:number|null;disabled:boolean;onSent:()=>Promise<void>;onRefresh:()=>Promise<void>;prepared?:{file:ChatFile;nonce:string}|null;deleted?:boolean}){
+export default function ChatAttachmentComposer({token,userId,caseId,replyTo,disabled,onSent,onRefresh,prepared,deleted=false}:{token:string;userId:number;caseId:number;replyTo:number|null;disabled:boolean;onSent:(message?:ChatMessage)=>Promise<void>;onRefresh:()=>Promise<void>;prepared?:{file:ChatFile;nonce:string}|null;deleted?:boolean}){
  const [file,setFile]=useState<ChatFile|null>(null),[busy,setBusy]=useState(false),[restoring,setRestoring]=useState(true),[restoreAttempt,setRestoreAttempt]=useState(0),[recoveryBlocked,setRecoveryBlocked]=useState(false),[uncertain,setUncertain]=useState(false),[error,setError]=useState(""),[editing,setEditing]=useState(false),[pendingId,setPendingId]=useState<string|null>(null),[pendingMeta,setPendingMeta]=useState<{id:string;scope:string;replyTo:number|null;type:string;size:number|null;createdAt:number}|null>(null);
  const scope=useRef(token+":"+userId+":"+caseId);scope.current=token+":"+userId+":"+caseId;const lock=useRef(false),active=useRef(true),pendingKey="dai.consultation.media."+userId+"."+caseId;
  useEffect(()=>{active.current=true;return()=>{active.current=false}},[]);
@@ -37,7 +38,7 @@ export default function ChatAttachmentComposer({token,userId,caseId,replyTo,disa
     if(receipt.deleted||receipt.message){
      await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});
      if(!live)return;
-     setPendingId(null);setPendingMeta(null);setFile(null);await onSent();
+     setPendingId(null);setPendingMeta(null);setFile(null);await onSent(receipt.message||undefined);
     }
    }catch{/* Keep the encrypted intent for an explicit same-key retry. */}
   }).catch(()=>{
@@ -77,10 +78,10 @@ export default function ChatAttachmentComposer({token,userId,caseId,replyTo,disa
    const result=await sendChatFile(token,caseId,file,intent.replyTo??undefined,intent.id);
    if(!current(owner))return;
    if(!result?.message?.id)throw Error("Ek gönderimi doğrulanamadı.");
-   await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});setPendingId(null);setPendingMeta(null);setFile(null);setUncertain(false);await onSent();
+   await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});setPendingId(null);setPendingMeta(null);setFile(null);setUncertain(false);await onSent(result.message);
   }catch(e){
    if(current(owner)){
-    try{const receipt=await getConsultationMessageReceipt(token,caseId,intent.id);if(current(owner)&&(receipt.deleted||receipt.message)){await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});setPendingId(null);setPendingMeta(null);setFile(null);await onSent();return}}catch{}
+    try{const receipt=await getConsultationMessageReceipt(token,caseId,intent.id);if(current(owner)&&(receipt.deleted||receipt.message)){await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});setPendingId(null);setPendingMeta(null);setFile(null);await onSent(receipt.message||undefined);return}}catch{}
     if(current(owner)){setUncertain(false);setError((e instanceof Error?e.message:"Ek gönderilemedi.")+" Aynı dosya ve istek anahtarı korunuyor; tekrar deneyebilirsiniz.");void onRefresh()}
    }
   }finally{if(current(owner)){lock.current=false;setBusy(false)}}
