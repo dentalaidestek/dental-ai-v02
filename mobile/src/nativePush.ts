@@ -4,12 +4,13 @@ import * as Crypto from "expo-crypto";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { registerPushDevice, unregisterPushDevice } from "./modernApi";
+import { isValidExpoPushToken } from "./pushToken";
 import { resolveExpoPushTarget, NativeNotificationTarget } from "./notificationTarget";
 
 const DEVICE_ID_KEY = "dai.push.device_id";
 const ENABLED_USER_KEY = (userId: number) => "dai.push.enabled." + String(userId);
 const DELIVERY_USER_KEY = (userId: number) => "dai.push.delivery." + String(userId);
-const EXPO_TOKEN_PATTERN = /^(?:Expo|Exponent)PushToken\\[[A-Za-z0-9_-]{8,128}\\]$/;
+
 
 export type NativePushState = {
   supported: boolean;
@@ -91,7 +92,7 @@ async function expoToken(): Promise<{ deviceId: string; token: string; platform:
   }
 
   const result = await Notifications.getExpoPushTokenAsync({ projectId });
-  if (!EXPO_TOKEN_PATTERN.test(result.data)) {
+  if (!isValidExpoPushToken(result.data)) {
     throw new Error("Expo geçerli bir cihaz bildirim anahtarı döndürmedi.");
   }
   return { deviceId: await deviceId(), token: result.data, platform };
