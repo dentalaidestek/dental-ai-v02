@@ -3,7 +3,7 @@ global.IS_REACT_ACT_ENVIRONMENT=true;
 require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
 const text=node=>typeof node==='string'?node:!node?'':(node.children||[]).map(text).join('');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-const page=(view='week',title='Synthetic appointment')=>({view,focus_date:'2030-01-07',today:'2030-01-07',timezone:'Europe/Istanbul',previous_day:'2029-12-31',next_day:'2030-01-14',month_title:'Ocak 2030',copy_days:Array.from({length:7},(_,i)=>({date:new Date(Date.UTC(2030,0,7+i)).toISOString().slice(0,10),label:'Pzt'})),days:Array.from({length:view==='month'?42:view==='week'?7:1},(_,i)=>({date:new Date(Date.UTC(2030,0,7+i)).toISOString().slice(0,10),label:'Pzt',in_month:true,count:i?0:1})),items:[{key:'1:2030-01-07T10:00',event_id:1,event_type:'APPOINTMENT',title,status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:null,notes:null,recurrence_rule:'NONE'}],total:1,next_offset:null,next_cursor:null,event_types:{APPOINTMENT:'Hasta / Randevu',CLASS:'Ders'},reminders:['NONE','30'],recurrences:['NONE','WEEKLY'],suggested_start_local:'2030-01-07T10:00',suggested_end_local:'2030-01-07T10:30'});
+const page=(view='week',title='Synthetic appointment')=>({view,focus_date:'2030-01-07',today:'2030-01-07',timezone:'Europe/Istanbul',previous_day:'2029-12-31',next_day:'2030-01-14',month_title:'Ocak 2030',copy_days:Array.from({length:7},(_,i)=>({date:new Date(Date.UTC(2030,0,7+i)).toISOString().slice(0,10),label:'Pzt'})),days:Array.from({length:view==='month'?42:view==='week'?7:1},(_,i)=>({date:new Date(Date.UTC(2030,0,7+i)).toISOString().slice(0,10),label:'Pzt',in_month:true,count:i?0:1,event_types:[],has_more:false})),items:[{key:'1:2030-01-07T10:00',event_id:1,event_type:'APPOINTMENT',title,status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:null,notes:null,recurrence_rule:'NONE'}],total:1,next_offset:null,next_cursor:null,event_types:{APPOINTMENT:'Hasta / Randevu',CLASS:'Ders'},reminders:['NONE','30'],recurrences:['NONE','WEEKLY'],suggested_start_local:'2030-01-07T10:00',suggested_end_local:'2030-01-07T10:30'});
 function component(file,api){
  const exports={},native={StyleSheet:{create:x=>x},AppState:{addEventListener:()=>({remove(){}})},BackHandler:{addEventListener:()=>({remove(){}})},Alert:{alert:(...args)=>api.onAlert?.(...args)},...Object.fromEntries(['ActivityIndicator','FlatList','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
  native.FlatList=props=>React.createElement('FlatList',props,props.ListHeaderComponent,...(props.data||[]).map(item=>React.createElement(React.Fragment,{key:item.key},props.renderItem?.({item}))),props.ListEmptyComponent&&!(props.data||[]).length?props.ListEmptyComponent:null,props.ListFooterComponent);
@@ -106,6 +106,9 @@ test('program API requests opaque cursors and rejects malformed continuation tok
   assert.ok(url.includes('cursor='+cursor));
   global.fetch=async()=>new Response(JSON.stringify({...page('today'),next_cursor:'invalid!'}),{status:200});
   await assert.rejects(()=>api.getProgram('token','today','2030-01-07'),/geçersiz takvim/);
+  const malformedDays=page('today');malformedDays.days[0]={...malformedDays.days[0],event_types:['CLASS','CLINIC','EXAM','TASK']};
+  global.fetch=async()=>new Response(JSON.stringify(malformedDays),{status:200});
+  await assert.rejects(()=>api.getProgram('token','today','2030-01-07'),/geçersiz takvim/);
  }finally{global.fetch=original}
 });
 
@@ -162,5 +165,19 @@ test('native calendar stops stale cursor retries after 409 and requires a full r
  await renderer.act(async()=>tick());
  assert.equal(calls,3);
  assert.equal(tree.root.findByType('FlatList').props.data[0].title,'Fresh calendar');
+ await renderer.act(async()=>tree.unmount());
+});
+
+
+test('native month grid renders the web event-type dots and overflow marker',async()=>{
+ const month=page('month');
+ month.days[0]={...month.days[0],event_types:['CLASS','CLINIC','EXAM'],has_more:true,count:5};
+ const Program=component('NativeProgram',{getProgram:async(_token,view)=>view==='month'?month:page('week')});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'token',userId:1}));await tick()});
+ await renderer.act(async()=>button(tree,'Ay').props.onPress());
+ await renderer.act(async()=>tick());
+ for(const type of ['CLASS','CLINIC','EXAM'])assert.equal(tree.root.findAllByProps({testID:'program-month-dot-'+type+'-2030-01-07'}).length,1);
+ assert.equal(tree.root.findAllByProps({testID:'program-month-dot-more-2030-01-07'}).length,1);
  await renderer.act(async()=>tree.unmount());
 });
