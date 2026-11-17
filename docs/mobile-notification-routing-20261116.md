@@ -19,6 +19,7 @@ Reviewed the real web notification/account flow before changing native code:
 
 ## Changes in this turn
 
+- The mobile notice list now returns a full active-unread count via a bounded SQL `COUNT` query independent of the 20-row display page, matching the web notification badge without loading all notices into memory.
 - Added `POST /api/mobile/v1/notifications/read-all` with bearer-authenticated owner scope.
 - The endpoint accepts a client-captured `seen_before` timestamp, normalizes offset-aware values to UTC, clamps future values to server time, and marks only active unread notices created at or before the cutoff.
 - Existing `read_at` values are preserved. Notices created after the cutoff, resolved notices and another user's notices remain untouched.
@@ -32,7 +33,7 @@ Reviewed the real web notification/account flow before changing native code:
 ## Tests and verification boundary
 
 Committed tests:
-- `tests/test_mobile_notifications.py`: owner isolation, active-status filter, cutoff boundary, newer-notice preservation, unauthorized request, invalid timestamp and idempotent replay.
+- `tests/test_mobile_notifications.py`: owner isolation, active-status filter, cutoff boundary, 25 unread notices across a 20-item page, newer-notice preservation, unauthorized request, invalid timestamp and idempotent replay.
 - `mobile/tests/notifications.cjs`: cutoff snapshot, already-read preservation, invalid cutoff, naive-UTC/offset parsing, native API/UI wiring, Home focus refresh and no premature OS permission prompt.
 
 The GitHub Actions jobs inspected at the starting PR head had empty step arrays and no runner assignment; npm, TypeScript, Gradle and pytest did not start. The new tests are committed and registered but are not reported as passed. Full mobile typecheck, beta suite, backend TestClient/SQLite execution, Android build and device tests remain required.
