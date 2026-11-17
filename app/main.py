@@ -2015,6 +2015,19 @@ def _parse_study_material_ids(raw_value: Optional[str]) -> list[int]:
 def init_db():
     SQLModel.metadata.create_all(engine)
     with engine.begin() as conn:
+        # Native Program receipts are nullable on web-created events. Keep the
+        # unique owner/request index present on both fresh and legacy databases.
+        if engine.dialect.name == "postgresql":
+            conn.exec_driver_sql('ALTER TABLE scheduleevent ADD COLUMN IF NOT EXISTS client_request_hash VARCHAR')
+            conn.exec_driver_sql('ALTER TABLE scheduleevent ADD COLUMN IF NOT EXISTS client_payload_hash VARCHAR')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_scheduleevent_owner_client_request ON scheduleevent(owner_user_id, client_request_hash)')
+        elif engine.dialect.name == "sqlite":
+            columns = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("scheduleevent")').fetchall()}
+            if "client_request_hash" not in columns:
+                conn.exec_driver_sql('ALTER TABLE scheduleevent ADD COLUMN client_request_hash VARCHAR')
+            if "client_payload_hash" not in columns:
+                conn.exec_driver_sql('ALTER TABLE scheduleevent ADD COLUMN client_payload_hash VARCHAR')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_scheduleevent_owner_client_request ON scheduleevent(owner_user_id, client_request_hash)')
         # Additive migration for existing installations; create_all handles fresh databases.
         if engine.dialect.name == "postgresql":
             conn.exec_driver_sql('CREATE TABLE IF NOT EXISTS adminverifiedsession (token_hash VARCHAR PRIMARY KEY, user_id INTEGER NOT NULL)')
