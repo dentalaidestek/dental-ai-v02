@@ -30,7 +30,7 @@ import{Academic,AnalysisHistory,ConsultationChat,Consultations,ExpertDirectory,N
 import{RealtimeProvider,useRealtime}from"./src/realtime";
 import{uploadPatientMedia}from"./src/api";
 import{getNotifications}from"./src/modernApi";
-import{refreshNativePushRegistration,subscribeToNativePushResponses,unregisterNativePushForLogout}from"./src/nativePush";
+import{claimNativePushDeviceForSession,refreshNativePushRegistration,subscribeToNativePushResponses,unregisterNativePushForLogout}from"./src/nativePush";
 
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",red:"#B42318",green:"#16803C"};
 const notificationNavigationRef=createNavigationContainerRef<any>();
@@ -150,10 +150,16 @@ function AppContent(){
  },[session?.token,session?.user.id]);
  useEffect(()=>{
   if(!session)return;
-  const refresh=()=>{void refreshNativePushRegistration(session.token,session.user.id).catch(()=>{});};
-  refresh();
+  let active=true;
+  const token=session.token,userId=session.user.id;
+  const refresh=()=>{if(active)void refreshNativePushRegistration(token,userId).catch(()=>{});};
+  const reconcile=async()=>{
+   try{await claimNativePushDeviceForSession(token,userId);}catch{}
+   if(active)refresh();
+  };
+  void reconcile();
   const listener=AppState.addEventListener("change",state=>{if(state==="active")refresh()});
-  return()=>listener.remove();
+  return()=>{active=false;listener.remove()};
  },[session?.token,session?.user.id]);
  const restore=useCallback(async()=>{
   setBoot(true);setBootError("");
