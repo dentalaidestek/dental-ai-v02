@@ -1358,7 +1358,7 @@ def register_mobile_push_device(
     )
     if platform not in {"android", "ios"}:
         raise HTTPException(status_code=422, detail="Geçersiz cihaz bilgisi.")
-    if not re.fullmatch(r"(?:Expo|Exponent)PushToken\\[[A-Za-z0-9_-]{8,128}\\]", token):
+    if not re.fullmatch(r"(?:Expo|Exponent)PushToken\[[A-Za-z0-9_-]{8,128}\]", token):
         raise HTTPException(status_code=422, detail="Geçersiz Expo push token.")
 
     with Session(engine, expire_on_commit=False) as session:
