@@ -1,41 +1,47 @@
-# Native notification target parity — 2026-11-16
+# Native notification and account parity — 2026-11-17
 
 ## Web flow inspected first
 
-Reviewed:
-- app/templates/base.html notification center rendering and anchor behavior;
-- app/main.py _notify_user target validation and the actual target_url values emitted by the web workflows;
-- app/mobile_api.py mobile notification payload and read endpoint;
-- mobile/src/ModernScreens.tsx native notification center;
-- mobile/App.tsx registered native stack routes.
+Reviewed the real web notification/account flow before changing native code:
+- `app/templates/base.html`: notification bell, center cards, same-origin target anchors, single-flight refresh and the `/account/notifications/read-all` cutoff.
+- `app/templates/account.html`: explicit Web Push setting and its user-initiated browser permission/subscription flow.
+- `app/main.py`: canonical notice targets, read-all timestamp semantics, mobile push delivery and message privacy copy.
+- `app/mobile_api.py`: bearer-authenticated notice list, per-notice read, push-device registration/unregistration and mobile notice delivery.
+- `mobile/src/ModernScreens.tsx`, `mobile/App.tsx`, `mobile/src/modernApi.ts` and `mobile/src/notificationTarget.ts`: native center, stack targets, current permission onboarding and API contracts.
 
-The web notification center renders an anchor when a notice has a target URL. The canonical backend targets observed on this branch include /expert-support/cases/{id}, /expert-support/profile, /expert-support, /program, and /support-request.
+## Findings
 
-## Reproduced native parity defect
+1. The native center could mark individual notices read but had no equivalent to the web center's cutoff-scoped read-all action.
+2. The native home unread badge refreshed on realtime events, but not explicitly when returning to Home after a read action on a screen where the realtime event was missed.
+3. The first-run native onboarding requested Android notification permission even though the app had no Expo push token registration or push-response listener. The same screen admitted that OS delivery was not active. Asking for permission before a usable feature exists is misleading.
+4. The notification target resolver already supports `/support-request?ticket_id=...` and maps it to the owner-scoped native SupportRequests screen. The earlier note claiming this route was unsupported was stale and is corrected here.
+5. Backend `/api/mobile/v1/push/devices` registration endpoints and Expo transport exist, but `expo-notifications` is not a declared mobile dependency and native token acquisition/response handling is not wired.
 
-The old native resolver recognized /consultations/{id}, /expert/consultations/{id}, /cases/{id}, /consultations, and /patients/{id} only. The actual web-generated /expert-support/cases/{id} route therefore did not open the corresponding native consultation chat. Program reminders and expert-directory/profile notices also remained in the notification center without navigating.
+## Changes in this turn
 
-A second behavioral defect was that native marked a notice read before deciding whether its target could be opened. An unsupported target was therefore silently consumed even though no corresponding native screen existed.
+- Added `POST /api/mobile/v1/notifications/read-all` with bearer-authenticated owner scope.
+- The endpoint accepts a client-captured `seen_before` timestamp, normalizes offset-aware values to UTC, clamps future values to server time, and marks only active unread notices created at or before the cutoff.
+- Existing `read_at` values are preserved. Notices created after the cutoff, resolved notices and another user's notices remain untouched.
+- A durable `NOTIFICATIONS_READ` realtime event is recorded only when at least one notice changes. Replaying the same cutoff is idempotent and emits no second event.
+- Added the native API adapter and a pure local snapshot helper so the list only optimistically reads items at or before the same cutoff.
+- Added an explicit “Tümünü okundu işaretle” action. It does not mark notices read merely because the user opened the native screen; this keeps the action deliberate while preserving the web cutoff semantics.
+- Home refreshes its unread badge when it regains focus, and the notification list reconciles `NOTIFICATIONS_READ` events.
+- Removed the premature Android OS permission request from the first-run notice. It now explains that in-app notices are available while native Expo push registration and killed-app routing are not yet integrated. No OS permission is requested until that feature can actually register a device.
+- Added backend ownership/cutoff tests, native state/UI tests, and security workflow path/test coverage.
 
-## Changes
+## Tests and verification boundary
 
-- Added mobile/src/notificationTarget.ts as a pure, typed resolver for only known same-origin web paths.
-- Mapped /expert-support/cases/{id} to ConsultationChat with the same case ID used by the canonical mobile chat API.
-- Mapped /expert-support to ExpertDirectory.
-- Mapped /expert-support/profile to ExpertManagement.
-- Mapped /program to Program.
-- Preserved nested patient navigation for /patients/{id} and legacy consultation aliases.
-- Rejects external, protocol-relative, backslash/control-character, malformed and unsafe numeric targets. No URL is opened in a browser and no target value is treated as an authorization credential.
-- The native center now resolves a target before changing read state. An unsupported path such as /support-request shows a clear message and remains unread rather than pretending it opened.
-- For supported routes, the native screen still navigates if the read-marker request fails, matching the web anchor's behavior; the notice remains unread on the server and can be reconciled when the user returns.
-- Added the new regression file to npm run test:beta.
+Committed tests:
+- `tests/test_mobile_notifications.py`: owner isolation, active-status filter, cutoff boundary, newer-notice preservation, unauthorized request, invalid timestamp and idempotent replay.
+- `mobile/tests/notifications.cjs`: cutoff snapshot, already-read preservation, invalid cutoff, native API/UI wiring, Home focus refresh and no premature OS permission prompt.
 
-## Verification boundary
+The GitHub Actions jobs inspected at the starting PR head had empty step arrays and no runner assignment; npm, TypeScript, Gradle and pytest did not start. The new tests are committed and registered but are not reported as passed. Full mobile typecheck, beta suite, backend TestClient/SQLite execution, Android build and device tests remain required.
 
-The isolated Node regression suite passed 10/10 against the resolver and a source-contract fixture. The committed test file additionally reads the actual ModernScreens.tsx at repository test time. The module's standalone TypeScript check is separate from the full Expo application typecheck.
+## Remaining acceptance
 
-The current GitHub Android and security jobs have runner_id=0, empty runner names, and zero steps. Re-running the latest failed jobs was accepted, but Android typecheck/APK and both security jobs again failed without starting a runner; no npm ci, tsc, Gradle or pytest step ran. This does not establish a source-code test failure or a green CI result. The repository owner still needs to inspect hosted-runner availability, account billing/usage and Actions service access.
-
-The /support-request path still has no native support-ticket screen in this branch. It is intentionally reported as unsupported and left unread; no unrelated screen is opened as a substitute. Native Expo push token registration, OS delivery, tap/deep-link behavior from a killed app, duplicate delivery and physical-device acceptance remain separate release gates.
-
-No backend target, notice payload, patient data, provider, schema or production setting was changed. No main merge, production deploy, APK/IPA publication or patient-record mutation was performed.
+- Add the Expo SDK-compatible `expo-notifications` dependency and native config only when the lockfile can be generated with `npx expo install` and verified on Android/iOS.
+- Register Expo tokens only after an explicit user action and real OS permission grant; keep device ID in SecureStore, token out of logs, and revoke only the current account/device on logout.
+- Add notification-response listeners for foreground/background/killed-app launches and route only the known same-origin target types through the existing resolver. Push payloads must remain free of patient names, case content, message previews and clinical data.
+- Validate duplicate delivery, token rotation, account switch, logout, expired/revoked sessions, permission denial, offline retries and cross-device unread reconciliation on physical devices.
+- The explicit native read-all button is a deliberate UX choice; compare it with web auto-read-on-open during product acceptance.
+- No main merge, production deployment, APK/IPA publication or patient-record mutation was performed.
