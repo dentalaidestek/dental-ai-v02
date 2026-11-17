@@ -177,7 +177,7 @@ export const getConsultationMessageReceipt=async(t:string,id:number,clientMessag
     !Number.isSafeInteger(result.message.sender_user_id)||result.message.sender_user_id<=0||
     typeof result.message.message_type!=="string"||typeof result.message.created_at!=="string"))
   throw Error("Mesaj gönderim makbuzu doğrulanamadı.");
- return result.message;
+ return {message:result.message,deleted:result.deleted===true};
 };
 function validateAcademicPage<T extends {id:number}>(response:{items:T[];next_before?:number|null},before?:number,dateOrdered=false):{items:T[];next_before:number|null}{
  const cursor=response?.next_before??null;
