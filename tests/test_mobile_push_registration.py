@@ -271,15 +271,192 @@ def test_existing_revision_15_schema_bootstraps_mobile_push_device_table(tmp_pat
         connection.execute(text(
             "INSERT INTO dental_schema_revision (id, version) VALUES (1, 15)"
         ))
+        # Simulate a production revision-15 table created before installation proofs.
+        connection.execute(text(
+            "CREATE TABLE mobilepushdevice (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, "
+            "device_id VARCHAR NOT NULL, expo_push_token VARCHAR NOT NULL UNIQUE, "
+            "platform VARCHAR NOT NULL, enabled BOOLEAN NOT NULL, updated_at DATETIME NOT NULL)"
+        ))
 
     migrate.require_schema(engine)
 
     inspector = inspect(engine)
     assert inspector.has_table("mobilepushdevice")
     columns = {column["name"] for column in inspector.get_columns("mobilepushdevice")}
-    assert {"user_id", "device_id", "expo_push_token", "platform", "enabled", "updated_at"}.issubset(columns)
+    assert {"user_id", "device_id", "device_proof_hash", "expo_push_token", "platform", "enabled", "updated_at"}.issubset(columns)
     with engine.connect() as connection:
         assert connection.execute(text(
             "SELECT version FROM dental_schema_revision WHERE id=1"
         )).scalar_one() == 15
+    engine.dispose()
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
+def test_device_claim_revokes_previous_account_before_optional_push_opt_in(monkeypatch, tmp_path):
+    engine, owner_id, other_id, owner_token, other_token = _client_db(monkeypatch, tmp_path)
+    device_id = str(uuid.uuid4())
+    proof = "a" * 64
+    owner_headers = {"Authorization": "Bearer " + owner_token}
+    other_headers = {"Authorization": "Bearer " + other_token}
+
+    with TestClient(main.app) as client:
+        registered = client.post(
+            "/api/mobile/v1/push/devices",
+            headers=owner_headers,
+            json={
+                "device_id": device_id,
+                "expo_push_token": "ExpoPushToken[abcdefgh11111111]",
+                "platform": "android",
+                "installation_proof": proof,
+            },
+        )
+        assert registered.status_code == 200, registered.text
+
+        # A new account on the same installation claims the device even if it
+        # has not opted into notifications and therefore must not register a token.
+        claimed = client.post(
+            "/api/mobile/v1/push/devices/claim",
+            headers=other_headers,
+            json={"device_id": device_id, "installation_proof": proof},
+        )
+        assert claimed.status_code == 200, claimed.text
+        assert claimed.headers.get("cache-control") == "private, no-store"
+        assert claimed.json()["revoked_previous_owners"] == 1
+
+        with Session(engine) as session:
+            assert session.exec(select(main.MobilePushDevice).where(
+                main.MobilePushDevice.device_id == device_id,
+            )).all() == []
+
+        # Opt-in remains a separate, explicit action for the new account.
+        registered_new = client.post(
+            "/api/mobile/v1/push/devices",
+            headers=other_headers,
+            json={
+                "device_id": device_id,
+                "expo_push_token": "ExpoPushToken[abcdefgh22222222]",
+                "platform": "ios",
+                "installation_proof": proof,
+            },
+        )
+        assert registered_new.status_code == 200, registered_new.text
+
+    with Session(engine) as session:
+        rows = session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.device_id == device_id,
+        )).all()
+    assert len(rows) == 1
+    assert rows[0].user_id == other_id
+    assert rows[0].device_proof_hash == __import__("hashlib").sha256(proof.encode()).hexdigest()
+    assert session is not None
+    engine.dispose()
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
+def test_device_claim_rejects_another_installations_proof_without_deleting_owner(monkeypatch, tmp_path):
+    engine, owner_id, _, owner_token, other_token = _client_db(monkeypatch, tmp_path)
+    device_id = str(uuid.uuid4())
+    owner_proof = "b" * 64
+    attacker_proof = "c" * 64
+    with TestClient(main.app) as client:
+        registered = client.post(
+            "/api/mobile/v1/push/devices",
+            headers={"Authorization": "Bearer " + owner_token},
+            json={
+                "device_id": device_id,
+                "expo_push_token": "ExpoPushToken[abcdefgh33333333]",
+                "platform": "android",
+                "installation_proof": owner_proof,
+            },
+        )
+        assert registered.status_code == 200
+        claimed = client.post(
+            "/api/mobile/v1/push/devices/claim",
+            headers={"Authorization": "Bearer " + other_token},
+            json={"device_id": device_id, "installation_proof": attacker_proof},
+        )
+        assert claimed.status_code == 409
+
+    with Session(engine) as session:
+        rows = session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.device_id == device_id,
+        )).all()
+    assert len(rows) == 1
+    assert rows[0].user_id == owner_id
+    assert rows[0].device_proof_hash == __import__("hashlib").sha256(owner_proof.encode()).hexdigest()
+    engine.dispose()
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
+def test_registration_transfers_legacy_device_row_and_stores_new_proof(monkeypatch, tmp_path):
+    engine, _, other_id, _, other_token = _client_db(monkeypatch, tmp_path)
+    device_id = str(uuid.uuid4())
+    proof = "d" * 64
+    with Session(engine) as session:
+        legacy_owner = main.User(username="legacy-push-owner", role="DOCTOR", display_name="Legacy")
+        session.add(legacy_owner)
+        session.commit()
+        session.add(main.MobilePushDevice(
+            user_id=legacy_owner.id,
+            device_id=device_id,
+            expo_push_token="ExpoPushToken[abcdefgh44444444]",
+            platform="android",
+            enabled=True,
+        ))
+        session.commit()
+        legacy_owner_id = legacy_owner.id
+
+    with TestClient(main.app) as client:
+        transferred = client.post(
+            "/api/mobile/v1/push/devices",
+            headers={"Authorization": "Bearer " + other_token},
+            json={
+                "device_id": device_id,
+                "expo_push_token": "ExpoPushToken[abcdefgh55555555]",
+                "platform": "ios",
+                "installation_proof": proof,
+            },
+        )
+        assert transferred.status_code == 200, transferred.text
+
+    with Session(engine) as session:
+        rows = session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.device_id == device_id,
+        )).all()
+    assert len(rows) == 1
+    assert rows[0].user_id == other_id
+    assert rows[0].user_id != legacy_owner_id
+    assert rows[0].device_proof_hash == __import__("hashlib").sha256(proof.encode()).hexdigest()
+    engine.dispose()
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
+def test_device_claim_does_not_delete_another_installation(monkeypatch, tmp_path):
+    engine, owner_id, _, owner_token, other_token = _client_db(monkeypatch, tmp_path)
+    first_device, second_device = str(uuid.uuid4()), str(uuid.uuid4())
+    first_proof, second_proof = "e" * 64, "f" * 64
+    with TestClient(main.app) as client:
+        for device_id, proof, token in [
+            (first_device, first_proof, "ExpoPushToken[abcdefgh66666661]"),
+            (second_device, second_proof, "ExpoPushToken[abcdefgh66666662]"),
+        ]:
+            response = client.post(
+                "/api/mobile/v1/push/devices",
+                headers={"Authorization": "Bearer " + owner_token},
+                json={"device_id": device_id, "expo_push_token": token, "platform": "android", "installation_proof": proof},
+            )
+            assert response.status_code == 200, response.text
+
+        claimed = client.post(
+            "/api/mobile/v1/push/devices/claim",
+            headers={"Authorization": "Bearer " + other_token},
+            json={"device_id": first_device, "installation_proof": first_proof},
+        )
+        assert claimed.status_code == 200
+
+    with Session(engine) as session:
+        rows = session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.user_id == owner_id,
+        )).all()
+    assert [row.device_id for row in rows] == [second_device]
     engine.dispose()
