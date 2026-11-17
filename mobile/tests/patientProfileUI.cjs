@@ -10,12 +10,14 @@ function component(api,file='NativePatientProfile',storage=new Map()){
  vm.runInNewContext(intentCode,{exports:intentExports,Error,JSON,Date,Number,RegExp});
  const secure={getItemAsync:async key=>storage.get(key)||null,setItemAsync:async(key,value)=>storage.set(key,value),deleteItemAsync:async key=>storage.delete(key)};
  let sequence=0;
- const native={StyleSheet:{create:s=>s},AppState:{addEventListener:()=>({remove(){}})},Platform:{OS:'android'},Alert:{alert(){}},...Object.fromEntries(['Modal','ActivityIndicator','KeyboardAvoidingView','Pressable','RefreshControl','ScrollView','Text','TextInput','View'].map(s=>[s,s]))},exports={};
+ const alertCalls=[];
+ const native={StyleSheet:{create:s=>s},AppState:{addEventListener:()=>({remove(){}})},Platform:{OS:'android'},Alert:{alert:(title,message,buttons)=>alertCalls.push({title,message,buttons})},...Object.fromEntries(['Modal','ActivityIndicator','KeyboardAvoidingView','Pressable','RefreshControl','ScrollView','Text','TextInput','View'].map(s=>[s,s]))},exports={};
  const endpoints={getPatient:async()=>patient(8),createTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),updateTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),...api};
  vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:name==='./patientProfilePresentation'?presentationExports:{default:'Child'}});
  const Original=exports.default;
  const Wrapped=props=>React.createElement(Original,{userId:1,...props});
  Wrapped.storage=storage;
+ Wrapped.alertCalls=alertCalls;
  return Wrapped;
 }
 const actions=Object.fromEntries(['chart','analysis','appointment','expert','voice','analysisResult','deleted'].map(k=>[k,()=>{}]));
@@ -334,5 +336,58 @@ test('failed patient edit reconciliation preserves uncertainty and keeps deletio
  assert.ok(text(tree.toJSON()).includes('Belirsizlik korunuyor'));
  const remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
  assert.equal(remove.props.disabled,true);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('restored treatment intent blocks profile edits until its exact receipt is reconciled',async()=>{
+ const pending={userId:1,patientId:8,operation:'CREATE',treatmentId:null,requestKey:'synthetic-treatment-request-0001',expectedRevision:null,payload:{treatment_name:'Synthetic treatment',tooth_number:'',treatment_date:'',material:'',doctor_note:'',result:''}};
+ const storage=new Map([['dai.treatment.1.8',JSON.stringify(pending)]]);
+ let writes=0;
+ const Profile=component({getPatient:async()=>patient(8),editPatient:async()=>{writes++}},'NativePatientProfile',storage);let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ const info=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Bilgileri')));
+ await renderer.act(async()=>info.props.onPress());
+ const save=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Değişiklikleri Kaydet')));
+ assert.equal(save.props.disabled,true);
+ const inputs=tree.root.findAllByType('TextInput');
+ assert.ok(inputs.every(input=>input.props.editable===false),'profile fields stay read-only while treatment receipt is unresolved');
+ assert.equal(writes,0);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('ambiguous profile edit cannot start a treatment mutation until profile reconciliation',async()=>{
+ let treatmentWrites=0;
+ const Profile=component({
+  getPatient:async()=>patient(8),
+  editPatient:async()=>{throw Object.assign(new Error('Sunucu yanıtı belirsiz'),{status:503})},
+  createTreatment:async()=>{treatmentWrites++;return {ok:true,treatment_id:9,edit_revision:'e'.repeat(64),replayed:false}}
+ });let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ await press('Hasta Bilgileri');await press('Değişiklikleri Kaydet');
+ await press('Yeni Tedavi');
+ assert.equal(treatmentWrites,0,'profile uncertainty must not be cleared by a treatment receipt');
+ assert.ok(text(tree.toJSON()).includes('Önce bekleyen profil veya tedavi işlemini sunucuyla doğrulayın.'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('second patient-delete confirmation is discarded after account or patient scope changes',async()=>{
+ let deletes=0;
+ const Profile=component({
+  getPatient:async(_token,id)=>patient(id),
+  deletePatient:async()=>{deletes++;return {ok:true,patient_id:8}}
+ });let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ const info=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Bilgileri')));
+ await renderer.act(async()=>info.props.onPress());
+ const remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
+ assert.equal(remove.props.disabled,false);
+ await renderer.act(async()=>remove.props.onPress());
+ assert.equal(Profile.alertCalls.length,1);
+ await renderer.act(async()=>Profile.alertCalls[0].buttons[1].onPress());
+ assert.equal(Profile.alertCalls.length,2,'first confirmation opens the second destructive confirmation');
+ await renderer.act(async()=>tree.update(React.createElement(Profile,{token:'two',patientId:9,actions})));
+ await renderer.act(async()=>Profile.alertCalls[1].buttons[1].onPress());
+ assert.equal(deletes,0,'a stale alert must not delete the previous account or patient');
  await renderer.act(async()=>tree.unmount());
 });
