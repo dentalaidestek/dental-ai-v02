@@ -884,6 +884,6 @@ def test_native_patient_delete_ui_fails_closed_for_unresolved_local_mutations():
     assert "Sunucudaki profil kaydını karşılaştır" in component
     assert "Kontrol ettim" not in component
     delete_block = component.split("function confirmDelete()", 1)[1].split("const button=", 1)[0]
-    assert delete_block.count("if(!current())return;") == 2
+    assert delete_block.count("if(!current()||!focusedRef.current)return;") == 2
     assert "gate.uncertain === false" in presentation
     assert "gate.hasPendingTreatment === false" in presentation
