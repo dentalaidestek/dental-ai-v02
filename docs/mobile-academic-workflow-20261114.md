@@ -34,3 +34,19 @@ See the final checkpoint in PR/issue for exact fresh counts. Focused Python test
 No actual Android release install, iOS signing/device run, production credentials/source inference/Modal indexing, two-device updates, full markdown/math/clipboard parity, accessibility/Android image pinch zoom, hard process-death recovery, upload deduplication transaction, background cache erasure or 60,000-user capacity claim. New adapters require a separately approved backend deployment before a production APK can use them. Remote CI previously failed without job steps and logs returned BlobNotFound404; local success is not a green remote CI run. Source work cannot certify these gates.
 
 Final local verification after preserving gallery commits through `a9400e4771cfbcad0a08b9228f65fcaa6680455d`: TypeScript clean, **267/267 Node tests** (18 session + 46 realtime + 203 beta, including 12 Academic tests), **218/218 selected Python tests**, zero failures. Python emits 395 existing deprecation warnings. This is a selected acceptance suite, not the entire repository/browser/PostgreSQL suite. Prior broader-suite browser failures due unavailable Chromium/sandbox and skipped PostgreSQL checks remain open. Android and iOS Hermes export is repeated for the final source. Remote pre-push Android run `43629778794` has two failed jobs and no steps; typecheck job `132553593419` log fetch returned BlobNotFound404. The failing remote check's cause remains unconfirmed.
+
+
+## 2026-11-17 — Native Academic AI fixed-composer parity
+
+Web-first comparison re-read `app/templates/notes_ai.html` and the academic chat footer rules in `app/static/style.css` against `mobile/src/NativeAcademic.tsx`.
+
+A concrete mobile UX regression was found: the native question field and send action lived inside the conversation `FlatList` header. After enough messages, the composer scrolled away with history. The web keeps its `study-chat-clean-footer` outside the scrollable message region.
+
+Added `NativeAcademicComposer.tsx` as a separate native footer and moved the controlled question input/send action below the conversation list. The message list now takes the remaining vertical space and keeps taps available while the keyboard is open. The draft remains owned by the course screen, so switching to Sources or Questions and back does not discard it. The composer is hidden on those non-chat tabs, and disabled when sources are not ready, an unresolved paid-run intent exists, the screen is in a broken recovery state, or a run is active. Blank messages are blocked and the web 8,000-character limit is retained. No provider, route, database, polling or clinical-data behavior changed.
+
+Regression coverage:
+- Added `mobile/tests/academicComposer.cjs` for the 8,000-character limit, accessible controls, blank-send rejection and disabled-send behavior.
+- Extended `academicWorkflow.cjs` to assert the composer is outside the scrolling FlatList and that a draft survives tab changes.
+- Registered the new test in `npm run test:beta`.
+
+Validation boundary: 11/11 GitHub-source contract checks passed against the committed files. The React renderer tests are committed and registered but were not executed in this runtime because the repository's installed React/test-renderer dependencies are not available here. Full project typecheck, `test:beta`, Android/iOS builds and physical-device keyboard/safe-area acceptance remain open. No main merge, backend deploy, store release or patient-data mutation.
