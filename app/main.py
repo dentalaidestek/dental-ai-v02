@@ -773,7 +773,7 @@ def _consultation_message_payload_hash(
         "case_id": case_id,
         "sender_user_id": sender_user_id,
         "message_type": message_type,
-        "content": content or "",
+        "content": "" if raw_bytes is not None else (content or ""),
         "reply_to_message_id": reply_to_message_id,
         "media_sha256": hashlib.sha256(raw_bytes).hexdigest() if raw_bytes is not None else None,
     }
