@@ -404,5 +404,81 @@ def test_consultation_receipt_revision_12_creates_both_receipt_tables(pg):
     with engine.connect() as connection:
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('mobilesupportmutationreceipt')")).scalar_one() is not None
+        # The study tables are additive revision-12 objects. The receipt upgrade
+        # advances the revision to 14, so they must be created before that bump.
+        for table in ('studylearningstate', 'studyreview', 'studyattempt', 'studyrun'):
+            assert connection.execute(text("SELECT to_regclass(:name)"), {'name': table}).scalar_one() is not None
         assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 14
 
+def test_consultation_message_same_key_replays_once_under_concurrent_postgres_writes(pg, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import mobile_api
+
+    engine, _, resources = pg
+    monkeypatch.setattr(mobile_api, 'engine', engine)
+    requester_id = resources[0].owner_user_id
+    now = main._utcnow_naive()
+    requester_token = 'pg-consultation-requester-' + uuid.uuid4().hex
+    expert_token = 'pg-consultation-expert-' + uuid.uuid4().hex
+    with Session(engine, expire_on_commit=False) as session:
+        requester = session.get(main.User, requester_id)
+        requester.email_verified_at = now
+        requester.is_active = True
+        session.add(requester)
+        expert = main.User(username='pg-expert-' + uuid.uuid4().hex, role='DOCTOR',
+                           display_name='Synthetic expert', is_active=True, email_verified_at=now)
+        session.add(expert)
+        session.flush()
+        session.add_all([
+            main.SessionToken(user_id=requester_id, token_hash=main.hash_session_token(requester_token),
+                              expires_at=now + timedelta(days=1)),
+            main.SessionToken(user_id=expert.id, token_hash=main.hash_session_token(expert_token),
+                              expires_at=now + timedelta(days=1)),
+        ])
+        case = main.ConsultationCase(
+            requester_user_id=requester_id, expert_user_id=expert.id, specialty='Endodonti',
+            clinical_summary='Synthetic clinical summary', question='Synthetic question',
+            status='ACTIVE', expert_response_deadline=now + timedelta(hours=1),
+        )
+        session.add(case)
+        session.commit()
+        case_id = case.id
+
+    key = 'pg-consultation-same-key-' + uuid.uuid4().hex
+    body = {'content': 'Synthetic same-key message', 'client_message_id': key}
+
+    def submit(_):
+        client = TestClient(main.app)
+        response = client.post(
+            f'/api/mobile/v1/consultations/{case_id}/messages',
+            headers={'Authorization': 'Bearer ' + requester_token},
+            json=body,
+        )
+        return response.status_code, response.json()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(submit, range(2)))
+    assert [status for status, _ in results] == [200, 200]
+    message_ids = {payload['message']['id'] for _, payload in results}
+    assert len(message_ids) == 1
+    assert sorted(bool(payload.get('replayed')) for _, payload in results) == [False, True]
+
+    conflict_client = TestClient(main.app)
+    conflict = conflict_client.post(
+        f'/api/mobile/v1/consultations/{case_id}/messages',
+        headers={'Authorization': 'Bearer ' + requester_token},
+        json={'content': 'Different payload', 'client_message_id': key},
+    )
+    assert conflict.status_code == 409
+    with Session(engine) as session:
+        messages = session.exec(select(main.ConsultationMessage).where(
+            main.ConsultationMessage.case_id == case_id,
+            main.ConsultationMessage.sender_user_id == requester_id,
+        )).all()
+        receipts = session.exec(select(main.ConsultationMessageReceipt).where(
+            main.ConsultationMessageReceipt.case_id == case_id,
+            main.ConsultationMessageReceipt.sender_user_id == requester_id,
+            main.ConsultationMessageReceipt.client_message_id == key,
+        )).all()
+    assert len(messages) == 1
+    assert len(receipts) == 1
