@@ -355,7 +355,8 @@ test('pending treatment intent prevents closing the selected tooth panel',async(
  const notesInput=tree.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Diş notları');
  assert.equal(notesInput.props.editable,false,'the notes tab must also remain read-only while a treatment receipt is unresolved');
  await press('Diş Bilgisi');
- assert.equal(save.props.disabled,true,'tooth status cannot be saved while a treatment receipt is unresolved');
+ const saveAfterNotes=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children).includes('Durumu Kaydet')));
+ assert.equal(saveAfterNotes.props.disabled,true,'tooth status cannot be saved while a treatment receipt is unresolved');
  await renderer.act(async()=>tree.unmount());
 });
 
