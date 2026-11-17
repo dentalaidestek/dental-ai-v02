@@ -1116,9 +1116,11 @@ function PostCard({
 }) {
   const [busy, setBusy] = useState(false),
     [followBusy, setFollowBusy] = useState(false),
+    [moderationBusy, setModerationBusy] = useState(false),
     [error, setError] = useState(""),
     lock = useRef(false),
-    followLock = useRef(false);
+    followLock = useRef(false),
+    moderationLock = useRef(false);
   const mutate = async (fn: () => Promise<api.SocialPost | null>) => {
     if (lock.current) return;
     lock.current = true;
@@ -1133,6 +1135,29 @@ function PostCard({
       setBusy(false);
     }
   };
+  async function refreshModeration() {
+    if (moderationLock.current || busy || followBusy) return;
+    moderationLock.current = true;
+    setModerationBusy(true);
+    setError("");
+    try {
+      const latest = await api.getPost(token, post.id);
+      onUpdate({
+        ...post,
+        ...latest,
+        author_specialty: post.author_specialty ?? latest.author_specialty,
+        author_followed: post.author_followed ?? latest.author_followed,
+        author_support_available:
+          post.author_support_available ?? latest.author_support_available,
+      });
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      moderationLock.current = false;
+      setModerationBusy(false);
+    }
+  }
+
   async function sharePost() {
     if (post.status !== "PUBLISHED") return;
     try {
@@ -1169,6 +1194,16 @@ function PostCard({
   const gallery = post.media.filter(
     (item) => !(post.link_url && item.id === post.cover_media_id),
   );
+  const createdAt = new Date(post.created_at);
+  const createdAtLabel = Number.isNaN(createdAt.getTime())
+    ? "Tarih bilinmiyor"
+    : createdAt.toLocaleString("tr-TR", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
   return (
     <View style={s.card}>
       <View style={s.row}>
@@ -1189,10 +1224,11 @@ function PostCard({
           )}
           <View style={{ flex: 1 }}>
             <Text style={s.author}>{post.author_name}</Text>
-            <Text style={s.meta}>
-              {post.author_specialty ||
-                new Date(post.created_at).toLocaleDateString("tr-TR")}
-            </Text>
+            <Text style={s.verified}>✓ Mesleki belgesi doğrulanmış</Text>
+            {!!post.author_specialty && (
+              <Text style={s.meta}>{post.author_specialty}</Text>
+            )}
+            <Text style={s.meta}>{createdAtLabel}</Text>
           </View>
         </Pressable>
         {post.author_id !== userId &&
@@ -1280,7 +1316,34 @@ function PostCard({
         </Pressable>
       )}
       {post.status !== "PUBLISHED" && (
-        <Text style={s.meta}>İnceleme durumu: {post.status}</Text>
+        <View style={s.moderationBox}>
+          <Text style={s.moderationTitle}>
+            {post.moderation?.wait_type === "OWNER_CHANGES"
+              ? "Düzenleme gerekli"
+              : post.status === "PENDING"
+                ? post.moderation?.state === "FAILED"
+                  ? "Otomatik kontrol yeniden denenecek"
+                  : "İnceleme bekliyor"
+                : "Yayınlanmadı"}
+          </Text>
+          <Text style={s.meta}>
+            {post.moderation?.reason ||
+              (post.status === "PENDING"
+                ? "Gönderi yayınlanmadan önce inceleniyor."
+                : "Gönderi yayınlanmadı.")}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Yayın durumunu yenile"
+            disabled={moderationBusy || busy || followBusy}
+            onPress={() => void refreshModeration()}
+            style={s.moderationAction}
+          >
+            <Text style={s.moderationActionText}>
+              {moderationBusy ? "Kontrol ediliyor…" : "Durumu yenile"}
+            </Text>
+          </Pressable>
+        </View>
       )}
       <View style={s.row}>
         <Pressable
@@ -1803,6 +1866,11 @@ const s = StyleSheet.create({
     flexWrap: "wrap",
   },
   author: { fontSize: 14, fontWeight: "800", color: C.text },
+  verified: { fontSize: 11, fontWeight: "700", color: "#1769AA", marginTop: 2 },
+  moderationBox: { padding: 12, borderRadius: 12, borderWidth: 1, borderColor: "#F0D9A8", backgroundColor: "#FFF9ED", marginVertical: 8, gap: 6 },
+  moderationTitle: { color: "#8A4B08", fontSize: 13, fontWeight: "800" },
+  moderationAction: { alignSelf: "flex-start", minHeight: 40, justifyContent: "center", paddingHorizontal: 10, borderRadius: 9, backgroundColor: "#FCECCB" },
+  moderationActionText: { color: "#75400B", fontSize: 12, fontWeight: "800" },
   body: { fontSize: 15, color: C.text, lineHeight: 23, marginVertical: 10 },
   meta: { fontSize: 12, color: C.muted, lineHeight: 18 },
   action: {
