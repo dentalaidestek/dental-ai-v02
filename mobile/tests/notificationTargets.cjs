@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const ts=require('typescript');
 require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{fileName:filename,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,filename);
-const {resolveNativeNotificationTarget:resolve}=require('../src/notificationTarget.ts');
+const {resolveNativeNotificationTarget:resolve,resolveExpoPushTarget:resolvePush}=require('../src/notificationTarget.ts');
 
 test('canonical web consultation case links open the native case chat',()=>{
  for(const url of ['/expert-support/cases/42','/expert-support/cases/42/','/expert-support/cases/42?tab=messages','/expert-support/cases/42/messages','/consultations/42','/expert/consultations/42/messages','/cases/42'])
@@ -69,4 +69,36 @@ test('support notification links retain a validated ticket id for native convers
 test('malformed support ticket identifiers never become native navigation parameters',()=>{
  for(const url of ['/support-request?ticket_id=0','/support-request?ticket_id=abc','/support-request?ticket_id=9007199254740992','/support-request?ticket_id=%ZZ'])
   assert.deepEqual(resolve(url),{kind:'unsupported',path:'/support-request'});
+});
+
+test('Expo notification payloads navigate only to allowlisted native screens',()=>{
+ assert.deepEqual(resolvePush({kind:'notification',notice_id:42}),{
+  kind:'navigate',route:{screen:'Notifications',params:{noticeId:42}}
+ });
+ assert.deepEqual(resolvePush({kind:'consultation',case_id:73}),{
+  kind:'navigate',route:{screen:'ConsultationChat',params:{id:73}}
+ });
+});
+
+test('malformed, zero, unsafe and unknown Expo push payloads never navigate',()=>{
+ for(const value of [
+  null,[], 'https://evil.example',
+  {kind:'notification',notice_id:0},
+  {kind:'notification',notice_id:'9007199254740992'},
+  {kind:'consultation',case_id:-1},
+  {kind:'consultation',case_id:'abc'},
+  {kind:'patient',patient_id:23},
+ ]) assert.equal(resolvePush(value).kind,'unsupported');
+});
+
+test('push notification deep links request the exact owner-scoped notice before opening it',()=>{
+ const api=fs.readFileSync(path.join(__dirname,'../src/modernApi.ts'),'utf8');
+ const screens=fs.readFileSync(path.join(__dirname,'../src/ModernScreens.tsx'),'utf8');
+ const backend=fs.readFileSync(path.join(__dirname,'../../app/mobile_api.py'),'utf8');
+ assert.ok(api.includes('getNotifications=async(t:string,noticeId?:number)'));
+ assert.ok(api.includes('"?notice_id="+encodeURIComponent(noticeId)'));
+ assert.ok(screens.includes('getNotifications(token,noticeId)'));
+ assert.ok(screens.includes('initialNoticeId'));
+ assert.ok(backend.includes('AdminNotice.id == notice_id'));
+ assert.ok(backend.includes('AdminNotice.user_id == user.id'));
 });
