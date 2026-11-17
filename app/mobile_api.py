@@ -1335,7 +1335,7 @@ def register_mobile_push_device(
         except IntegrityError:
             session.rollback()
             raise HTTPException(status_code=409, detail="Cihaz bildirimi başka bir oturumda kaydedildi. Tekrar deneyin.")
-    return {"ok": True}
+    return {"ok": True, "delivery_enabled": os.getenv("MOBILE_PUSH_ENABLED", "").lower() in {"1", "true", "yes"}}
 
 
 @router.delete("/push/devices/{device_id}")
