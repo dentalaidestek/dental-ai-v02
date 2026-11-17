@@ -16,8 +16,8 @@ export default function NativeVisionViewer({token,analysisId,assetId,assets=[],o
  const [findings,setFindings]=useState<VisionFinding[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[pending,setPending]=useState(false),[pollDelay,setPollDelay]=useState(5000),[zoom,setZoom]=useState(1),[width,setWidth]=useState(320),[size,setSize]=useState<{width:number;height:number}|null>(null),[selected,setSelected]=useState(''),[filter,setFilter]=useState('Tümü'),[foreground,setForeground]=useState(AppState.currentState==='active');
  const [tab,setTab]=useState<ViewerTab>('findings'),[treatmentTeeth,setTreatmentTeeth]=useState<string[]>([]),[treatmentBusy,setTreatmentBusy]=useState(false),[treatmentMessage,setTreatmentMessage]=useState(''),[clinicalTooth,setClinicalTooth]=useState(''),[manualFinding,setManualFinding]=useState(''),[clinicalNote,setClinicalNote]=useState(''),[chartBusy,setChartBusy]=useState(false),[chartMessage,setChartMessage]=useState('');
  const findingInput=useRef<TextInput|null>(null),alive=useRef(true),lock=useRef(false),focused=useIsFocused(),currentAsset=assets.find(asset=>asset.id===assetId),modality=currentAsset?.image_type||'';
-  const latestRequest=useRef({token,analysisId,assetId,modality}),queuedLoad=useRef(false),queuedReset=useRef(false),requestGeneration=useRef(0);
-  latestRequest.current={token,analysisId,assetId,modality};
+  const latestRequest=useRef({token,analysisId,assetId,modality}),viewerActive=useRef({focused,foreground}),queuedLoad=useRef(false),queuedReset=useRef(false),requestGeneration=useRef(0);
+  latestRequest.current={token,analysisId,assetId,modality};viewerActive.current={focused,foreground};
   useEffect(()=>{alive.current=true;const listener=AppState.addEventListener('change',v=>setForeground(v==='active'));return()=>{alive.current=false;requestGeneration.current++;listener.remove()}},[]);
   useEffect(()=>{requestGeneration.current++;setFindings([]);setPending(false);setError('');setSelected('');setSize(null);setFilter('Tümü');setZoom(1);setTreatmentTeeth([]);setTreatmentMessage('');setPollDelay(5000)},[token,analysisId,assetId,modality]);
   async function load(resetBackoff=false){
@@ -32,8 +32,8 @@ export default function NativeVisionViewer({token,analysisId,assetId,assets=[],o
    }catch(e){if(stillCurrent()){setPending(false);setError(e instanceof Error?e.message:'Görüntü bulguları alınamadı.')}}
    finally{
     lock.current=false;
-    if(alive.current&&queuedLoad.current){const reset=queuedReset.current;queuedLoad.current=false;queuedReset.current=false;void load(reset)}
-    else if(alive.current)setBusy(false);
+    if(alive.current&&queuedLoad.current&&viewerActive.current.focused&&viewerActive.current.foreground){const reset=queuedReset.current;queuedLoad.current=false;queuedReset.current=false;void load(reset)}
+    else{queuedLoad.current=false;queuedReset.current=false;if(alive.current)setBusy(false)}
    }
   }
   useEffect(()=>{if(focused&&foreground)void load()},[token,focused,foreground,analysisId,assetId,modality]);
