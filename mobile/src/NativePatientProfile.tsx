@@ -34,7 +34,7 @@ export default function NativePatientProfile({token,userId,patientId,actions}:{t
  useEffect(()=>{if(!lastEvent||Number(lastEvent.payload?.patient_id||lastEvent.entity_id)!==patientId)return;const type=String(lastEvent.event_type||lastEvent.type);if(type==='PATIENT_DELETED')actions.deleted();else if(['PATIENT_UPDATED','TOOTH_UPDATED','PATIENT_MEDIA_CREATED','PATIENT_MEDIA_DELETED','TREATMENT_CREATED','TREATMENT_UPDATED'].includes(type))void load()},[lastEvent,patientId,load]);
  function toggleInfo(){if(!detail||busy)return;if(!infoOpen){const p=detail.patient;setPatientForm({first_name:p.first_name||'',last_name:p.last_name||'',phone:p.phone||'',birth_date:p.birth_date||'',tc_kimlik_no:p.tc_kimlik_no||'',address:p.address||'',chief_complaint:p.chief_complaint||''})}setInfoOpen(v=>!v)}
  async function savePatient(){
-  if(lock.current||profileUncertain||treatmentUncertain||pendingTreatment)return;
+  if(lock.current||profileUncertain||treatmentUncertain||pendingTreatment||!treatmentIntentReady||treatmentIntentBlocked)return;
   const validationError=patientProfileEditError(patientForm);if(validationError){setMutationError(validationError);return}
   lock.current=true;setBusy(true);setMutationError('');
   try{
@@ -127,12 +127,14 @@ export default function NativePatientProfile({token,userId,patientId,actions}:{t
  }
  function confirmDelete(){
   const blockedMessage='Bekleyen profil veya tedavi işlemi sunucuyla doğrulanmadan hasta kaydı silinemez.';
+  if(!current())return;
   if(lock.current||!patientProfileCanDeletePatient(deleteGate.current)){setMutationError(blockedMessage);return}
   Alert.alert('Hasta kaydı silinsin mi?','Bu işlem geri alınamaz.',[
    {text:'Vazgeç',style:'cancel'},
    {text:'Devam',style:'destructive',onPress:()=>Alert.alert('Son onay','Hasta kaydını kalıcı olarak silmek üzeresiniz.',[
     {text:'Vazgeç',style:'cancel'},
     {text:'Hasta Kaydını Sil',style:'destructive',onPress:async()=>{
+     if(!current())return;
      if(lock.current||!patientProfileCanDeletePatient(deleteGate.current)){setMutationError(blockedMessage);return}
      lock.current=true;setBusy(true);
      try{await deletePatient(token,patientId);if(current())actions.deleted()}
