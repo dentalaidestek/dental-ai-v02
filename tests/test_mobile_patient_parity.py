@@ -994,7 +994,7 @@ def test_native_patient_media_delete_replay_is_idempotent_and_owner_scoped(chat,
         "ok": True,
         "media_id": 880,
         "already_deleted": True,
-        "storage_cleanup_pending": False,
+        "storage_cleanup_pending": None,
     }
     assert deleted_paths == ["synthetic/private/880.png"]
 
