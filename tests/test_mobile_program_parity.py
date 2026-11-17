@@ -86,6 +86,8 @@ def test_program_create_receipt_replays_exact_event_and_rejects_changed_payload(
     with Session(engine) as s:
         rows=s.exec(select(main.ScheduleEvent).where(main.ScheduleEvent.owner_user_id==1,main.ScheduleEvent.client_request_hash!=None)).all()
         assert len(rows)==1
+        assert len(rows[0].client_request_hash)==64 and rows[0].client_request_hash!=key
+        assert len(rows[0].client_payload_hash)==64 and values['title'] not in rows[0].client_payload_hash
         jobs=s.exec(select(main.ProgramReminderJob).where(main.ProgramReminderJob.schedule_event_id==rows[0].id)).all()
         assert len(jobs)==1 and jobs[0].status=='PENDING'
 
