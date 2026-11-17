@@ -23,6 +23,7 @@ RECEIPT_FIRST_CHECK = timedelta(minutes=15)
 RECEIPT_TTL = timedelta(hours=24)
 RECEIPT_MAX_ATTEMPTS = 8
 RECEIPT_BATCH_LIMIT = 100
+MAINTENANCE_BATCH_LIMIT = 1000
 SENDING_LEASE = timedelta(minutes=2)
 RECEIPT_LEASE = timedelta(seconds=45)
 TERMINAL_RETENTION = timedelta(days=30)
@@ -264,9 +265,11 @@ def poll_due_mobile_push_receipts(engine, *, limit: int = RECEIPT_BATCH_LIMIT) -
     return processed
 
 
-def _maintain_receipt_rows(engine, *, limit: int = 100) -> int:
+def _maintain_receipt_rows(engine, *, limit: int = MAINTENANCE_BATCH_LIMIT) -> int:
     from app.main import MobilePushDelivery
 
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > MAINTENANCE_BATCH_LIMIT:
+        raise ValueError("Receipt maintenance limit must be between 1 and 1,000")
     stamp = _now()
     changed = 0
     with Session(engine) as session:
