@@ -673,3 +673,15 @@ Added a participant-scoped mobile `messages-live` endpoint with a bounded 100-me
 Regression coverage: `tests/test_mobile_consultation_live_api.py`, `mobile/tests/consultations.cjs`, and `mobile/tests/consultationRealtime.cjs`; the realtime test is registered in `mobile/package.json`. No migration or new polling was added. Evidence: `docs/mobile-expert-support-realtime-20261117.md`.
 
 Validation remains limited: latest Android/Security jobs still have no runner assignment and no steps, so the committed tests, TypeScript typecheck, pytest, beta suite, and Android build have not run. No main merge or production deployment.
+
+
+## 2026-11-17 — Expert room media acknowledgement, cache privacy and presentation
+
+- Re-read the canonical web expert room and message templates before native changes.
+- Native attachment success/recovery previously forced a full case GET even though the upload or receipt returned the persisted message. The composer now passes that message to the chat; the chat merges it by ID and advances its cursor. Deleted receipts without a message retain an authoritative reload path.
+- Added a shared `private, no-store` response policy with `Pragma: no-cache` and `Vary: Authorization` to the mobile consultation inbox, full room snapshot, incremental messages and message-receipt endpoints. Inbox previews and chat snapshots contain private conversation content, so explicit response policy is required even when the client requests no-store.
+- Native room status labels, media reply previews and annotation labels now match the web room's Turkish presentation.
+- Added Python cache-header assertions, native attachment-ack source regression and pure status/preview reducer tests. Added `tests/test_mobile_consultation_live_api.py` to Security recovery path filters and pytest invocation.
+- Evidence: `docs/mobile-expert-support-room-hardening-20261117.md`.
+- Tests are committed but not executed. Starting head `e2e6cb6` had five failed-before-steps workflows; job step arrays were empty and log downloads returned `BlobNotFound 404`. No typecheck, beta, pytest, Gradle or Expo export pass is claimed.
+- No schema migration, main merge, production deploy, APK/IPA publication or clinical record mutation.
