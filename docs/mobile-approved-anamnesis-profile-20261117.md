@@ -26,7 +26,8 @@ The reader now splits on the actual blank-line delimiter. Added a route regressi
 - Connected the card to `NativePatientProfile.tsx`.
 - The native card preserves the clinician-approved wording, including negative statements such as “Alerjim yok”; it does not reinterpret an old statement as a current diagnosis or medication. It shows the server notice and source analysis ID.
 - Late responses are scoped to the current token/patient; switching patient invalidates the previous request.
-- Added native component tests for field ordering, negative statements, empty history, retry after errors, and stale response isolation. Added API tests for the authenticated GET route and strict field/source validation. Registered the suite in `npm run test:beta`.
+- Added six native component regressions for field ordering, negative statements, empty history, retry after errors, stale patient response isolation, and hiding old clinical values after a failed refresh. Added API tests for the authenticated GET route and strict field/source validation. Registered the suite in `npm run test:beta`.
+- A JavaScript syntax parse of the touched native tests exposed a malformed pre-existing regex in `mobile/tests/voiceApi.cjs` (`Invalid regular expression flags`). Replaced it with an explicit `endsWith()` route assertion; both touched CJS test files now parse successfully.
 
 ## Data and privacy boundaries
 
