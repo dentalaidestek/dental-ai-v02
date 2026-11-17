@@ -52,3 +52,25 @@ test('Academic chat composer stays outside the scrolling history and preserves d
  assert.equal(tree.root.findAllByType('TextInput').some(n=>n.props.accessibilityLabel==='Akademik soru'),false);
  await renderer.act(async()=>tree.unmount());
 });
+
+test('Academic index polling follows active per-file work, not aggregate partial state',()=>{
+ const a=api();
+ const failedPartial={ready:true,complete:false,state:'partial',completed:1,total:2,files:[
+  {id:1,filename:'ready.pdf',state:'ready',usable:true},
+  {id:2,filename:'failed.pdf',state:'failed',message:'Synthetic failure'}
+ ]};
+ assert.equal(a.indexNeedsPolling(failedPartial),false,'a ready+failed partial index must not poll forever');
+ assert.equal(a.indexNeedsPolling({...failedPartial,files:[failedPartial.files[0],{id:2,filename:'updating.pdf',state:'updating'}]}),true);
+ assert.equal(a.indexNeedsPolling({...failedPartial,files:[{id:1,filename:'preparing.pdf',state:'preparing'}]}),true);
+ assert.equal(a.indexNeedsPolling({...failedPartial,complete:true,state:'ready'}),false);
+ assert.throws(()=>a.validateIndexStatus({...failedPartial,files:[]}),/doğrulanamadı/);
+});
+
+test('native Academic polling is foreground-only, idle-free and slower than active run polling for indexing',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativeAcademic.tsx'),'utf8');
+ assert.match(source,/A\.indexNeedsPolling\(index\)/);
+ assert.match(source,/nextIndexAt=Date\.now\(\)\+15000/);
+ assert.match(source,/\(!runBusy&&!indexPending\)/);
+ assert.match(source,/runBusy\?5000:15000/);
+ assert.match(source,/\[focused,foreground,ready,runBusy,indexPending\]/);
+});
