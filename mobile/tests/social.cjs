@@ -34,6 +34,17 @@ test('encrypted Dental Flow drafts restore a bounded preview and reject invalid 
  const legacy=await readDraft({getItemAsync:async()=>JSON.stringify({id:'legacy',text:'old',link:'',media_ids:[],attempted:false})},'draft');
  assert.equal(legacy.preview,null);assert.equal(legacy.preview_id,undefined);
 });
+test('preview receipts reject non-HTTPS restores and mismatched cover IDs',async()=>{
+ const base={id:'same-key',text:'draft',link:'https://example.org/article',media_ids:[],attempted:false,preview_id:77,preview:{available:true,id:77,url:'https://example.org/article',cover:{id:81,url:'/api/expert-social/media/82'}}};
+ const restored=await readDraft({getItemAsync:async()=>JSON.stringify(base)},'draft');
+ assert.equal(restored.preview_id,77);assert.equal(restored.preview.cover,null);
+ const unsafe=await readDraft({getItemAsync:async()=>JSON.stringify({...base,link:'http://example.org/article',preview:{...base.preview,url:'http://example.org/article'}})},'draft');
+ assert.equal(unsafe.preview_id,undefined);assert.equal(unsafe.preview,null);
+ const original=global.fetch;
+ global.fetch=async()=>new Response(JSON.stringify({available:true,id:77,url:'https://example.org/article',cover:{id:81,url:'/api/expert-social/media/82'}}));
+ try{await assert.rejects(()=>api.getLinkPreview('secret','https://example.org/article'),/Bağlantı görseli doğrulanamadı/);}
+ finally{global.fetch=original;}
+});
 test('failed commit response and app restart retain the same payload and UUID',async()=>{
  const values=new Map(),store={getItemAsync:async k=>values.get(k)||null,setItemAsync:async(k,v)=>values.set(k,v),deleteItemAsync:async k=>values.delete(k)};
  const key=draftKey(1,'post'),draft={id:'same-uuid',text:'metin',link:'',media_ids:[],attempted:false};
