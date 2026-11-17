@@ -63,3 +63,25 @@ These tests are committed but have not been executed in this environment. The re
 - 60,000-user load and storage-growth measurements.
 
 No main merge, production deployment, APK/IPA publication, or patient-record mutation was performed.
+
+## Follow-up — native media recovery race and PostgreSQL acceptance
+
+A second web/native lifecycle pass found a race in \`ChatAttachmentComposer\`: the native screen read its SecureStore media intent asynchronously, but camera, document selection and send controls were enabled during that read. After process death between a successful server commit and the client acknowledgement, a fast new selection could create a fresh request key before the old receipt was reconciled, allowing a duplicate attachment.
+
+Fixed on the native client:
+- Initial media state is locked while the stored intent and server receipt are checked.
+- Camera, document picker, send and clear controls remain disabled until recovery completes.
+- A valid pending intent is retained and reused; a found receipt is reconciled before a new send is enabled.
+- Corrupt or unreadable intent metadata fails closed, remains in SecureStore and exposes a local re-read action. It is not silently replaced with a new key or deleted.
+- Receipt lookup remains sender/participant scoped and \`private, no-store\`; no media URI, filename or bytes were added to the stored intent.
+
+Regression coverage in \`mobile/tests/consultations.cjs\` checks the restore gate on both pickers and send, plus corrupt-intent fail-closed behavior. The test file is already part of \`npm run test:beta\` and the Android workflow watches \`mobile/**\`.
+
+PostgreSQL acceptance was strengthened:
+- The revision-12 migration test now removes the four additive study tables before migration and asserts that all are recreated before the receipt migration advances the revision to 14.
+- Added a two-worker PostgreSQL same-key/same-payload consultation send test. It asserts one canonical message and receipt, one original plus one replayed response, and HTTP 409 for changed content under the same key.
+- Added \`tests/test_postgres_optimization.py\` to the Security recovery PR path filter; its existing dedicated PostgreSQL workflow step already runs the file.
+
+Commits in this follow-up: \`0451e1b\`, \`0fe7915\`, \`e00257b\`, \`a35dd60\`, \`809b608\`, \`e5e1957\`.
+
+Validation boundary: source-level checks can verify the new guards, regression registration and workflow path. The Node beta suite, PostgreSQL fixture, full TypeScript 5.9.2 check, Android build and physical Android/iOS process-death/account-switch tests still require a working runner/device. No clinical message or patient record was changed by this work.
