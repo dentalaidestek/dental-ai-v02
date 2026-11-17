@@ -64,7 +64,7 @@ export async function clearLegacyAnalysisSources(images:UploadImage[]):Promise<v
 export async function prepareAnalysisUploadImages(images:UploadImage[],userId:number,patientId:number):Promise<{images:UploadImage[];cleanup:()=>Promise<void>}>{
   const prepared:UploadImage[]=[],temporary:string[]=[];
   let totalBytes=0;
-  const cleanup=async()=>{await Promise.all(temporary.map(uri=>deleteClinicalMediaTemp(uri).catch(()=>{})));};
+  const cleanup=async()=>{await Promise.all(temporary.map(uri=>deleteClinicalMediaTemp(uri)));};
   try{
     for(const image of images){
       let uri=image.uri;
