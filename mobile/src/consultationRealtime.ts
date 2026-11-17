@@ -64,3 +64,31 @@ export function mergeConsultationMessages<T extends {id:number}>(existing:T[],in
  for(const item of incoming)if(item&&Number.isSafeInteger(item.id)&&item.id>0)byId.set(item.id,item);
  return Array.from(byId.values()).sort((a,b)=>a.id-b.id);
 }
+
+const CONSULTATION_STATUS_LABELS:Record<string,string>={
+ REQUESTED:"Yeni talep",
+ PROPOSED:"Onay bekleniyor",
+ WAITING_START:"Başlangıç bekleniyor",
+ ACTIVE:"Aktif",
+ EXPERT_COMPLETED:"Onay bekleniyor",
+ COMPLETED:"Tamamlandı",
+ DISPUTE:"Sorun bildirildi",
+ REJECTED:"Reddedildi",
+ PROPOSAL_REJECTED:"Süre onaylanmadı",
+ PROPOSAL_EXPIRED:"Süresi doldu",
+ EXPERT_TIMEOUT:"Süresi doldu",
+};
+export function consultationStatusLabel(status?:string|null):string{
+ const key=String(status||"").toUpperCase();
+ return CONSULTATION_STATUS_LABELS[key]||(status?String(status):"Yükleniyor");
+}
+export function consultationMessagePreview(message?:{message_type?:string;content?:string|null}|null):string{
+ if(!message)return "Mesaj";
+ switch(String(message.message_type||"").toUpperCase()){
+  case "IMAGE":return "Görsel";
+  case "VOICE":return "Sesli mesaj";
+  case "FILE":return "Dosya · "+String(message.content||"Belge");
+  case "ANNOTATION":return "İşaretlenmiş görüntü";
+  default:return String(message.content||"Mesaj").replace(/\\s+/g," ").trim().slice(0,90)||"Mesaj";
+ }
+}
