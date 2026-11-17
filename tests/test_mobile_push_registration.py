@@ -1,0 +1,205 @@
+"""Owner-scoped native push registration and notification deep-link tests."""
+from datetime import timedelta
+import uuid
+
+import pytest
+from sqlmodel import Session, SQLModel, create_engine, select
+
+try:
+    from fastapi.testclient import TestClient
+except RuntimeError:
+    TestClient = None
+
+from app import main, mobile_api
+
+
+def _client_db(monkeypatch, tmp_path):
+    engine = create_engine(
+        "sqlite:///" + str(tmp_path / "mobile-push-registration.db"),
+        connect_args={"check_same_thread": False},
+    )
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(main, "engine", engine)
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    now = main._utcnow_naive()
+    owner_token = "mobile-push-owner-session"
+    other_token = "mobile-push-other-session"
+    with Session(engine, expire_on_commit=False) as session:
+        owner = main.User(
+            username="mobile-push-owner", role="DOCTOR",
+            display_name="Owner", email_verified_at=now,
+        )
+        other = main.User(
+            username="mobile-push-other", role="DOCTOR",
+            display_name="Other", email_verified_at=now,
+        )
+        session.add_all([owner, other])
+        session.commit()
+        session.add_all([
+            main.SessionToken(
+                token_hash=main.hash_session_token(owner_token), user_id=owner.id,
+                expires_at=now + timedelta(days=1),
+            ),
+            main.SessionToken(
+                token_hash=main.hash_session_token(other_token), user_id=other.id,
+                expires_at=now + timedelta(days=1),
+            ),
+        ])
+        session.commit()
+        owner_id, other_id = owner.id, other.id
+    return engine, owner_id, other_id, owner_token, other_token
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
+def test_push_registration_is_strict_owner_scoped_and_revocable(monkeypatch, tmp_path):
+    engine, owner_id, other_id, owner_token, other_token = _client_db(monkeypatch, tmp_path)
+    device_id = str(uuid.uuid4())
+    push_token = "ExpoPushToken[abcdefgh12345678]"
+    owner_headers = {"Authorization": "Bearer " + owner_token}
+    other_headers = {"Authorization": "Bearer " + other_token}
+
+    with TestClient(main.app) as client:
+        registered = client.post(
+            "/api/mobile/v1/push/devices",
+            headers=owner_headers,
+            json={"device_id": device_id, "expo_push_token": push_token, "platform": "android"},
+        )
+        assert registered.status_code == 200, registered.text
+        assert registered.headers.get("cache-control") == "private, no-store"
+
+        conflict = client.post(
+            "/api/mobile/v1/push/devices",
+            headers=other_headers,
+            json={"device_id": str(uuid.uuid4()), "expo_push_token": push_token, "platform": "ios"},
+        )
+        assert conflict.status_code == 409
+
+        invalid_device = client.post(
+            "/api/mobile/v1/push/devices",
+            headers=owner_headers,
+            json={"device_id": "device-from-client", "expo_push_token": push_token, "platform": "android"},
+        )
+        assert invalid_device.status_code == 422
+        invalid_token = client.post(
+            "/api/mobile/v1/push/devices",
+            headers=owner_headers,
+            json={"device_id": str(uuid.uuid4()), "expo_push_token": "ExpoPushToken[bad token]", "platform": "android"},
+        )
+        assert invalid_token.status_code == 422
+
+        # Another account cannot revoke a device by guessing its stable ID.
+        other_delete = client.delete(f"/api/mobile/v1/push/devices/{device_id}", headers=other_headers)
+        assert other_delete.status_code == 200
+        with Session(engine) as session:
+            row = session.exec(select(main.MobilePushDevice).where(
+                main.MobilePushDevice.user_id == owner_id,
+                main.MobilePushDevice.device_id == device_id,
+            )).first()
+        assert row is not None
+
+        owner_delete = client.delete(f"/api/mobile/v1/push/devices/{device_id}", headers=owner_headers)
+        assert owner_delete.status_code == 200
+        assert owner_delete.headers.get("cache-control") == "private, no-store"
+        repeated_delete = client.delete(f"/api/mobile/v1/push/devices/{device_id}", headers=owner_headers)
+        assert repeated_delete.status_code == 200
+
+    with Session(engine) as session:
+        assert session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.user_id == owner_id,
+        )).all() == []
+        assert session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.user_id == other_id,
+        )).all() == []
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
+def test_push_refresh_replaces_same_device_and_caps_account_devices(monkeypatch, tmp_path):
+    engine, owner_id, _, owner_token, _ = _client_db(monkeypatch, tmp_path)
+    headers = {"Authorization": "Bearer " + owner_token}
+    first_device = str(uuid.uuid4())
+
+    with TestClient(main.app) as client:
+        first = client.post(
+            "/api/mobile/v1/push/devices", headers=headers,
+            json={"device_id": first_device, "expo_push_token": "ExpoPushToken[abcdefgh00000001]", "platform": "android"},
+        )
+        assert first.status_code == 200
+        refreshed = client.post(
+            "/api/mobile/v1/push/devices", headers=headers,
+            json={"device_id": first_device, "expo_push_token": "ExpoPushToken[abcdefgh00000002]", "platform": "ios"},
+        )
+        assert refreshed.status_code == 200
+
+        for index in range(9):
+            response = client.post(
+                "/api/mobile/v1/push/devices", headers=headers,
+                json={
+                    "device_id": str(uuid.uuid4()),
+                    "expo_push_token": f"ExpoPushToken[device{index:04d}abcdef]",
+                    "platform": "android",
+                },
+            )
+            assert response.status_code == 200, response.text
+
+        overflow = client.post(
+            "/api/mobile/v1/push/devices", headers=headers,
+            json={
+                "device_id": str(uuid.uuid4()),
+                "expo_push_token": "ExpoPushToken[overflow00000001]",
+                "platform": "android",
+            },
+        )
+        assert overflow.status_code == 409
+
+    with Session(engine) as session:
+        rows = session.exec(select(main.MobilePushDevice).where(
+            main.MobilePushDevice.user_id == owner_id,
+        )).all()
+    assert len(rows) == 10
+    assert sum(row.device_id == first_device for row in rows) == 1
+    assert all(row.expo_push_token != "ExpoPushToken[abcdefgh00000001]" for row in rows)
+
+
+@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
+def test_notification_push_lookup_includes_only_requested_owners_notice(monkeypatch, tmp_path):
+    engine, owner_id, other_id, owner_token, other_token = _client_db(monkeypatch, tmp_path)
+    now = main._utcnow_naive()
+    with Session(engine, expire_on_commit=False) as session:
+        notices = [
+            main.AdminNotice(
+                user_id=owner_id, title=f"Notice {index}", message="Genel bildirim",
+                notice_type="TEST", status="ACTIVE", created_at=now - timedelta(minutes=index),
+            )
+            for index in range(21)
+        ]
+        other_notice = main.AdminNotice(
+            user_id=other_id, title="Other notice", message="Genel bildirim",
+            notice_type="TEST", status="ACTIVE", created_at=now,
+        )
+        session.add_all([*notices, other_notice])
+        session.commit()
+        oldest_id = notices[-1].id
+
+    with TestClient(main.app) as client:
+        owner_headers = {"Authorization": "Bearer " + owner_token}
+        other_headers = {"Authorization": "Bearer " + other_token}
+        page = client.get("/api/mobile/v1/notifications", headers=owner_headers)
+        assert page.status_code == 200
+        assert page.headers.get("cache-control") == "private, no-store"
+        assert len(page.json()["items"]) == 20
+
+        deep_link = client.get(
+            f"/api/mobile/v1/notifications?notice_id={oldest_id}",
+            headers=owner_headers,
+        )
+        assert deep_link.status_code == 200
+        assert len(deep_link.json()["items"]) == 21
+        assert oldest_id in {item["id"] for item in deep_link.json()["items"]}
+
+        other_lookup = client.get(
+            f"/api/mobile/v1/notifications?notice_id={oldest_id}",
+            headers=other_headers,
+        )
+        assert other_lookup.status_code == 200
+        assert len(other_lookup.json()["items"]) == 1
+        assert all(item["id"] != oldest_id for item in other_lookup.json()["items"])
