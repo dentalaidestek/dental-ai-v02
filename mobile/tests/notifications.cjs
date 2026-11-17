@@ -90,7 +90,7 @@ test('Expo SDK 54 push registration is explicit, account-scoped and token-safe',
  assert.ok(projectPreflight>=0&&permissionRequest>projectPreflight);
  assert.ok(push.includes('refreshNativePushRegistration'));
  assert.ok(push.includes('SecureStore.setItemAsync(enabledKey(userId), "1")'));
- assert.ok(push.includes('registerPushDevice(token, registration.deviceId, registration.token, registration.platform)'));
+ assert.ok(push.includes('registerPushDevice(token, registration.deviceId, registration.token, registration.platform, registration.installationProof)'));
  assert.ok(push.includes('registered.delivery_enabled ? "1" : "0"'));
  assert.ok(settings.includes('state.deliveryEnabled'));
  assert.ok(settings.includes('sunucu push dağıtımı henüz etkinleştirilmemiş'));
@@ -123,4 +123,32 @@ test('Expo push token validation accepts canonical tokens and rejects escaped or
  assert.equal(isValidExpoPushToken('ExpoPushToken\\[abcdefgh12345678\\]'),false);
  assert.equal(isValidExpoPushToken('OtherPushToken[abcdefgh12345678]'),false);
  assert.equal(isValidExpoPushToken(null),false);
+});
+
+
+test('account login claims the same installation before optional push refresh',()=>{
+ const app=fs.readFileSync(path.join(__dirname,'../App.tsx'),'utf8');
+ const push=fs.readFileSync(path.join(__dirname,'../src/nativePush.ts'),'utf8');
+ const api=fs.readFileSync(path.join(__dirname,'../src/modernApi.ts'),'utf8');
+ assert.ok(push.includes('INSTALLATION_PROOF_KEY'));
+ assert.ok(push.includes('Crypto.getRandomBytesAsync(32)'));
+ assert.ok(push.includes('installationClaimQueue.then(claim, claim)'));
+ assert.ok(push.includes('claimPushDevice(token, identity.deviceId, identity.installationProof)'));
+ assert.ok(api.includes('"/push/devices/claim"'));
+ assert.ok(api.includes('installation_proof:installationProof'));
+ const claimIndex=app.indexOf('await claimNativePushDeviceForSession(token,userId)');
+ const refreshIndex=app.indexOf('if(active)refresh()',claimIndex);
+ assert.ok(claimIndex>=0&&refreshIndex>claimIndex);
+ assert.ok(app.includes('claimNativePushDeviceForSession,refreshNativePushRegistration'));
+});
+
+test('installation claim does not request notification permission or enable a new account',()=>{
+ const push=fs.readFileSync(path.join(__dirname,'../src/nativePush.ts'),'utf8');
+ const start=push.indexOf('export function claimNativePushDeviceForSession');
+ const end=push.indexOf('/** Refreshes an opted-in token',start);
+ const claim=push.slice(start,end);
+ assert.ok(claim.includes('claimPushDevice'));
+ assert.ok(!claim.includes('requestPermissionsAsync'));
+ assert.ok(!claim.includes('registerPushDevice'));
+ assert.ok(!claim.includes('setItemAsync(enabledKey(userId), "1")'));
 });
