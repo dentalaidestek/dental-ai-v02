@@ -55,12 +55,51 @@ test('native onboarding does not request OS permission before push token registr
  const intro=source.slice(start,end);
  assert.ok(!intro.includes('PermissionsAndroid.request'));
  assert.ok(!source.includes('PermissionsAndroid'));
- assert.ok(intro.includes('Expo push token kaydı'));
- assert.ok(intro.includes('henüz bağlanmadı'));
+ assert.ok(intro.includes('Profil > Cihaz Bildirimleri'));
+ assert.ok(intro.includes('İşletim sistemi izni yalnızca'));
 });
 
 test('mobile API validates and calls the cutoff read-all endpoint',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../src/modernApi.ts'),'utf8');
  assert.ok(source.includes('"/notifications/read-all"'));
  assert.ok(source.includes('seen_before:new Date(timestamp).toISOString()'));
+});
+
+test('Expo SDK 54 push registration is explicit, account-scoped and token-safe',()=>{
+ const app=fs.readFileSync(path.join(__dirname,'../App.tsx'),'utf8');
+ const account=fs.readFileSync(path.join(__dirname,'../src/NativeAccount.tsx'),'utf8');
+ const settings=fs.readFileSync(path.join(__dirname,'../src/NativePushSettings.tsx'),'utf8');
+ const push=fs.readFileSync(path.join(__dirname,'../src/nativePush.ts'),'utf8');
+ const config=fs.readFileSync(path.join(__dirname,'../app.config.js'),'utf8');
+ const appJson=JSON.parse(fs.readFileSync(path.join(__dirname,'../app.json'),'utf8'));
+ const pkg=JSON.parse(fs.readFileSync(path.join(__dirname,'../package.json'),'utf8'));
+ const lock=JSON.parse(fs.readFileSync(path.join(__dirname,'../package-lock.json'),'utf8'));
+ assert.equal(pkg.dependencies['expo-notifications'],'~0.32.17');
+ assert.equal(pkg.dependencies['expo-constants'],'~18.0.14');
+ assert.equal(lock.packages['node_modules/expo-notifications'].version,'0.32.17');
+ assert.ok(appJson.expo.plugins.includes('expo-notifications'));
+ assert.ok(config.includes('EXPO_PUBLIC_EAS_PROJECT_ID'));
+ assert.ok(account.includes('NativePushSettings token={token} userId={user.id}'));
+ assert.ok(settings.includes('enableNativePush(token, userId)'));
+ assert.ok(settings.includes('disableNativePush(token, userId)'));
+ assert.ok(push.includes('Notifications.requestPermissionsAsync()'));
+ assert.ok(push.includes('Notifications.getExpoPushTokenAsync({ projectId })'));
+ assert.ok(push.includes('refreshNativePushRegistration'));
+ assert.ok(push.includes('SecureStore.setItemAsync(enabledKey(userId), "1")'));
+ assert.ok(push.includes('registerPushDevice(token, registration.deviceId, registration.token, registration.platform)'));
+ assert.ok(!push.includes('console.log'));
+ assert.ok(app.includes('subscribeToNativePushResponses'));
+ assert.ok(app.includes('refreshNativePushRegistration(session.token,session.user.id)'));
+ assert.ok(app.includes('unregisterNativePushForLogout(session.token,session.user.id)'));
+});
+
+test('native push asks permission only after an explicit account action and refreshes on foreground',()=>{
+ const push=fs.readFileSync(path.join(__dirname,'../src/nativePush.ts'),'utf8');
+ const app=fs.readFileSync(path.join(__dirname,'../App.tsx'),'utf8');
+ const intro=app.slice(app.indexOf('function NotificationPermissionIntro('),app.indexOf('function AppContent()',app.indexOf('function NotificationPermissionIntro(')));
+ assert.ok(push.includes('export async function enableNativePush'));
+ assert.ok(push.includes('export async function refreshNativePushRegistration'));
+ assert.ok(push.includes('if ((await SecureStore.getItemAsync(enabledKey(userId))) !== "1") return false'));
+ assert.ok(app.includes('state==="active"'));
+ assert.ok(!intro.includes('requestPermissionsAsync'));
 });
