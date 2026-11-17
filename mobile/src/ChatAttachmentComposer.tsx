@@ -62,7 +62,7 @@ export default function ChatAttachmentComposer({token,userId,caseId,replyTo,disa
   }catch(e){if(current(owner))setError(e instanceof Error?e.message:"Görsel seçilemedi.")}
  }
  async function chooseFile(){
-  if(lock.current||disabled||uncertain)return;const owner=scope.current;
+  if(lock.current||restoring||recoveryBlocked||disabled||uncertain)return;const owner=scope.current;
   try{const result=await DocumentPicker.getDocumentAsync({type:["application/pdf","audio/*"],multiple:false,copyToCacheDirectory:true});
    if(result.canceled)return;const asset=result.assets[0];if(!current(owner)){if(asset?.uri)await FileSystem.deleteAsync(asset.uri,{idempotent:true});return}
    if(!asset)return;try{select({uri:asset.uri,name:asset.name,type:asset.mimeType||"application/octet-stream",size:asset.size,owned:true})}catch(e){await FileSystem.deleteAsync(asset.uri,{idempotent:true});throw e}
