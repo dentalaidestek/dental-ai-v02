@@ -1,5 +1,9 @@
 """Native calendar uses the web recurrence, patient and reminder rules."""
-from datetime import date,datetime,timedelta
+import base64
+import hashlib
+import json
+import re
+from datetime import date,datetime,timedelta,timezone
 from typing import Optional
 from fastapi import APIRouter,Depends,HTTPException,Query
 from pydantic import BaseModel,Field
@@ -22,35 +26,201 @@ def _event(session,web,event,user):
         'reminder_minutes':str(event.reminder_minutes) if event.notification_enabled and event.reminder_minutes is not None else 'NONE',
         'recurrence_rule':event.recurrence_rule,'recurrence_until':event.recurrence_until or ''}
 
+_PROGRAM_CURSOR_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,512}$")
+_PROGRAM_CURSOR_TTL = timedelta(minutes=15)
+
+
+def _program_cursor_owner(user_id: int) -> str:
+    # Scope tag only; every page still queries the authenticated owner's rows.
+    return hashlib.sha256(f"dental-ai:program-cursor:v1:{int(user_id)}".encode("ascii")).hexdigest()[:24]
+
+
+def _encode_program_cursor(view: str, focus: date, user_id: int, snapshot_at: datetime, item: dict) -> str:
+    payload = {
+        "v": 1,
+        "view": view,
+        "day": focus.isoformat(),
+        "owner": _program_cursor_owner(user_id),
+        "snapshot": snapshot_at.isoformat(timespec="microseconds"),
+        "after": item["start_local"].astimezone(timezone.utc).isoformat(timespec="microseconds"),
+        "id": int(item["id"]),
+    }
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_program_cursor(cursor: str, view: str, focus: date, user_id: int, app_timezone, now_utc: datetime):
+    invalid = HTTPException(status_code=422, detail="Takvim sayfası anahtarı geçersiz. Yenileyin.")
+    if not isinstance(cursor, str) or not _PROGRAM_CURSOR_PATTERN.fullmatch(cursor):
+        raise invalid
+    try:
+        raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
+        payload = json.loads(raw.decode("utf-8"))
+        if type(payload) is not dict or set(payload) != {"v", "view", "day", "owner", "snapshot", "after", "id"}:
+            raise ValueError("cursor shape")
+        if type(payload["v"]) is not int or payload["v"] != 1:
+            raise ValueError("cursor version")
+        if payload["view"] != view or payload["day"] != focus.isoformat():
+            raise ValueError("cursor calendar scope")
+        if payload["owner"] != _program_cursor_owner(user_id):
+            raise ValueError("cursor account scope")
+        if type(payload["id"]) is not int or payload["id"] <= 0:
+            raise ValueError("cursor id")
+        if not isinstance(payload["snapshot"], str) or not isinstance(payload["after"], str):
+            raise ValueError("cursor timestamps")
+        snapshot_at = datetime.fromisoformat(payload["snapshot"])
+        after_utc = datetime.fromisoformat(payload["after"])
+        if snapshot_at.tzinfo is not None:
+            raise ValueError("snapshot must be UTC-naive")
+        if after_utc.tzinfo is None or after_utc.utcoffset() != timedelta(0):
+            raise ValueError("last occurrence must be UTC-aware")
+        now_naive = now_utc.astimezone(timezone.utc).replace(tzinfo=None)
+        if snapshot_at > now_naive + timedelta(seconds=30):
+            raise ValueError("future snapshot")
+        if now_naive - snapshot_at > _PROGRAM_CURSOR_TTL:
+            raise HTTPException(status_code=410, detail="Takvim sayfasının süresi doldu. Yenileyin.")
+        if after_utc.astimezone(app_timezone).date() != focus:
+            raise ValueError("last occurrence outside selected day")
+        return snapshot_at, after_utc, payload["id"]
+    except HTTPException:
+        raise
+    except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
+        raise invalid
+
+
+def _program_snapshot_changed(session, web, user_id: int, snapshot_at: datetime) -> bool:
+    changed = session.exec(
+        select(web.ScheduleEvent.id)
+        .where(web.ScheduleEvent.owner_user_id == user_id)
+        .where(web.sa_or(
+            web.ScheduleEvent.created_at > snapshot_at,
+            web.ScheduleEvent.updated_at > snapshot_at,
+        ))
+        .limit(1)
+    ).first()
+    return changed is not None
+
+
 @router.get('/program')
-def program_range(view:str=Query('week',pattern='^(today|week|month)$'),day:Optional[str]=None,offset:int=Query(0,ge=0),user=Depends(_mobile_user)):
+def program_range(
+    view: str = Query('week', pattern='^(today|week|month)$'),
+    day: Optional[str] = None,
+    offset: int = Query(0, ge=0),
+    cursor: Optional[str] = Query(None, max_length=512),
+    user=Depends(_mobile_user),
+):
     from app import main as web
-    today=datetime.now(web.APP_TIMEZONE).date()
-    try:focus=date.fromisoformat(day) if day else today
-    except ValueError:raise HTTPException(status_code=422,detail='Geçerli bir takvim günü seçin.')
-    _,start,end,previous,following=web._program_range(view,focus)
-    if view=='month':
-        first=focus.replace(day=1);grid_start=first-timedelta(days=first.weekday());start=web._date_to_local_start(grid_start);end=web._date_to_local_end(grid_start+timedelta(days=41))
-    with Session(web.engine,expire_on_commit=False) as session:
-        occurrences=web._user_schedule_occurrences(session,user.id,start,end)
-    counts={}
+    today = datetime.now(web.APP_TIMEZONE).date()
+    try:
+        focus = date.fromisoformat(day) if day else today
+    except ValueError:
+        raise HTTPException(status_code=422, detail='Geçerli bir takvim günü seçin.')
+    if cursor is not None and offset:
+        raise HTTPException(status_code=422, detail='Takvim sayfası için tek bir devam anahtarı kullanın.')
+
+    _, start, end, previous, following = web._program_range(view, focus)
+    if view == 'month':
+        first = focus.replace(day=1)
+        grid_start = first - timedelta(days=first.weekday())
+        start = web._date_to_local_start(grid_start)
+        end = web._date_to_local_end(grid_start + timedelta(days=41))
+
+    now_utc = datetime.now(timezone.utc)
+    after_utc = None
+    after_id = None
+    if cursor is not None:
+        snapshot_at, after_utc, after_id = _decode_program_cursor(
+            cursor, view, focus, user.id, web.APP_TIMEZONE, now_utc
+        )
+    else:
+        # First-page watermark is naive UTC, matching ScheduleEvent timestamps.
+        snapshot_at = now_utc.replace(tzinfo=None) if offset == 0 else None
+
+    with Session(web.engine, expire_on_commit=False) as session:
+        if cursor is not None and _program_snapshot_changed(session, web, user.id, snapshot_at):
+            raise HTTPException(status_code=409, detail='Takvim bu sırada değişti. Yenileyip tekrar deneyin.')
+        if snapshot_at is None:
+            occurrences = web._user_schedule_occurrences(session, user.id, start, end)
+        else:
+            occurrences = web._user_schedule_occurrences(session, user.id, start, end, snapshot_at=snapshot_at)
+        # Catch a write racing the occurrence read. A later write is caught by the
+        # next cursor request; realtime still triggers a first-page refresh.
+        if cursor is not None and _program_snapshot_changed(session, web, user.id, snapshot_at):
+            raise HTTPException(status_code=409, detail='Takvim bu sırada değişti. Yenileyip tekrar deneyin.')
+
+    counts = {}
     for item in occurrences:
-        key=item['start_local'].date().isoformat();counts[key]=counts.get(key,0)+1
-    if view=='month':days=[{'date':(grid_start+timedelta(days=i)).isoformat(),'label':str((grid_start+timedelta(days=i)).day),'in_month':(grid_start+timedelta(days=i)).month==focus.month,'count':counts.get((grid_start+timedelta(days=i)).isoformat(),0)} for i in range(42)]
-    else:days=[{'date':item['date'].isoformat(),'label':item['label'],'in_month':True,'count':counts.get(item['date'].isoformat(),0)} for item in web._program_week_days(focus)] if view=='week' else [{'date':focus.isoformat(),'label':str(focus.day),'in_month':True,'count':counts.get(focus.isoformat(),0)}]
-    selected=sorted([item for item in occurrences if view=='today' or item['start_local'].date()==focus],key=lambda item:(item['start_local'],item['id']))
-    page=selected[offset:offset+50]
-    now=datetime.now(web.APP_TIMEZONE).replace(second=0,microsecond=0)
-    suggested=now.replace(minute=0 if now.minute<30 else 30)
-    if suggested<now:suggested+=timedelta(minutes=30)
-    suggested=datetime.combine(focus,suggested.time())
-    return {'view':view,'focus_date':focus.isoformat(),'today':today.isoformat(),'timezone':'Europe/Istanbul','previous_day':previous.isoformat(),'next_day':following.isoformat(),'days':days,
-        'items':[{'key':f"{item['id']}:{item['start_local'].isoformat()}",'event_id':item['id'],'event_type':item['event_type'],'title':item['title'],'status':item['status'],'start_local':item['start_local'].strftime('%Y-%m-%dT%H:%M'),'end_local':item['end_local'].strftime('%Y-%m-%dT%H:%M') if item['end_local'] else '',
-            'patient_id':item['patient'].id if item.get('patient') else None,'patient_name':f"{item['patient'].first_name or ''} {item['patient'].last_name or ''}".strip() if item.get('patient') else None,
-            'location':item['location'],'notes':item['notes'],'recurrence_rule':item['recurrence_rule']} for item in page],
-        'total':len(selected),'next_offset':offset+len(page) if offset+len(page)<len(selected) else None,
-        'copy_days':[{'date':item['date'].isoformat(),'label':item['label']} for item in web._program_week_days(focus)],'month_title':f'{web.PROGRAM_MONTH_NAMES[focus.month-1]} {focus.year}', 'event_types':web.PROGRAM_EVENT_TYPES,'reminders':['NONE',*[str(x) for x in sorted(web.REMINDER_OPTIONS)]],'recurrences':sorted(web.RECURRENCE_OPTIONS),
-        'suggested_start_local':suggested.strftime('%Y-%m-%dT%H:%M'),'suggested_end_local':(suggested+timedelta(minutes=30)).strftime('%Y-%m-%dT%H:%M')}
+        key = item['start_local'].date().isoformat()
+        counts[key] = counts.get(key, 0) + 1
+    if view == 'month':
+        days = [
+            {'date': (grid_start + timedelta(days=i)).isoformat(), 'label': str((grid_start + timedelta(days=i)).day),
+             'in_month': (grid_start + timedelta(days=i)).month == focus.month,
+             'count': counts.get((grid_start + timedelta(days=i)).isoformat(), 0)}
+            for i in range(42)
+        ]
+    else:
+        days = [
+            {'date': item['date'].isoformat(), 'label': item['label'], 'in_month': True,
+             'count': counts.get(item['date'].isoformat(), 0)}
+            for item in web._program_week_days(focus)
+        ] if view == 'week' else [
+            {'date': focus.isoformat(), 'label': str(focus.day), 'in_month': True,
+             'count': counts.get(focus.isoformat(), 0)}
+        ]
+
+    selected = sorted(
+        [item for item in occurrences if view == 'today' or item['start_local'].date() == focus],
+        key=lambda item: (item['start_local'], item['id']),
+    )
+    total = len(selected)
+    if cursor is not None:
+        cursor_key = (after_utc, after_id)
+        remaining = [
+            item for item in selected
+            if (item['start_local'].astimezone(timezone.utc), item['id']) > cursor_key
+        ]
+        page = remaining[:50]
+        has_more = len(remaining) > len(page)
+    else:
+        page = selected[offset:offset + 50]
+        has_more = offset + len(page) < total
+
+    next_cursor = (
+        _encode_program_cursor(view, focus, user.id, snapshot_at, page[-1])
+        if snapshot_at is not None and has_more and page else None
+    )
+    next_offset = offset + len(page) if cursor is None and has_more else None
+    now_local = datetime.now(web.APP_TIMEZONE).replace(second=0, microsecond=0)
+    suggested = now_local.replace(minute=0 if now_local.minute < 30 else 30)
+    if suggested < now_local:
+        suggested += timedelta(minutes=30)
+    suggested = datetime.combine(focus, suggested.time())
+    return {
+        'view': view, 'focus_date': focus.isoformat(), 'today': today.isoformat(),
+        'timezone': 'Europe/Istanbul', 'previous_day': previous.isoformat(),
+        'next_day': following.isoformat(), 'days': days,
+        'items': [
+            {'key': f"{item['id']}:{item['start_local'].isoformat()}", 'event_id': item['id'],
+             'event_type': item['event_type'], 'title': item['title'], 'status': item['status'],
+             'start_local': item['start_local'].strftime('%Y-%m-%dT%H:%M'),
+             'end_local': item['end_local'].strftime('%Y-%m-%dT%H:%M') if item['end_local'] else '',
+             'patient_id': item['patient'].id if item.get('patient') else None,
+             'patient_name': f"{item['patient'].first_name or ''} {item['patient'].last_name or ''}".strip() if item.get('patient') else None,
+             'location': item['location'], 'notes': item['notes'],
+             'recurrence_rule': item['recurrence_rule']}
+            for item in page
+        ],
+        'total': total, 'next_offset': next_offset, 'next_cursor': next_cursor,
+        'copy_days': [{'date': item['date'].isoformat(), 'label': item['label']} for item in web._program_week_days(focus)],
+        'month_title': f'{web.PROGRAM_MONTH_NAMES[focus.month - 1]} {focus.year}',
+        'event_types': web.PROGRAM_EVENT_TYPES,
+        'reminders': ['NONE', *[str(x) for x in sorted(web.REMINDER_OPTIONS)]],
+        'recurrences': sorted(web.RECURRENCE_OPTIONS),
+        'suggested_start_local': suggested.strftime('%Y-%m-%dT%H:%M'),
+        'suggested_end_local': (suggested + timedelta(minutes=30)).strftime('%Y-%m-%dT%H:%M'),
+    }
+
 
 @router.get('/program/mutations/{request_key}')
 def program_mutation(request_key:str,user=Depends(_mobile_user)):
