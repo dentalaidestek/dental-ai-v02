@@ -9,7 +9,7 @@ from sqlalchemy import text, inspect
 
 logger = logging.getLogger(__name__)
 
-REVISION = 13
+REVISION = 14
 
 
 def require_schema(engine,*,require_study=False):
@@ -93,7 +93,10 @@ def _upgrade_recent_schema(main):
         connection.execute(text('ALTER TABLE consultationcase ADD COLUMN IF NOT EXISTS chat_retention_started_at TIMESTAMP'))
         logger.warning('migration.recent begin=private_tables')
         from app.membership_verification import MembershipVerification
+        from app.mobile_api import MobileSupportMutationReceipt
         main.ConsultationMediaDeletion.__table__.create(connection, checkfirst=True)
+        main.ConsultationMessageReceipt.__table__.create(connection, checkfirst=True)
+        MobileSupportMutationReceipt.__table__.create(connection, checkfirst=True)
         MembershipVerification.__table__.create(connection, checkfirst=True)
         _create_study_tables(connection)
         logger.warning('migration.recent begin=retention_backfill')
@@ -104,7 +107,7 @@ def _upgrade_recent_schema(main):
 
 
 def _upgrade_support_receipts_schema(main):
-    """Add durable idempotency receipts for native support-ticket mutations."""
+    """Add durable idempotency receipts for support tickets and consultation chat."""
     if main.engine.dialect.name != 'postgresql':
         return False
     with main.engine.begin() as connection:
@@ -115,18 +118,20 @@ def _upgrade_support_receipts_schema(main):
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
         if revision == REVISION:
             return True
-        if revision != 12:
+        if revision not in (12, 13):
             return False
         connection.execute(text('SELECT pg_advisory_xact_lock(71048233)'))
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
         if revision == REVISION:
             return True
-        if revision != 12:
-            raise RuntimeError('Schema changed during support receipt migration')
-        from app.mobile_api import MobileSupportMutationReceipt
-        MobileSupportMutationReceipt.__table__.create(connection, checkfirst=True)
+        if revision not in (12, 13):
+            raise RuntimeError('Schema changed during consultation receipt migration')
+        if revision == 12:
+            from app.mobile_api import MobileSupportMutationReceipt
+            MobileSupportMutationReceipt.__table__.create(connection, checkfirst=True)
+        main.ConsultationMessageReceipt.__table__.create(connection, checkfirst=True)
         connection.execute(text('UPDATE dental_schema_revision SET version=:version WHERE id=1'), {'version': REVISION})
-    logger.warning('migration.support_receipts complete revision=%s', REVISION)
+    logger.warning('migration.consultation_receipts complete revision=%s', REVISION)
     return True
 
 
