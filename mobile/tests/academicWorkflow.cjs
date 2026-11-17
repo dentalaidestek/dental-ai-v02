@@ -127,3 +127,39 @@ test('required workspace failure keeps Academic actions fail-closed',async()=>{
  assert.ok(text(tree.toJSON()).includes('Synthetic timeline outage'));
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('course creation reconciliation selects only a new exact title and description match',()=>{
+ const a=api(),intent={title:'Synthetic course',description:'Description',known_ids:[3,4]};
+ const found=a.findCreatedCourse([
+  {id:4,title:'Synthetic course',description:'Description'},
+  {id:8,title:'Synthetic course',description:'Description'},
+  {id:9,title:'Synthetic course',description:'Different'}
+ ],intent);
+ assert.equal(found.id,8);
+ assert.equal(a.findCreatedCourse([{id:4,title:'Synthetic course',description:'Description'}],intent),null);
+});
+
+test('uncertain course creation cannot be manually unlocked into a duplicate create',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativeAcademic.tsx'),'utf8');
+ assert.match(source,/A\\.findCreatedCourse\\(v\\.items,uncertain\\)/);
+ assert.match(source,/disabled=\\{busy\\|\\|!!uncertain/);
+ assert.doesNotMatch(source,/Listeyi Kontrol Ettim; Yeni Oluşturmaya İzin Ver/);
+});
+
+test('Academic upload receipt matches only a newly created same-name material',()=>{
+ const a=api(),items=[
+  {id:7,name:'lecture.pdf',mime:'application/pdf',size:100,index_status:'ready',url:'/file/7'},
+  {id:11,name:'lecture.pdf',mime:'application/pdf',size:100,index_status:'ready',url:'/file/11'}
+ ];
+ assert.equal(a.findUploadedMaterial(items,'lecture.pdf',[7]).id,11);
+ assert.equal(a.findUploadedMaterial(items,'lecture.pdf',[7,11]),null);
+});
+
+test('persisted upload intent is bound to the same user and course',()=>{
+ const a=api(),value={version:1,user:1,course:3,name:'lecture.pdf',uri:'file:///cache/lecture.pdf',known_ids:[2,4]};
+ assert.equal(a.parseUploadIntent(JSON.stringify(value),1,3).name,'lecture.pdf');
+ assert.throws(()=>a.parseUploadIntent(JSON.stringify(value),2,3));
+ assert.throws(()=>a.parseUploadIntent(JSON.stringify(value),1,4));
+ assert.throws(()=>a.parseUploadIntent(JSON.stringify({...value,known_ids:['2']}),1,3));
+});
