@@ -13,7 +13,7 @@ import{getAnalysisHistory,getConsultation,getConsultations,getCourses,getAcademi
 import{useRealtime}from"./realtime";
 import {usePagedRecords} from "./usePagedRecords";
 import {resolveNativeNotificationTarget} from "./notificationTarget";
-import {applyNotificationReadAllSnapshot} from "./notificationState";
+import {applyNotificationReadAllSnapshot,parseNotificationTimestamp} from "./notificationState";
 import {uploadPatientMedia} from "./api";
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",green:"#16803C",red:"#B42318"};
 const card={backgroundColor:C.white,borderRadius:18,borderWidth:1,borderColor:C.line,padding:16,marginBottom:12} as any;
@@ -76,7 +76,7 @@ export function Notifications({token}:{token:string}){
  ListHeaderComponent={<View style={{marginBottom:14}}><Text style={s.big}>Bildirimler</Text><Text style={s.muted}>Yeni mesajlar, danışmanlıklar ve hesap gelişmeleri.</Text>{d?.accountToken===token&&d.unread>0&&<Pressable accessibilityRole="button" accessibilityLabel="Tüm bildirimleri okundu işaretle" disabled={busy||markingAll} onPress={()=>void markAllRead()} style={[s.btn,{marginTop:12,opacity:(busy||markingAll)?0.55:1}]}><Text style={s.btnT}>{markingAll?"Okundu olarak işaretleniyor…":"Tümünü okundu işaretle"}</Text></Pressable>}{!!error&&(!d||d.accountToken===token)&&<Text accessibilityRole="alert" style={{color:C.red,marginTop:10}}>{error}</Text>}</View>}
  renderItem={({item})=><Pressable accessibilityRole="button" style={[card,!item.read_at&&{borderLeftWidth:4,borderLeftColor:C.navy}]} onPress={()=>void open(item)}>
  <View style={s.row}><Text style={[s.title,{flex:1}]}>{item.title}</Text>{!item.read_at&&<Text style={{color:"#1769AA",fontWeight:"800"}}>Yeni</Text>}</View>
- <Text style={s.body}>{item.message}</Text><Text style={s.meta}>{new Date(item.created_at).toLocaleString("tr-TR")}</Text>
+ <Text style={s.body}>{item.message}</Text><Text style={s.meta}>{Number.isFinite(parseNotificationTimestamp(item.created_at))?new Date(parseNotificationTimestamp(item.created_at)).toLocaleString("tr-TR"):"—"}</Text>
  </Pressable>} ListEmptyComponent={!busy&&(!d||d.accountToken===token)?<View><Empty title={error?"Bildirimler yüklenemedi":"Bildirim yok"} sub={error?"Bağlantıyı kontrol edip yeniden deneyin.":"Yeni gelişmeler burada görünecek."}/>{!!error&&<Pressable accessibilityRole="button" onPress={()=>void load()} style={s.btn}><Text style={s.btnT}>Yeniden dene</Text></Pressable>}</View>:null}/>;
 }
 
