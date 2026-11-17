@@ -12,6 +12,25 @@ logger = logging.getLogger(__name__)
 REVISION = 15
 
 
+def _ensure_mobile_push_device_table(engine):
+    """Create the additive native push table for databases already at revision 15.
+
+    MobilePushDevice was introduced after the current baseline revision. Existing
+    Render databases do not replay init_db(), so the table must be ensured through
+    the same small, serialized compatibility path used for admin MFA tables.
+    """
+    from app import main
+
+    table = main.MobilePushDevice.__table__
+    with engine.begin() as connection:
+        if engine.dialect.name == 'postgresql':
+            connection.execute(text("SET LOCAL lock_timeout = '10s'"))
+            connection.execute(text('SELECT pg_advisory_xact_lock(71048235)'))
+        table.create(connection, checkfirst=True)
+        for index in table.indexes:
+            index.create(connection, checkfirst=True)
+
+
 def require_schema(engine,*,require_study=False):
     try:
         with engine.connect() as connection:
@@ -31,6 +50,7 @@ def require_schema(engine,*,require_study=False):
             connection.execute(text('CREATE INDEX IF NOT EXISTS ix_adminloginchallenge_user_id ON adminloginchallenge (user_id)'))
             connection.execute(text('CREATE TABLE IF NOT EXISTS adminverifiedsession (token_hash VARCHAR PRIMARY KEY, user_id INTEGER NOT NULL)'))
             connection.execute(text('CREATE INDEX IF NOT EXISTS ix_adminverifiedsession_user_id ON adminverifiedsession (user_id)'))
+    _ensure_mobile_push_device_table(engine)
     if require_study:
         inspector=inspect(engine)
         if any(not inspector.has_table(table) for table in ('studylearningstate','studyreview','studyattempt','studyrun')):
