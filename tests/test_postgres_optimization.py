@@ -148,7 +148,8 @@ def test_release_migration_preserves_existing_records_and_repeats_on_postgres(pg
     with engine.connect() as connection:
         assert connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all() == before
         assert set(connection.execute(text('SELECT id FROM guestanalysis')).scalars()) == {resource.id for resource in resources}
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 12
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 14
+        assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('authratebucket')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('emailchangechallenge')")).scalar_one() is not None
 
@@ -375,3 +376,33 @@ def test_recent_release_migration_avoids_legacy_session_lock(pg, monkeypatch):
         assert c.execute(text("SELECT to_regclass('consultationmediadeletion')")).scalar()
         cols = {row[0] for row in c.execute(text("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='consultationcase'"))}
         assert {'messages_deleted_at', 'chat_retention_started_at'} <= cols
+
+def test_consultation_receipt_revision_13_upgrade_on_postgres(pg):
+    from app import migrate
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        connection.execute(text('DROP TABLE IF EXISTS consultationmessagereceipt'))
+        connection.execute(text('CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
+        connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,13)'))
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 14
+
+
+def test_consultation_receipt_revision_12_creates_both_receipt_tables(pg):
+    from app import migrate, mobile_api
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        connection.execute(text('DROP TABLE IF EXISTS consultationmessagereceipt'))
+        mobile_api.MobileSupportMutationReceipt.__table__.drop(connection, checkfirst=True)
+        connection.execute(text('CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
+        connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,12)'))
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
+        assert connection.execute(text("SELECT to_regclass('mobilesupportmutationreceipt')")).scalar_one() is not None
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 14
+
