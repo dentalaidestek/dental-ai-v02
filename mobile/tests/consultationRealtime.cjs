@@ -96,3 +96,15 @@ test("consultation inbox applies message previews locally instead of reloading t
  assert.ok(inbox.includes("applyConsultationInboxEvent(data,lastEvent,userId)"));
  assert.equal(inbox.includes('if(type==="MESSAGE_CREATED"&&caseId){void load()}'),false);
 });
+
+test("consultation inbox receives authenticated user identity from both navigation entry points",()=>{
+ const source=fs.readFileSync(require.resolve("../src/ModernScreens.tsx"),"utf8");
+ const app=fs.readFileSync(require.resolve("../App.tsx"),"utf8");
+ const start=source.indexOf("export function Consultations(");
+ const end=source.indexOf("export function ConsultationChat(",start);
+ const inbox=source.slice(start,end);
+ assert.ok(inbox.includes("export function Consultations({token,userId,navigation}:{token:string;userId:number;navigation:any})"));
+ assert.ok(inbox.includes("applyConsultationInboxEvent(data,lastEvent,userId)"));
+ assert.ok(app.includes("<Consultations token={token} userId={user.id} navigation={navigation}/>"));
+ assert.ok(app.includes("<Consultations token={token} userId={user.id} navigation={p.navigation}/>"));
+});
