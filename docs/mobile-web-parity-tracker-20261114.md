@@ -660,3 +660,16 @@ Regression coverage added to `mobile/tests/social.cjs` and `mobile/tests/socialS
 Restored preview drafts now require HTTPS without URL credentials/nonstandard ports; cover URLs must exactly match their media IDs. Native preview opening repeats the HTTPS guard. A newly found retry defect was fixed: `attempted=true` drafts now allow the existing "Tekrar dene" action to submit the frozen payload with the same idempotency UUID, while media/link edits remain disabled. Regression tests cover preview URL/cover binding and ambiguous-send retry.
 
 Latest observed head before this tracker update: `d5c415afa37b3f09eb937e1f6471e6f3fb3d78ef`. Android run `44030198756`, Security `44030198821`, Expert Social `44030198735`, Admin `44030198867`, Voice `44030198773`: six inspected jobs had empty step arrays and all six log downloads returned `BlobNotFound 404`. No compiler, Node beta, Gradle or pytest step executed. Evidence: `docs/mobile-dental-flow-parity-20261117.md`.
+
+
+## 2026-11-17 — Expert support incremental realtime parity
+
+Web-first review covered `expert_case_room.html`, `messages.html`, `_message_row.html`, the case-room `messages-live?after_id` flow, durable `MESSAGE_CREATED` / `CASE_READ` / `CASE_STATUS_UPDATED` payloads, and native `Consultations` / `ConsultationChat`.
+
+New native gaps found: each `MESSAGE_CREATED` event reloaded the 50-row inbox; the open chat reloaded its latest 100-message page on each message/reconnect; successful text sends and recovered receipts also forced a full case GET. This did not match the web room's incremental cursor and caused avoidable database/network work.
+
+Added a participant-scoped mobile `messages-live` endpoint with a bounded 100-message `after_id` cursor and a minimal case snapshot (no patient ID or clinical summary). Inbox rows now expose `last_message_id`; native applies preview/unread/status changes locally and ignores duplicate/out-of-order events. Native chat coalesces incremental catch-up, merges message IDs idempotently, applies status/read events in place, and appends send acknowledgements/receipts without a full reload. Case creation, detected event gaps, and case/report mutations retain an authoritative refresh path.
+
+Regression coverage: `tests/test_mobile_consultation_live_api.py`, `mobile/tests/consultations.cjs`, and `mobile/tests/consultationRealtime.cjs`; the realtime test is registered in `mobile/package.json`. No migration or new polling was added. Evidence: `docs/mobile-expert-support-realtime-20261117.md`.
+
+Validation remains limited: latest Android/Security jobs still have no runner assignment and no steps, so the committed tests, TypeScript typecheck, pytest, beta suite, and Android build have not run. No main merge or production deployment.
