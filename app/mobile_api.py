@@ -2494,7 +2494,7 @@ def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Dep
             # A native client may lose the DELETE response after the database
             # commit. Replaying the same owner-scoped delete must confirm that
             # outcome instead of leaving the gallery permanently uncertain.
-            return {"ok": True, "media_id": media_id, "already_deleted": True, "storage_cleanup_pending": False}
+            return {"ok": True, "media_id": media_id, "already_deleted": True, "storage_cleanup_pending": None}
         if media.patient_id != patient_id or media.owner_user_id != user.id:
             raise HTTPException(status_code=404, detail="Klinik görüntü bulunamadı.")
         file_path = media.file_path
