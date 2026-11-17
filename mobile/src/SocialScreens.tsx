@@ -159,6 +159,16 @@ function Composer({
     [error, setError] = useState(""),
     previewGeneration = useRef(0),
     lock = useRef(false);
+  const selectedCoverId =
+    d.draft.link.trim() &&
+    typeof d.draft.cover_media_id === "number" &&
+    Number.isSafeInteger(d.draft.cover_media_id) &&
+    d.draft.media_ids.includes(d.draft.cover_media_id)
+      ? d.draft.cover_media_id
+      : undefined;
+  const previewCoverUrl = selectedCoverId
+    ? `/api/expert-social/media/${selectedCoverId}`
+    : d.draft.preview?.cover?.url;
 
   useEffect(() => () => {
     previewGeneration.current++;
@@ -222,7 +232,13 @@ function Composer({
     setBusy(true);
     setError("");
     try {
-      d.update({ media_ids: ids });
+      d.update({
+        media_ids: ids,
+        ...(d.draft.cover_media_id !== undefined &&
+        !ids.includes(d.draft.cover_media_id)
+          ? { cover_media_id: undefined }
+          : {}),
+      });
       await d.flush();
     } catch (e) {
       setError("Görsel taslağı kaydedilemedi: " + message(e));
@@ -273,15 +289,25 @@ function Composer({
     setBusy(true);
     setError("");
     try {
-      const p = await d.send((v) =>
-        api.createPost(token, {
+      const p = await d.send((v) => {
+        const coverMediaId = v.link.trim()
+          ? typeof v.cover_media_id === "number" &&
+            Number.isSafeInteger(v.cover_media_id) &&
+            v.media_ids.includes(v.cover_media_id)
+            ? v.cover_media_id
+            : v.media_ids.length === 4
+              ? v.media_ids[0]
+              : undefined
+          : undefined;
+        return api.createPost(token, {
           text: v.text,
           media_ids: v.media_ids,
           idempotency_key: v.id,
           ...(v.link.trim() ? { link_url: v.link.trim() } : {}),
           ...(v.preview_id ? { preview_id: v.preview_id } : {}),
-        }),
-      );
+          ...(coverMediaId ? { cover_media_id: coverMediaId } : {}),
+        });
+      });
       onPosted(p);
       onClose();
     } catch (e) {
@@ -361,7 +387,12 @@ function Composer({
               onChangeText={(link) => {
                 previewGeneration.current++;
                 setPreviewBusy(false);
-                d.update({ link, preview_id: undefined, preview: null });
+                d.update({
+                  link,
+                  preview_id: undefined,
+                  preview: null,
+                  ...(link.trim() ? {} : { cover_media_id: undefined }),
+                });
               }}
               style={s.input}
             />
@@ -370,7 +401,7 @@ function Composer({
               onPress={() => void previewLink()}
               disabled={busy || previewBusy || d.draft.attempted || !d.draft.link.trim()}
             />
-            {d.draft.preview?.available && (
+            {d.draft.link.trim() && (
               <Pressable
                 accessibilityRole="link"
                 accessibilityLabel="Bağlantı önizlemesini aç"
@@ -394,24 +425,24 @@ function Composer({
                 }}
                 style={s.previewCard}
               >
-                {d.draft.preview.cover?.url && (
+                {previewCoverUrl && (
                   <Image
-                    source={api.socialImageSource(d.draft.preview.cover.url, token)}
+                    source={api.socialImageSource(previewCoverUrl, token)}
                     style={s.previewImage}
                     resizeMode="cover"
                   />
                 )}
                 <View style={{ flex: 1 }}>
                   <Text style={s.previewTitle}>
-                    {d.draft.preview.title ||
-                      d.draft.preview.site_name ||
-                      d.draft.preview.domain ||
+                    {d.draft.preview?.title ||
+                      d.draft.preview?.site_name ||
+                      d.draft.preview?.domain ||
                       d.draft.link}
                   </Text>
-                  {!!d.draft.preview.domain && (
+                  {!!d.draft.preview?.domain && (
                     <Text style={s.previewMeta}>{d.draft.preview.domain}</Text>
                   )}
-                  {!!d.draft.preview.description && (
+                  {!!d.draft.preview?.description && (
                     <Text style={s.previewDescription} numberOfLines={3}>
                       {d.draft.preview.description}
                     </Text>
@@ -420,6 +451,11 @@ function Composer({
               </Pressable>
             )}
             <Text style={s.meta}>{d.draft.media_ids.length}/4 fotoğraf</Text>
+            {d.draft.link.trim() && d.draft.media_ids.length === 4 && !selectedCoverId && (
+              <Text style={s.meta}>
+                Dört görsel yüklendiğinde ilk görsel otomatik bağlantı kapağı olur.
+              </Text>
+            )}
             {d.draft.media_ids.length > 0 && (
               <View style={s.mediaGrid}>
                 {d.draft.media_ids.map((id, index) => (
@@ -462,6 +498,36 @@ function Composer({
                         <Text style={s.mediaControlText}>›</Text>
                       </Pressable>
                     </View>
+                    {d.draft.link.trim() && (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          selectedCoverId === id
+                            ? `Bağlantı kapağı seçildi ${index + 1}`
+                            : `Bağlantı kapağı yap ${index + 1}`
+                        }
+                        accessibilityState={{ selected: selectedCoverId === id }}
+                        disabled={busy || d.draft.attempted}
+                        onPress={() =>
+                          d.update({
+                            cover_media_id: selectedCoverId === id ? undefined : id,
+                          })
+                        }
+                        style={[
+                          s.coverControl,
+                          selectedCoverId === id && s.coverControlSelected,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            s.coverControlText,
+                            selectedCoverId === id && s.coverControlTextSelected,
+                          ]}
+                        >
+                          {selectedCoverId === id ? "Bağlantı kapağı" : "Kapak yap"}
+                        </Text>
+                      </Pressable>
+                    )}
                   </View>
                 ))}
               </View>
@@ -1767,6 +1833,10 @@ const s = StyleSheet.create({
   mediaControls: { flexDirection: "row", alignItems: "center", justifyContent: "space-around", padding: 5, backgroundColor: "#EEF3F8" },
   mediaControl: { minWidth: 42, minHeight: 36, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: "white" },
   mediaControlText: { color: C.navy, fontSize: 21, fontWeight: "800" },
+  coverControl: { paddingVertical: 8, paddingHorizontal: 10, alignItems: "center", backgroundColor: "#EEF3F8" },
+  coverControlSelected: { backgroundColor: "#DCEAF5" },
+  coverControlText: { color: C.navy, fontSize: 11, fontWeight: "700" },
+  coverControlTextSelected: { color: "#075B75" },
   previewCard: { flexDirection: "row", gap: 12, alignItems: "center", padding: 10, borderWidth: 1, borderColor: C.line, borderRadius: 14, backgroundColor: "white", marginVertical: 8 },
   previewImage: { width: 88, height: 88, borderRadius: 10, backgroundColor: C.bg },
   previewTitle: { color: C.navy, fontSize: 14, fontWeight: "800", lineHeight: 19 },
