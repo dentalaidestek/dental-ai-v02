@@ -1,7 +1,7 @@
 from test_mobile_chat_actions import chat
 from app import main,mobile_api
 from sqlmodel import Session,select
-from datetime import datetime
+from datetime import datetime,timedelta
 from starlette.responses import Response
 import pytest
 
@@ -148,3 +148,72 @@ def test_calendar_pagination_is_not_truncated_by_old_first_hundred_records(progr
         assert data['next_offset']>offset
         offset=data['next_offset']
     assert ids==list(range(200,351))
+
+
+
+def test_program_cursor_pages_are_stable_for_equal_start_times(program):
+    client,engine=program
+    with Session(engine) as s:
+        old=datetime(2020,1,1,0,0)
+        for ident in range(400,520):
+            s.add(main.ScheduleEvent(
+                id=ident,owner_user_id=1,event_type='TASK',title='Synthetic cursor item',
+                start_at=datetime(2030,1,7,7,0),created_at=old,updated_at=old,
+            ))
+        s.commit()
+
+    ids=[]
+    cursor=None
+    while True:
+        params={'view':'today','day':'2030-01-07'}
+        if cursor:params['cursor']=cursor
+        response=client.get('/api/mobile/v1/program',params=params)
+        assert response.status_code==200,response.text
+        data=response.json()
+        assert data['total']==120
+        assert len(data['items'])<=50
+        ids.extend(item['event_id'] for item in data['items'])
+        cursor=data['next_cursor']
+        if cursor is None:break
+    assert ids==list(range(400,520))
+    assert len(ids)==len(set(ids))
+
+
+def test_program_cursor_rejects_scope_changes_and_invalidates_mutated_snapshots(program):
+    client,engine=program
+    old=datetime(2020,1,1,0,0)
+    with Session(engine) as s:
+        for ident in range(700,780):
+            s.add(main.ScheduleEvent(
+                id=ident,owner_user_id=1,event_type='TASK',title='Synthetic snapshot item',
+                start_at=datetime(2030,1,7,7,0),created_at=old,updated_at=old,
+            ))
+        s.commit()
+
+    first=client.get('/api/mobile/v1/program?view=today&day=2030-01-07')
+    assert first.status_code==200,first.text
+    cursor=first.json()['next_cursor']
+    assert isinstance(cursor,str) and len(cursor)>=16
+    assert client.get('/api/mobile/v1/program',params={'view':'month','day':'2030-01-07','cursor':cursor}).status_code==422
+    assert client.get('/api/mobile/v1/program',params={'view':'today','day':'2030-01-07','cursor':'not-a-valid-cursor-token'}).status_code==422
+
+    future=datetime.utcnow()+timedelta(minutes=1)
+    with Session(engine) as s:
+        s.add(main.ScheduleEvent(
+            id=900,owner_user_id=1,event_type='TASK',title='Synthetic later insert',
+            start_at=datetime(2030,1,7,7,0),created_at=future,updated_at=future,
+        ))
+        s.commit()
+    stale=client.get('/api/mobile/v1/program',params={'view':'today','day':'2030-01-07','cursor':cursor})
+    assert stale.status_code==409
+
+    refreshed=client.get('/api/mobile/v1/program?view=today&day=2030-01-07')
+    assert refreshed.status_code==200,refreshed.text
+    refreshed_cursor=refreshed.json()['next_cursor']
+    with Session(engine) as s:
+        changed=s.get(main.ScheduleEvent,750)
+        changed.updated_at=datetime.utcnow()+timedelta(minutes=2)
+        s.add(changed)
+        s.commit()
+    stale_edit=client.get('/api/mobile/v1/program',params={'view':'today','day':'2030-01-07','cursor':refreshed_cursor})
+    assert stale_edit.status_code==409

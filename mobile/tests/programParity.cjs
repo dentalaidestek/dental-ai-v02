@@ -3,7 +3,7 @@ global.IS_REACT_ACT_ENVIRONMENT=true;
 require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
 const text=node=>typeof node==='string'?node:!node?'':(node.children||[]).map(text).join('');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-const page=(view='week',title='Synthetic appointment')=>({view,focus_date:'2030-01-07',today:'2030-01-07',timezone:'Europe/Istanbul',previous_day:'2029-12-31',next_day:'2030-01-14',month_title:'Ocak 2030',copy_days:Array.from({length:7},(_,i)=>({date:new Date(Date.UTC(2030,0,7+i)).toISOString().slice(0,10),label:'Pzt'})),days:Array.from({length:view==='month'?42:view==='week'?7:1},(_,i)=>({date:new Date(Date.UTC(2030,0,7+i)).toISOString().slice(0,10),label:'Pzt',in_month:true,count:i?0:1})),items:[{key:'1:2030-01-07T10:00',event_id:1,event_type:'APPOINTMENT',title,status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:null,notes:null,recurrence_rule:'NONE'}],total:1,next_offset:null,event_types:{APPOINTMENT:'Hasta / Randevu',CLASS:'Ders'},reminders:['NONE','30'],recurrences:['NONE','WEEKLY'],suggested_start_local:'2030-01-07T10:00',suggested_end_local:'2030-01-07T10:30'});
+const page=(view='week',title='Synthetic appointment')=>({view,focus_date:'2030-01-07',today:'2030-01-07',timezone:'Europe/Istanbul',previous_day:'2029-12-31',next_day:'2030-01-14',month_title:'Ocak 2030',copy_days:Array.from({length:7},(_,i)=>({date:new Date(Date.UTC(2030,0,7+i)).toISOString().slice(0,10),label:'Pzt'})),days:Array.from({length:view==='month'?42:view==='week'?7:1},(_,i)=>({date:new Date(Date.UTC(2030,0,7+i)).toISOString().slice(0,10),label:'Pzt',in_month:true,count:i?0:1})),items:[{key:'1:2030-01-07T10:00',event_id:1,event_type:'APPOINTMENT',title,status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:null,notes:null,recurrence_rule:'NONE'}],total:1,next_offset:null,next_cursor:null,event_types:{APPOINTMENT:'Hasta / Randevu',CLASS:'Ders'},reminders:['NONE','30'],recurrences:['NONE','WEEKLY'],suggested_start_local:'2030-01-07T10:00',suggested_end_local:'2030-01-07T10:30'});
 function component(file,api){
  const exports={},native={StyleSheet:{create:x=>x},AppState:{addEventListener:()=>({remove(){}})},BackHandler:{addEventListener:()=>({remove(){}})},Alert:{alert:(...args)=>api.onAlert?.(...args)},...Object.fromEntries(['ActivityIndicator','FlatList','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
  native.FlatList=props=>React.createElement('FlatList',props,props.ListHeaderComponent,...(props.data||[]).map(item=>React.createElement(React.Fragment,{key:item.key},props.renderItem?.({item}))),props.ListEmptyComponent&&!(props.data||[]).length?props.ListEmptyComponent:null,props.ListFooterComponent);
@@ -93,5 +93,52 @@ test('calendar switches to the real month grid and opens the shared editor',asyn
  assert.equal(tree.root.findAllByType('Pressable').filter(node=>typeof node.props.accessibilityLabel==='string'&&node.props.accessibilityLabel.includes('kayıt')).length,42);
  await renderer.act(async()=>button(tree,'＋').props.onPress());
  assert.equal(tree.root.findByType('NativeProgramEditor').props.page.view,'month');
+ await renderer.act(async()=>tree.unmount());
+});
+
+
+test('program API requests opaque cursors and rejects malformed continuation tokens',async()=>{
+ const api=require('../src/programApi.ts'),original=global.fetch,cursor='program-cursor-token-00000001';
+ try{
+  let url='';
+  global.fetch=async(path)=>{url=String(path);return new Response(JSON.stringify({...page(),next_cursor:null}),{status:200})};
+  await api.getProgram('token','today','2030-01-07',cursor);
+  assert.ok(url.includes('cursor='+cursor));
+  global.fetch=async()=>new Response(JSON.stringify({...page(),next_cursor:'invalid!'}),{status:200});
+  await assert.rejects(()=>api.getProgram('token','today','2030-01-07'),/geçersiz takvim/);
+ }finally{global.fetch=original}
+});
+
+test('native calendar follows the snapshot cursor and appends pages without duplicates',async()=>{
+ const calls=[];
+ const occurrence=id=>({key:id+':2030-01-07T10:00:00+03:00',event_id:id,event_type:'TASK',title:'Synthetic '+id,status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'',patient_id:null,patient_name:null,location:null,notes:null,recurrence_rule:'NONE'});
+ const first={...page(),items:Array.from({length:50},(_,i)=>occurrence(100+i)),total:100,next_offset:50,next_cursor:'program-cursor-token-00000001'};
+ const second={...page(),items:Array.from({length:50},(_,i)=>occurrence(150+i)),total:100,next_offset:null,next_cursor:null};
+ const Program=component('NativeProgram',{getProgram:async(_token,_view,_day,cursor,offset)=>{calls.push({cursor,offset});return cursor?second:first}});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'token',userId:1}));await tick()});
+ assert.equal(tree.root.findByType('FlatList').props.data.length,50);
+ await renderer.act(async()=>button(tree,'Diğer kayıtlar').props.onPress());
+ await renderer.act(async()=>tick());
+ assert.equal(calls.length,2);
+ assert.equal(calls[1].cursor,'program-cursor-token-00000001');
+ assert.equal(calls[1].offset,0);
+ const items=tree.root.findByType('FlatList').props.data;
+ assert.equal(items.length,100);
+ assert.equal(new Set(items.map(item=>item.key)).size,100);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('native calendar retains offset pagination only for an older backend without cursor metadata',async()=>{
+ const calls=[];
+ const legacy={...page(),next_cursor:undefined,next_offset:50};
+ const next={...page(),next_cursor:undefined,next_offset:null};
+ const Program=component('NativeProgram',{getProgram:async(_token,_view,_day,cursor,offset)=>{calls.push({cursor,offset});return offset?next:legacy}});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'token',userId:1}));await tick()});
+ await renderer.act(async()=>button(tree,'Diğer kayıtlar').props.onPress());
+ await renderer.act(async()=>tick());
+ assert.equal(calls[1].cursor,undefined);
+ assert.equal(calls[1].offset,50);
  await renderer.act(async()=>tree.unmount());
 });
