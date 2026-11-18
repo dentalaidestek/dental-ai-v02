@@ -141,8 +141,9 @@ test('native clinical image cards use modality labels rather than uploaded filen
 test('saved clinical note reconciliation recognizes LF and CRLF lines without substring matches',()=>{
  const a=api(),pending={user:1,analysis:1,note:'Synthetic note',finding:'Manual finding',tooth:'36'};
  const line=a.clinicalNoteLine(pending);
- assert.equal(a.clinicalNoteIsPresent(line+'\\nOther note',pending),true);
- assert.equal(a.clinicalNoteIsPresent((line+'\\nOther note').replace(/\\n/g,'\\r\\n'),pending),true);
+ const lf=String.fromCharCode(10),crlf=String.fromCharCode(13)+lf;
+ assert.equal(a.clinicalNoteIsPresent(line+lf+'Other note',pending),true);
+ assert.equal(a.clinicalNoteIsPresent((line+lf+'Other note').replaceAll(lf,crlf),pending),true);
  assert.equal(a.clinicalNoteIsPresent('prefix '+line,pending),false);
  assert.equal(a.clinicalNoteIsPresent(null,pending),false);
 });
