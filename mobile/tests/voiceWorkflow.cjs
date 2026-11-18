@@ -32,11 +32,27 @@ test('voice transcript segments use real line breaks for display and chunk bound
  assert.equal(chunks[1],'b'.repeat(7000));
 });
 
-function recorderUI({saved=null,transcribe=async()=>({transcript:'Synthetic dictated speech',revision:'r'}),stopFailures=0,restoredFileInfo={exists:true,size:1024}}={}){
+
+test('interrupted recovery enforces the native audio byte range and preserves transcript',()=>{
+ const api=require('../src/voiceSession.ts');
+ const draft={...api.newVoiceDraft(1,8,1000),transcript:'Önceki metin',segments:[{id:'bounded',uri:'file:///cache/bounded.m4a',ready:false}]};
+ const tooSmall=api.recoverInterruptedVoiceSegment(draft,'bounded',{exists:true,size:99});
+ assert.equal(tooSmall.segments[0].ready,false);
+ const tooLarge=api.recoverInterruptedVoiceSegment(draft,'bounded',{exists:true,size:8*1024*1024+1});
+ assert.equal(tooLarge.segments[0].ready,false);
+ const valid=api.recoverInterruptedVoiceSegment(draft,'bounded',{exists:true,size:100});
+ assert.equal(valid.segments[0].ready,true);
+ const missing=api.recoverInterruptedVoiceSegment(draft,'bounded',{exists:false});
+ assert.equal(missing.segments.length,0);
+ assert.equal(missing.transcript,'Önceki metin');
+ assert.throws(()=>api.discardInterruptedVoiceSegment(valid,'bounded'),/Tamamlanmış/);
+});
+
+function recorderUI({saved=null,transcribe=async()=>({transcript:'Synthetic dictated speech',revision:'r'}),stopFailures=0,stopFailureStopsRecorder=false,restoredFileInfo={exists:true,size:1024}}={}){
  const exports={},store=new Map(),calls=[],timers=[],files=new Map(),state={isRecording:false,durationMillis:0,mediaServicesDidReset:false};
  if(saved){try{for(const segment of JSON.parse(saved).segments||[])files.set(segment.uri,{...restoredFileInfo})}catch{}}
  let audioUri='file:///cache/record-0.m4a',stopFailuresRemaining=stopFailures;
- const audio={get uri(){return audioUri},prepareToRecordAsync:async options=>{if(!options?.extension)throw Error('iOS segment preparation must receive fresh recording options');const index=calls.filter(value=>value==='prepare').length+1;audioUri='file:///cache/record-'+index+'.m4a';files.set(audioUri,{exists:true,size:1024});calls.push('prepare')},record(){state.isRecording=true;calls.push('record')},stop:async()=>{calls.push('stop');if(stopFailuresRemaining>0){stopFailuresRemaining--;throw Error('Synthetic stop failure')}state.isRecording=false}};
+ const audio={get uri(){return audioUri},prepareToRecordAsync:async options=>{if(!options?.extension)throw Error('iOS segment preparation must receive fresh recording options');const index=calls.filter(value=>value==='prepare').length+1;audioUri='file:///cache/record-'+index+'.m4a';files.set(audioUri,{exists:true,size:1024});calls.push('prepare')},record(){state.isRecording=true;calls.push('record')},stop:async()=>{calls.push('stop');if(stopFailuresRemaining>0){stopFailuresRemaining--;if(stopFailureStopsRecorder)state.isRecording=false;throw Error('Synthetic stop failure')}state.isRecording=false}};
  let focused=true,clockNow=Date.now(),nextInterval=0;const intervals=new Map();
  const secure={getItemAsync:async key=>store.get(key)||null,setItemAsync:async(k,v)=>store.set(k,v),deleteItemAsync:async k=>store.delete(k)};
  const native={StyleSheet:{create:x=>x},Alert:{alert(){}},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Pressable','Text','TextInput','View'].map(x=>[x,x]))};
@@ -253,6 +269,21 @@ test('missing interrupted audio removes only its receipt and preserves earlier t
  assert.equal(JSON.parse(h.store.get('draft')).segments.length,0);
  assert.equal(JSON.parse(h.store.get('draft')).transcript,'Korunacak önceki metin');
  assert.equal(transcripts.at(-1),'Korunacak önceki metin');
+ await renderer.act(async()=>tree.unmount());
+});
+
+
+test('a recorder that stopped before returning an error exposes safe finalization without a second stop',async()=>{
+ const asr=[],h=recorderUI({stopFailures:1,stopFailureStopsRecorder:true,transcribe:async(...args)=>{asr.push(args);return{transcript:'Güvenli biçimde tamamlandı',revision:'r'}}});let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished(){}})));
+ await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());
+ await renderer.act(async()=>button(tree,'Ⅱ  Duraklat').props.onPress());
+ assert.ok(button(tree,'Ses bölümünü güvenle tamamla'));
+ await renderer.act(async()=>button(tree,'Ses bölümünü güvenle tamamla').props.onPress());
+ assert.equal(h.calls.filter(value=>value==='stop').length,1);
+ assert.equal(asr.length,1);
+ assert.equal(JSON.parse(h.store.get('draft')).segments.length,0);
+ assert.ok(JSON.parse(h.store.get('draft')).transcript.includes('Güvenli biçimde tamamlandı'));
  await renderer.act(async()=>tree.unmount());
 });
 
