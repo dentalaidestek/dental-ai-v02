@@ -321,3 +321,39 @@ test('Dental Flow reconnect refresh is event-driven, owner-only and bounded',()=
  assert.doesNotMatch(source,/setInterval\s*\(/,'reconnect refresh must not introduce polling');
 });
 
+
+
+test('comment refresh invalidates an in-flight page lease without wedging the next cursor',async()=>{
+ const h=harness(),pending=[];
+ const deferred=()=>{let resolve;const promise=new Promise(r=>{resolve=r});return {promise,resolve}};
+ h.setGetCommentsHandler((_token,_postId,after)=>{
+  if(after===0)return Promise.resolve({items:[{id:10,text:'root',author_name:'A',parent_id:null}],next_cursor:10});
+  if(after===10){const item=deferred();pending.push(item);return item.promise;}
+  if(after===20)return Promise.resolve({items:[],next_cursor:null});
+  throw Error('unexpected cursor '+after);
+ });
+ const props={token:'synthetic',userId:2,post:{id:5,comments_closed:false},onClose(){},onProfile(){}};
+ h.render('Comments',props);await tick();
+ let tree=h.render('Comments',props),list=nodes(tree).find(n=>n.type==='FlatList');
+ assert.ok(list,'comments use the native paged list');
+ list.props.ListFooterComponent.props.onPress();
+ assert.equal(h.requests.length,2,'the first older-page request starts');
+ list.props.onRefresh();
+ await tick();
+ tree=h.render('Comments',props);list=nodes(tree).find(n=>n.type==='FlatList');
+ list.props.ListFooterComponent.props.onPress();
+ assert.equal(h.requests.length,4,'refresh releases the stale page lease so the current cursor can be requested again');
+ assert.equal(h.requests[3][2],10);
+ pending[0].resolve({items:[{id:11,text:'stale page',author_name:'A',parent_id:null}],next_cursor:20});
+ await tick();
+ tree=h.render('Comments',props);list=nodes(tree).find(n=>n.type==='FlatList');
+ list.props.ListFooterComponent.props.onPress();
+ assert.equal(h.requests.length,4,'a stale finally block must not release the newer page request lease');
+ pending[1].resolve({items:[{id:21,text:'current page',author_name:'B',parent_id:null}],next_cursor:20});
+ await tick();
+ tree=h.render('Comments',props);list=nodes(tree).find(n=>n.type==='FlatList');
+ assert.equal(list.props.ListFooterComponent.props.disabled,false);
+ list.props.ListFooterComponent.props.onPress();await tick();
+ assert.equal(h.requests.length,5,'pagination continues from the current page cursor');
+ assert.equal(h.requests[4][2],20);
+});
