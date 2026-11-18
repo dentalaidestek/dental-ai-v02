@@ -55,3 +55,12 @@ GitHub Actions, önceki istekteki bildirim gürültüsünü artırmamak için `w
 Fiziksel Android ve iOS'ta pinch hassasiyeti, VoiceOver/TalkBack, ekran döndürme, arka plana alma, zayıf ağ ve büyük görüntü kabulü açık kalıyor. 60.000 kullanıcı kapasitesi bu iş kapsamında ölçülmedi.
 
 PR #257 açık/Draft kalır. Main merge, canlı deploy, production migration, APK/IPA yayını veya hasta verisi işlemi yapılmadı.
+
+## Isolated verification follow-up
+
+- An isolated Node harness copied the committed pan/zoom/swipe/index helper logic and passed 8 assertions, including the portrait/landscape pan bounds and exact zero normalization.
+- The helper and native viewer component passed an isolated strict TypeScript compile with minimal React Native declarations. This checks the component's TS syntax and local types, not the complete app's installed Expo/React Native type graph.
+- The committed `socialMediaViewer.cjs` is registered in both package and manual Security Recovery scripts, but the actual repository test file was not run with `npm ci` or the full mobile workspace. No full-app typecheck, Expo export, Android build or device result is claimed.
+- A strict equality edge case was found during the isolated pan check: clamping could return negative zero on a centered axis. The helper now canonicalizes both zero offsets to positive zero, making pan results deterministic.
+
+Final branch HEAD after this follow-up: `38a7540682717fc895972c8e6899ad9e44ee086e`.
