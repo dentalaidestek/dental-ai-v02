@@ -23,14 +23,16 @@ Reviewed the authenticated web flow first:
   - stop at `VISION_READY`, `VISION_ERROR`, `AI_ANALYZED`, `AI_FINAL` and other terminal analysis states;
   - stop when the latest work job is `DONE`, `FAILED` or `CANCELLED`;
   - use 15s → 30s → 60s fallback delays with bounded ±10% jitter;
-  - cap one automatic refresh sequence at 40 attempts.
+  - cap one automatic refresh sequence at 40 attempts;
+  - retry transport/5xx/429 failures with backoff, but stop immediately on authentication, ownership, missing-resource, conflict or validation errors;
+  - stale responses invalidated by a newer foreground/realtime/manual read cannot schedule another timer.
 - `NativeDentalAI` now uses a one-shot timeout rather than a fixed 15-second interval. Foreground return, matching analysis realtime events and the manual “Sonucu Yenile” action restart the bounded sequence. Background state does not keep a timer loop alive.
 - Existing owner checks, patient/analysis ID matching, account-scope guards, durable upload receipt, encrypted local image intent and clinician approval rules remain unchanged. No provider, prompt, clinical taxonomy, endpoint, database schema or production setting changed.
 
 ## Regression coverage
 
 - `mobile/tests/analysisApi.cjs`: accepts a synthetic image-backed `VISION/QUEUED` envelope and rejects unknown job kinds.
-- `mobile/tests/analysisRefresh.cjs`: terminal analysis/job states, 15/30/60-second backoff, jitter bounds, 40-attempt cap and absence of the old fixed interval.
+- `mobile/tests/analysisRefresh.cjs`: terminal analysis/job states, 15/30/60-second backoff, jitter bounds, 40-attempt cap, permanent-vs-transient error handling, stale-response guard and absence of the old fixed interval.
 - Both test files were already included in `npm run test:beta` / `npm run test:realtime`; no new workflow or CI trigger was added.
 
 ## Verification and remaining limits
