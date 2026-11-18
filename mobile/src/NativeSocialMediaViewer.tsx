@@ -67,7 +67,7 @@ export default function NativeSocialMediaViewer({
   const [index, setIndex] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<SocialPan>({ x: 0, y: 0 });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const indexRef = useRef(0);
