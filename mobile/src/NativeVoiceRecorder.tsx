@@ -244,14 +244,14 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
  return <View style={s.card}>
   <View style={s.header}>
    <View style={s.headerCopy}><Text style={s.eyebrow}>SESLİ MUAYENE</Text><Text style={s.title}>Görüşme kaydı</Text></View>
-   <View style={s.timerPill}><Text style={s.timer}>{formatVoiceElapsed(elapsedMs)}</Text></View>
+   {view.audioStarted&&<View style={s.timerPill}><Text style={s.timer}>{formatVoiceElapsed(elapsedMs)}</Text></View>}
   </View>
   <View style={s.hero}>
-   <View style={[s.micCircle,recording&&s.micCircleActive]}><Text style={s.micGlyph}>🎙</Text></View>
+   {view.audioStarted&&<View style={[s.micCircle,recording&&s.micCircleActive]}><Text style={s.micGlyph}>🎙</Text></View>}
    <Text accessibilityLiveRegion="polite" style={s.phase}>{phaseLabel}</Text>
    <Text style={s.meta}>{recording?'Mikrofon açık':transcribing?'Ses bölümleri güvenli şekilde yazıya çevriliyor':view.ended?'Mikrofon kapalı · Görüşme bitti':view.audioStarted?'Mikrofon kapalı · Devam edebilirsiniz':'Mikrofon kapalı · Yalnızca başlattığınızda açılır'}</Text>
-   <View accessibilityRole="progressbar" accessibilityLabel="Mikrofon ses seviyesi" accessibilityValue={{min:0,max:100,now:Math.round(level*100)}} style={s.levelTrack}><View style={[s.levelFill,{width:(Math.round(level*100)+'%') as `${number}%`}]} /></View>
-   <View style={s.wave} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{WAVE_BARS.map((height,index)=><View key={index} style={[s.waveBar,{height:recording?Math.max(5,Math.round(height*(0.25+level))):4,opacity:recording?0.55+level*0.45:0.24}]} />)}</View>
+   {recording&&<View accessibilityRole="progressbar" accessibilityLabel="Mikrofon ses seviyesi" accessibilityValue={{min:0,max:100,now:Math.round(level*100)}} style={s.levelTrack}><View style={[s.levelFill,{width:(Math.round(level*100)+'%') as `${number}%`}]} /></View>}
+   {recording&&<View style={s.wave} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{WAVE_BARS.map((height,index)=><View key={index} style={[s.waveBar,{height:Math.max(5,Math.round(height*(0.25+level)))}]} />)}</View>}
   </View>
   <Text style={s.helper}>Konuşma, kısa ses bölümleri tamamlandıkça yazıya çevrilir. Klinik değerlendirme yalnızca “Muayeneyi bitir” işleminden sonra başlar. Ham ses ve tam konuşma metni hasta dosyasına otomatik kaydedilmez.</Text>
   {transcriptPreview?<View style={s.preview}><Text style={s.previewLabel}>SON ALINAN KONUŞMA METNİ</Text><Text selectable numberOfLines={4} style={s.previewText}>{transcriptPreview}</Text></View>:null}
@@ -275,14 +275,14 @@ const s=StyleSheet.create({
  headerCopy:{flex:1,gap:3},eyebrow:{fontSize:10,fontWeight:'800',letterSpacing:1.3,color:'#397C98'},
  title:{fontSize:18,fontWeight:'800',color:'#071B35'},timerPill:{backgroundColor:'#EAF2F8',borderRadius:12,paddingHorizontal:13,paddingVertical:8},
  timer:{fontVariant:['tabular-nums'],fontSize:18,fontWeight:'800',color:'#102A46'},
- hero:{alignItems:'center',paddingVertical:13,gap:8},micCircle:{width:94,height:94,borderRadius:47,backgroundColor:'#102A46',alignItems:'center',justifyContent:'center',borderWidth:5,borderColor:'#EAF2F8'},
- micCircleActive:{backgroundColor:'#1769AA',borderColor:'#D8ECFA'},micGlyph:{fontSize:38,color:'#FFFFFF'},phase:{fontSize:18,fontWeight:'800',color:'#102A46'},
+ hero:{alignItems:'center',paddingVertical:8,gap:8},micCircle:{width:76,height:76,borderRadius:38,backgroundColor:'#102A46',alignItems:'center',justifyContent:'center',borderWidth:4,borderColor:'#EAF2F8'},
+ micCircleActive:{backgroundColor:'#1769AA',borderColor:'#D8ECFA'},micGlyph:{fontSize:30,color:'#FFFFFF'},phase:{fontSize:18,fontWeight:'800',color:'#102A46'},
  meta:{color:'#63748A',lineHeight:20,textAlign:'center'},levelTrack:{height:5,width:'78%',backgroundColor:'#E8EDF3',borderRadius:99,overflow:'hidden'},
- levelFill:{height:5,backgroundColor:'#2B82B8',borderRadius:99},wave:{height:32,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5},
+ levelFill:{height:5,backgroundColor:'#2B82B8',borderRadius:99},wave:{height:24,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:5},
  waveBar:{width:4,borderRadius:4,backgroundColor:'#2B82B8'},helper:{color:'#63748A',lineHeight:20,fontSize:13},
  preview:{padding:12,borderRadius:12,backgroundColor:'#F4F8FB',borderWidth:1,borderColor:'#DCE8F0',gap:6},
  previewLabel:{fontSize:10,fontWeight:'800',letterSpacing:0.7,color:'#397C98'},previewText:{color:'#102A46',lineHeight:20},
- controls:{flexDirection:'row',gap:9},button:{flex:1,minHeight:48,padding:13,borderRadius:12,backgroundColor:'#E8F0FF',alignItems:'center',justifyContent:'center'},
+ controls:{flexDirection:'column',gap:9},button:{width:'100%',minHeight:48,padding:13,borderRadius:12,backgroundColor:'#E8F0FF',alignItems:'center',justifyContent:'center'},
  primaryButton:{backgroundColor:'#102A46'},disabledButton:{opacity:0.42},action:{color:'#1769AA',fontWeight:'800',textAlign:'center'},primaryAction:{color:'#FFFFFF'},
  cleanupButton:{padding:12,borderRadius:10,borderWidth:1,borderColor:'#DCE4ED',alignItems:'center'},cleanupText:{color:'#1769AA',fontWeight:'700',textAlign:'center'},
  retryNotice:{padding:10,borderRadius:10,backgroundColor:'#FFF7E8',gap:8},retryText:{color:'#8A4B0F',lineHeight:20},
