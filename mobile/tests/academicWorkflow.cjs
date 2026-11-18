@@ -220,6 +220,7 @@ test('native course creation persists a stable request key and retries the exact
   courseCreateReceipt:async()=>null
  });
  const tree=await openLibrary(h);
+ await renderer.act(async()=>button(tree,'Yeni Ders').props.onPress());
  const fields=tree.root.findAllByType('TextInput');
  await renderer.act(async()=>fields.find(n=>n.props.placeholder==='Ders adı').props.onChangeText('Synthetic receipt course'));
  await renderer.act(async()=>fields.find(n=>n.props.placeholder==='Açıklama').props.onChangeText('Synthetic description'));
@@ -246,6 +247,7 @@ test('native course creation resolves a lost response from the server receipt wi
   courseCreateReceipt:async()=>{receiptReads++;return committed}
  });
  const tree=await openLibrary(h);
+ await renderer.act(async()=>button(tree,'Yeni Ders').props.onPress());
  const field=tree.root.findAllByType('TextInput').find(n=>n.props.placeholder==='Ders adı');
  await renderer.act(async()=>field.props.onChangeText('Synthetic committed course'));
  await renderer.act(async()=>{button(tree,'Dersi Oluştur').props.onPress();await new Promise(r=>setImmediate(r))});
