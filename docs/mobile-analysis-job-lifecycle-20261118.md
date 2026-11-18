@@ -38,7 +38,8 @@ Reviewed the authenticated web flow first:
 ## Verification and remaining limits
 
 - GitHub source inspection confirmed the web/backend/native status and job-kind contract described above.
-- The pure refresh policy is small and independently executable; full repository Node/React tests, `npm run typecheck`, pytest, Expo export and Gradle were not run in this connector-only workspace.
+- The exact `analysisRefresh.ts` policy was compiled with `tsc --noEmit --strict --target es2020` against a minimal type-only `MobileAnalysis` declaration: passed. An isolated Node run executed 13 lifecycle/terminal-state assertions and 7 backoff/jitter/attempt-cap assertions: all passed.
+- The committed `analysisApi.cjs` and `analysisRefresh.cjs` suites were not run as repository test files. Full repository `npm run typecheck`, `npm run test:beta`, `npm run test:realtime`, pytest, Expo export and Gradle were not run in this connector-only workspace.
 - At starting HEAD `b78bd8523df165b276fc4572897038e6124e42c5`, GitHub returned no PR workflow runs and no combined status entries. The last documented older-head Android/Security runs failed before steps (`runner_id=0`, empty steps, `BlobNotFound 404`); compiler, Gradle and pytest did not start. This does not establish a source-level TypeScript failure or a passing CI result. The exact hosted-runner/account/billing cause remains unavailable from the returned GitHub records.
 
 No main merge, production deploy, migration, APK/IPA publication or clinical-record mutation was performed.
