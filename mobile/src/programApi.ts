@@ -30,8 +30,8 @@ export async function saveProgramEvent(token:string,draft:ProgramDraft,eventId?:
 export async function programAction(token:string,eventId:number,action:'complete'|'delete'|'copy',days?:string[]){if(action==='copy'&&(!days?.length||days.length>7||days.some(day=>!/^\d{4}-\d{2}-\d{2}$/.test(day))))throw Error('Kopyalanacak günleri seçin.');const result=await request<{ok:boolean}>(`/program/events/${id(eventId)}`+(action==='delete'?'':`/${action}`),token,{method:action==='delete'?'DELETE':'POST',...(action==='copy'?{body:JSON.stringify({days})}:{})});if(result.ok!==true)throw Error('Program işlemi doğrulanamadı. Takvimi yenileyin.');return result;}
 
 export async function checkProgramConflicts(token:string,draft:ProgramDraft,eventId?:number){
- const result=await request<{advisory:boolean;total:number;items:Array<{id:number;title:string;start_local:string}>}>('/program/conflicts'+(eventId!==undefined?`?exclude_id=${id(eventId)}`:''),token,{method:'POST',body:JSON.stringify(programPayload(draft))});
- if(result.advisory!==true||!Number.isSafeInteger(result.total)||result.total<0||!Array.isArray(result.items)||result.items.length>10||result.items.some(item=>!item||!Number.isSafeInteger(item.id)||typeof item.title!=='string'||!validWallTime(item.start_local)))throw Error('Saat çakışması kontrol edilemedi. Yeniden deneyin.');
+ const result=await request<{advisory:boolean;total:number}>('/program/conflicts'+(eventId!==undefined?`?exclude_id=${id(eventId)}`:''),token,{method:'POST',body:JSON.stringify(programPayload(draft))});
+ if(result.advisory!==true||!Number.isSafeInteger(result.total)||result.total<0)throw Error('Saat çakışması kontrol edilemedi. Yeniden deneyin.');
  return result;
 }
 
