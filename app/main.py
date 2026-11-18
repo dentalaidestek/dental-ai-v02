@@ -30,6 +30,7 @@ from dental_rag.rag import (
 )
 from app.clinical_rag_router import route_clinical_case
 from app.clinical_media import sanitize_clinical_media_image
+from app.tooth_surface_status import upsert_tooth_observation, upsert_tooth_surface_observation
 from app.vision_llm_context import structured_vision_payload
 from app.modality_classifier import classify_dental_image
 from vision_service.tooth_evidence import build_tooth_evidence_package
@@ -10637,61 +10638,16 @@ def update_tooth_status(
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
 
-        # Diş yüzeyi seçildiyse yüzey durumunu kaydet
-        allowed_surfaces = {
-            "OCCLUSAL",
-            "INCISAL",
-            "MESIAL",
-            "DISTAL",
-            "BUCCAL",
-            "LINGUAL",
-        }
-
+        normalized_note = note.strip() if note else None
+        updated_at = _utcnow_naive()
         if surface:
-            if surface not in allowed_surfaces:
-                return HTMLResponse("Geçersiz diş yüzeyi", status_code=400)
-
-            existing_surface = s.exec(
-                select(ToothSurfaceStatus).where(
-                    (ToothSurfaceStatus.patient_id == patient_id)
-                    & (ToothSurfaceStatus.tooth_number == tooth_number)
-                    & (ToothSurfaceStatus.surface == surface)
-                )
-            ).first()
-
-            if existing_surface:
-                existing_surface.status = status
-                existing_surface.note = note.strip() if note else None
-                existing_surface.updated_at = _utcnow_naive()
-            else:
-                surface_status = ToothSurfaceStatus(
-                    patient_id=patient_id,
-                    tooth_number=tooth_number,
-                    surface=surface,
-                    status=status,
-                    note=note.strip() if note else None,
-                )
-                s.add(surface_status)
-
-        existing = s.exec(
-            select(ToothStatus).where(
-                (ToothStatus.patient_id == patient_id)
-                & (ToothStatus.tooth_number == tooth_number)
+            upsert_tooth_surface_observation(
+                s, ToothSurfaceStatus, patient_id, tooth_number,
+                surface, status, normalized_note, updated_at,
             )
-        ).first()
-
-        if existing:
-            existing.status = status
-            existing.note = note.strip() if note else None
-            existing.updated_at = _utcnow_naive()
-        else:
-            tooth = ToothStatus(
-                patient_id=patient_id,
-                tooth_number=tooth_number,
-                status=status,
-                note=note.strip() if note else None,
-            )
-            s.add(tooth)
+        upsert_tooth_observation(
+            s, ToothStatus, patient_id, tooth_number, status, normalized_note, updated_at,
+        )
 
 
         # A clinical observation is not evidence that a procedure was performed.

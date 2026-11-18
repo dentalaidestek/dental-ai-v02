@@ -27,6 +27,7 @@ from sqlmodel import SQLModel, Session, func, select, Field as SQLField
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
 from app.clinical_media import sanitize_clinical_media_image
+from app.tooth_surface_status import upsert_tooth_observation, upsert_tooth_surface_observation
 from app.upload_limits import (MAX_PATIENT_MEDIA_FILES, MAX_PATIENT_MEDIA_FILE_BYTES, MAX_PATIENT_MEDIA_BATCH_BYTES, MAX_ANALYSIS_IMAGE_BYTES, MAX_ANALYSIS_BATCH_BYTES)
 from app.work_jobs import WorkJob
 from starlette.requests import Request
@@ -772,69 +773,17 @@ def mobile_update_tooth_surface(
         patient = session.get(Patient, patient_id)
         if not patient or patient.owner_user_id != user.id:
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
-        surface = session.exec(select(ToothSurfaceStatus).where(
-            ToothSurfaceStatus.patient_id == patient_id,
-            ToothSurfaceStatus.tooth_number == tooth_number,
-            ToothSurfaceStatus.surface == surface_name,
-        )).first()
         note = payload.note.strip() if payload.note else None
-        if surface:
-            surface.status, surface.note, surface.updated_at = payload.status, note, datetime.utcnow()
-        else:
-            session.add(ToothSurfaceStatus(patient_id=patient_id, tooth_number=tooth_number,
-                surface=surface_name, status=payload.status, note=note))
-        realtime = _record_realtime_event(session, user.id, "TOOTH_UPDATED", "patient", patient_id,
-            {"patient_id": patient_id, "tooth_number": tooth_number, "surface": surface_name, "surface_status": payload.status})
-        session.commit()
-        on_loop(_publish_realtime_event, realtime)
-        return {"ok": True, "tooth_number": tooth_number, "surface": surface_name, "status": payload.status}
-
-
-@router.post("/patients/{patient_id}/teeth/{tooth_number}")
-def mobile_update_tooth(
-    patient_id: int,
-    tooth_number: str,
-    payload: MobileToothUpdate,
-    user: User = Depends(_mobile_user),
-):
-    if not _valid_fdi_tooth_number(tooth_number):
-        raise HTTPException(status_code=422, detail="Geçersiz FDI diş numarası.")
-    if payload.note is not None and len(payload.note) > 2000:
-        raise HTTPException(status_code=422, detail="Diş notu 2000 karakteri aşamaz.")
-    allowed_statuses = {"HEALTHY","CARIES","FILLING","CROWN","ROOT_CANAL","EXTRACTED","IMPLANT","OTHER"}
-    allowed_surfaces = {"OCCLUSAL","INCISAL","MESIAL","DISTAL","BUCCAL","LINGUAL"}
-    if payload.status not in allowed_statuses:
-        raise HTTPException(status_code=422, detail="Geçersiz diş durumu.")
-    if payload.surface and payload.surface not in allowed_surfaces:
-        raise HTTPException(status_code=422, detail="Geçersiz diş yüzeyi.")
-    if payload.surfaces is not None and (len(payload.surfaces) > 6 or len(set(payload.surfaces)) != len(payload.surfaces) or any(surface not in allowed_surfaces for surface in payload.surfaces)):
-        raise HTTPException(status_code=422, detail="Geçersiz veya tekrarlanan diş yüzeyi.")
-    if payload.surface and payload.surfaces is not None:
-        raise HTTPException(status_code=422, detail="Tekil ve çoklu yüzey birlikte gönderilemez.")
-    requested_surfaces = payload.surfaces if payload.surfaces is not None else ([payload.surface] if payload.surface else [])
-    with Session(engine, expire_on_commit=False) as session:
-        patient = session.get(Patient, patient_id)
-        if not patient or patient.owner_user_id != user.id:
-            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
-        note = payload.note.strip() if payload.note else None
-        tooth = session.exec(select(ToothStatus).where(
-            ToothStatus.patient_id == patient_id,
-            ToothStatus.tooth_number == tooth_number,
-        )).first()
-        if tooth:
-            tooth.status, tooth.note, tooth.updated_at = payload.status, note, datetime.utcnow()
-        else:
-            session.add(ToothStatus(patient_id=patient_id,tooth_number=tooth_number,status=payload.status,note=note))
+        updated_at = _utcnow_naive()
+        upsert_tooth_observation(
+            session, ToothStatus, patient_id, tooth_number,
+            payload.status, note, updated_at,
+        )
         for surface_name in requested_surfaces:
-            surface = session.exec(select(ToothSurfaceStatus).where(
-                ToothSurfaceStatus.patient_id == patient_id,
-                ToothSurfaceStatus.tooth_number == tooth_number,
-                ToothSurfaceStatus.surface == surface_name,
-            )).first()
-            if surface:
-                surface.status, surface.note, surface.updated_at = payload.status, note, datetime.utcnow()
-            else:
-                session.add(ToothSurfaceStatus(patient_id=patient_id,tooth_number=tooth_number,surface=surface_name,status=payload.status,note=note))
+            upsert_tooth_surface_observation(
+                session, ToothSurfaceStatus, patient_id, tooth_number,
+                surface_name, payload.status, note, updated_at,
+            )
         # Tooth chart status describes an observation, not a completed procedure.
         # Completed treatment records must be created via the dedicated treatments API.
         realtime=_record_realtime_event(session,user.id,"TOOTH_UPDATED","patient",patient_id,{"patient_id":patient_id,"tooth_number":tooth_number,"status":payload.status,"surface":payload.surface,"surfaces":requested_surfaces,"note":note})
