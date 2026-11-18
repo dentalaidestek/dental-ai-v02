@@ -48,7 +48,10 @@ def encryption_key(value: str | None = None) -> bytes:
         raise ReceiptKeyUnavailable(
             "VOICE_ASR_RECEIPT_KEY must be configured as 64 hexadecimal characters."
         )
-    return bytes.fromhex(raw)
+    key = bytes.fromhex(raw)
+    # Verify AES-GCM support before any paid transcription or clinical provider call.
+    _cipher()
+    return key
 
 
 def receipt_dedupe_key(owner_id: int, patient_id: int, request_key: str) -> str:
