@@ -2626,7 +2626,15 @@ def mobile_experts_alias(user:User=Depends(_mobile_user),q:str=Query("",max_leng
         return {"items":items}
 
 @router.get("/patients/{patient_id}/media")
-def mobile_patient_media(patient_id: int, before: Optional[int] = Query(None, ge=1), limit: int = Query(40, ge=1, le=100), user: User = Depends(_mobile_user)):
+def mobile_patient_media(
+    patient_id: int,
+    response: Response,
+    before: Optional[int] = Query(None, ge=1),
+    limit: int = Query(40, ge=1, le=100),
+    user: User = Depends(_mobile_user),
+):
+    # Clinical filenames, notes and media URLs must never enter shared caches.
+    _mobile_private_no_store(response)
     with Session(engine, expire_on_commit=False) as session:
         patient = session.get(Patient, patient_id)
         if not patient or patient.owner_user_id != user.id:
