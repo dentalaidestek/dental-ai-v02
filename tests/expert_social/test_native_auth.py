@@ -52,10 +52,64 @@ def test_native_cannot_bypass_origin_or_use_cookie_as_bearer_fallback(env):
     c.headers['Origin']='https://unrelated.example'
     assert c.put('/api/expert-social/experts/3/follow',json={'followed':True}).status_code == 403
 
-def test_native_admin_token_has_no_moderation_authority(env):
-    c,_=env
-    native(c,'t4')
-    assert c.get('/api/expert-social/moderation').status_code == 403
+@pytest.mark.parametrize(
+    ("method", "path", "kwargs"),
+    [
+        ("get", "/api/expert-social/moderation", {}),
+        ("get", "/api/expert-social/reports", {}),
+        ("get", "/api/expert-social/moderation/POST/1", {}),
+        ("post", "/api/expert-social/moderation/POST/1", {
+            "json": {
+                "status": "PUBLISHED",
+                "version": 1,
+                "reason": "Güvenlik regresyonu",
+            },
+        }),
+    ],
+)
+def test_native_admin_bearer_cannot_access_any_social_moderation_route(env, method, path, kwargs):
+    c, _ = env
+    native(c, "t4")
+    response = getattr(c, method)(path, **kwargs)
+    assert response.status_code == 403, response.text
+
+
+def test_native_admin_bearer_cannot_reuse_a_verified_browser_cookie(env):
+    c, engine = env
+    with Session(engine) as session:
+        admin = session.get(main.User, 4)
+        assert admin is not None
+        session.add(main.AdminVerifiedSession(
+            token_hash=main.hash_session_token("t4"),
+            user_id=admin.id,
+        ))
+        session.commit()
+    native(c, "t4")
+    c.cookies.set(main.SESSION_COOKIE, "t4")
+    assert c.get("/api/expert-social/moderation").status_code == 403
+
+
+def test_web_admin_moderation_still_requires_verified_session(env):
+    c, engine = env
+    c.headers.pop("Authorization", None)
+    c.cookies.clear()
+    c.cookies.set(main.SESSION_COOKIE, "t4")
+    assert c.get("/api/expert-social/moderation").status_code == 403
+    with Session(engine) as session:
+        admin = session.get(main.User, 4)
+        assert admin is not None
+        admin.role = "ADMIN"
+        admin.is_active = True
+        admin.email = main.ADMIN_FIXED_EMAIL
+        admin.email_verified_at = main._utcnow_naive()
+        session.add(admin)
+        session.add(main.AdminVerifiedSession(
+            token_hash=main.hash_session_token("t4"),
+            user_id=admin.id,
+        ))
+        session.commit()
+    response = c.get("/api/expert-social/moderation")
+    assert response.status_code == 200, response.text
 
 def test_native_profile_photo_preserves_block_and_member_scope(env, monkeypatch, tmp_path):
     c,engine=env
