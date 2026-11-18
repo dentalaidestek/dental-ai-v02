@@ -10627,7 +10627,7 @@ def update_tooth_status(
     status: str = Form(...),
     note: Optional[str] = Form(None),
     surface: Optional[str] = Form(None),
-    expected_revision: Optional[str] = Form(None),
+    expected_revision: str = Form(...),
     expected_surface_revision: Optional[str] = Form(None),
 ):
     allowed_statuses = {
@@ -10657,9 +10657,12 @@ def update_tooth_status(
     if not user:
         return RedirectResponse("/login", status_code=303)
 
-    for revision in (expected_revision, expected_surface_revision):
-        if revision and not re.fullmatch(r"[0-9a-f]{64}", revision):
-            return HTMLResponse("Diş kaydı sürümü geçersiz. Sayfayı yenileyin.", status_code=422)
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_revision):
+        return HTMLResponse("Diş kaydı sürümü eksik veya geçersiz. Sayfayı yenileyin.", status_code=422)
+    if surface and not re.fullmatch(r"[0-9a-f]{64}", expected_surface_revision or ""):
+        return HTMLResponse("Diş yüzeyi sürümü eksik veya geçersiz. Sayfayı yenileyin.", status_code=422)
+    if expected_surface_revision and not re.fullmatch(r"[0-9a-f]{64}", expected_surface_revision):
+        return HTMLResponse("Diş yüzeyi sürümü geçersiz. Sayfayı yenileyin.", status_code=422)
     with Session(engine, expire_on_commit=False) as s:
         patient = s.exec(select(Patient).where(Patient.id == patient_id).with_for_update()).first()
 
@@ -10672,7 +10675,7 @@ def update_tooth_status(
         current_tooth = s.exec(select(ToothStatus).where(
             ToothStatus.patient_id == patient_id, ToothStatus.tooth_number == tooth_number
         )).first()
-        if expected_revision and not hmac.compare_digest(
+        if not hmac.compare_digest(
             observation_revision(current_tooth, kind="tooth", patient_id=patient_id, tooth_number=tooth_number),
             expected_revision,
         ):
@@ -10683,7 +10686,7 @@ def update_tooth_status(
                 ToothSurfaceStatus.tooth_number == tooth_number,
                 ToothSurfaceStatus.surface == surface,
             )).first()
-            if expected_surface_revision and not hmac.compare_digest(
+            if not hmac.compare_digest(
                 observation_revision(current_surface, kind="surface", patient_id=patient_id,
                                      tooth_number=tooth_number, surface=surface),
                 expected_surface_revision,
