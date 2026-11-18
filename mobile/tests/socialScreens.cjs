@@ -311,7 +311,7 @@ test('Dental Flow keeps a safe link card visible when metadata preview is unavai
 test('Dental Flow reconnect refresh is event-driven, owner-only and bounded',()=>{
  const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
  const helper=fs.readFileSync(require.resolve('../src/socialModerationRefresh.ts'),'utf8');
- assert.match(source,/AppState\\.addEventListener\\(\\s*"change"/);
+ assert.match(source,/AppState\.addEventListener\(\s*"change"/);
  assert.ok(source.includes('navigation?.addListener?.("focus"'));
  assert.ok(source.includes('api.getPostModerationStatus'));
  assert.ok(source.includes('selectOwnedModerationCandidates(pages.items)'));
