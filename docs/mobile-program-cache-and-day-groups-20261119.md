@@ -34,9 +34,13 @@ A separate native/web presentation gap was also confirmed: the web groups weekly
 - The boundary check uses the complete ordered FlatList data, so appending a later cursor page does not repeat the heading when the next page continues the same day.
 - Month markers, day selection, pagination, copy-day filtering and mutation controls are unchanged.
 
+## Conflict-advice query cost
+
+A follow-up scale review traced the conflict-advice path through `_user_schedule_occurrences`. That helper hydrated every referenced Patient row after expanding events, but the conflict endpoint returns only an overlap count and never reads patient details. The helper now has an explicit `include_patient_details` option (defaulting to the existing behavior); conflict advice passes `False`, avoiding the unnecessary patient SELECT and in-memory patient map while keeping the same owner-scoped ScheduleEvent query and overlap calculation.
+
 ## Regression coverage
 
-- `tests/test_mobile_program_parity.py` checks cache headers on calendar reads, conflict advice, create/edit acknowledgements, event detail, mutation receipt, copy, complete and delete.
+- `tests/test_mobile_program_parity.py` checks cache headers on calendar reads, conflict advice, create/edit acknowledgements, event detail, mutation receipt, copy, complete and delete; it also asserts a patient-linked conflict query performs no patient hydration SELECT.
 - `mobile/tests/programParity.cjs` verifies that multiple same-day events share one heading and the next day gets a new heading.
 - The Python test module is already included by the Security Recovery workflow; the native test is already part of `npm run test:beta`.
 
