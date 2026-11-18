@@ -20,10 +20,13 @@ test('current voice extraction displays the exact bounded interview quote',()=>{
  assert.equal(result.edited,false);
 });
 
-test('previous approved history is never labelled as a current interview statement',()=>{
+test('previous approved history is not presented as a verbatim transcript quote',()=>{
  const result=present({quote:'Önceki muayenede astım beyanı.',origin:'history',edited:true});
- assert.equal(result.label,'Önceki hekim onaylı kayıttaki dayanak');
- assert.equal(result.quote,'Önceki muayenede astım beyanı.');
+ assert.equal(result.label,'Önceki hekim onaylı alan değeri');
+ assert.equal(result.quote,'');
+ assert.equal(result.hasEvidence,false);
+ assert.equal(result.fromHistory,true);
+ assert.match(result.notice,/Özgün konuşma alıntısı hasta dosyasında saklanmıyor/);
  assert.equal(result.edited,true);
 });
 
@@ -49,4 +52,9 @@ test('both native review and final approval render provenance before any save',(
  assert.match(approval,/<VoiceEvidence item=\{item\}\/>/);
  assert.match(approval,/<VoiceEvidence item=\{\{quote:t\.quote\}\}\/>/);
  assert.ok(approval.includes("Object.fromEntries(fields.map(name=>[name,review.review.fields?.[name]?.value||'']))"));
+ assert.match(entry,/evidence\.notice/);
+ assert.match(approval,/evidence\.notice/);
+ const web=fs.readFileSync(path.join(__dirname,'../../app/static/voice-exam.js'),'utf8');
+ assert.match(web,/Özgün konuşma alıntısı hasta dosyasında saklanmıyor/);
+ assert.match(web,/item\.origin==='history'/);
 });
