@@ -5,7 +5,7 @@ const api=require('../src/voiceApi.ts');
 const response=(body,status=200)=>({ok:status>=200&&status<300,status,text:async()=>body});
 test('voice extraction sends consent, bearer and patient path',async()=>{
  const original=global.fetch;let call;global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review:{fields:{}}}))};
- try{const result=await api.extractVoice('secret',12,'muayene konuşması',{sessionId:'session_1234567890'});assert.equal(result.ok,true);assert.match(call.url,/\/patients\/12\/voice-exam\/text$/);assert.equal(call.init.headers.Authorization,'Bearer secret');assert.deepEqual(JSON.parse(call.init.body),{transcript:'muayene konuşması',consent:true,context:{},request_key:'session_1234567890_0'})}finally{global.fetch=original}
+ try{const result=await api.extractVoice('secret',12,'muayene konuşması',{sessionId:'session_1234567890'});assert.equal(result.ok,true);assert.match(call.url,/\/patients\/12\/voice-exam\/text$/);assert.equal(call.init.headers.Authorization,'Bearer secret');assert.deepEqual(JSON.parse(call.init.body),{transcript:'muayene konuşması',consent:true,context:{},request_key:'session_1234567890_0_0000000000000000'})}finally{global.fetch=original}
 });
 test('voice API surfaces HTTP errors without masking details',async()=>{
  const original=global.fetch;global.fetch=async()=>response(JSON.stringify({detail:'Hasta erişim yetkisi yok'}),403);
