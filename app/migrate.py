@@ -289,7 +289,7 @@ def _upgrade_program_query_indexes(main):
                 current = connection.execute(
                     text('SELECT version FROM dental_schema_revision WHERE id=1')
                 ).scalar()
-                if current != REVISION:
+                if current != PROGRAM_QUERY_INDEX_REVISION:
                     raise RuntimeError('Schema changed during Program query index migration')
         finally:
             connection.execute(
