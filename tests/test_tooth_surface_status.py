@@ -21,9 +21,25 @@ def test_web_and_native_tooth_writes_converge_on_one_owner_scoped_row(chat, monk
         is_active=True, email_verified_at=main._utcnow_naive(),
     )
     monkeypatch.setattr(main, "get_current_user", lambda _request: web_user)
+    chart_page = client.get("/patients/8/teeth")
+    assert chart_page.status_code == 200, chart_page.text
+    tooth_revision = re.search(
+        r'name="expected_revision" id="toothExpectedRevision" value="([a-f0-9]{64})"', chart_page.text
+    ).group(1)
+    surface_revision = re.search(
+        r'name="expected_surface_revision" id="surfaceExpectedRevision" value=""', chart_page.text
+    )
+    # The surface revision is populated by the chart's selection handler; use the
+    # server-provided deterministic snapshot for the requested FDI surface.
+    surface_snapshot = client.get("/api/mobile/v1/patients/8")
+    empty_surface_revision = mobile_api.observation_revision(
+        None, kind="surface", patient_id=8, tooth_number="36", surface="MESIAL"
+    )
     web = client.post(
         "/patients/8/teeth/36",
-        data={"status": "CARIES", "note": "web observation", "surface": "MESIAL"},
+        data={"status": "CARIES", "note": "web observation", "surface": "MESIAL",
+              "expected_revision": tooth_revision,
+              "expected_surface_revision": empty_surface_revision},
         follow_redirects=False,
     )
     assert web.status_code == 303, web.text
