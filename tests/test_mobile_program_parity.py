@@ -328,3 +328,67 @@ def test_mobile_program_api_rejects_overlong_location_and_notes(program):
     notes=client.post('/api/mobile/v1/program/events',json={**values,'request_key':'program-length-limit-000002','notes':'x'*2001})
     assert location.status_code==422
     assert notes.status_code==422
+
+
+def _assert_program_private_no_store(response):
+    assert response.headers.get("cache-control") == "private, no-store"
+    assert response.headers.get("pragma") == "no-cache"
+    assert "authorization" in response.headers.get("vary", "").lower()
+
+
+def test_mobile_program_routes_prevent_caching_of_account_scoped_calendar_data(program):
+    client, _ = program
+    values = {
+        "event_type": "APPOINTMENT",
+        "title": "Synthetic private calendar entry",
+        "start_at": "2030-01-07T10:00",
+        "end_at": "2030-01-07T10:30",
+        "patient_id": 8,
+        "reminder_minutes": "NONE",
+        "recurrence_rule": "NONE",
+        "request_key": "program-private-cache-000001",
+    }
+
+    calendar = client.get("/api/mobile/v1/program?view=week&day=2030-01-07")
+    assert calendar.status_code == 200, calendar.text
+    _assert_program_private_no_store(calendar)
+
+    conflicts = client.post("/api/mobile/v1/program/conflicts", json=values)
+    assert conflicts.status_code == 200, conflicts.text
+    _assert_program_private_no_store(conflicts)
+
+    created = client.post("/api/mobile/v1/program/events", json=values)
+    assert created.status_code == 200, created.text
+    _assert_program_private_no_store(created)
+    event_id = created.json()["event"]["id"]
+
+    detail = client.get(f"/api/mobile/v1/program/events/{event_id}")
+    assert detail.status_code == 200, detail.text
+    _assert_program_private_no_store(detail)
+
+    receipt = client.get("/api/mobile/v1/program/mutations/program-private-cache-000001")
+    assert receipt.status_code == 200, receipt.text
+    _assert_program_private_no_store(receipt)
+
+    edited = client.put(
+        f"/api/mobile/v1/program/events/{event_id}",
+        json={**values, "title": "Synthetic private calendar entry edited",
+              "start_at": "2030-01-07T11:00", "end_at": "2030-01-07T11:30"},
+    )
+    assert edited.status_code == 200, edited.text
+    _assert_program_private_no_store(edited)
+
+    copied = client.post(
+        f"/api/mobile/v1/program/events/{event_id}/copy",
+        json={"days": ["2030-01-08"]},
+    )
+    assert copied.status_code == 200, copied.text
+    _assert_program_private_no_store(copied)
+
+    completed = client.post(f"/api/mobile/v1/program/events/{event_id}/complete")
+    assert completed.status_code == 200, completed.text
+    _assert_program_private_no_store(completed)
+
+    deleted = client.delete(f"/api/mobile/v1/program/events/{event_id}")
+    assert deleted.status_code == 200, deleted.text
+    _assert_program_private_no_store(deleted)
