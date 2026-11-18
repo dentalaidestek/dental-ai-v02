@@ -1,10 +1,11 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
-import {ActivityIndicator,Pressable,Text,View} from 'react-native';
+import {ActivityIndicator,AppState,Pressable,Text,View} from 'react-native';
 import {useIsFocused} from '@react-navigation/native';
 import {getVoiceHistory} from './voiceApi';
 import type {VoiceHistory} from './voiceApi';
 import {useRealtime} from './realtime';
 import {patientVoiceHistoryRows} from './patientVoiceHistoryPresentation';
+import {shouldRefreshPatientVoiceHistoryOnResume} from './patientVoiceHistoryRefresh';
 
 export default function NativePatientVoiceHistory({token,patientId}:{token:string;patientId:number}){
  const focused=useIsFocused(),{lastEvent}=useRealtime(),scope=token+':'+patientId;
@@ -29,6 +30,18 @@ export default function NativePatientVoiceHistory({token,patientId}:{token:strin
  useEffect(()=>{
   if(focused)void load();
   return()=>{generation.current++};
+ },[focused,load]);
+ useEffect(()=>{
+  // The profile's base patient payload refreshes on resume, but the separately
+  // loaded, doctor-approved anamnesis has its own request and cache scope.
+  // Refresh it on a real foreground transition without adding a polling loop.
+  let previousState=AppState.currentState;
+  const subscription=AppState.addEventListener('change',nextState=>{
+   const shouldRefresh=shouldRefreshPatientVoiceHistoryOnResume(previousState,nextState,focused);
+   previousState=nextState;
+   if(shouldRefresh)void load();
+  });
+  return()=>subscription.remove();
  },[focused,load]);
  useEffect(()=>{
   if(!lastEvent)return;
