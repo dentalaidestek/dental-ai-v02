@@ -7,6 +7,8 @@ test('native moderation grant stays in memory and closes on blur, background and
  assert.match(source,/AppState\.addEventListener\("change"/);
  assert.match(source,/expiresAt\s*-\s*Date\.now\(\)/);
  assert.match(source,/revokeSocialAdminStepUp\(token, current\)/);
+ assert.match(source,/isStepUpRequired\(e\)/);
+ assert.match(source,/clearGrant\(true\)/);
  assert.doesNotMatch(source,/SecureStore|AsyncStorage|setItemAsync|localStorage/);
 });
 
