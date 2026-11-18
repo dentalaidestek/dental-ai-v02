@@ -8,7 +8,7 @@ function component(file,api){
  const exports={},native={StyleSheet:{create:x=>x},AppState:{addEventListener:()=>({remove(){}})},BackHandler:{addEventListener:()=>({remove(){}})},Alert:{alert:(...args)=>api.onAlert?.(...args)},...Object.fromEntries(['ActivityIndicator','FlatList','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
  native.FlatList=props=>React.createElement('FlatList',props,props.ListHeaderComponent,...(props.data||[]).map(item=>React.createElement(React.Fragment,{key:item.key},props.renderItem?.({item}))),props.ListEmptyComponent&&!(props.data||[]).length?props.ListEmptyComponent:null,props.ListFooterComponent);
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/'+file+'.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
- vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true,usePreventRemove:()=>{}}:name==='./programApi'?{checkProgramConflicts:async()=>({advisory:true,total:0,items:[]}),getProgramMutation:async()=>({state:'NOT_FOUND'}),...api}:name==='./programIntent'?{loadProgramRequestKey:async()=>null,getOrCreateProgramRequestKey:async()=> 'program-request-key-00000001',clearProgramRequestKey:async()=>{}}:name==='./programModel'?require('../src/programModel.ts'):name==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'SYNTHETIC',first_name:'Synthetic'}})}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:{default:name.slice(2)}});
+ vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true,usePreventRemove:()=>{}}:name==='./programApi'?{checkProgramConflicts:async()=>({advisory:true,total:0,items:[]}),getProgramMutation:async()=>({state:'NOT_FOUND'}),verifyProgramAction:async()=> 'UNKNOWN',...api}:name==='./programIntent'?{loadProgramRequestKey:async()=>null,getOrCreateProgramRequestKey:async()=> 'program-request-key-00000001',clearProgramRequestKey:async()=>{},loadProgramActionIntent:async()=>null,saveProgramActionIntent:async()=>{},clearProgramActionIntent:async()=>{},...api}:name==='./programModel'?require('../src/programModel.ts'):name==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'SYNTHETIC',first_name:'Synthetic'}})}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:{default:name.slice(2)}});
  return exports.default;
 }
 const button=(tree,label)=>tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>text(child)===label));
@@ -251,25 +251,88 @@ test('uncertain program edit does not claim success when the server still has ol
 });
 
 
-test('uncertain calendar actions require a successful server refresh before unlocking',async()=>{
- let reads=0,actions=0;
+test('uncertain calendar action stays locked until the exact server event state is verified',async()=>{
+ let reads=0,actions=0,verifications=0,clears=0;
  const timeout=Object.assign(new Error('network timeout'),{status:408});
  const Program=component('NativeProgram',{
-  getProgram:async()=>{reads++;if(reads===1)return page();if(reads===2)throw new Error('refresh unavailable');return page('week','Server refreshed');},
-  programAction:async()=>{actions++;throw timeout}
+  getProgram:async()=>{reads++;return page('week','Fresh server calendar');},
+  programAction:async()=>{actions++;throw timeout},
+  verifyProgramAction:async()=>{verifications++;return verifications===1?'UNKNOWN':'APPLIED';},
+  saveProgramActionIntent:async()=>{},
+  clearProgramActionIntent:async()=>{clears++;}
  });
  let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'token',userId:1}));await tick()});
  await renderer.act(async()=>button(tree,'İşlemler').props.onPress());
  await renderer.act(async()=>button(tree,'Tamamlandı').props.onPress());
  assert.equal(actions,1);
- assert.equal(button(tree,'Kontrol ettim, işlemlere devam et'),undefined);
- assert.ok(button(tree,'Takvimi sunucudan yenile'));
- await renderer.act(async()=>button(tree,'Takvimi sunucudan yenile').props.onPress());
- assert.ok(button(tree,'Takvimi sunucudan yenile'));
- await renderer.act(async()=>button(tree,'Takvimi sunucudan yenile').props.onPress());
- assert.equal(reads,3);
- assert.equal(button(tree,'Takvimi sunucudan yenile'),undefined);
- assert.equal(tree.root.findByType('FlatList').props.data[0].title,'Server refreshed');
+ assert.ok(button(tree,'İşlemi sunucuda doğrula'));
+ await renderer.act(async()=>button(tree,'İşlemi sunucuda doğrula').props.onPress());
+ assert.equal(verifications,1);
+ assert.ok(button(tree,'İşlemi sunucuda doğrula'));
+ await renderer.act(async()=>button(tree,'İşlemi sunucuda doğrula').props.onPress());
+ assert.equal(verifications,2);
+ assert.equal(clears,1);
+ assert.equal(reads,2);
+ assert.equal(button(tree,'İşlemi sunucuda doğrula'),undefined);
+ assert.equal(tree.root.findByType('FlatList').props.data[0].title,'Fresh server calendar');
  await renderer.act(async()=>tree.unmount());
 });
+
+test('restored pending Program action is verified before the calendar unlocks',async()=>{
+ const intent={version:1,action:'delete',event_id:1};
+ let verifications=0,clears=0;
+ const Program=component('NativeProgram',{
+  getProgram:async()=>page(),
+  loadProgramActionIntent:async()=>intent,
+  verifyProgramAction:async(_token,value)=>{verifications++;assert.deepEqual(value,intent);return 'APPLIED';},
+  clearProgramActionIntent:async(_userId,value)=>{clears++;assert.deepEqual(value,intent);}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'token',userId:1}));await tick()});
+ assert.ok(button(tree,'İşlemi sunucuda doğrula'));
+ await renderer.act(async()=>button(tree,'İşlemi sunucuda doğrula').props.onPress());
+ assert.equal(verifications,1);
+ assert.equal(clears,1);
+ assert.equal(button(tree,'İşlemi sunucuda doğrula'),undefined);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('a confirmed not-applied Program action unlocks only after its intent is cleared',async()=>{
+ let actions=0,clears=0;
+ const timeout=Object.assign(new Error('network timeout'),{status:408});
+ const Program=component('NativeProgram',{
+  getProgram:async()=>page(),
+  programAction:async()=>{actions++;throw timeout},
+  verifyProgramAction:async()=> 'NOT_APPLIED',
+  saveProgramActionIntent:async()=>{},
+  clearProgramActionIntent:async()=>{clears++;}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'token',userId:1}));await tick()});
+ await renderer.act(async()=>button(tree,'İşlemler').props.onPress());
+ await renderer.act(async()=>button(tree,'Tamamlandı').props.onPress());
+ assert.ok(button(tree,'İşlemi sunucuda doğrula'));
+ await renderer.act(async()=>button(tree,'İşlemi sunucuda doğrula').props.onPress());
+ assert.equal(clears,1);
+ assert.equal(button(tree,'İşlemi sunucuda doğrula'),undefined);
+ assert.equal(button(tree,'Tamamlandı').props.disabled,false);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('copy verification follows the snapshot cursor to find a later target-day page',async()=>{
+ const api=require('../src/programApi.ts'),original=global.fetch,cursor='program-cursor-token-00000001';
+ const source={id:1,event_type:'APPOINTMENT',title:'Synthetic source',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:8,patient_name:'Synthetic',location:'Clinic',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const occurrence=(id,title='Other')=>({key:id+':2030-01-08T09:00',event_id:id,event_type:'TASK',title,status:'ACTIVE',start_local:'2030-01-08T09:00',end_local:'2030-01-08T09:30',patient_id:null,patient_name:null,location:null,notes:null,recurrence_rule:'NONE'});
+ const first={...page('today'),focus_date:'2030-01-08',days:[{date:'2030-01-08',label:'8',in_month:true,count:51,event_types:[],has_more:false}],copy_days:Array.from({length:7},(_,i)=>({date:new Date(Date.UTC(2030,0,8+i)).toISOString().slice(0,10),label:'Gün'})),items:Array.from({length:50},(_,i)=>occurrence(100+i)),total:51,next_cursor:cursor,next_offset:null};
+ const target={...occurrence(999,'Synthetic source'),event_type:'APPOINTMENT',start_local:'2030-01-08T10:00',end_local:'2030-01-08T10:30',patient_id:8,location:'Clinic',notes:''};
+ const second={...first,items:[target],next_cursor:null,next_offset:null};
+ try{
+  const calls=[];
+  global.fetch=async(url)=>{const value=String(url);calls.push(value);if(value.includes('/program/events/1'))return new Response(JSON.stringify({event:source}),{status:200});if(value.includes('cursor='+cursor))return new Response(JSON.stringify(second),{status:200});return new Response(JSON.stringify(first),{status:200});};
+  const result=await api.verifyProgramAction('token',{version:1,action:'copy',event_id:1,days:['2030-01-08']});
+  assert.equal(result,'APPLIED');
+  assert.equal(calls.length,3);
+ }finally{global.fetch=original}
+});
+
