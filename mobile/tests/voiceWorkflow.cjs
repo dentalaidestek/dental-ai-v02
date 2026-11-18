@@ -223,13 +223,17 @@ test('native voice transcript matches the web 72k/216KB chunk contract without s
  const cjk='漢'.repeat(72000),webDraft=new web.FinishDraft();assert.equal(api.voiceUtf8Bytes(cjk),216000);assert.equal(api.splitVoiceTranscript(cjk).join(''),cjk);webDraft.set(cjk);assert.deepEqual(api.splitVoiceTranscript(cjk),web.splitTranscript(cjk));assert.throws(()=>api.splitVoiceTranscript('ç'.repeat(72001)),/72.000/);
 });
 
-test('voice extraction checkpoint is scoped to account, patient, transcript and expiry',()=>{
- const api=require('../src/voiceSession.ts'),hash='a'.repeat(64),checkpoint={version:1,userId:1,patientId:8,transcriptHash:hash,cursor:2,revision:'b'.repeat(64),review:{fields:{}},updatedAt:100000},raw=JSON.stringify(checkpoint);
- assert.deepEqual(api.parseVoiceExtractionCheckpoint(raw,1,8,hash,3,100001),checkpoint);
- assert.equal(api.parseVoiceExtractionCheckpoint(raw,2,8,hash,3,100001),null);
- assert.equal(api.parseVoiceExtractionCheckpoint(raw,1,9,hash,3,100001),null);
- assert.equal(api.parseVoiceExtractionCheckpoint(raw,1,8,'c'.repeat(64),3,100001),null);
- assert.equal(api.parseVoiceExtractionCheckpoint(raw,1,8,hash,3,100000+86400001),null);
+test('voice extraction checkpoint is scoped to account, patient, transcript, exam session and expiry',()=>{
+ const api=require('../src/voiceSession.ts'),hash='a'.repeat(64),sessionId='11111111-1111-4111-8111-111111111111',otherSession='22222222-2222-4222-8222-222222222222';
+ const checkpoint={version:1,userId:1,patientId:8,sessionId,transcriptHash:hash,cursor:2,revision:'b'.repeat(64),review:{fields:{}},updatedAt:100000},raw=JSON.stringify(checkpoint);
+ assert.equal(api.newVoiceDraft(1,8,100000,sessionId).sessionId,sessionId);
+ assert.deepEqual(api.parseVoiceExtractionCheckpoint(raw,1,8,hash,3,sessionId,100001),checkpoint);
+ assert.equal(api.parseVoiceExtractionCheckpoint(raw,1,8,hash,3,otherSession,100001),null);
+ assert.equal(api.parseVoiceExtractionCheckpoint(JSON.stringify({...checkpoint,sessionId:undefined}),1,8,hash,3,sessionId,100001),null);
+ assert.equal(api.parseVoiceExtractionCheckpoint(raw,2,8,hash,3,sessionId,100001),null);
+ assert.equal(api.parseVoiceExtractionCheckpoint(raw,1,9,hash,3,sessionId,100001),null);
+ assert.equal(api.parseVoiceExtractionCheckpoint(raw,1,8,'c'.repeat(64),3,sessionId,100001),null);
+ assert.equal(api.parseVoiceExtractionCheckpoint(raw,1,8,hash,3,sessionId,100000+86400001),null);
 });
 
 test('native extraction processes web-sized chunks sequentially and resumes after the last saved chunk',async()=>{
