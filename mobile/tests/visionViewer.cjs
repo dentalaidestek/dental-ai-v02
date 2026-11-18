@@ -204,3 +204,23 @@ test('switching assets during an in-flight vision request discards stale finding
  assert.ok(text(t.toJSON()).includes('Current asset result'));
  await renderer.act(async()=>t.unmount());
 });
+
+
+test('web radiograph and intraoral viewers preselect only permanent FDI teeth like native',()=>{
+ for(const file of ['radiograph_viewer.js','intraoral_viewer.js']){
+  const source=fs.readFileSync(require.resolve('../../vision_service/templates/'+file),'utf8');
+  const start=source.indexOf('const teeth=['),end=source.indexOf(';panel.innerHTML',start);
+  assert.ok(start>=0&&end>start,file+' treatment selection block exists');
+  const snippet=source.slice(start,end);
+  const select=new Function('findings',snippet+';return [...selected]');
+  const selected=select(()=>[
+   {fdi:'36'},
+   {tooth_id:'11'},
+   {tooth:'55'},
+   {fdi:'3A'},
+   {fdi:'18'},
+  ]);
+  assert.deepEqual(selected.sort(),['11','18','36']);
+  assert.ok(!snippet.includes('\\\\d{2}'),'viewer must not use the escaped digit matcher');
+ }
+});
