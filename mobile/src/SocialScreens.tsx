@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -30,6 +31,11 @@ import {
   chunkedDraftStore,
 } from "./socialDraft";
 import { usePagedRecords } from "./usePagedRecords";
+import {
+  createModerationResumeGate,
+  isSocialAppResume,
+  selectOwnedModerationCandidates,
+} from "./socialModerationRefresh";
 import NativeSocialMediaViewer from "./NativeSocialMediaViewer";
 
 const C = {
@@ -1137,19 +1143,17 @@ function PostCard({
     }
   };
   async function refreshModeration() {
-    if (moderationLock.current || busy || followBusy) return;
+    if (!post.owned || moderationLock.current || busy || followBusy) return;
     moderationLock.current = true;
     setModerationBusy(true);
     setError("");
     try {
-      const latest = await api.getPost(token, post.id);
+      const latest = await api.getPostModerationStatus(token, post.id);
       onUpdate({
         ...post,
-        ...latest,
-        author_specialty: post.author_specialty ?? latest.author_specialty,
-        author_followed: post.author_followed ?? latest.author_followed,
-        author_support_available:
-          post.author_support_available ?? latest.author_support_available,
+        status: latest.status,
+        version: latest.version,
+        moderation: latest.moderation,
       });
     } catch (e) {
       setError(message(e));
@@ -1528,6 +1532,93 @@ export function DentalFlow({
     false,
     true,
   );
+  const moderationRefreshLock = useRef(false);
+  const moderationResumeGate = useRef(createModerationResumeGate());
+  const sessionScope = useRef({ userId: user.id, token });
+  sessionScope.current = { userId: user.id, token };
+  const refreshVisibleModeration = useCallback(async () => {
+    if (moderationRefreshLock.current) return;
+    const candidates = selectOwnedModerationCandidates(pages.items);
+    if (!candidates.length) return;
+    moderationRefreshLock.current = true;
+    const requestUserId = user.id;
+    const requestToken = token;
+    try {
+      // At most five owned, unpublished cards are checked, two requests at a time.
+      // No timer/polling is used; this runs only after an app or navigation resume.
+      for (let offset = 0; offset < candidates.length; offset += 2) {
+        const batch = candidates.slice(offset, offset + 2);
+        await Promise.all(
+          batch.map(async (candidate) => {
+            try {
+              const latest = await api.getPostModerationStatus(
+                requestToken,
+                candidate.id,
+              );
+              if (
+                sessionScope.current.userId !== requestUserId ||
+                sessionScope.current.token !== requestToken
+              ) {
+                return;
+              }
+              pages.setItems((current) =>
+                current.map((item) =>
+                  item.id === candidate.id &&
+                  item.owned &&
+                  item.version <= latest.version
+                    ? {
+                        ...item,
+                        status: latest.status,
+                        version: latest.version,
+                        moderation: latest.moderation,
+                      }
+                    : item,
+                ),
+              );
+            } catch {
+              // Resume refresh is best-effort. The visible manual retry remains available.
+            }
+          }),
+        );
+      }
+    } finally {
+      moderationRefreshLock.current = false;
+    }
+  }, [pages.items, pages.setItems, token, user.id]);
+  const requestResumeModerationRefresh = useCallback(() => {
+    if (moderationResumeGate.current()) {
+      void refreshVisibleModeration();
+    }
+  }, [refreshVisibleModeration]);
+  useEffect(() => {
+    let previousState = AppState.currentState;
+    let hasBlurred = false;
+    const resumeIfFocused = () => {
+      if (navigation?.isFocused?.() === false) return;
+      requestResumeModerationRefresh();
+    };
+    const appStateSubscription = AppState.addEventListener(
+      "change",
+      (nextState) => {
+        const resumed = isSocialAppResume(previousState, nextState);
+        previousState = nextState;
+        if (resumed) resumeIfFocused();
+      },
+    );
+    const removeBlur = navigation?.addListener?.("blur", () => {
+      hasBlurred = true;
+    });
+    const removeFocus = navigation?.addListener?.("focus", () => {
+      if (!hasBlurred) return;
+      hasBlurred = false;
+      resumeIfFocused();
+    });
+    return () => {
+      appStateSubscription.remove();
+      if (typeof removeBlur === "function") removeBlur();
+      if (typeof removeFocus === "function") removeFocus();
+    };
+  }, [navigation, requestResumeModerationRefresh]);
   const update = (p: api.SocialPost | null, id: number) =>
     pages.setItems((v) =>
       p ? v.map((x) => (x.id === id ? p : x)) : v.filter((x) => x.id !== id),
