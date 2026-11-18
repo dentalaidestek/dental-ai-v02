@@ -4,7 +4,8 @@ const API_BASE = "https://dentalai.tr/api/mobile/v1";
 export type User={id:number;username:string;email?:string|null;display_name:string;role:string;is_active:boolean;email_verified_at?:string|null;professional_title?:string|null;specialty?:string|null;university?:string|null};
 export type Patient={id:number;tc_kimlik_no?:string|null;address?:string|null;anonymous_id:string;first_name?:string|null;last_name?:string|null;phone?:string|null;birth_date?:string|null;age?:number|null;chief_complaint?:string|null;created_at?:string};
 export type Dashboard={user:User;stats:{patient_count:number;analysis_count:number;upcoming_event_count:number};recent_patients:Patient[];upcoming_events:Array<{id:number;event_type:string;title:string;start_at:string;end_at?:string|null;patient_id?:number|null;location?:string|null;status:string}>};
-export type PatientDetail={patient:Patient;edit_revision?:string;teeth:Array<{id:number;tooth_number:string;status:string;note?:string|null}>;surfaces:Array<{id:number;tooth_number:string;surface:string;status:string;note?:string|null;updated_at?:string|null}>;treatments:Array<{id:number;tooth_number?:string|null;treatment_name:string;treatment_date?:string|null;material?:string|null;doctor_note?:string|null;result?:string|null;edit_revision?:string}>;media:Array<{id:number;original_filename:string;file_path:string;media_type:string;tooth_number?:string|null;note?:string|null;uploaded_at?:string}>};
+export type PatientTreatment={id:number;tooth_number?:string|null;treatment_name:string;treatment_date?:string|null;material?:string|null;doctor_note?:string|null;result?:string|null;edit_revision?:string;analysis_id?:number|null;created_at?:string};
+export type PatientDetail={patient:Patient;edit_revision?:string;teeth:Array<{id:number;tooth_number:string;status:string;note?:string|null}>;surfaces:Array<{id:number;tooth_number:string;surface:string;status:string;note?:string|null;updated_at?:string|null}>;treatments:PatientTreatment[];treatments_next_cursor?:string|null;media:Array<{id:number;original_filename:string;file_path:string;media_type:string;tooth_number?:string|null;note?:string|null;uploaded_at?:string}>};
 
 export class ApiError extends Error {
  readonly status:number;
@@ -61,12 +62,14 @@ export async function getPatients(token:string,q="",offset=0){
   throw Error("Hasta sunucusundan geçersiz liste alındı. Yeniden deneyin.");
  return result;
 }
+const validTreatmentHistoryCursor=(value:unknown):value is string=>typeof value==="string"&&/^[A-Za-z0-9_-]{24,512}$/.test(value);
 export async function getPatient(token:string,id:number){
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz hasta kimliği.");
  const result=await request<PatientDetail>("/patients/"+id,token);
  if(!result?.patient||result.patient.id!==id||
     (result.edit_revision!==undefined&&(typeof result.edit_revision!=="string"||!/^[a-f0-9]{64}$/.test(result.edit_revision)))||
-    !Array.isArray(result.teeth)||!Array.isArray(result.surfaces)||!Array.isArray(result.treatments)||!Array.isArray(result.media)||
+    !Array.isArray(result.teeth)||!Array.isArray(result.surfaces)||!Array.isArray(result.treatments)||result.treatments.length>3||!Array.isArray(result.media)||
+    (result.treatments_next_cursor!==undefined&&result.treatments_next_cursor!==null&&!validTreatmentHistoryCursor(result.treatments_next_cursor))||
     result.teeth.some(t=>!t||!validFdiTooth(t.tooth_number)||!validToothStatuses.has(t.status as ToothStatusCode))||
     result.surfaces.some(s=>!s||!validFdiTooth(s.tooth_number)||!validToothSurfaces.has(s.surface as ToothSurfaceCode)||!validToothStatuses.has(s.status as ToothStatusCode)||(s.updated_at!=null&&typeof s.updated_at!=="string"))||
     result.treatments.some(t=>!t||!Number.isSafeInteger(t.id)||t.id<=0||typeof t.treatment_name!=="string"||(t.tooth_number!=null&&!validFdiTooth(t.tooth_number))||(t.edit_revision!==undefined&&(typeof t.edit_revision!=="string"||!/^[a-f0-9]{64}$/.test(t.edit_revision))))||
@@ -74,6 +77,24 @@ export async function getPatient(token:string,id:number){
   throw Error("Hasta sunucusundan beklenmeyen profil alındı. Yeniden deneyin.");
  return result;
 }
+export type PatientTreatmentPage={items:PatientTreatment[];next_cursor:string|null};
+export async function getPatientTreatments(token:string,id:number,cursor:string):Promise<PatientTreatmentPage>{
+ if(!Number.isSafeInteger(id)||id<=0)throw new Error("Geçersiz hasta kimliği.");
+ if(!validTreatmentHistoryCursor(cursor))throw new Error("Tedavi geçmişi sayfalama imleci geçersiz.");
+ const result=await request<PatientTreatmentPage>(`/patients/${id}/treatments?cursor=${encodeURIComponent(cursor)}`,token);
+ if(!Array.isArray(result?.items)||result.items.length>20||
+    result.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0||typeof item.treatment_name!=="string"||
+      (item.tooth_number!=null&&!validFdiTooth(item.tooth_number))||
+      typeof item.edit_revision!=="string"||!/^[a-f0-9]{64}$/.test(item.edit_revision)||
+      typeof item.created_at!=="string"||
+      (item.analysis_id!=null&&(!Number.isSafeInteger(item.analysis_id)||item.analysis_id<=0)))||
+    new Set(result.items.map(item=>item.id)).size!==result.items.length||
+    !(result.next_cursor===null||validTreatmentHistoryCursor(result.next_cursor))||
+    (result.next_cursor!==null&&(result.next_cursor===cursor||result.items.length!==20)))
+  throw new ApiError(502,"Tedavi geçmişi sayfası doğrulanamadı. Geçmişi yenileyin.");
+ return result;
+}
+
 export type TreatmentPayload={treatment_name:string;tooth_number?:string;treatment_date?:string;material?:string;doctor_note?:string;result?:string};
 export type TreatmentMutationResult={ok:boolean;treatment_id:number;edit_revision:string;replayed:boolean};
 function validateTreatmentTarget(patientId:number,payload:TreatmentPayload,treatmentId:number|undefined,requestKey:string,expectedRevision?:string){
