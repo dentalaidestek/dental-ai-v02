@@ -444,5 +444,6 @@ test('native tooth and surface writes carry the exact loaded observation revisio
  assert.match(chart,/expected_revision:currentTooth\?\.revision\?\?null/);
  assert.match(chart,/expected_revision:currentSurface\?\.revision\?\?null/);
  assert.match(api,/expected_revision:string\|null/);
- assert.match(api,/payload\.expected_revision!==null&&!\/\^\[a-f0-9\]\{64\}\$\//);
+ assert.ok(api.includes('payload.expected_revision!==null&&!/^[a-f0-9]{64}$/.test'));
+ assert.ok(api.includes('surface_revisions?:Record<string,string|null>'));
 });
