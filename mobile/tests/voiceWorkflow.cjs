@@ -391,4 +391,9 @@ test('native voice recorder exposes the web session microphone, timer, meter and
  assert.match(source,/SON ALINAN KONUŞMA METNİ/);
  assert.match(source,/isMeteringEnabled:true/);
  assert.match(source,/voiceDeviceSignalLevel\(status\.metering\)/);
+ assert.match(source,/\\{view\\.audioStarted&&<View style=\\{\\[s\\.micCircle/,'the microphone focal point appears only after recording has started');
+ assert.match(source,/\\{recording&&<View accessibilityRole="progressbar"/,'the live level meter is shown only while recording');
+ assert.match(source,/micCircle:\\{width:76,height:76/,'the native microphone stays compact');
+ assert.match(source,/controls:\\{flexDirection:'column'/,'primary voice actions remain full-width and vertically ordered');
+ assert.match(source,/button:\\{width:'100%',minHeight:48/);
 });
