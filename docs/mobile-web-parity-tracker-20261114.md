@@ -685,3 +685,14 @@ Validation remains limited: latest Android/Security jobs still have no runner as
 - Evidence: `docs/mobile-expert-support-room-hardening-20261117.md`.
 - Tests are committed but not executed. Starting head `e2e6cb6` had five failed-before-steps workflows; job step arrays were empty and log downloads returned `BlobNotFound 404`. No typecheck, beta, pytest, Gradle or Expo export pass is claimed.
 - No schema migration, main merge, production deploy, APK/IPA publication or clinical record mutation.
+
+
+## 2026-11-18 — Native voice interrupted-recording recovery
+
+Web-first recheck covered \`voice_exam_entry.html\`, \`voice_exam_panel.html\`, \`voice-exam-live.js\` and \`voice-pcm-worklet.js\` before native changes. Found that a process interruption left \`ready=false\` M4A intents with no per-segment recovery action, and \`cut()\` discarded the active segment ID before recorder stop and SecureStore persistence completed. Also found that the ASR receipt used a literal escaped newline and that several renderer selectors still targeted previous Turkish button labels.
+
+Native restore now checks only the direct app-private cache file and marks a segment ready only when it exists within the server's 100-byte–8-MiB contract. Missing files remove only their stale segment reference; earlier transcript text remains. Unverified/undersized/oversized files stay blocked and can be removed individually after explicit confirmation. Active segment identity survives stop/persistence failure, and background/unmount cleanup attempts to finalize the same intent. ASR transcript receipts now use actual newline characters.
+
+Added renderer regressions for bounded interrupted-file recovery, missing-file transcript preservation, stop retry, and newline semantics. Corrected stale test selectors to the current native labels. Security Recovery now includes \`voiceWorkflow.cjs\` alongside \`nativeVoiceAudio.cjs\`.
+
+Tests are committed, not yet executed. Starting HEAD \`365ddb4740e88ca25728e562b1759245a6a5c8e4\` had Android typecheck job \`134532184679\`, Security job \`134532183748\`, and native voice job \`134532184250\` with empty step arrays. Typecheck/Security logs returned \`BlobNotFound 404\`; no npm/tsc/pytest/Gradle step started. Exact hosted-runner/account/billing cause remains unavailable. Native live PCM16 WebSocket parity and physical-device acceptance remain open. No main merge, production deploy, APK/IPA publication, migration, or patient-record mutation.
