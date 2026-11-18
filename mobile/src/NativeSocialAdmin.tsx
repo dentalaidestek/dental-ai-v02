@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
-import { User } from "./api";
+import { ApiError, User } from "./api";
 import * as api from "./socialApi";
 
 type Props = { token: string; user: User };
@@ -47,6 +47,11 @@ function asText(value: unknown, max = 1200): string {
 }
 function actionLabel(status: Status): string {
   return status === "PUBLISHED" ? "Yayınla" : status === "REJECTED" ? "Reddet" : "Düzenleme iste";
+}
+function isStepUpRequired(error: unknown): boolean {
+  return error instanceof ApiError &&
+    error.status === 403 &&
+    error.message === "Yönetici doğrulaması gerekiyor.";
 }
 
 export default function NativeSocialAdmin({ token, user }: Props) {
@@ -216,7 +221,10 @@ export default function NativeSocialAdmin({ token, user }: Props) {
         setAging(page.aging);
       }
     } catch (e) {
-      if (request === generation.current) {
+      if (isStepUpRequired(e) && grantRef.current === grant) {
+        await clearGrant(true);
+        setNotice("Yönetici doğrulaması sona erdi. Yeniden doğrulayın.");
+      } else if (request === generation.current) {
         setError(e instanceof Error ? e.message : "Liste yüklenemedi.");
       }
     } finally {
@@ -243,7 +251,12 @@ export default function NativeSocialAdmin({ token, user }: Props) {
       setDetailKind(targetKind);
       setDecisionReason("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "İçerik ayrıntısı yüklenemedi.");
+      if (isStepUpRequired(e) && grantRef.current === grant) {
+        await clearGrant(true);
+        setNotice("Yönetici doğrulaması sona erdi. Yeniden doğrulayın.");
+      } else {
+        setError(e instanceof Error ? e.message : "İçerik ayrıntısı yüklenemedi.");
+      }
     } finally {
       setBusy(false);
     }
@@ -271,8 +284,13 @@ export default function NativeSocialAdmin({ token, user }: Props) {
       setNotice(next === "PUBLISHED" ? "İçerik yayınlandı." : next === "REJECTED" ? "İçerik reddedildi." : "Düzenleme isteği iletildi.");
       await load(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Karar kaydedilemedi. İçerik sürümünü yenileyin.");
-      if (grantRef.current === grant) await load(true);
+      if (isStepUpRequired(e) && grantRef.current === grant) {
+        await clearGrant(true);
+        setNotice("Yönetici doğrulaması sona erdi. Yeniden doğrulayın.");
+      } else {
+        setError(e instanceof Error ? e.message : "Karar kaydedilemedi. İçerik sürümünü yenileyin.");
+        if (grantRef.current === grant) await load(true);
+      }
     } finally {
       setBusy(false);
     }
