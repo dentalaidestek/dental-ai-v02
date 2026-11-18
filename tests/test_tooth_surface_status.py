@@ -110,3 +110,63 @@ def test_revision_18_deduplicates_legacy_current_state_and_adds_unique_indexes(t
             connection.execute(text(
                 "INSERT INTO toothsurfacestatus(patient_id,tooth_number,surface,status,updated_at) VALUES (8,'36','MESIAL','OTHER','2026-11-18')"
             ))
+
+
+
+def test_native_tooth_and_surface_compare_and_swap_rejects_stale_devices(chat, monkeypatch):
+    client, engine = chat
+    monkeypatch.setattr(main, "engine", engine)
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    with Session(engine) as session:
+        session.add(main.Patient(id=18, anonymous_id="SYNTHETIC-CAS-18", owner_user_id=1))
+        session.commit()
+
+    snapshot = client.get("/api/mobile/v1/patients/18")
+    assert snapshot.status_code == 200, snapshot.text
+    tooth_revision = next((item["revision"] for item in snapshot.json()["teeth"]
+                           if item["tooth_number"] == "36"), None)
+    assert tooth_revision is None
+
+    first = client.post("/api/mobile/v1/patients/18/teeth/36", json={
+        "status": "CARIES", "note": "first device", "expected_revision": None,
+    })
+    assert first.status_code == 200, first.text
+    assert len(first.json()["revision"]) == 64
+
+    stale_create = client.post("/api/mobile/v1/patients/18/teeth/36", json={
+        "status": "HEALTHY", "note": "stale device", "expected_revision": None,
+    })
+    assert stale_create.status_code == 409, stale_create.text
+
+    latest = client.get("/api/mobile/v1/patients/18")
+    current_revision = next(item["revision"] for item in latest.json()["teeth"]
+                            if item["tooth_number"] == "36")
+    second = client.post("/api/mobile/v1/patients/18/teeth/36", json={
+        "status": "FILLING", "note": "second device", "expected_revision": current_revision,
+    })
+    assert second.status_code == 200, second.text
+    stale_update = client.post("/api/mobile/v1/patients/18/teeth/36", json={
+        "status": "HEALTHY", "note": "old snapshot", "expected_revision": current_revision,
+    })
+    assert stale_update.status_code == 409, stale_update.text
+
+    empty_surface = client.put("/api/mobile/v1/patients/18/teeth/36/surfaces/MESIAL", json={
+        "status": "CARIES", "note": "surface first device", "expected_revision": None,
+    })
+    assert empty_surface.status_code == 200, empty_surface.text
+    stale_surface_create = client.put("/api/mobile/v1/patients/18/teeth/36/surfaces/MESIAL", json={
+        "status": "HEALTHY", "note": "stale surface device", "expected_revision": None,
+    })
+    assert stale_surface_create.status_code == 409, stale_surface_create.text
+
+    latest = client.get("/api/mobile/v1/patients/18")
+    surface_revision = next(item["revision"] for item in latest.json()["surfaces"]
+                            if item["tooth_number"] == "36" and item["surface"] == "MESIAL")
+    updated_surface = client.put("/api/mobile/v1/patients/18/teeth/36/surfaces/MESIAL", json={
+        "status": "FILLING", "note": "fresh surface edit", "expected_revision": surface_revision,
+    })
+    assert updated_surface.status_code == 200, updated_surface.text
+    stale_surface_update = client.put("/api/mobile/v1/patients/18/teeth/36/surfaces/MESIAL", json={
+        "status": "HEALTHY", "note": "old surface snapshot", "expected_revision": surface_revision,
+    })
+    assert stale_surface_update.status_code == 409, stale_surface_update.text
