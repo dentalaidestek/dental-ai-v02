@@ -27,7 +27,7 @@ function VoiceEvidence({item}:{item:{quote?:string;origin?:string;edited?:boolea
  const evidence=voiceEvidencePresentation(item);
  return <View style={{marginTop:7,padding:10,borderRadius:9,backgroundColor:"#F6FAFD",borderWidth:1,borderColor:line}}>
   <Text style={{fontSize:12,fontWeight:"800",color:muted}}>{evidence.label}</Text>
-  {evidence.hasEvidence?<Text selectable style={{color:navy,lineHeight:19,marginTop:4}}>{evidence.quote}</Text>:<Text style={{color:"#9A6700",lineHeight:19,marginTop:4}}>Dayanak metni sunulmadı; kaydetmeden önce alanı doğrulayın.</Text>}
+  {evidence.hasEvidence?<Text selectable style={{color:navy,lineHeight:19,marginTop:4}}>{evidence.quote}</Text>:<Text style={{color:"#9A6700",lineHeight:19,marginTop:4}}>{evidence.notice}</Text>}
   {evidence.edited&&<Text style={{color:"#9A6700",lineHeight:18,marginTop:5}}>Bu alan hekim tarafından düzenlendi. Kaydetmeden önce dayanakla karşılaştırın.</Text>}
  </View>;
 }
