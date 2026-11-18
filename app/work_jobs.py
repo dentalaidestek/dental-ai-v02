@@ -377,15 +377,17 @@ def prune_history(engine):
     from sqlalchemy import delete
     from app.main import Analysis, Patient
     from app.voice_asr_receipts import expire_voice_asr_receipts
+    from app.voice_clinical_receipts import expire_voice_clinical_receipts
     # Upload and treatment receipts remain authoritative while their parent
-    # resource exists. Voice ASR receipts have their own 24h encrypted-result
-    # TTL and seven-day tombstone retention; no raw audio is stored.
+    # resource exists. Voice ASR and clinical extraction receipts have a 24h
+    # encrypted-result TTL and seven-day tombstone retention.
     live_upload_receipt=and_(WorkJob.kind=='UPLOAD_RECEIPT',WorkJob.resource_type=='ANALYSIS',select(Analysis.id).where(Analysis.id==WorkJob.resource_id).exists())
     live_treatment_receipt=and_(WorkJob.kind=='TREATMENT_RECEIPT',WorkJob.resource_type=='PATIENT',select(Patient.id).where(Patient.id==WorkJob.resource_id).exists())
     live_patient_media_receipt=and_(WorkJob.kind=='PATIENT_MEDIA_RECEIPT',WorkJob.resource_type=='PATIENT',select(Patient.id).where(Patient.id==WorkJob.resource_id).exists())
     with Session(engine) as session:
         if _voice_receipt_prune_due():
             expire_voice_asr_receipts(session, patient_model=Patient, limit=100)
+            expire_voice_clinical_receipts(session, patient_model=Patient, limit=100)
         ids = session.exec(select(WorkJob.id).where(
             WorkJob.status.in_(["DONE", "CANCELLED", "FAILED"]),
             WorkJob.updated_at < now() - timedelta(days=30),
