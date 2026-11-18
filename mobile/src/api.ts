@@ -242,6 +242,7 @@ export const uploadPatientMedia=async(
  requestKey:string,
  batchId:string,
  onProgress?:(progress:PatientMediaUploadProgress)=>void,
+ note?:string,
 ):Promise<PatientMediaUploadResult>=>{
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw new Error("Geçersiz hasta kimliği.");
  if(!file?.uri||!file.name||!file.type)throw new Error("Geçerli bir klinik görüntü seçin.");
@@ -255,6 +256,7 @@ export const uploadPatientMedia=async(
  body.append("batch_id",batchId);
  body.append("file",{uri:file.uri,name:file.name,type:file.type} as any);
  if(toothNumber)body.append("tooth_number",toothNumber);
+ if(note?.trim())body.append("note",note.trim().slice(0,2000));
  return await new Promise<PatientMediaUploadResult>((resolve,reject)=>{
   const xhr=new XMLHttpRequest();
   let settled=false;
