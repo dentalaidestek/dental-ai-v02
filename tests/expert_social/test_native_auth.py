@@ -275,12 +275,14 @@ def test_native_social_admin_stepup_cooldown_attempt_limit_and_expiry(env, monke
     assert client.post("/api/expert-social/admin/step-up").status_code == 200
     assert client.post("/api/expert-social/admin/step-up").status_code == 429
     wrong_code = "000000" if delivered[0][1] != "000000" else "999999"
-    for _ in range(5):
+    for attempt in range(5):
         response = client.post(
             "/api/expert-social/admin/step-up/verify",
             json={"code": wrong_code},
         )
         assert response.status_code == 401
+        if attempt == 0:
+            assert response.json()["code"] == "SOCIAL_ADMIN_OTP_INVALID"
     locked = client.post(
         "/api/expert-social/admin/step-up/verify",
         json={"code": delivered[0][1]},
@@ -314,3 +316,71 @@ def test_native_social_admin_stepup_cooldown_attempt_limit_and_expiry(env, monke
         session.commit()
     client.headers["X-Dental-Social-Admin-Step-Up"] = verified.json()["token"]
     assert client.get("/api/expert-social/moderation").status_code == 403
+
+def test_native_stepup_issue_prunes_only_bounded_expired_credentials(env, monkeypatch):
+    client, engine = env
+    _prepare_native_social_admin(client, engine)
+    now = main._utcnow_naive()
+    with Session(engine) as session:
+        for index in range(105):
+            session.add(
+                SocialAdminStepUpChallenge(
+                    session_hash=f"expired-challenge-{index}",
+                    user_id=4,
+                    code_hash="not-a-live-code",
+                    created_at=now - timedelta(minutes=20),
+                    expires_at=now - timedelta(minutes=10),
+                    attempts=0,
+                )
+            )
+            session.add(
+                SocialAdminStepUpSession(
+                    token_hash=f"expired-grant-{index}",
+                    user_id=4,
+                    session_hash=f"old-session-{index}",
+                    scope="SOCIAL_MODERATION",
+                    expires_at=now - timedelta(minutes=5),
+                    created_at=now - timedelta(minutes=6),
+                )
+            )
+        session.add(
+            SocialAdminStepUpChallenge(
+                session_hash="still-live-challenge",
+                user_id=4,
+                code_hash="keep",
+                created_at=now,
+                expires_at=now + timedelta(minutes=5),
+                attempts=0,
+            )
+        )
+        session.add(
+            SocialAdminStepUpSession(
+                token_hash="still-live-grant",
+                user_id=4,
+                session_hash="other-live-session",
+                scope="SOCIAL_MODERATION",
+                expires_at=now + timedelta(minutes=2),
+                created_at=now,
+            )
+        )
+        session.commit()
+
+    monkeypatch.setattr(main, "send_email_verification_code", lambda *_: None)
+    response = client.post("/api/expert-social/admin/step-up")
+    assert response.status_code == 200, response.text
+    with Session(engine) as session:
+        expired_challenges = session.exec(
+            select(SocialAdminStepUpChallenge).where(
+                SocialAdminStepUpChallenge.expires_at <= main._utcnow_naive()
+            )
+        ).all()
+        expired_grants = session.exec(
+            select(SocialAdminStepUpSession).where(
+                SocialAdminStepUpSession.expires_at <= main._utcnow_naive()
+            )
+        ).all()
+        assert len(expired_challenges) == 5
+        assert len(expired_grants) == 5
+        assert session.get(SocialAdminStepUpChallenge, "still-live-challenge") is not None
+        assert session.get(SocialAdminStepUpSession, "still-live-grant") is not None
+
