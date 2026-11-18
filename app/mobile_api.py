@@ -2712,7 +2712,9 @@ def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mob
         except FileNotFoundError:raise HTTPException(status_code=404,detail="Görüntü dosyası bulunamadı.")
         from fastapi.responses import FileResponse
         mime={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp"}.get(path.suffix.lower().lstrip("."),"application/octet-stream")
-        return FileResponse(path,media_type=mime,filename=media.original_filename,headers={"Cache-Control":"private, no-store"})
+        result = FileResponse(path, media_type=mime, filename=media.original_filename)
+        _mobile_private_no_store(result)
+        return result
 
 async def _invoke_patient_web(handler, request, *args):
     response = await handler(request, *args) if _chat_inspect.iscoroutinefunction(handler) else await _chat_offload(handler, request, *args)
