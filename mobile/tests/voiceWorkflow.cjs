@@ -3,6 +3,18 @@ global.IS_REACT_ACT_ENVIRONMENT=true;
 require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
 const text=n=>typeof n==='string'?n:!n?'':(n.children||[]).map(text).join('');
 const button=(t,label)=>t.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(c=>text(c)===label));
+
+const recorderLifecycle=require('../src/voiceRecorderLifecycle.ts');
+test('native voice recorder distinguishes normal chunk rotation from an unexpected microphone stop',()=>{
+ assert.equal(recorderLifecycle.isUnexpectedVoiceRecorderStop(true,true,true,true),false,'a stop owned by rotation is expected');
+ assert.equal(recorderLifecycle.isUnexpectedVoiceRecorderStop(true,true,true,false),true,'a stop outside rotation must pause the session');
+ assert.equal(recorderLifecycle.isUnexpectedVoiceRecorderStop(true,false,true,false),false,'a clinician pause is not an interruption');
+ assert.equal(recorderLifecycle.isUnexpectedVoiceRecorderStop(true,true,false,false),false,'a stale status without an active segment is ignored');
+ const source=fs.readFileSync(require.resolve('../src/NativeVoiceRecorder.tsx'),'utf8');
+ assert.match(source,/wasRecording\\.current=false;\\s*if\\(!stopped\\.current\\)\\{await recorder\\.stop\\(\\)/,'rotation clears the previous recorder marker before Expo Audio publishes the stop');
+ assert.match(source,/isUnexpectedVoiceRecorderStop\\(wasRecording\\.current,wanted\\.current,Boolean\\(active\\.current\\),gate\\.current\\)/);
+});
+
 test('voice draft is account-patient bound, expires, and appends each segment only once',()=>{
  const api=require('../src/voiceSession.ts'),draft={...api.newVoiceDraft(1,8,1000),segments:[{id:'s1',uri:'file:///cache/audio.m4a',ready:true}]};
  assert.throws(()=>api.parseVoiceDraft(JSON.stringify(draft),2,8,2000),/hesabı/);assert.equal(api.parseVoiceDraft(JSON.stringify(draft),1,8,1000+86400001),null);
