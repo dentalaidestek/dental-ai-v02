@@ -46,7 +46,7 @@ export async function getVoiceHistory(token:string,patientId:number):Promise<Voi
 }
 
 export type VoiceField={value:string;quote?:string;edited?:boolean;origin?:"history"|"extraction"};
-export type VoiceExtraction={ok:boolean;revision:string;review:{
+export type VoiceExtraction={ok:boolean;revision:string;replayed?:boolean;review:{
  fields?:Record<string,VoiceField>;teeth?:unknown[];insights?:Record<string,unknown>[];
  communication?:Record<string,unknown>[];
  decision_barriers?:Record<string,unknown>[];follow_up_questions?:Record<string,unknown>[];
@@ -56,6 +56,7 @@ export type VoiceExtraction={ok:boolean;revision:string;review:{
 }};
 export type VoiceExtractionCheckpointData={cursor:number;revision:string;review:VoiceExtraction["review"]};
 export type ExtractVoiceOptions={
+ sessionId?:string;
  resume?:VoiceExtractionCheckpointData;
  onProgress?:(completed:number,total:number)=>void;
  onCheckpoint?:(checkpoint:VoiceExtractionCheckpointData)=>Promise<void>|void;
@@ -123,6 +124,8 @@ export async function extractVoice(token:string,patientId:number,transcript:stri
  if(typeof transcript!=="string"||!transcript.trim())throw Error("Muayene metni boş olamaz. Metniniz korunuyor.");
  const chunks=splitVoiceTranscript(transcript);
  if(!chunks.length)throw Error("Muayene metni boş olamaz. Metniniz korunuyor.");
+ const sessionId=options.sessionId||("ephemeral_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2));
+ if(!/^[A-Za-z0-9_-]{16,96}$/.test(sessionId))throw Error("Muayene oturum anahtarı doğrulanamadı.");
  let cursor=0,revision="",review:VoiceExtraction["review"]|undefined;
  if(options.resume){
   const saved=options.resume;
@@ -132,8 +135,11 @@ export async function extractVoice(token:string,patientId:number,transcript:stri
  }
  for(let index=cursor;index<chunks.length;index++){
   options.onProgress?.(index+1,chunks.length);
-  const context=review?contextFromVoiceReview(review):undefined;
-  const result=await send<VoiceExtraction>(token,`/patients/${patientId}/voice-exam/text`,{transcript:chunks[index],consent:true,...(context?{context}:{})});
+  const context=review?contextFromVoiceReview(review):{};
+  // Stable for the same examination, transcript and chunk after process death.
+  // The server independently binds this key to an HMAC of transcript + context.
+  const requestKey=sessionId.replace(/-/g,"")+"_"+index;
+  const result=await send<VoiceExtraction>(token,`/patients/${patientId}/voice-exam/text`,{transcript:chunks[index],consent:true,context,request_key:requestKey});
   if(!result.review||typeof result.revision!=="string"||!/^[a-f0-9]{64}$/.test(result.revision))
    throw Error("Klinik çıkarım yanıtı eksik. Metninizi koruyup tekrar deneyin.");
   if(revision&&revision!==result.revision)throw Error("Hasta dosyası görüşme sırasında değişti. Taslak korunuyor; güncel hasta bilgilerini yeniden kontrol edin.");
