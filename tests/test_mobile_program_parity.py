@@ -128,7 +128,8 @@ def test_conflict_advice_is_owned_and_supports_recurring_records(program):
     values={'event_type':'APPOINTMENT','title':'Synthetic new','start_at':'2030-01-07T10:15','end_at':'2030-01-07T10:45','patient_id':8,'reminder_minutes':'NONE'}
     response=client.post('/api/mobile/v1/program/conflicts',json=values)
     assert response.status_code==200,response.text
-    assert response.json()['total']==1 and response.json()['items'][0]['id']==21
+    assert response.json()=={'advisory':True,'total':1}
+    assert 'items' not in response.json() and 'title' not in response.json()
     assert client.post('/api/mobile/v1/program/conflicts?exclude_id=22',json=values).status_code==404
     assert client.post('/api/mobile/v1/program/conflicts?exclude_id=21',json=values).json()['total']==0
 
@@ -305,3 +306,25 @@ def test_deleted_program_event_state_remains_owner_scoped(program):
     assert own.status_code==200 and own.json()['event']['status']=='DELETED'
     assert client.get('/api/mobile/v1/program/events/987').status_code==404
 
+
+
+def test_program_shared_validator_enforces_web_form_length_limits(program):
+    _,engine=program
+    with Session(engine) as s:
+        user=s.get(main.User,1)
+        base=('APPOINTMENT','Synthetic valid title','2030-01-07T10:00','2030-01-07T10:30','8','','','NONE',None,'NONE','')
+        values,error=main._validate_schedule_input(s,user,*base[:6],'x'*161,*base[7:])
+        assert values is None and error=='Konum en fazla 160 karakter olabilir.'
+        values,error=main._validate_schedule_input(s,user,*base[:7],'x'*2001,*base[8:])
+        assert values is None and error=='Notlar en fazla 2000 karakter olabilir.'
+
+
+def test_mobile_program_api_rejects_overlong_location_and_notes(program):
+    client,_=program
+    values={'event_type':'APPOINTMENT','title':'Synthetic appointment','start_at':'2030-01-07T10:00',
+        'end_at':'2030-01-07T10:30','patient_id':8,'reminder_minutes':'NONE','recurrence_rule':'NONE',
+        'request_key':'program-length-limit-000001'}
+    location=client.post('/api/mobile/v1/program/events',json={**values,'location':'x'*161})
+    notes=client.post('/api/mobile/v1/program/events',json={**values,'request_key':'program-length-limit-000002','notes':'x'*2001})
+    assert location.status_code==422
+    assert notes.status_code==422
