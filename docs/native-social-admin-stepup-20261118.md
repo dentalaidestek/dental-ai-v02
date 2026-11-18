@@ -45,3 +45,20 @@ The branch's `android-test-apk.yml` was still triggered by every push touching `
 - Schema revision 3 has not been applied to production. No deploy or migration was run.
 
 PR #257 remains open/Draft. No main merge, live deploy, production migration, store publication or clinical-data mutation.
+
+## 2026-11-18 — step-up lifecycle and client response semantics
+
+A second review of the native OTP flow found a client-side distinction that the generic social request adapter did not preserve: an incorrect OTP is intentionally returned as HTTP 401, but the adapter treated every 401 as a possible expired Bearer session and launched an extra /api/mobile/v1/me probe. The backend now returns the machine-readable SOCIAL_ADMIN_OTP_INVALID code for this one response; the client skips session revalidation only for that explicit code. Generic 401 responses and non-JSON gateway 401 responses still trigger the existing session probe.
+
+Additional hardening:
+- Social API responses vary on Cookie, Authorization and the scoped step-up header while remaining private/no-store.
+- Expired OTP challenges and five-minute grants are pruned in batches of at most 100 each on the rare step-up issue path. Live credentials are not touched; no feed or general API request performs this cleanup.
+- Native step-up tokens are validated as the exact URL-safe 43-character form produced by secrets.token_urlsafe(32).
+- Added bounded native adapters for moderation queue, reports, detail/history and version-checked decisions. They require the step-up header and validate cursor, collection, media, history and version shapes before exposing data to a future native screen.
+
+Regression coverage added:
+- Python: structured invalid-OTP response, authorization-aware Vary headers, and bounded cleanup retaining live challenge/grant rows.
+- Node: invalid OTP does not cause a /me probe, ordinary 401 still does, scoped moderation headers are attached, and malformed grants/queue/report/detail/decision payloads are rejected.
+
+These tests are committed and included in the existing Admin Security and Security Recovery workflow commands. They were not executed in this connector session. Current branch head remains manual-workflow only; no Actions run was started. The exact hosted-runner allocation cause remains outside the repository API evidence. No production migration, deploy, main merge or native admin UI was added in this follow-up.
+
