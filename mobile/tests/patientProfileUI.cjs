@@ -568,9 +568,8 @@ test('pending patient deletion makes nested clinical media and analysis surfaces
  assert.equal(media.props.readOnly,true,'clinical media uploads/deletes and new analysis must be read-only');
  assert.ok(history);
  assert.equal(history.props.onNew,undefined,'new analysis entry must be hidden while deletion is unresolved');
- const voice=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(t=>text(t.children).includes('Sesli Muayene')));
- assert.ok(voice);
- assert.equal(voice.props.disabled,true,'voice examination must not start while patient deletion is unresolved');
+ const voice=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(t=>text(t.children).trim()==='Sesli Muayene'));
+ assert.equal(voice,undefined,'voice examination entry belongs to the dedicated home screen, not the patient profile');
  await renderer.act(async()=>tree.unmount());
 });
 
