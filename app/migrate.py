@@ -1,7 +1,7 @@
 """Explicit, serialized release migration: python -m app.migrate.
 
 The existing idempotent baseline DDL is retained; revision 2 adds durable work, provider reservations and immutable analysis-result pointers;
-revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata; revision 5 adds lazy visual page artifacts; revision 6 adds one-time email verification state; revision 9 adds shared authentication admission counters; revision 10 adds isolated email-change challenges; revision 11 adds consultation chat retention and a committed media-deletion outbox. revision 12 adds private membership-verification records; revision 15 adds native Program idempotency fields; revision 16 adds online owner-scoped Program and reminder queue indexes. Web/workers only
+revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata; revision 5 adds lazy visual page artifacts; revision 6 adds one-time email verification state; revision 9 adds shared authentication admission counters; revision 10 adds isolated email-change challenges; revision 11 adds consultation chat retention and a committed media-deletion outbox. revision 12 adds private membership-verification records; revision 15 adds native Program idempotency fields; revision 16 adds online owner-scoped Program and reminder queue indexes; revision 17 adds native Academic course-create receipts. Web/workers only
 check the revision in production, avoiding repeated boot-time DDL/backfills.
 """
 import logging
@@ -11,7 +11,8 @@ logger = logging.getLogger(__name__)
 
 SUPPORT_RECEIPTS_REVISION = 14
 PROGRAM_IDEMPOTENCY_REVISION = 15
-REVISION = 16
+PROGRAM_QUERY_INDEX_REVISION = 16
+REVISION = 17
 PROGRAM_QUERY_INDEX_LOCK = 71048238
 
 
@@ -74,7 +75,7 @@ def require_schema(engine,*,require_study=False):
     _ensure_mobile_push_delivery_table(engine)
     if require_study:
         inspector=inspect(engine)
-        if any(not inspector.has_table(table) for table in ('studylearningstate','studyreview','studyattempt','studyrun')):
+        if any(not inspector.has_table(table) for table in ('studylearningstate','studyreview','studyattempt','studyrun','studycoursecreatereceipt')):
             raise RuntimeError('Run python -m app.migrate to create the academic study tables')
 
 
@@ -117,7 +118,7 @@ def _upgrade_recent_schema(main):
             return False
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
         logger.warning('migration.recent revision=%s', revision)
-        if revision in (SUPPORT_RECEIPTS_REVISION, REVISION):
+        if revision in (SUPPORT_RECEIPTS_REVISION, PROGRAM_QUERY_INDEX_REVISION, REVISION):
             return True
         if revision not in (10, 11):
             return False
@@ -125,7 +126,7 @@ def _upgrade_recent_schema(main):
         connection.execute(text('SELECT pg_advisory_xact_lock(71048233)'))
         # Re-read after obtaining the lock: another deploy may have finished.
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
-        if revision in (SUPPORT_RECEIPTS_REVISION, REVISION):
+        if revision in (SUPPORT_RECEIPTS_REVISION, PROGRAM_QUERY_INDEX_REVISION, REVISION):
             return True
         if revision not in (10, 11):
             raise RuntimeError('Schema changed during release migration')
@@ -157,13 +158,13 @@ def _upgrade_support_receipts_schema(main):
         if not inspect(connection).has_table('dental_schema_revision'):
             return False
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
-        if revision in (SUPPORT_RECEIPTS_REVISION, REVISION):
+        if revision in (SUPPORT_RECEIPTS_REVISION, PROGRAM_QUERY_INDEX_REVISION, REVISION):
             return True
         if revision not in (12, 13):
             return False
         connection.execute(text('SELECT pg_advisory_xact_lock(71048233)'))
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
-        if revision in (SUPPORT_RECEIPTS_REVISION, REVISION):
+        if revision in (SUPPORT_RECEIPTS_REVISION, PROGRAM_QUERY_INDEX_REVISION, REVISION):
             return True
         if revision not in (12, 13):
             raise RuntimeError('Schema changed during consultation receipt migration')
@@ -187,13 +188,13 @@ def _upgrade_program_idempotency_schema(main):
         if not inspect(connection).has_table('dental_schema_revision'):
             return False
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
-        if revision in (PROGRAM_IDEMPOTENCY_REVISION, REVISION):
+        if revision in (PROGRAM_IDEMPOTENCY_REVISION, PROGRAM_QUERY_INDEX_REVISION, REVISION):
             return True
         if revision != PROGRAM_IDEMPOTENCY_REVISION - 1:
             return False
         connection.execute(text('SELECT pg_advisory_xact_lock(71048233)'))
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
-        if revision in (PROGRAM_IDEMPOTENCY_REVISION, REVISION):
+        if revision in (PROGRAM_IDEMPOTENCY_REVISION, PROGRAM_QUERY_INDEX_REVISION, REVISION):
             return True
         if revision != PROGRAM_IDEMPOTENCY_REVISION - 1:
             raise RuntimeError('Schema changed during Program idempotency migration')
@@ -257,7 +258,7 @@ def _upgrade_program_query_indexes(main):
             revision = connection.execute(
                 text('SELECT version FROM dental_schema_revision WHERE id=1')
             ).scalar()
-            if revision == REVISION:
+            if revision in (PROGRAM_QUERY_INDEX_REVISION, REVISION):
                 return True
             if revision != PROGRAM_IDEMPOTENCY_REVISION:
                 return False
@@ -282,7 +283,7 @@ def _upgrade_program_query_indexes(main):
 
             result = connection.execute(
                 text('UPDATE dental_schema_revision SET version=:version WHERE id=1 AND version=:prior'),
-                {'version': REVISION, 'prior': PROGRAM_IDEMPOTENCY_REVISION},
+                {'version': PROGRAM_QUERY_INDEX_REVISION, 'prior': PROGRAM_IDEMPOTENCY_REVISION},
             )
             if result.rowcount != 1:
                 current = connection.execute(
@@ -296,8 +297,54 @@ def _upgrade_program_query_indexes(main):
                 {'lock_key': PROGRAM_QUERY_INDEX_LOCK},
             )
 
-    logger.warning('migration.program_query_indexes complete revision=%s', REVISION)
+    logger.warning('migration.program_query_indexes complete revision=%s', PROGRAM_QUERY_INDEX_REVISION)
     return True
+
+
+
+def _upgrade_academic_course_receipts_schema(main):
+    """Create native Academic course receipts and advance schema revision 17."""
+    if main.engine.dialect.name != 'postgresql':
+        return False
+    with main.engine.begin() as connection:
+        connection.execute(text("SET LOCAL lock_timeout = '5s'"))
+        connection.execute(text("SET LOCAL statement_timeout = '60s'"))
+        if not inspect(connection).has_table('dental_schema_revision'):
+            return False
+        revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
+        if revision == REVISION:
+            return True
+        if revision != PROGRAM_QUERY_INDEX_REVISION:
+            return False
+        connection.execute(text('SELECT pg_advisory_xact_lock(71048239)'))
+        revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
+        if revision == REVISION:
+            return True
+        if revision != PROGRAM_QUERY_INDEX_REVISION:
+            raise RuntimeError('Schema changed during Academic course receipt migration')
+        from app.academic_course_receipts import StudyCourseCreateReceipt
+        table = StudyCourseCreateReceipt.__table__
+        table.create(connection, checkfirst=True)
+        if not inspect(connection).has_table(table.name):
+            raise RuntimeError('Academic course receipt table was not created')
+        unique_constraints = inspect(connection).get_unique_constraints(table.name)
+        if not any(
+            item.get('name') == 'uq_studycoursecreatereceipt_owner_key'
+            and item.get('column_names') == ['owner_user_id', 'request_key']
+            for item in unique_constraints
+        ):
+            raise RuntimeError('Academic course receipt unique owner/key constraint is missing')
+        result = connection.execute(
+            text('UPDATE dental_schema_revision SET version=:version WHERE id=1 AND version=:prior'),
+            {'version': REVISION, 'prior': PROGRAM_QUERY_INDEX_REVISION},
+        )
+        if result.rowcount != 1:
+            current = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
+            if current != REVISION:
+                raise RuntimeError('Schema changed during Academic course receipt migration')
+    logger.warning('migration.academic_course_receipts complete revision=%s', REVISION)
+    return True
+
 
 def _apply_baseline():
     from app import main
@@ -305,17 +352,22 @@ def _apply_baseline():
     # preserves the baseline version. Run it before the receipt migration,
     # which advances that same revision to 14.
     _upgrade_learning_schema(main)
+    if _upgrade_academic_course_receipts_schema(main):
+        return
     # Revision 15 databases can take the online index-only path without replaying
     # historical DDL or reminder backfills.
     if _upgrade_program_query_indexes(main):
+        _upgrade_academic_course_receipts_schema(main)
         return
     if _upgrade_support_receipts_schema(main):
         _upgrade_program_idempotency_schema(main)
         _upgrade_program_query_indexes(main)
+        _upgrade_academic_course_receipts_schema(main)
         return
     if _upgrade_recent_schema(main):
         _upgrade_program_idempotency_schema(main)
         _upgrade_program_query_indexes(main)
+        _upgrade_academic_course_receipts_schema(main)
         return
     # A dedicated migration process owns the advisory lock through all of the
     # historical DDL transactions. It is released even on migration failure.
