@@ -286,3 +286,13 @@ def test_receipt_key_is_validated_and_dedicated_encryption_key_is_required(monke
     assert encryption_key("12" * 32) == bytes.fromhex("12" * 32)
     with pytest.raises(ReceiptKeyUnavailable):
         encryption_key("not-a-secret")
+
+
+def test_missing_claude_configuration_is_typed_before_provider_invocation(monkeypatch):
+    from app import voice_exam_core as core
+    from app.voice_exam_review_provider import _configuration
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("VOICE_EXAM_CLAUDE_MODEL", "claude-test")
+    with pytest.raises(core.VoiceConfigurationError):
+        _configuration()
