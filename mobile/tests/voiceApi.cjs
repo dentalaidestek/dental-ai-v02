@@ -104,7 +104,7 @@ test('voice API handles HTML gateway failures and rate limits before parsing',as
 
 test('native voice audio uses raw bounded bytes, consent and patient scoped route',async()=>{
  const original=global.fetch;let call;
- global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'rev1',transcript:'Dişim ağrıyor.'}))};
+ global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',transcript:'Dişim ağrıyor.'}))};
  try{
   const blob=new Blob([new Uint8Array(128)],{type:'audio/mp4'});
   const result=await api.transcribeVoiceAudio('secret',23,blob,'audio/mp4');
