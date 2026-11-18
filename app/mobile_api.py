@@ -2876,10 +2876,12 @@ async def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, us
         )
         return reply(429, "VOICE_CLINICAL_RETRYABLE", "Klinik değerlendirme yoğun. Aynı muayene bölümüyle tekrar deneyin.")
     except core.VoiceConfigurationError:
-        with Session(engine, expire_on_commit=False) as session:
-            finish_receipt(session, owner_id=user.id, patient_id=patient_id,
-                request_key=payload.request_key, digest=digest, lease_token=lease_token, retryable=True)
-            session.commit()
+        await run_in_threadpool(
+            finish_receipt_transaction, engine,
+            owner_id=user.id, patient_id=patient_id,
+            request_key=payload.request_key, digest=digest,
+            lease_token=lease_token, retryable=True,
+        )
         return reply(503, "VOICE_CLINICAL_NOT_READY", "Klinik değerlendirme yapılandırması hazır değil; taslak korundu.")
     except Exception:
         await run_in_threadpool(
@@ -2894,16 +2896,20 @@ async def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, us
     try:
         current_revision = await run_in_threadpool(_mobile_voice_patient, user, patient_id)
     except HTTPException:
-        with Session(engine, expire_on_commit=False) as session:
-            finish_receipt(session, owner_id=user.id, patient_id=patient_id,
-                request_key=payload.request_key, digest=digest, lease_token=lease_token, retryable=False)
-            session.commit()
+        await run_in_threadpool(
+            finish_receipt_transaction, engine,
+            owner_id=user.id, patient_id=patient_id,
+            request_key=payload.request_key, digest=digest,
+            lease_token=lease_token, retryable=False,
+        )
         raise
     if current_revision != revision:
-        with Session(engine, expire_on_commit=False) as session:
-            finish_receipt(session, owner_id=user.id, patient_id=patient_id,
-                request_key=payload.request_key, digest=digest, lease_token=lease_token, retryable=False)
-            session.commit()
+        await run_in_threadpool(
+            finish_receipt_transaction, engine,
+            owner_id=user.id, patient_id=patient_id,
+            request_key=payload.request_key, digest=digest,
+            lease_token=lease_token, retryable=False,
+        )
         return reply(409, "VOICE_CLINICAL_PATIENT_CHANGED", "Hasta dosyası görüşme sırasında değişti. Taslak korunuyor; güncel hasta bilgilerini yeniden kontrol edin.")
     try:
         saved = await run_in_threadpool(
@@ -2916,10 +2922,12 @@ async def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, us
         logging.getLogger(__name__).warning("mobile voice clinical receipt persistence failed")
         return reply(502, "VOICE_CLINICAL_OUTCOME_UNKNOWN", "Klinik sonuç kalıcı ve şifreli fişe yazılamadı. Aynı anahtarla ikinci AI çağrısı yapılmadı.")
     if not saved:
-        with Session(engine, expire_on_commit=False) as session:
-            finish_receipt(session, owner_id=user.id, patient_id=patient_id,
-                request_key=payload.request_key, digest=digest, lease_token=lease_token, retryable=False)
-            session.commit()
+        await run_in_threadpool(
+            finish_receipt_transaction, engine,
+            owner_id=user.id, patient_id=patient_id,
+            request_key=payload.request_key, digest=digest,
+            lease_token=lease_token, retryable=False,
+        )
         return reply(409, "VOICE_CLINICAL_OUTCOME_UNKNOWN", "Klinik sonuç güvenli biçimde kaydedilemedi. Aynı anahtarla ikinci AI çağrısı yapılmadı.")
     return JSONResponse(
         {"ok": True, "revision": revision, "review": review, "replayed": False},
