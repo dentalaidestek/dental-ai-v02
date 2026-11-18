@@ -43,3 +43,28 @@ test('invalid FDI positions are rejected before rendering',()=>{
     assert.throws(()=>toothVisualModel(number),/Geçersiz FDI/);
   }
 });
+
+
+const {
+  EXTRACTED_TOOTH_FILTER_ID,
+  EXTRACTED_TOOTH_FILTER_URL,
+  EXTRACTED_TOOTH_FILTER_MATRIX,
+  toothVisualFilter
+}=require('../src/toothVisual.ts');
+
+test('extracted tooth uses the web grayscale and 70 percent brightness contract',()=>{
+  assert.equal(EXTRACTED_TOOTH_FILTER_ID,'tooth-extracted-grayscale');
+  assert.equal(toothVisualFilter('EXTRACTED'),EXTRACTED_TOOTH_FILTER_URL);
+  assert.equal(toothVisualFilter('HEALTHY'),undefined);
+  assert.equal(toothVisualFilter('CARIES'),undefined);
+  const values=EXTRACTED_TOOTH_FILTER_MATRIX.trim().split(/\\s+/).map(Number);
+  assert.equal(values.length,20);
+  assert.ok(values.every(Number.isFinite));
+  const luminance=values[0]+values[1]+values[2];
+  assert.ok(Math.abs(luminance-0.7)<1e-9,'grayscale output must retain 70% brightness');
+  assert.deepEqual(values.slice(0,5),values.slice(5,10));
+  assert.deepEqual(values.slice(0,5),values.slice(10,15));
+  assert.deepEqual(values.slice(15,20),[0,0,0,1,0],'alpha must remain unchanged');
+  const web=fs.readFileSync(require.resolve('../../app/templates/tooth_chart.html'),'utf8');
+  assert.ok(web.includes('filter:grayscale(1) brightness(.7)'),'web CSS remains the visual source of truth');
+});
