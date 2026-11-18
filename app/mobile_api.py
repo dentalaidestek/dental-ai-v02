@@ -509,13 +509,13 @@ class MobileToothUpdate(BaseModel):
     note: Optional[str] = None
     surface: Optional[str] = None
     surfaces: Optional[list[str]] = None
-    expected_revision: Optional[str] = None
+    expected_revision: Optional[str]
 
 
 class MobileSurfaceUpdate(BaseModel):
     status: str
     note: Optional[str] = None
-    expected_revision: Optional[str] = None
+    expected_revision: Optional[str]
 
 
 class MobileScheduleCreate(BaseModel):
