@@ -1336,6 +1336,8 @@ def mobile_patient_detail(
                     "status": t.status,
                     "note": t.note,
                     "updated_at": t.updated_at,
+                    "revision": observation_revision(t, kind="tooth", patient_id=patient_id,
+                                                     tooth_number=t.tooth_number),
                 }
                 for t in teeth
             ],
@@ -1347,6 +1349,8 @@ def mobile_patient_detail(
                     "status": s.status,
                     "note": s.note,
                     "updated_at": s.updated_at,
+                    "revision": observation_revision(s, kind="surface", patient_id=patient_id,
+                                                     tooth_number=s.tooth_number, surface=s.surface),
                 }
                 for s in surfaces
             ],
