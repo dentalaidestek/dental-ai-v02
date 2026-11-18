@@ -1007,3 +1007,89 @@ def test_native_patient_media_delete_replay_is_idempotent_and_owner_scoped(chat,
     with Session(engine) as session:
         assert session.get(main.PatientMedia, 880) is None
         assert session.get(main.PatientMedia, 890) is not None
+
+def test_mobile_patient_delete_receipt_replays_after_lost_response_and_is_owner_scoped(chat):
+    client, engine = chat
+    with Session(engine) as session:
+        session.add_all([
+            main.Patient(id=111, anonymous_id="SYNTHETIC-DELETE-RECEIPT-111", owner_user_id=1),
+            main.Patient(id=112, anonymous_id="SYNTHETIC-DELETE-RECEIPT-112", owner_user_id=1),
+        ])
+        session.commit()
+
+    request_key = "synthetic-patient-delete-request-0001"
+    first = client.delete(f"/api/mobile/v1/patients/111?request_key={request_key}")
+    assert first.status_code == 200, first.text
+    assert first.json() == {"ok": True, "patient_id": 111, "already_deleted": False}
+
+    # Simulate a response lost after commit: the exact same request is a
+    # successful replay and does not publish a second deletion.
+    replay = client.delete(f"/api/mobile/v1/patients/111?request_key={request_key}")
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == {"ok": True, "patient_id": 111, "already_deleted": True}
+
+    # A request key is bound to one account and one patient, not reusable for
+    # another deletion target.
+    reused = client.delete(f"/api/mobile/v1/patients/112?request_key={request_key}")
+    assert reused.status_code == 409, reused.text
+
+    client.headers["Authorization"] = "Bearer token2"
+    assert client.delete(f"/api/mobile/v1/patients/111?request_key={request_key}").status_code == 404
+
+    with Session(engine) as session:
+        assert session.get(main.Patient, 111) is None
+        assert session.get(main.Patient, 112) is not None
+        receipts = session.exec(select(WorkJob).where(
+            WorkJob.owner_user_id == 1,
+            WorkJob.kind == "PATIENT_DELETE_RECEIPT",
+            WorkJob.resource_type == "PATIENT",
+            WorkJob.resource_id == 111,
+        )).all()
+        assert len(receipts) == 1
+        assert len(receipts[0].source_hash) == 64
+        assert len(receipts[0].dedupe_key) == 64
+        assert receipts[0].payload_json == "{}"
+
+
+def test_mobile_patient_delete_receipt_is_not_created_when_clinical_history_blocks_delete(chat):
+    client, engine = chat
+    with Session(engine) as session:
+        session.add(main.Patient(id=113, anonymous_id="SYNTHETIC-DELETE-BLOCKED", owner_user_id=1))
+        session.add(main.Analysis(id=1131, patient_id=113, tooth_number="36", status="DRAFT"))
+        session.commit()
+
+    request_key = "synthetic-patient-delete-request-0002"
+    blocked = client.delete(f"/api/mobile/v1/patients/113?request_key={request_key}")
+    assert blocked.status_code == 409, blocked.text
+    with Session(engine) as session:
+        assert session.exec(select(WorkJob).where(
+            WorkJob.owner_user_id == 1,
+            WorkJob.kind == "PATIENT_DELETE_RECEIPT",
+            WorkJob.resource_id == 113,
+        )).first() is None
+
+    # The same key remains usable after the blocking clinical dependency is
+    # removed through the test fixture; no failed deletion receipt was committed.
+    with Session(engine) as session:
+        session.delete(session.get(main.Analysis, 1131))
+        session.commit()
+    removed = client.delete(f"/api/mobile/v1/patients/113?request_key={request_key}")
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["already_deleted"] is False
+
+
+def test_mobile_patient_delete_rejects_malformed_request_key_without_mutation(chat):
+    client, engine = chat
+    with Session(engine) as session:
+        session.add(main.Patient(id=114, anonymous_id="SYNTHETIC-DELETE-KEY", owner_user_id=1))
+        session.commit()
+
+    response = client.delete("/api/mobile/v1/patients/114?request_key=short")
+    assert response.status_code == 422, response.text
+    with Session(engine) as session:
+        assert session.get(main.Patient, 114) is not None
+        assert session.exec(select(WorkJob).where(
+            WorkJob.kind == "PATIENT_DELETE_RECEIPT",
+            WorkJob.resource_id == 114,
+        )).first() is None
+
