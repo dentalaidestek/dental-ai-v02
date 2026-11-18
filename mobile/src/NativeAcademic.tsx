@@ -22,7 +22,7 @@ function Library({token,userId,select}:{token:string;userId:number;select:(c:A.C
   const pending=recovery===undefined?uncertain:recovery;
   try{
    if(pending?.request_key&&!before){
-    const receipt=await A.courseCreateReceipt(token,requestKey);
+    const receipt=await A.courseCreateReceipt(token,pending.request_key);
     if(receipt){if(alive.current){setItems([{...receipt.course,material_count:receipt.materials.length}]);setCursor(null);await SecureStore.deleteItemAsync(createKey);setUncertain(null);setCreateReceiptDeleted(false);select(receipt.course)}return}
    }
    const v=await A.library(token,pending?.title||q,before);
@@ -41,7 +41,7 @@ function Library({token,userId,select}:{token:string;userId:number;select:(c:A.C
   try{
    await SecureStore.setItemAsync(createKey,JSON.stringify(pending));
    if(!alive.current)return;setUncertain(pending);
-   if(checkReceipt){const existing=await A.courseCreateReceipt(token,pending.request_key);if(existing){await SecureStore.deleteItemAsync(createKey);if(alive.current){setUncertain(null);setCreateReceiptDeleted(false);select(existing.course)}return}}
+   if(checkReceipt){const existing=await A.courseCreateReceipt(token,requestKey);if(existing){await SecureStore.deleteItemAsync(createKey);if(alive.current){setUncertain(null);setCreateReceiptDeleted(false);select(existing.course)}return}}
    const v=await A.createCourse(token,pending.title,pending.description,requestKey);
    await SecureStore.deleteItemAsync(createKey);
    if(alive.current){setUncertain(null);setCreateReceiptDeleted(false);select(v.course)}
