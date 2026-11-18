@@ -6242,8 +6242,16 @@ def program_copy_to_days(
             target_dates.append(parsed)
 
     with Session(engine, expire_on_commit=False) as s:
-        source = s.get(ScheduleEvent, event_id)
-        if not source or source.owner_user_id != user.id or source.status == "DELETED":
+        # Serialize copies of the same source event on PostgreSQL. A second
+        # device must see the first copy transaction's committed target rows
+        # before deciding whether another copy is needed.
+        source = s.exec(
+            select(ScheduleEvent)
+            .where(ScheduleEvent.id == event_id)
+            .where(ScheduleEvent.owner_user_id == user.id)
+            .with_for_update()
+        ).first()
+        if not source or source.status == "DELETED":
             return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
         if source.recurrence_rule != "NONE":
             return HTMLResponse(
@@ -6271,12 +6279,23 @@ def program_copy_to_days(
             local_end = local_start + duration if duration else None
             start_utc = local_start.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
             end_utc = local_end.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None) if local_end else None
+            # A matching title/time alone is not a duplicate: clinics often
+            # have different patients or event types with the same label.
+            # Match the copied event's complete scheduling identity so a
+            # different appointment is never silently suppressed.
             duplicate = s.exec(
                 select(ScheduleEvent)
                 .where(ScheduleEvent.owner_user_id == user.id)
                 .where(ScheduleEvent.status != "DELETED")
+                .where(ScheduleEvent.event_type == source.event_type)
                 .where(ScheduleEvent.title == source.title)
                 .where(ScheduleEvent.start_at == start_utc)
+                .where(ScheduleEvent.end_at == end_utc)
+                .where(ScheduleEvent.patient_id == copied_patient_id)
+                .where(ScheduleEvent.location == source.location)
+                .where(ScheduleEvent.notes == source.notes)
+                .where(ScheduleEvent.reminder_minutes == source.reminder_minutes)
+                .where(ScheduleEvent.notification_enabled == source.notification_enabled)
             ).first()
             if duplicate:
                 continue
