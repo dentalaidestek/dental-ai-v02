@@ -12,8 +12,11 @@ logger = logging.getLogger(__name__)
 SUPPORT_RECEIPTS_REVISION = 14
 PROGRAM_IDEMPOTENCY_REVISION = 15
 PROGRAM_QUERY_INDEX_REVISION = 16
-REVISION = 17
+ACADEMIC_COURSE_RECEIPT_REVISION = 17
+TOOTH_CHART_OBSERVATION_REVISION = 18
+REVISION = TOOTH_CHART_OBSERVATION_REVISION
 PROGRAM_QUERY_INDEX_LOCK = 71048238
+TOOTH_CHART_OBSERVATION_LOCK = 71048240
 
 
 def _ensure_mobile_push_device_table(engine):
@@ -312,13 +315,13 @@ def _upgrade_academic_course_receipts_schema(main):
         if not inspect(connection).has_table('dental_schema_revision'):
             return False
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
-        if revision == REVISION:
+        if revision in (ACADEMIC_COURSE_RECEIPT_REVISION, REVISION):
             return True
         if revision != PROGRAM_QUERY_INDEX_REVISION:
             return False
         connection.execute(text('SELECT pg_advisory_xact_lock(71048239)'))
         revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
-        if revision == REVISION:
+        if revision in (ACADEMIC_COURSE_RECEIPT_REVISION, REVISION):
             return True
         if revision != PROGRAM_QUERY_INDEX_REVISION:
             raise RuntimeError('Schema changed during Academic course receipt migration')
@@ -336,38 +339,120 @@ def _upgrade_academic_course_receipts_schema(main):
             raise RuntimeError('Academic course receipt unique owner/key constraint is missing')
         result = connection.execute(
             text('UPDATE dental_schema_revision SET version=:version WHERE id=1 AND version=:prior'),
-            {'version': REVISION, 'prior': PROGRAM_QUERY_INDEX_REVISION},
+            {'version': ACADEMIC_COURSE_RECEIPT_REVISION, 'prior': PROGRAM_QUERY_INDEX_REVISION},
         )
         if result.rowcount != 1:
             current = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
-            if current != REVISION:
+            if current != ACADEMIC_COURSE_RECEIPT_REVISION:
                 raise RuntimeError('Schema changed during Academic course receipt migration')
-    logger.warning('migration.academic_course_receipts complete revision=%s', REVISION)
+    logger.warning('migration.academic_course_receipts complete revision=%s', ACADEMIC_COURSE_RECEIPT_REVISION)
+    return True
+
+
+
+
+def _upgrade_tooth_chart_observation_indexes(main):
+    """Deduplicate current tooth observations and install revision-18 unique indexes."""
+    if main.engine.dialect.name not in ("postgresql", "sqlite"):
+        return False
+    index_specs = (
+        ("toothstatus", "patient_id, tooth_number", "uq_toothstatus_patient_tooth"),
+        ("toothsurfacestatus", "patient_id, tooth_number, surface", "uq_toothsurfacestatus_patient_tooth_surface"),
+    )
+    with main.engine.begin() as connection:
+        if not inspect(connection).has_table("dental_schema_revision"):
+            return False
+        for table_name, _columns, _index_name in index_specs:
+            if not inspect(connection).has_table(table_name):
+                raise RuntimeError(f"Tooth chart migration requires {table_name}")
+        revision = connection.execute(text("SELECT version FROM dental_schema_revision WHERE id=1")).scalar()
+        if revision == TOOTH_CHART_OBSERVATION_REVISION:
+            for table_name, columns, index_name in index_specs:
+                indexes = inspect(connection).get_indexes(table_name)
+                if not any(item.get("name") == index_name and item.get("unique")
+                           and item.get("column_names") == [part.strip() for part in columns.split(",")]
+                           for item in indexes):
+                    raise RuntimeError(f"Tooth chart unique index {index_name} is missing")
+            return True
+        if revision != ACADEMIC_COURSE_RECEIPT_REVISION:
+            return False
+        if main.engine.dialect.name == "postgresql":
+            connection.execute(text("SET LOCAL lock_timeout = '5s'"))
+            connection.execute(text("SET LOCAL statement_timeout = '60s'"))
+            connection.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"),
+                               {"lock_key": TOOTH_CHART_OBSERVATION_LOCK})
+            revision = connection.execute(text("SELECT version FROM dental_schema_revision WHERE id=1")).scalar()
+            if revision == TOOTH_CHART_OBSERVATION_REVISION:
+                return True
+            if revision != ACADEMIC_COURSE_RECEIPT_REVISION:
+                raise RuntimeError("Schema changed during tooth chart observation migration")
+            connection.execute(text(
+                "LOCK TABLE toothstatus, toothsurfacestatus IN SHARE ROW EXCLUSIVE MODE"
+            ))
+        for table_name, columns, index_name in index_specs:
+            connection.execute(text(f"""
+                DELETE FROM {table_name}
+                WHERE id IN (
+                    SELECT id FROM (
+                        SELECT id, ROW_NUMBER() OVER (
+                            PARTITION BY {columns}
+                            ORDER BY CASE WHEN updated_at IS NULL THEN 1 ELSE 0 END,
+                                     updated_at DESC, id DESC
+                        ) AS duplicate_rank
+                        FROM {table_name}
+                    ) AS ranked
+                    WHERE duplicate_rank > 1
+                )
+            """))
+            connection.execute(text(
+                f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table_name} ({columns})"
+            ))
+            indexes = inspect(connection).get_indexes(table_name)
+            if not any(item.get("name") == index_name and item.get("unique")
+                       and item.get("column_names") == [part.strip() for part in columns.split(",")]
+                       for item in indexes):
+                raise RuntimeError(f"Tooth chart unique index {index_name} was not created")
+        result = connection.execute(text(
+            "UPDATE dental_schema_revision SET version=:version WHERE id=1 AND version=:prior"
+        ), {"version": TOOTH_CHART_OBSERVATION_REVISION, "prior": ACADEMIC_COURSE_RECEIPT_REVISION})
+        if result.rowcount != 1:
+            current = connection.execute(text("SELECT version FROM dental_schema_revision WHERE id=1")).scalar()
+            if current != TOOTH_CHART_OBSERVATION_REVISION:
+                raise RuntimeError("Schema changed during tooth chart observation migration")
+    logger.warning("migration.tooth_chart_observation_indexes complete revision=%s",
+                   TOOTH_CHART_OBSERVATION_REVISION)
     return True
 
 
 def _apply_baseline():
     from app import main
-    # Revision 12's study tables are an additive migration that deliberately
-    # preserves the baseline version. Run it before the receipt migration,
-    # which advances that same revision to 14.
+    # Revision 17 is the Academic receipt boundary; revision 18 enforces one
+    # current observation per patient/tooth and patient/tooth/surface.
+    if _upgrade_tooth_chart_observation_indexes(main):
+        return
     _upgrade_learning_schema(main)
     if _upgrade_academic_course_receipts_schema(main):
+        if not _upgrade_tooth_chart_observation_indexes(main):
+            raise RuntimeError("Could not apply tooth chart observation revision 18")
         return
-    # Revision 15 databases can take the online index-only path without replaying
-    # historical DDL or reminder backfills.
     if _upgrade_program_query_indexes(main):
         _upgrade_academic_course_receipts_schema(main)
+        if not _upgrade_tooth_chart_observation_indexes(main):
+            raise RuntimeError("Could not apply tooth chart observation revision 18")
         return
     if _upgrade_support_receipts_schema(main):
         _upgrade_program_idempotency_schema(main)
         _upgrade_program_query_indexes(main)
         _upgrade_academic_course_receipts_schema(main)
+        if not _upgrade_tooth_chart_observation_indexes(main):
+            raise RuntimeError("Could not apply tooth chart observation revision 18")
         return
     if _upgrade_recent_schema(main):
         _upgrade_program_idempotency_schema(main)
         _upgrade_program_query_indexes(main)
         _upgrade_academic_course_receipts_schema(main)
+        if not _upgrade_tooth_chart_observation_indexes(main):
+            raise RuntimeError("Could not apply tooth chart observation revision 18")
         return
     # A dedicated migration process owns the advisory lock through all of the
     # historical DDL transactions. It is released even on migration failure.
