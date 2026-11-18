@@ -37,3 +37,24 @@ test('native chart status overlays use the web crown, canal and extraction paths
  }
  assert.equal(paths(exports.default({number:'36',status:'HEALTHY'})).length,0);
 });
+
+test('patient delete API sends a scoped replay key and validates the receipt response',async()=>{
+ const api=require('../src/api.ts'),original=global.fetch,calls=[];
+ try{
+  global.fetch=async(url,options)=>{calls.push({url:String(url),options});return new Response(JSON.stringify({ok:true,patient_id:8,already_deleted:true}),{status:200,headers:{'Content-Type':'application/json'}})};
+  const result=await api.deletePatient('synthetic-token',8,'synthetic-patient-delete-0001');
+  assert.equal(result.already_deleted,true);
+  assert.match(calls[0].url,/\/patients\/8\?request_key=synthetic-patient-delete-0001$/);
+  assert.equal(calls[0].options.method,'DELETE');
+  assert.equal(calls[0].options.headers.Authorization,'Bearer synthetic-token');
+  const count=calls.length;
+  await assert.rejects(()=>api.deletePatient('synthetic-token',8,'short'));
+  assert.equal(calls.length,count,'invalid keys must be rejected before network access');
+
+  global.fetch=async()=>new Response(JSON.stringify({ok:true,patient_id:9,already_deleted:true}),{status:200});
+  await assert.rejects(()=>api.deletePatient('synthetic-token',8,'synthetic-patient-delete-0002'),/işlem fişi doğrulanamadı/);
+  global.fetch=async()=>new Response(JSON.stringify({ok:true,patient_id:8}),{status:200});
+  await assert.rejects(()=>api.deletePatient('synthetic-token',8,'synthetic-patient-delete-0003'),/işlem fişi doğrulanamadı/);
+ }finally{global.fetch=original}
+});
+
