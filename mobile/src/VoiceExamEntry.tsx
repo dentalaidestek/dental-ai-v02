@@ -151,7 +151,6 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    setVoiceSessionId(activeSessionId);
    const checkpointKey=userId?`dai.voice.extraction.${userId}.${patientId}.${activeSessionId}`:"";
    const legacyCheckpointKey=userId?`dai.voice.extraction.${userId}.${patientId}`:"";
-   const legacyCheckpointKey=userId?`dai.voice.extraction.${userId}.${patientId}`:"";
    let resume: {cursor:number;revision:string;review:VoiceExtraction["review"]}|undefined;
    if(userId){
     if(legacyCheckpointKey)await extractionStore.deleteItemAsync(legacyCheckpointKey);
