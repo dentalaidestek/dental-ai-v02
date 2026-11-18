@@ -774,6 +774,45 @@ def mobile_update_tooth_surface(
         if not patient or patient.owner_user_id != user.id:
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
         note = payload.note.strip() if payload.note else None
+        upsert_tooth_surface_observation(
+            session, ToothSurfaceStatus, patient_id, tooth_number,
+            surface_name, payload.status, note, _utcnow_naive(),
+        )
+        realtime = _record_realtime_event(session, user.id, "TOOTH_UPDATED", "patient", patient_id,
+            {"patient_id": patient_id, "tooth_number": tooth_number,
+             "surface": surface_name, "surface_status": payload.status})
+        session.commit()
+        on_loop(_publish_realtime_event, realtime)
+        return {"ok": True, "tooth_number": tooth_number, "surface": surface_name, "status": payload.status}
+
+
+@router.post("/patients/{patient_id}/teeth/{tooth_number}")
+def mobile_update_tooth(
+    patient_id: int,
+    tooth_number: str,
+    payload: MobileToothUpdate,
+    user: User = Depends(_mobile_user),
+):
+    if not _valid_fdi_tooth_number(tooth_number):
+        raise HTTPException(status_code=422, detail="Geçersiz FDI diş numarası.")
+    if payload.note is not None and len(payload.note) > 2000:
+        raise HTTPException(status_code=422, detail="Diş notu 2000 karakteri aşamaz.")
+    allowed_statuses = {"HEALTHY","CARIES","FILLING","CROWN","ROOT_CANAL","EXTRACTED","IMPLANT","OTHER"}
+    allowed_surfaces = {"OCCLUSAL","INCISAL","MESIAL","DISTAL","BUCCAL","LINGUAL"}
+    if payload.status not in allowed_statuses:
+        raise HTTPException(status_code=422, detail="Geçersiz diş durumu.")
+    if payload.surface and payload.surface not in allowed_surfaces:
+        raise HTTPException(status_code=422, detail="Geçersiz diş yüzeyi.")
+    if payload.surfaces is not None and (len(payload.surfaces) > 6 or len(set(payload.surfaces)) != len(payload.surfaces) or any(surface not in allowed_surfaces for surface in payload.surfaces)):
+        raise HTTPException(status_code=422, detail="Geçersiz veya tekrarlanan diş yüzeyi.")
+    if payload.surface and payload.surfaces is not None:
+        raise HTTPException(status_code=422, detail="Tekil ve çoklu yüzey birlikte gönderilemez.")
+    requested_surfaces = payload.surfaces if payload.surfaces is not None else ([payload.surface] if payload.surface else [])
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        if not patient or patient.owner_user_id != user.id:
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        note = payload.note.strip() if payload.note else None
         updated_at = _utcnow_naive()
         upsert_tooth_observation(
             session, ToothStatus, patient_id, tooth_number,
@@ -786,9 +825,13 @@ def mobile_update_tooth_surface(
             )
         # Tooth chart status describes an observation, not a completed procedure.
         # Completed treatment records must be created via the dedicated treatments API.
-        realtime=_record_realtime_event(session,user.id,"TOOTH_UPDATED","patient",patient_id,{"patient_id":patient_id,"tooth_number":tooth_number,"status":payload.status,"surface":payload.surface,"surfaces":requested_surfaces,"note":note})
-        session.commit(); on_loop(_publish_realtime_event,realtime)
-        return {"ok": True, "tooth_number": tooth_number, "status": payload.status, "surface": payload.surface, "surfaces": requested_surfaces}
+        realtime = _record_realtime_event(session, user.id, "TOOTH_UPDATED", "patient", patient_id,
+            {"patient_id": patient_id, "tooth_number": tooth_number, "status": payload.status,
+             "surface": payload.surface, "surfaces": requested_surfaces, "note": note})
+        session.commit()
+        on_loop(_publish_realtime_event, realtime)
+        return {"ok": True, "tooth_number": tooth_number, "status": payload.status,
+                "surface": payload.surface, "surfaces": requested_surfaces}
 
 
 class MobilePatientEdit(BaseModel):
