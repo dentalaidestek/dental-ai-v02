@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   AppState,
   Image,
   Pressable,
@@ -71,18 +70,24 @@ export default function NativeSocialAdmin({ token, user }: Props) {
   const [notice, setNotice] = useState("");
   const grantRef = useRef<string | null>(null);
   const generation = useRef(0);
+  const loadingRef = useRef(false);
+  const cursorRef = useRef<string | number | null>(null);
   const mounted = useRef(true);
 
   const clearGrant = useCallback(async (updateUi: boolean) => {
     const current = grantRef.current;
     grantRef.current = null;
+    generation.current++;
+    loadingRef.current = false;
     if (updateUi && mounted.current) {
       setStepUpToken(null);
       setExpiresAt(0);
       setItems([]);
       setCursor(null);
+      cursorRef.current = null;
       setDetail(null);
       setAging(undefined);
+      setLoading(false);
     }
     if (current) {
       try {
@@ -174,14 +179,16 @@ export default function NativeSocialAdmin({ token, user }: Props) {
 
   const load = useCallback(async (reset = true) => {
     const grant = grantRef.current;
-    if (!grant || loading) return;
+    if (!grant || (!reset && loadingRef.current)) return;
     const request = ++generation.current;
-    const before = reset ? null : cursor;
+    const before = reset ? null : cursorRef.current;
+    loadingRef.current = true;
     setLoading(true);
     setError("");
     if (reset) {
       setItems([]);
       setCursor(null);
+      cursorRef.current = null;
       setAging(undefined);
     }
     try {
@@ -195,6 +202,8 @@ export default function NativeSocialAdmin({ token, user }: Props) {
         setItems((current) => reset
           ? page.items
           : [...current, ...page.items.filter((row) => !current.some((old) => old.id === row.id))]);
+        cursorRef.current = page.next_cursor;
+        cursorRef.current = page.next_cursor;
         setCursor(page.next_cursor);
       } else {
         const page = await api.getSocialAdminQueue(token, grant, kind, status, before);
@@ -210,9 +219,12 @@ export default function NativeSocialAdmin({ token, user }: Props) {
         setError(e instanceof Error ? e.message : "Liste yüklenemedi.");
       }
     } finally {
-      if (request === generation.current) setLoading(false);
+      if (request === generation.current) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
-  }, [token, mode, kind, status, cursor, loading]);
+  }, [token, mode, kind, status]);
 
   useEffect(() => {
     if (stepUpToken && grantRef.current === stepUpToken) void load(true);
@@ -442,7 +454,7 @@ export default function NativeSocialAdmin({ token, user }: Props) {
                 {items.map((item) => mode === "reports" ? (
                   <View key={item.id} style={styles.card}>
                     <Text style={styles.cardTitle}>Şikâyet #{item.id} · {asText(item.reason, 80)}</Text>
-                    <Text style={styles.muted}>Üye #{asText(item.reporter_id, 30)} · {asText(item.created_at, 40)}</Text>
+                    <Text style={styles.muted}>Üye #{String(item.reporter_id ?? "—").slice(0, 30)} · {asText(item.created_at, 40)}</Text>
                     <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => openReport(item)}>
                       <Text style={styles.secondaryText}>İçeriği ve geçmişini aç</Text>
                     </Pressable>
