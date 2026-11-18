@@ -671,3 +671,14 @@ test('rapid double tap on treatment pagination sends only one request',async()=>
  await renderer.act(async()=>{resolvePage({items:[],next_cursor:null});await new Promise(resolve=>setImmediate(resolve))});
  await renderer.act(async()=>tree.unmount());
 });
+
+test('voice examination stays on the dedicated home feature and stack route',async()=>{
+ const Profile=component({getPatient:async()=>patient(8)});let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ const voiceEntry=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(t=>text(t.children).trim()==='Sesli Muayene'));
+ assert.equal(voiceEntry,undefined,'patient detail must not duplicate the separate voice-exam entry');
+ const app=fs.readFileSync(require.resolve('../App.tsx'),'utf8');
+ assert.match(app,/VisualFeature title="Sesli Muayene"[\s\S]*?navigate\("VoiceExam"\)/);
+ assert.match(app,/Stack\.Screen name="VoiceExam"/);
+ await renderer.act(async()=>tree.unmount());
+});
