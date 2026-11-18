@@ -1500,8 +1500,9 @@ def _user_schedule_occurrences(
     range_start: datetime,
     range_end: datetime,
     snapshot_at: Optional[datetime] = None,
+    include_patient_details: bool = True,
 ):
-    """Expand the owner's events; optionally freeze the row set at a UTC watermark."""
+    """Expand owner events; optionally freeze rows and skip unused patient hydration."""
     range_end_utc = (
         range_end.replace(tzinfo=APP_TIMEZONE)
         .astimezone(timezone.utc)
@@ -1532,19 +1533,19 @@ def _user_schedule_occurrences(
     for event in events:
         occurrences.extend(_event_occurrences(event, range_start, range_end))
 
-    patient_ids = {item["patient_id"] for item in occurrences if item.get("patient_id")}
     patient_map = {}
-    if patient_ids:
-        patients = session.exec(
-            select(Patient)
-            .where(Patient.id.in_(patient_ids))
-            .where(Patient.owner_user_id == user_id)
-        ).all()
-        patient_map = {patient.id: patient for patient in patients}
+    if include_patient_details:
+        patient_ids = {item["patient_id"] for item in occurrences if item.get("patient_id")}
+        if patient_ids:
+            patients = session.exec(
+                select(Patient)
+                .where(Patient.id.in_(patient_ids))
+                .where(Patient.owner_user_id == user_id)
+            ).all()
+            patient_map = {patient.id: patient for patient in patients}
 
     for item in occurrences:
-        patient = patient_map.get(item.get("patient_id"))
-        item["patient"] = patient
+        item["patient"] = patient_map.get(item.get("patient_id")) if include_patient_details else None
     return sorted(occurrences, key=lambda item: item["start_local"])
 
 
