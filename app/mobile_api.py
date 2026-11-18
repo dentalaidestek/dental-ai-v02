@@ -2538,34 +2538,52 @@ def mobile_patient_media(patient_id: int, before: Optional[int] = Query(None, ge
 
 @router.delete("/patients/{patient_id}/media/{media_id}")
 def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Depends(_mobile_user)):
+    from app import work_jobs
+
     with Session(engine, expire_on_commit=False) as session:
-        patient = session.get(Patient, patient_id)
-        if not patient or patient.owner_user_id != user.id:
+        patient_query = select(Patient).where(
+            Patient.id == patient_id, Patient.owner_user_id == user.id
+        )
+        if engine.dialect.name == "postgresql":
+            patient_query = patient_query.with_for_update()
+        patient = session.exec(patient_query).first()
+        if not patient:
             raise HTTPException(status_code=404, detail="Klinik görüntü bulunamadı.")
         media = session.get(PatientMedia, media_id)
         if media is None:
             # A native client may lose the DELETE response after the database
-            # commit. Replaying the same owner-scoped delete must confirm that
-            # outcome instead of leaving the gallery permanently uncertain.
+            # commit. Replaying the same owner-scoped delete confirms the outcome.
             return {"ok": True, "media_id": media_id, "already_deleted": True, "storage_cleanup_pending": None}
         if media.patient_id != patient_id or media.owner_user_id != user.id:
             raise HTTPException(status_code=404, detail="Klinik görüntü bulunamadı.")
+
         file_path = media.file_path
+        queued = work_jobs.enqueue_patient_media_cleanup(session, file_path)
         session.delete(media)
-        event = _record_realtime_event(session, user.id, "PATIENT_MEDIA_DELETED", "patient", patient_id, {"patient_id": patient_id, "media_id": media_id})
+        event = _record_realtime_event(
+            session, user.id, "PATIENT_MEDIA_DELETED", "patient", patient_id,
+            {"patient_id": patient_id, "media_id": media_id},
+        )
         session.commit()
+
     on_loop(_publish_realtime_event, event)
-    # Database commit precedes object deletion, matching the web route.
-    cleanup_pending = False
-    try:
-        storage_delete(file_path)
-    except Exception:
-        # The database deletion already committed: do not report a false API failure.
-        # Operators must reconcile orphaned storage objects from server logs.
-        import logging
-        logging.getLogger(__name__).exception("Patient media storage cleanup failed for media_id=%s", media_id)
-        cleanup_pending = True
-    return {"ok": True, "media_id": media_id, "already_deleted": False, "storage_cleanup_pending": cleanup_pending}
+    cleanup_pending = queued
+    if not queued:
+        try:
+            storage_delete(file_path)
+        except Exception:
+            # The database deletion already committed; do not report a false API failure.
+            import logging
+            logging.getLogger(__name__).exception(
+                "Patient media storage cleanup failed for media_id=%s", media_id
+            )
+            cleanup_pending = True
+    return {
+        "ok": True,
+        "media_id": media_id,
+        "already_deleted": False,
+        "storage_cleanup_pending": cleanup_pending,
+    }
 
 
 @router.get("/patients/{patient_id}/media/{media_id}/file")
