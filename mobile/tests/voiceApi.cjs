@@ -5,7 +5,7 @@ const api=require('../src/voiceApi.ts');
 const response=(body,status=200)=>({ok:status>=200&&status<300,status,text:async()=>body});
 test('voice extraction sends consent, bearer and patient path',async()=>{
  const original=global.fetch;let call;global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review:{fields:{}}}))};
- try{const result=await api.extractVoice('secret',12,'muayene konuşması',{sessionId:'session_1234567890'});assert.equal(result.ok,true);assert.match(call.url,/\/patients\/12\/voice-exam\/text$/);assert.equal(call.init.headers.Authorization,'Bearer secret');assert.deepEqual(JSON.parse(call.init.body),{transcript:'muayene konuşması',consent:true,context:{},request_key:'session_1234567890_0_0000000000000000'})}finally{global.fetch=original}
+ try{const result=await api.extractVoice('secret',12,'muayene konuşması',{sessionId:'session_1234567890'});assert.equal(result.ok,true);assert.match(call.url,/\/patients\/12\/voice-exam\/text$/);assert.equal(call.init.headers.Authorization,'Bearer secret');assert.deepEqual(JSON.parse(call.init.body),{transcript:'muayene konuşması',consent:true,context:{},request_key:'session_1234567890_0_'+'0'.repeat(64)})}finally{global.fetch=original}
 });
 test('voice API surfaces HTTP errors without masking details',async()=>{
  const original=global.fetch;global.fetch=async()=>response(JSON.stringify({detail:'Hasta erişim yetkisi yok'}),403);
@@ -486,15 +486,17 @@ test('approved voice history accepts an empty quote when the original transcript
  }finally{global.fetch=original}
 });
 
-test('clinical chunk request key is stable for one session and changes for a new session',async()=>{
+test('clinical chunk request key is stable on restart and changes with transcript or session',async()=>{
  const original=global.fetch,calls=[];
  global.fetch=async(_url,init)=>{calls.push(JSON.parse(init.body));return response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review:{fields:{}}}))};
  try{
-  await api.extractVoice('token',7,'same transcript',{sessionId:'session_1234567890'});
-  await api.extractVoice('token',7,'same transcript',{sessionId:'session_1234567890'});
-  await api.extractVoice('token',7,'same transcript',{sessionId:'session_1234567891'});
+  await api.extractVoice('token',7,'same transcript',{sessionId:'session_1234567890',transcriptHash:'a'.repeat(64)});
+  await api.extractVoice('token',7,'same transcript',{sessionId:'session_1234567890',transcriptHash:'a'.repeat(64)});
+  await api.extractVoice('token',7,'edited transcript',{sessionId:'session_1234567890',transcriptHash:'b'.repeat(64)});
+  await api.extractVoice('token',7,'same transcript',{sessionId:'session_1234567891',transcriptHash:'a'.repeat(64)});
   assert.equal(calls[0].request_key,calls[1].request_key);
   assert.notEqual(calls[0].request_key,calls[2].request_key);
+  assert.notEqual(calls[0].request_key,calls[3].request_key);
   assert.equal(calls[0].context && typeof calls[0].context,'object');
  }finally{global.fetch=original}
 });
