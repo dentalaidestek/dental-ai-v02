@@ -357,3 +357,14 @@ test('comment refresh invalidates an in-flight page lease without wedging the ne
  assert.equal(h.requests.length,5,'pagination continues from the current page cursor');
  assert.equal(h.requests[4][2],20);
 });
+
+
+test('Dental Flow comment pagination lock is owned by a request and refresh invalidates stale ownership',()=>{
+ const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
+ const comments=source.slice(source.indexOf('function Comments('),source.indexOf('function PostCard('));
+ assert.match(comments,/commentPageRequest\s*=\s*useRef<number\s*\|\s*null>\(null\)/);
+ assert.match(comments,/if \(after && commentPageRequest\.current !== null\) return/);
+ assert.match(comments,/else commentPageRequest\.current = null/);
+ assert.match(comments,/if \(commentPageRequest\.current === request\)/);
+ assert.doesNotMatch(comments,/commentPageLock/);
+});
