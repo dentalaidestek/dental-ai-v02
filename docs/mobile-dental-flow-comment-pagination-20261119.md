@@ -36,7 +36,7 @@ No API, schema, permission, storage, patient data, polling or server query chang
 
 Added `comment refresh invalidates an in-flight page lease without wedging the next cursor` to `mobile/tests/socialScreens.cjs`. It drives the native Comments component through: first page, pending older page, refresh, replacement older page, late stale response, and the next cursor. It asserts that the new page can start and that the stale request cannot release its lock.
 
-The file is already included in `npm run test:beta` and the manual `native-social-security` job in `.github/workflows/security-recovery.yml`; no workflow edit or dispatch was needed.
+The file is already included in `npm run test:beta` and the manual `native-social-security` job in `.github/workflows/security-recovery.yml`; no workflow edit or dispatch was needed. A second source-contract regression protects the request-ID lease and refresh invalidation from being replaced by the old boolean lock.
 
 ## Validation limits
 
