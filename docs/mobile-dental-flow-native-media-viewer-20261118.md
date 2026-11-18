@@ -63,4 +63,4 @@ PR #257 açık/Draft kalır. Main merge, canlı deploy, production migration, AP
 - The committed `socialMediaViewer.cjs` is registered in both package and manual Security Recovery scripts, but the actual repository test file was not run with `npm ci` or the full mobile workspace. No full-app typecheck, Expo export, Android build or device result is claimed.
 - A strict equality edge case was found during the isolated pan check: clamping could return negative zero on a centered axis. The helper now canonicalizes both zero offsets to positive zero, making pan results deterministic.
 
-Final branch HEAD after this follow-up: `38a7540682717fc895972c8e6899ad9e44ee086e`.
+Code verification HEAD used for the isolated checks: `38a7540682717fc895972c8e6899ad9e44ee086e`; the documentation update itself is a subsequent commit.
