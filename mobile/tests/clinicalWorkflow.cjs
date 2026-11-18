@@ -159,3 +159,13 @@ test('clinical workspace rejects malformed or oversized result fields before nat
  const validError=api(async()=>({...base,result:{status:'AI_ERROR',error:'Synthetic provider error'}}));
  assert.equal((await validError.getClinical('A',1)).result.status,'AI_ERROR');
 });
+
+
+test('legacy ANALYSIS_COMPLETE preliminary results keep their web question and consent step',async()=>{
+ const h=harness({getClinical:async()=>({...base,result:{...base.result,status:'ANALYSIS_COMPLETE'}})}),t=await open(h);
+ const rendered=text(t.toJSON());
+ assert.ok(rendered.includes('Hekime Sorular'));
+ assert.ok(rendered.includes('Synthetic question?'));
+ assert.ok(button(t,'Yeni Bilgilerle Tekrar Analiz Et'));
+ await renderer.act(async()=>t.unmount());
+});
