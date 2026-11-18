@@ -486,6 +486,222 @@ export async function revokeSocialAdminStepUp(
   }
 }
 
+export type SocialAdminKind = "POST" | "COMMENT" | "PUBLICATION";
+export type SocialAdminStatus = "PENDING" | "PUBLISHED" | "REJECTED";
+export type SocialAdminQueueItem = Record<string, unknown> & {
+  id: number;
+  version: number;
+  status: SocialAdminStatus;
+};
+export type SocialAdminQueuePage = {
+  items: SocialAdminQueueItem[];
+  next_cursor: string | number | null;
+  aging?: Record<string, number>;
+};
+export type SocialAdminReport = Record<string, unknown> & {
+  id: number;
+  target_type: "POST" | "COMMENT";
+  target_id: number;
+  reason: string;
+};
+export type SocialAdminDetail = {
+  item: Record<string, unknown>;
+  history: Record<string, unknown>[];
+  moderation_history: Record<string, unknown>[];
+};
+
+function socialAdminStepUpHeaders(stepUpToken: string): Record<string, string> {
+  if (
+    typeof stepUpToken !== "string" ||
+    !SOCIAL_ADMIN_STEP_UP_TOKEN.test(stepUpToken)
+  ) {
+    throw new Error("Yönetici doğrulaması gerekiyor.");
+  }
+  return { "X-Dental-Social-Admin-Step-Up": stepUpToken };
+}
+
+function socialAdminRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+async function socialAdminRequest<T>(
+  token: string,
+  stepUpToken: string,
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  return socialRequest<T>(token, path, {
+    ...init,
+    headers: {
+      ...init.headers,
+      ...socialAdminStepUpHeaders(stepUpToken),
+    },
+  });
+}
+
+export async function getSocialAdminQueue(
+  token: string,
+  stepUpToken: string,
+  kind: SocialAdminKind,
+  status: SocialAdminStatus,
+  before?: string | number | null,
+): Promise<SocialAdminQueuePage> {
+  if (!["POST", "COMMENT", "PUBLICATION"].includes(kind) ||
+      !["PENDING", "PUBLISHED", "REJECTED"].includes(status)) {
+    throw new Error("Geçersiz moderasyon filtresi.");
+  }
+  const params = new URLSearchParams({ kind, status });
+  if (before !== undefined && before !== null) {
+    const cursor = String(before);
+    const validCursor = status === "PENDING"
+      ? /^(?:[1-9][0-9]{0,18}|m1_[A-Za-z0-9_-]{1,180})$/.test(cursor)
+      : /^[1-9][0-9]{0,18}$/.test(cursor);
+    if (!validCursor || cursor.length > 192) {
+      throw new Error("İnceleme sayfasını yeniden açın.");
+    }
+    params.set("before", cursor);
+  }
+  const value = await socialAdminRequest<unknown>(
+    token,
+    stepUpToken,
+    "/moderation?" + params.toString(),
+  );
+  if (!socialAdminRecord(value) ||
+      !Array.isArray(value.items) ||
+      value.items.length > 30 ||
+      !(value.next_cursor === null ||
+        (typeof value.next_cursor === "number" && Number.isSafeInteger(value.next_cursor) && value.next_cursor > 0) ||
+        (typeof value.next_cursor === "string" && status === "PENDING" && value.next_cursor.length <= 192 && /^m1_[A-Za-z0-9_-]+$/.test(value.next_cursor)))) {
+    throw new ApiError(502, "Yönetici inceleme listesi doğrulanamadı.");
+  }
+  const items: SocialAdminQueueItem[] = [];
+  for (const item of value.items) {
+    if (!socialAdminRecord(item) ||
+        !Number.isSafeInteger(item.id) || (item.id as number) < 1 ||
+        !Number.isSafeInteger(item.version) || (item.version as number) < 1 ||
+        item.status !== status) {
+      throw new ApiError(502, "İnceleme kaydı doğrulanamadı.");
+    }
+    if (item.media !== undefined &&
+        (!Array.isArray(item.media) || item.media.length > 4 ||
+         item.media.some((media) => !socialAdminRecord(media) ||
+           !Number.isSafeInteger(media.id) || (media.id as number) < 1 ||
+           typeof media.url !== "string" || media.url.length > 2048))) {
+      throw new ApiError(502, "İnceleme medyası doğrulanamadı.");
+    }
+    items.push(item as SocialAdminQueueItem);
+  }
+  let aging: Record<string, number> | undefined;
+  if (value.aging !== undefined) {
+    if (!socialAdminRecord(value.aging) ||
+        Object.values(value.aging).some((n) => !Number.isSafeInteger(n) || (n as number) < 0)) {
+      throw new ApiError(502, "İnceleme bekleme özeti doğrulanamadı.");
+    }
+    aging = value.aging as Record<string, number>;
+  }
+  return { items, next_cursor: value.next_cursor as string | number | null, aging };
+}
+
+export async function getSocialAdminReports(
+  token: string,
+  stepUpToken: string,
+  before?: number | null,
+): Promise<{ items: SocialAdminReport[]; next_cursor: number | null }> {
+  if (before !== undefined && before !== null &&
+      (!Number.isSafeInteger(before) || before < 1)) {
+    throw new Error("Şikâyet sayfasını yeniden açın.");
+  }
+  const query = before ? "?before=" + before : "";
+  const value = await socialAdminRequest<unknown>(
+    token,
+    stepUpToken,
+    "/reports" + query,
+  );
+  if (!socialAdminRecord(value) || !Array.isArray(value.items) ||
+      value.items.length > 30 ||
+      !(value.next_cursor === null ||
+        (Number.isSafeInteger(value.next_cursor) && (value.next_cursor as number) > 0))) {
+    throw new ApiError(502, "Şikâyet listesi doğrulanamadı.");
+  }
+  const items: SocialAdminReport[] = [];
+  for (const item of value.items) {
+    if (!socialAdminRecord(item) ||
+        !Number.isSafeInteger(item.id) || (item.id as number) < 1 ||
+        !["POST", "COMMENT"].includes(String(item.target_type)) ||
+        !Number.isSafeInteger(item.target_id) || (item.target_id as number) < 1 ||
+        typeof item.reason !== "string" || item.reason.length > 80) {
+      throw new ApiError(502, "Şikâyet kaydı doğrulanamadı.");
+    }
+    items.push(item as SocialAdminReport);
+  }
+  return { items, next_cursor: value.next_cursor as number | null };
+}
+
+export async function getSocialAdminDetail(
+  token: string,
+  stepUpToken: string,
+  kind: SocialAdminKind,
+  id: number,
+): Promise<SocialAdminDetail> {
+  if (!["POST", "COMMENT", "PUBLICATION"].includes(kind) ||
+      !Number.isSafeInteger(id) || id < 1) {
+    throw new Error("Geçersiz inceleme kaydı.");
+  }
+  const value = await socialAdminRequest<unknown>(
+    token,
+    stepUpToken,
+    "/moderation/" + kind + "/" + id,
+  );
+  if (!socialAdminRecord(value) ||
+      !socialAdminRecord(value.item) ||
+      value.item.id !== id ||
+      !Array.isArray(value.history) || value.history.length > 50 ||
+      !Array.isArray(value.moderation_history) || value.moderation_history.length > 50 ||
+      value.history.some((row) => !socialAdminRecord(row)) ||
+      value.moderation_history.some((row) => !socialAdminRecord(row))) {
+    throw new ApiError(502, "İnceleme ayrıntısı doğrulanamadı.");
+  }
+  return {
+    item: value.item,
+    history: value.history as Record<string, unknown>[],
+    moderation_history: value.moderation_history as Record<string, unknown>[],
+  };
+}
+
+export async function decideSocialAdminModeration(
+  token: string,
+  stepUpToken: string,
+  kind: SocialAdminKind,
+  id: number,
+  status: SocialAdminStatus,
+  version: number,
+  reason: string,
+): Promise<{ ok: true; status: SocialAdminStatus; version: number }> {
+  if (!["POST", "COMMENT", "PUBLICATION"].includes(kind) ||
+      !Number.isSafeInteger(id) || id < 1 ||
+      !["PENDING", "PUBLISHED", "REJECTED"].includes(status) ||
+      !Number.isSafeInteger(version) || version < 1 ||
+      typeof reason !== "string" || reason.trim().length < 3 || reason.trim().length > 300) {
+    throw new Error("Karar bilgilerini kontrol edin.");
+  }
+  const value = await socialAdminRequest<unknown>(
+    token,
+    stepUpToken,
+    "/moderation/" + kind + "/" + id,
+    {
+      method: "POST",
+      body: JSON.stringify({ status, version, reason: reason.trim() }),
+    },
+  );
+  if (!socialAdminRecord(value) ||
+      value.ok !== true ||
+      value.status !== status ||
+      !Number.isSafeInteger(value.version) || (value.version as number) <= version) {
+    throw new ApiError(502, "Moderasyon kararı doğrulanamadı.");
+  }
+  return { ok: true, status, version: value.version as number };
+}
+
 export const getSocialStats = (t: string, id: number) =>
   socialRequest<{
     followers: number;
