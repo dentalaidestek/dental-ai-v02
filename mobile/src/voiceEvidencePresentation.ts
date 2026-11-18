@@ -9,6 +9,8 @@ export type VoiceEvidencePresentation = {
   quote: string;
   hasEvidence: boolean;
   edited: boolean;
+  fromHistory: boolean;
+  notice: string;
 };
 
 const MAX_EVIDENCE_CHARS = 3000;
