@@ -435,3 +435,14 @@ test('native tooth history shows web-equivalent surface status, note and timesta
  assert.match(rendered,/10:30/);
  await renderer.act(async()=>tree.unmount());
 });
+
+
+
+test('native tooth and surface writes carry the exact loaded observation revision',()=>{
+ const chart=fs.readFileSync(require.resolve('../src/NativeToothChart.tsx'),'utf8');
+ const api=fs.readFileSync(require.resolve('../src/api.ts'),'utf8');
+ assert.match(chart,/expected_revision:currentTooth\?\.revision\?\?null/);
+ assert.match(chart,/expected_revision:currentSurface\?\.revision\?\?null/);
+ assert.match(api,/expected_revision:string\|null/);
+ assert.match(api,/payload\.expected_revision!==null&&!\/\^\[a-f0-9\]\{64\}\$\//);
+});
