@@ -1911,6 +1911,10 @@ def _validate_schedule_input(
     title = title.strip()
     location = location.strip()
     notes = notes.strip()
+    if len(location) > 160:
+        return None, "Konum en fazla 160 karakter olabilir."
+    if len(notes) > 2000:
+        return None, "Notlar en fazla 2000 karakter olabilir."
     recurrence_rule = recurrence_rule.strip().upper() or "NONE"
     recurrence_until = recurrence_until.strip()
 
