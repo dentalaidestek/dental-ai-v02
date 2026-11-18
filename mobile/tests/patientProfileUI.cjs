@@ -24,7 +24,7 @@ function component(api,file='NativePatientProfile',storage=new Map()){
  Wrapped.focusState=focusState;
  return Wrapped;
 }
-const actions=Object.fromEntries(['chart','analysis','appointment','expert','voice','analysisResult','deleted'].map(k=>[k,()=>{}]));
+const actions=Object.fromEntries(['chart','analysis','appointment','expert','analysisResult','deleted'].map(k=>[k,()=>{}]));
 const patient=id=>({patient:{id,first_name:'Synthetic'+id,last_name:'Test',anonymous_id:'SYN-'+id,chief_complaint:'Complaint',age:0},edit_revision:'a'.repeat(64),teeth:[],surfaces:[],treatments:[{id:1,treatment_name:'Root canal',material:'Synthetic material',result:'Synthetic result',doctor_note:'Synthetic note',edit_revision:'c'.repeat(64),created_at:'2026-11-18T10:00:00'}],media:[]});
 const pagedPatient=(id,cursor)=>{const value=patient(id);value.treatments=[{id:1,treatment_name:'Root canal',edit_revision:'c'.repeat(64),created_at:'2026-11-18T10:00:00'},{id:2,treatment_name:'Second treatment',edit_revision:'d'.repeat(64),created_at:'2026-11-17T10:00:00'},{id:3,treatment_name:'Third treatment',edit_revision:'e'.repeat(64),created_at:'2026-11-16T10:00:00'}];value.treatments_next_cursor=cursor;return value};
 const text=node=>typeof node==='string'?node:Array.isArray(node)?node.map(text).join(''):node?.children?node.children.map(text).join(''):'';
