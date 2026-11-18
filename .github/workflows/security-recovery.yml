@@ -77,6 +77,14 @@ on:
       - 'tests/test_mobile_push.py'
       - 'tests/test_mobile_push_receipts.py'
       - 'tests/test_mobile_push_registration.py'
+      - 'mobile/src/clinicalApi.ts'
+      - 'mobile/src/NativeClinicalReview.tsx'
+      - 'mobile/src/NativeVisionViewer.tsx'
+      - 'mobile/src/visionModel.ts'
+      - 'mobile/tests/clinicalWorkflow.cjs'
+      - 'mobile/tests/visionViewer.cjs'
+      - 'vision_service/templates/radiograph_viewer.js'
+      - 'vision_service/templates/intraoral_viewer.js'
       - 'mobile/src/nativeVoiceAudio.ts'
       - 'mobile/src/NativeVoiceRecorder.tsx'
       - 'mobile/src/voiceSession.ts'
@@ -120,6 +128,22 @@ jobs:
         run: npm ci
       - name: Validate native voice recovery and private audio path containment
         run: node --test tests/nativeVoiceAudio.cjs tests/voiceWorkflow.cjs
+  native-clinical-security:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install native clinical regression dependencies
+        run: npm ci
+      - name: Validate clinical result schema, restart recovery and web viewer parity
+        run: node --test tests/clinicalWorkflow.cjs tests/visionViewer.cjs
   native-social-security:
     runs-on: ubuntu-latest
     defaults:
