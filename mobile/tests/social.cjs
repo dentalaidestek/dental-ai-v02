@@ -23,6 +23,27 @@ test('owner moderation refresh uses bearer auth and rejects mismatched or malfor
  }finally{global.fetch=original;}
 });
 
+test('moderation status uses the owner-scoped minimal endpoint and rejects malformed receipts',async()=>{
+ const original=global.fetch,calls=[];
+ const moderation={job_id:9,registered:true,content_version:3,revision:2,state:'WAITING_HUMAN',wait_type:'HUMAN_REVIEW',reasons:['IMAGE_REVIEW'],reason:'Görsel yönetici incelemesi bekliyor.',retryable:false};
+ const payload={target_type:'POST',target_id:42,status:'PENDING',version:3,moderation};
+ try{
+  global.fetch=async(url,init)=>{calls.push({url,...init});return new Response(JSON.stringify(payload),{status:200});};
+  const result=await api.getPostModerationStatus('secret',42);
+  assert.equal(result.target_id,42);assert.equal(result.status,'PENDING');assert.equal(result.moderation.reason,moderation.reason);
+  assert.equal(calls[0].url,'https://dentalai.tr/api/expert-social/moderation-status/POST/42');
+  assert.equal(calls[0].credentials,'omit');assert.equal(calls[0].headers.Authorization,'Bearer secret');
+  await assert.rejects(()=>api.getPostModerationStatus('secret',0),/kimliği/);
+  assert.equal(calls.length,1,'invalid IDs must be rejected before network access');
+  global.fetch=async()=>new Response(JSON.stringify({...payload,target_id:43}),{status:200});
+  await assert.rejects(()=>api.getPostModerationStatus('secret',42),/alanları doğrulanamadı/);
+  global.fetch=async()=>new Response(JSON.stringify({...payload,status:'DELETED'}),{status:200});
+  await assert.rejects(()=>api.getPostModerationStatus('secret',42),/alanları doğrulanamadı/);
+  global.fetch=async()=>new Response(JSON.stringify({...payload,moderation:{...moderation,reason:17}}),{status:200});
+  await assert.rejects(()=>api.getPostModerationStatus('secret',42),/alanları doğrulanamadı/);
+ }finally{global.fetch=original;}
+});
+
 test('native social contract uses bearer, explicit states and versioned edits',async()=>{
  const original=global.fetch,calls=[];global.fetch=async(url,init)=>{calls.push({url,...init});return new Response('{}')};
  try{await api.getFeed('secret','discover',12);await api.setPostLike('secret',8,true);await api.setFollow('secret',7,false);await api.patchPost('secret',{id:8,version:3},{pinned:true});
