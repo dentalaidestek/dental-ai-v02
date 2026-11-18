@@ -163,3 +163,95 @@ def test_native_voice_history_returns_only_owned_completed_voice_approvals(chat,
     assert client.get('/api/mobile/v1/patients/8/voice-exam/history').status_code==404
     client.headers['Authorization']='Bearer token1'
     assert client.get('/api/mobile/v1/patients/9/voice-exam/history').status_code==404
+
+
+def test_mobile_voice_text_replays_encrypted_review_without_a_second_provider_call(chat,monkeypatch):
+    client,engine=setup(chat,monkeypatch)
+    monkeypatch.setenv("VOICE_ASR_RECEIPT_KEY","11"*32)
+    calls=[]
+    review={"fields":{"chief_complaint":{"value":"Synthetic pain","quote":"Synthetic quote"}},"teeth":[]}
+    def extract(**kwargs):
+        calls.append(kwargs)
+        return review
+    monkeypatch.setattr(voice_exam.core,"extract",extract)
+    path="/api/mobile/v1/patients/8/voice-exam/text"
+    payload={"transcript":"Synthetic clinical transcript","context":{},"consent":True,
+             "request_key":"session_1234567890_chunk_0"}
+    first=client.post(path,json=payload)
+    assert first.status_code==200,first.text
+    assert first.json()["replayed"] is False
+    replay=client.post(path,json=payload)
+    assert replay.status_code==200,replay.text
+    assert replay.json()["replayed"] is True
+    assert replay.json()["review"]==review
+    assert len(calls)==1
+    changed=client.post(path,json={**payload,"transcript":"Changed clinical transcript"})
+    assert changed.status_code==409
+    assert changed.json()["code"]=="VOICE_CLINICAL_KEY_REUSED"
+    assert len(calls)==1
+    with Session(engine) as session:
+        receipts=session.exec(select(WorkJob).where(WorkJob.kind=="VOICE_CLINICAL_RECEIPT")).all()
+        assert len(receipts)==1
+        assert receipts[0].status=="DONE"
+        assert "Synthetic clinical transcript" not in receipts[0].payload_json
+        assert "Synthetic pain" not in receipts[0].payload_json
+
+
+def test_mobile_voice_text_does_not_reprocess_an_indeterminate_provider_result(chat,monkeypatch):
+    client,engine=setup(chat,monkeypatch)
+    monkeypatch.setenv("VOICE_ASR_RECEIPT_KEY","11"*32)
+    calls=[]
+    def uncertain(**kwargs):
+        calls.append(kwargs)
+        raise RuntimeError("synthetic provider timeout")
+    monkeypatch.setattr(voice_exam.core,"extract",uncertain)
+    path="/api/mobile/v1/patients/8/voice-exam/text"
+    payload={"transcript":"Synthetic uncertain transcript","context":{},"consent":True,
+             "request_key":"session_1234567890_chunk_1"}
+    first=client.post(path,json=payload)
+    assert first.status_code==502
+    assert first.json()["code"]=="VOICE_CLINICAL_OUTCOME_UNKNOWN"
+    second=client.post(path,json=payload)
+    assert second.status_code==409
+    assert second.json()["code"]=="VOICE_CLINICAL_OUTCOME_UNKNOWN"
+    assert len(calls)==1
+
+
+def test_mobile_voice_text_retries_only_typed_pre_provider_capacity_failure(chat,monkeypatch):
+    client,engine=setup(chat,monkeypatch)
+    monkeypatch.setenv("VOICE_ASR_RECEIPT_KEY","11"*32)
+    calls=[]
+    def busy_once(**kwargs):
+        calls.append(kwargs)
+        if len(calls)==1:
+            raise voice_exam.core.VoiceBusy("busy")
+        return {"fields":{},"teeth":[]}
+    monkeypatch.setattr(voice_exam.core,"extract",busy_once)
+    path="/api/mobile/v1/patients/8/voice-exam/text"
+    payload={"transcript":"Synthetic retryable transcript","context":{},"consent":True,
+             "request_key":"session_1234567890_chunk_2"}
+    first=client.post(path,json=payload)
+    assert first.status_code==429
+    assert first.json()["code"]=="VOICE_CLINICAL_RETRYABLE"
+    second=client.post(path,json=payload)
+    assert second.status_code==200,second.text
+    assert len(calls)==2
+
+
+def test_mobile_voice_text_receipts_are_owner_and_patient_scoped(chat,monkeypatch):
+    client,engine=setup(chat,monkeypatch)
+    monkeypatch.setenv("VOICE_ASR_RECEIPT_KEY","11"*32)
+    calls=[]
+    monkeypatch.setattr(voice_exam.core,"extract",lambda **kwargs:(calls.append(kwargs) or {"fields":{},"teeth":[]}))
+    path="/api/mobile/v1/patients/8/voice-exam/text"
+    key="session_1234567890_chunk_3"
+    payload={"transcript":"Same transcript","context":{},"consent":True,"request_key":key}
+    assert client.post(path,json=payload).status_code==200
+    client.headers["Authorization"]="Bearer token2"
+    other_patient_path="/api/mobile/v1/patients/9/voice-exam/text"
+    assert client.post(other_patient_path,json=payload).status_code==200
+    assert len(calls)==2
+    with Session(engine) as session:
+        rows=session.exec(select(WorkJob).where(WorkJob.kind=="VOICE_CLINICAL_RECEIPT")).all()
+        assert len(rows)==2
+        assert len({row.dedupe_key for row in rows})==2
