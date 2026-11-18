@@ -103,7 +103,7 @@ test('backgrounding aborts a pending native ASR upload and replays the same rece
  assert.equal(calls[1][3],'stable-background-segment');
  draft=JSON.parse(h.store.get('draft'));
  assert.equal(draft.segments.length,0);
- assert.equal(draft.transcript,'Önceki metin\\nArka plan sonrası güvenli tekrar');
+ assert.equal(draft.transcript,'Önceki metin\nArka plan sonrası güvenli tekrar');
  assert.equal(finished.length,0);
  await renderer.act(async()=>tree.unmount());
 });
@@ -135,7 +135,7 @@ test('leaving the native voice screen aborts a paused-session ASR upload without
  assert.equal(calls[1][3],'stable-blur-segment');
  draft=JSON.parse(h.store.get('draft'));
  assert.equal(draft.segments.length,0);
- assert.equal(draft.transcript,'Önceki bölüm\\nEkrana dönünce tamamlandı');
+ assert.equal(draft.transcript,'Önceki bölüm\nEkrana dönünce tamamlandı');
  await renderer.act(async()=>tree.unmount());
 });
 
