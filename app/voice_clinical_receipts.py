@@ -321,3 +321,28 @@ def expire_voice_clinical_receipts(session: Session, *, patient_model=None,
     session.flush()
     return {"deleted": len(deleted), "expired": len(completed),
             "stale": len(stale), "pruned": len(prune_ids)}
+
+
+
+def reserve_receipt_transaction(engine, **kwargs) -> dict:
+    """Run one short receipt reservation transaction outside the ASGI event loop."""
+    with Session(engine, expire_on_commit=False) as session:
+        result = reserve_receipt(session, **kwargs)
+        session.commit()
+        return result
+
+
+def complete_receipt_transaction(engine, **kwargs) -> bool:
+    """Persist an encrypted provider result in a bounded synchronous DB worker."""
+    with Session(engine, expire_on_commit=False) as session:
+        saved = complete_receipt(session, **kwargs)
+        session.commit()
+        return saved
+
+
+def finish_receipt_transaction(engine, **kwargs) -> bool:
+    """Persist a retryable or terminal receipt state outside the ASGI event loop."""
+    with Session(engine, expire_on_commit=False) as session:
+        finished = finish_receipt(session, **kwargs)
+        session.commit()
+        return finished
