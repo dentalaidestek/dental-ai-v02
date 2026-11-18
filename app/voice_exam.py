@@ -241,7 +241,9 @@ def reviewed_history_payload(session, main, user, patient_id, fingerprint=None):
                 if name not in fields and paragraph.startswith(prefix):
                     value = paragraph[len(prefix):].strip()
                     if value and len(value) <= 3000:
-                        fields[name] = {'value': value, 'quote': value, 'analysis_id': row.id}
+                        # Approved clinical notes do not retain the original transcript quote.
+                        # Never relabel the saved value itself as verbatim speech evidence.
+                        fields[name] = {'value': value, 'quote': '', 'analysis_id': row.id}
     return {'ok': True, 'revision': fingerprint, 'fields': fields,
         'notice': 'Önceki hekim onaylı sesli muayene kayıtlarıdır. Güncel kullanım veya hastalık durumu olarak kabul etmeden hastayla doğrulayın.'}
 
