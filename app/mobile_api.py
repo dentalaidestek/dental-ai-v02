@@ -8,6 +8,7 @@ mobile clients do not create a second authentication system.
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
+import base64
 import hashlib
 import hmac
 import logging
@@ -25,7 +26,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field as RequestField
 from sqlmodel import SQLModel, Session, func, select, Field as SQLField
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import text
+from sqlalchemy import and_, or_, text
 from app.clinical_media import sanitize_clinical_media_image
 from app.tooth_surface_status import upsert_tooth_observation, upsert_tooth_surface_observation
 from app.upload_limits import (MAX_PATIENT_MEDIA_FILES, MAX_PATIENT_MEDIA_FILE_BYTES, MAX_PATIENT_MEDIA_BATCH_BYTES, MAX_ANALYSIS_IMAGE_BYTES, MAX_ANALYSIS_BATCH_BYTES)
@@ -1046,6 +1047,69 @@ def _treatment_revision(treatment: Treatment) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
 
 
+_TREATMENT_HISTORY_INITIAL_LIMIT = 3
+_TREATMENT_HISTORY_PAGE_LIMIT = 20
+_TREATMENT_HISTORY_CURSOR_RE = re.compile(r"^[A-Za-z0-9_-]{24,512}$")
+
+
+def _treatment_history_item(treatment: Treatment) -> dict:
+    return {
+        "id": treatment.id,
+        "tooth_number": treatment.tooth_number,
+        "treatment_name": treatment.treatment_name,
+        "treatment_date": treatment.treatment_date,
+        "material": treatment.material,
+        "doctor_note": treatment.doctor_note,
+        "result": treatment.result,
+        "edit_revision": _treatment_revision(treatment),
+        "analysis_id": treatment.analysis_id,
+        "created_at": treatment.created_at,
+    }
+
+
+def _encode_treatment_history_cursor(
+    user_id: int, patient_id: int, snapshot_id: int,
+    before_created_at: datetime, before_id: int,
+) -> str:
+    payload = {
+        "v": 1, "u": user_id, "p": patient_id, "s": snapshot_id,
+        "b": before_created_at.isoformat(), "i": before_id,
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_treatment_history_cursor(cursor: str, user_id: int, patient_id: int) -> dict:
+    try:
+        if not isinstance(cursor, str) or not _TREATMENT_HISTORY_CURSOR_RE.fullmatch(cursor):
+            raise ValueError("invalid cursor shape")
+        raw = base64.b64decode(
+            cursor + "=" * ((4 - len(cursor) % 4) % 4),
+            altchars=b"-_", validate=True,
+        )
+        payload = json.loads(raw.decode("utf-8"))
+        if not isinstance(payload, dict) or set(payload) != {"v", "u", "p", "s", "b", "i"}:
+            raise ValueError("invalid cursor fields")
+        if payload["v"] != 1 or type(payload["u"]) is not int or type(payload["p"]) is not int:
+            raise ValueError("invalid cursor version or scope")
+        if payload["u"] != user_id or payload["p"] != patient_id:
+            raise ValueError("cursor scope mismatch")
+        if type(payload["s"]) is not int or type(payload["i"]) is not int:
+            raise ValueError("invalid cursor ids")
+        if payload["s"] <= 0 or payload["i"] <= 0 or payload["i"] > payload["s"]:
+            raise ValueError("invalid cursor boundary")
+        before_created_at = datetime.fromisoformat(payload["b"])
+        if before_created_at.tzinfo is not None:
+            raise ValueError("timezone-aware cursor is not supported")
+        return {
+            "snapshot_id": payload["s"],
+            "before_created_at": before_created_at,
+            "before_id": payload["i"],
+        }
+    except (ValueError, TypeError, KeyError, UnicodeDecodeError, json.JSONDecodeError):
+        raise HTTPException(status_code=422, detail="Tedavi geçmişi sayfalama imleci geçersiz. Geçmişi yenileyin.")
+
+
 def _treatment_receipt_key(user_id: int, patient_id: int, operation: str, treatment_id: Optional[int], request_key: str) -> str:
     if not _TREATMENT_REQUEST_KEY.fullmatch(request_key or ""):
         raise HTTPException(status_code=422, detail="Geçersiz tedavi işlem anahtarı.")
@@ -1178,8 +1242,10 @@ def mobile_update_treatment(patient_id: int, treatment_id: int, payload: MobileT
 @router.get("/patients/{patient_id}")
 def mobile_patient_detail(
     patient_id: int,
+    response: Response,
     user: User = Depends(_mobile_user),
 ):
+    _mobile_private_no_store(response)
     with Session(engine, expire_on_commit=False) as session:
         patient = session.get(Patient, patient_id)
         if not patient or patient.owner_user_id != user.id:
@@ -1195,11 +1261,23 @@ def mobile_patient_detail(
             .where(ToothSurfaceStatus.patient_id == patient_id)
             .order_by(ToothSurfaceStatus.tooth_number, ToothSurfaceStatus.surface)
         ).all()
-        treatments = session.exec(
+        snapshot_id = session.exec(
+            select(func.max(Treatment.id)).where(Treatment.patient_id == patient_id)
+        ).one() or 0
+        treatment_page = session.exec(
             select(Treatment)
-            .where(Treatment.patient_id == patient_id)
-            .order_by(Treatment.created_at.desc())
-        ).all()
+            .where(Treatment.patient_id == patient_id, Treatment.id <= snapshot_id)
+            .order_by(Treatment.created_at.desc(), Treatment.id.desc())
+            .limit(_TREATMENT_HISTORY_INITIAL_LIMIT + 1)
+        ).all() if snapshot_id else []
+        treatments = treatment_page[:_TREATMENT_HISTORY_INITIAL_LIMIT]
+        treatments_next_cursor = (
+            _encode_treatment_history_cursor(
+                user.id, patient_id, snapshot_id,
+                treatments[-1].created_at, treatments[-1].id,
+            )
+            if len(treatment_page) > _TREATMENT_HISTORY_INITIAL_LIMIT else None
+        )
         media = session.exec(
             select(PatientMedia)
             .where(
@@ -1235,21 +1313,8 @@ def mobile_patient_detail(
                 }
                 for s in surfaces
             ],
-            "treatments": [
-                {
-                    "id": t.id,
-                    "tooth_number": t.tooth_number,
-                    "treatment_name": t.treatment_name,
-                    "treatment_date": t.treatment_date,
-                    "material": t.material,
-                    "doctor_note": t.doctor_note,
-                    "result": t.result,
-                    "edit_revision": _treatment_revision(t),
-                    "analysis_id": t.analysis_id,
-                    "created_at": t.created_at,
-                }
-                for t in treatments
-            ],
+            "treatments": [_treatment_history_item(t) for t in treatments],
+            "treatments_next_cursor": treatments_next_cursor,
             "media": [
                 {
                     "id": m.id,
@@ -1261,6 +1326,48 @@ def mobile_patient_detail(
                 }
                 for m in media
             ],
+        }
+
+
+@router.get("/patients/{patient_id}/treatments")
+def mobile_patient_treatment_history(
+    patient_id: int,
+    response: Response,
+    cursor: str = Query(..., min_length=1, max_length=512),
+    user: User = Depends(_mobile_user),
+):
+    _mobile_private_no_store(response)
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        if not patient or patient.owner_user_id != user.id:
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        boundary = _decode_treatment_history_cursor(cursor, user.id, patient_id)
+        query = select(Treatment).where(
+            Treatment.patient_id == patient_id,
+            Treatment.id <= boundary["snapshot_id"],
+        )
+        query = query.where(or_(
+            Treatment.created_at < boundary["before_created_at"],
+            and_(
+                Treatment.created_at == boundary["before_created_at"],
+                Treatment.id < boundary["before_id"],
+            ),
+        ))
+        rows = session.exec(
+            query.order_by(Treatment.created_at.desc(), Treatment.id.desc())
+            .limit(_TREATMENT_HISTORY_PAGE_LIMIT + 1)
+        ).all()
+        items = rows[:_TREATMENT_HISTORY_PAGE_LIMIT]
+        next_cursor = (
+            _encode_treatment_history_cursor(
+                user.id, patient_id, boundary["snapshot_id"],
+                items[-1].created_at, items[-1].id,
+            )
+            if len(rows) > _TREATMENT_HISTORY_PAGE_LIMIT else None
+        )
+        return {
+            "items": [_treatment_history_item(item) for item in items],
+            "next_cursor": next_cursor,
         }
 
 
