@@ -1,6 +1,26 @@
-"""Atomic upserts for the current FDI tooth and surface observations."""
+"""Atomic upserts and optimistic revisions for current FDI observations."""
 from datetime import datetime
+from hashlib import sha256
+import json
 from typing import Optional
+
+
+def observation_revision(row, *, kind: str, patient_id: int, tooth_number: str,
+                         surface: Optional[str] = None) -> str:
+    """Return a deterministic revision for one tooth or one surface observation."""
+    updated_at = getattr(row, "updated_at", None) if row is not None else None
+    payload = {
+        "v": 1,
+        "kind": kind,
+        "patient_id": int(patient_id),
+        "tooth_number": str(tooth_number),
+        "surface": surface,
+        "status": getattr(row, "status", None) if row is not None else None,
+        "note": getattr(row, "note", None) if row is not None else None,
+        "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else None,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return sha256(b"dai-tooth-observation-v1:" + encoded).hexdigest()
 
 
 def _upsert(session, model, conflict_columns, values) -> None:
