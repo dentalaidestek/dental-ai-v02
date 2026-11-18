@@ -149,7 +149,7 @@ def test_release_migration_preserves_existing_records_and_repeats_on_postgres(pg
     with engine.connect() as connection:
         assert connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all() == before
         assert set(connection.execute(text('SELECT id FROM guestanalysis')).scalars()) == {resource.id for resource in resources}
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 16
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 19
         assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('authratebucket')")).scalar_one() is not None
@@ -174,7 +174,7 @@ def test_program_idempotency_migration_upgrades_revision14_without_baseline_repl
         ))}
         assert {'client_request_hash','client_payload_hash'} <= columns
         assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one()==16
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 19
 
 
 def test_program_create_receipt_is_atomic_under_concurrent_postgres_requests(pg, monkeypatch):
@@ -445,7 +445,7 @@ def test_consultation_receipt_revision_13_upgrade_on_postgres(pg):
     migrate.require_schema(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 16
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 19
         assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
 
 
@@ -464,10 +464,10 @@ def test_consultation_receipt_revision_12_creates_both_receipt_tables(pg):
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('mobilesupportmutationreceipt')")).scalar_one() is not None
         # The study tables are additive revision-12 objects. The receipt upgrade
-        # advances through revisions 14 and 15 to the current revision 16, so they must be created before those bumps.
+        # advances through revisions 14 and 15 to the current revision 19, so they must be created before those bumps.
         for table in ('studylearningstate', 'studyreview', 'studyattempt', 'studyrun'):
             assert connection.execute(text("SELECT to_regclass(:name)"), {'name': table}).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 16
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 19
 
 def test_consultation_message_same_key_replays_once_under_concurrent_postgres_writes(pg, monkeypatch):
     from fastapi.testclient import TestClient
@@ -693,6 +693,7 @@ def test_program_query_index_migration_upgrades_revision15_online(pg):
         'ix_programreminderjob_status_run_at',
         'ix_programreminderjob_event_status',
         'ix_programreminderjob_owner_status',
+        'ix_treatment_patient_created_id',
     )
     with engine.begin() as connection:
         connection.execute(text('CREATE TABLE IF NOT EXISTS dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
@@ -702,7 +703,7 @@ def test_program_query_index_migration_upgrades_revision15_online(pg):
     migrate.apply()
     migrate.require_schema(engine)
     with engine.connect() as connection:
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 16
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 19
         for name in index_names:
             assert connection.execute(
                 text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
@@ -819,3 +820,31 @@ def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
     assert 'ix_scheduleevent_owner_start_at' in range_plan
     assert {'ix_scheduleevent_owner_created_at','ix_scheduleevent_owner_updated_at'} & snapshot_plan
     assert 'ix_programreminderjob_status_run_at' in reminder_plan
+
+
+def test_treatment_history_index_migration_upgrades_revision18_online(pg):
+    from app import migrate
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        connection.execute(text(
+            'CREATE TABLE IF NOT EXISTS dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'
+        ))
+        connection.execute(text(
+            'INSERT INTO dental_schema_revision VALUES (1,18) ON CONFLICT(id) DO UPDATE SET version=18'
+        ))
+        connection.execute(text('DROP INDEX IF EXISTS ix_treatment_patient_created_id'))
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(
+            text('SELECT version FROM dental_schema_revision WHERE id=1')
+        ).scalar_one() == 19
+        assert connection.execute(
+            text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
+            {'name': 'ix_treatment_patient_created_id'},
+        ).scalar_one() is True
+        index = next(
+            item for item in __import__('sqlalchemy').inspect(connection).get_indexes('treatment')
+            if item.get('name') == 'ix_treatment_patient_created_id'
+        )
+        assert index['column_names'] == ['patient_id', 'created_at', 'id']
