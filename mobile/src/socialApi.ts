@@ -82,6 +82,7 @@ export type SocialAdminStepUp = {
   expires_in: number;
   scope: "SOCIAL_MODERATION";
 };
+const SOCIAL_ADMIN_STEP_UP_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 export type SocialComment = {
   id: number;
   author_id: number;
@@ -164,17 +165,26 @@ export async function socialRequest<T>(
       ...init.headers,
     },
   });
-  // Session invalidation must run even when a gateway returns HTML for 401.
-  if(response.status===401)await revalidateSession(token);
   const raw = await response.text();
   let body: any;
   try {
     body = raw ? JSON.parse(raw) : {};
   } catch {
+    // A gateway may return HTML for an expired session. Preserve the existing
+    // session probe even when the response body is not JSON.
+    if (response.status === 401) await revalidateSession(token);
     throw new ApiError(
       response.ok ? 502 : response.status,
       "Sunucu yanıtı okunamadı. Taslağınız korundu.",
     );
+  }
+  // An incorrect second-factor code is a 401 for the OTP, not for the
+  // already-authenticated Bearer session. Avoid an unnecessary /me probe.
+  if (
+    response.status === 401 &&
+    body?.code !== "SOCIAL_ADMIN_OTP_INVALID"
+  ) {
+    await revalidateSession(token);
   }
   if(response.ok&&(!raw.trim()||!body||typeof body!=="object"||Array.isArray(body)))throw new ApiError(502,"Dental Akış sunucusu geçersiz yanıt gönderdi. Tekrar deneyin.");
   if (!response.ok)
@@ -451,8 +461,7 @@ export async function verifySocialAdminStepUp(
   if (
     result.ok !== true ||
     typeof result.token !== "string" ||
-    result.token.length < 32 ||
-    result.token.length > 256 ||
+    !SOCIAL_ADMIN_STEP_UP_TOKEN.test(result.token) ||
     result.expires_in !== 300 ||
     result.scope !== "SOCIAL_MODERATION"
   ) {
@@ -465,7 +474,7 @@ export async function revokeSocialAdminStepUp(
   token: string,
   stepUpToken: string,
 ): Promise<void> {
-  if (typeof stepUpToken !== "string" || stepUpToken.length < 32 || stepUpToken.length > 256) {
+  if (typeof stepUpToken !== "string" || !SOCIAL_ADMIN_STEP_UP_TOKEN.test(stepUpToken)) {
     throw new Error("Geçersiz yönetici yetki anahtarı.");
   }
   const value = await socialRequest<unknown>(token, "/admin/step-up/revoke", {
