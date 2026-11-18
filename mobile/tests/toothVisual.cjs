@@ -68,3 +68,78 @@ test('extracted tooth uses the web grayscale and 70 percent brightness contract'
   const web=fs.readFileSync(require.resolve('../../app/templates/tooth_chart.html'),'utf8');
   assert.ok(web.includes('filter:grayscale(1) brightness(.7)'),'web CSS remains the visual source of truth');
 });
+
+
+const vm=require('node:vm');
+const React=require('react');
+const renderer=require('react-test-renderer');
+global.IS_REACT_ACT_ENVIRONMENT=true;
+
+function nativeToothVisual(){
+  const source=fs.readFileSync(require.resolve('../src/NativeToothVisual.tsx'),'utf8');
+  const code=ts.transpileModule(source,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2020,esModuleInterop:true}
+  }).outputText;
+  const exports={};
+  const svg={
+    __esModule:true,
+    default:'Svg',
+    ClipPath:'ClipPath',
+    Defs:'Defs',
+    FeColorMatrix:'FeColorMatrix',
+    Filter:'Filter',
+    G:'G',
+    Image:'SvgImage',
+    LinearGradient:'LinearGradient',
+    Path:'Path',
+    Rect:'Rect',
+    Stop:'Stop',
+    SvgXml:'SvgXml'
+  };
+  vm.runInNewContext(code,{exports,require:name=>{
+    if(name==='react')return {...React,default:React};
+    if(name==='react-native')return {View:'View'};
+    if(name==='react-native-svg')return svg;
+    if(name==='./api')return {};
+    if(name==='./toothVisual')return require('../src/toothVisual.ts');
+    if(name==='../assets/enamel-atlas-v2.webp')return 1;
+    throw Error('unexpected import '+name);
+  }});
+  return exports.default;
+}
+
+test('extracted native tooth applies the web grayscale filter to its atlas and status overlay',async()=>{
+  const Visual=nativeToothVisual();
+  let tree;
+  await renderer.act(async()=>{tree=renderer.create(React.createElement(Visual,{number:'11',status:'EXTRACTED',height:82}))});
+  const filter=tree.root.findByType('Filter');
+  const matrix=tree.root.findByType('FeColorMatrix');
+  const group=tree.root.findByType('G');
+  const atlasImage=tree.root.findByType('SvgImage');
+  assert.equal(filter.props.id,EXTRACTED_TOOTH_FILTER_ID);
+  assert.equal(matrix.props.type,'matrix');
+  assert.equal(matrix.props.values,EXTRACTED_TOOTH_FILTER_MATRIX);
+  assert.equal(group.props.filter,EXTRACTED_TOOTH_FILTER_URL);
+  assert.equal(atlasImage.props.href,1);
+  assert.equal(atlasImage.props.clipPath,'url(#tooth-atlas-clip)');
+  assert.ok(tree.root.findAllByType('Path').some(path=>path.props.d==='M20 35l20 24M40 35L20 59'));
+  await renderer.act(async()=>tree.unmount());
+});
+
+test('healthy and carious teeth stay colored while implant keeps its canonical SVG',async()=>{
+  const Visual=nativeToothVisual();
+  let healthy,caries,implant;
+  await renderer.act(async()=>{healthy=renderer.create(React.createElement(Visual,{number:'16',status:'HEALTHY'}))});
+  assert.equal(healthy.root.findAllByType('Filter').length,0);
+  assert.equal(healthy.root.findByType('G').props.filter,undefined);
+  await renderer.act(async()=>healthy.unmount());
+  await renderer.act(async()=>{caries=renderer.create(React.createElement(Visual,{number:'16',status:'CARIES'}))});
+  assert.equal(caries.root.findAllByType('Filter').length,0);
+  assert.equal(caries.root.findByType('G').props.filter,undefined);
+  await renderer.act(async()=>caries.unmount());
+  await renderer.act(async()=>{implant=renderer.create(React.createElement(Visual,{number:'36',status:'IMPLANT'}))});
+  assert.equal(implant.root.findAllByType('SvgXml').length,1);
+  assert.equal(implant.root.findAllByType('SvgImage').length,0);
+  assert.equal(implant.root.findAllByType('Filter').length,0);
+  await renderer.act(async()=>implant.unmount());
+});
