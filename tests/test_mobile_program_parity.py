@@ -1,6 +1,7 @@
 from test_mobile_chat_actions import chat
 from app import main,mobile_api
 from sqlmodel import Session,select
+from sqlalchemy import event as sqlalchemy_event
 from datetime import date,datetime,timedelta,timezone
 from starlette.responses import Response
 import pytest
@@ -392,3 +393,45 @@ def test_mobile_program_routes_prevent_caching_of_account_scoped_calendar_data(p
     deleted = client.delete(f"/api/mobile/v1/program/events/{event_id}")
     assert deleted.status_code == 200, deleted.text
     _assert_program_private_no_store(deleted)
+
+
+def test_program_conflict_advice_skips_patient_detail_hydration(program):
+    client, engine = program
+    with Session(engine) as session:
+        session.add(main.ScheduleEvent(
+            id=91,
+            owner_user_id=1,
+            event_type="APPOINTMENT",
+            title="Synthetic patient-linked conflict",
+            start_at=datetime(2030, 1, 7, 7, 10),
+            end_at=datetime(2030, 1, 7, 7, 25),
+            patient_id=8,
+        ))
+        session.commit()
+
+    patient_selects = []
+
+    def capture_sql(_connection, _cursor, statement, _parameters, _context, _executemany):
+        normalized = " ".join(statement.lower().split())
+        if " from patient " in normalized or " from patient\n" in normalized:
+            patient_selects.append(normalized)
+
+    sqlalchemy_event.listen(engine, "before_cursor_execute", capture_sql)
+    try:
+        response = client.post(
+            "/api/mobile/v1/program/conflicts",
+            json={
+                "event_type": "TASK",
+                "title": "Synthetic conflict check",
+                "start_at": "2030-01-07T10:00",
+                "end_at": "2030-01-07T10:30",
+                "reminder_minutes": "NONE",
+                "recurrence_rule": "NONE",
+            },
+        )
+    finally:
+        sqlalchemy_event.remove(engine, "before_cursor_execute", capture_sql)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 1
+    assert patient_selects == []
