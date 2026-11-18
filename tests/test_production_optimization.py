@@ -429,3 +429,61 @@ def test_postgres_notice_channels_do_not_wake_unrelated_workers():
     reconnect, channels = main._postgres_notice_state([None])
     assert reconnect
     assert channels == set()
+
+
+def test_mobile_patient_media_upload_releases_db_before_r2_persist(tmp_path, monkeypatch):
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from starlette.datastructures import UploadFile
+    from app import main, mobile_api
+    from app import patient_media_receipts
+
+    engine = create_engine(f'sqlite:///{tmp_path / "mobile-patient-media.db"}')
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(mobile_api, 'engine', engine)
+    with Session(engine, expire_on_commit=False) as session:
+        user = main.User(username='mobile-media-owner', role='DOCTOR', display_name='Mobile Media Owner')
+        session.add(user); session.commit()
+        patient = main.Patient(anonymous_id='mobile-media-patient', owner_user_id=user.id)
+        session.add(patient); session.commit()
+        user_id, patient_id = user.id, patient.id
+
+    monkeypatch.setattr(patient_media_receipts, 'encryption_key', lambda: b'k' * 32)
+    monkeypatch.setattr(mobile_api, '_copy_validated_image',
+        lambda upload, destination, maximum: (destination.write_bytes(b'\xff\xd8\xffsynthetic') or 13))
+    monkeypatch.setattr(mobile_api, '_lock_patient_media_receipt', lambda *args: None)
+    monkeypatch.setattr(mobile_api, '_find_patient_media_receipt', lambda *args, **kwargs: None)
+    monkeypatch.setattr(mobile_api, '_patient_media_batch_usage', lambda *args: (0, 0))
+    monkeypatch.setattr(mobile_api, '_store_patient_media_receipt', lambda *args: None)
+    monkeypatch.setattr(mobile_api, '_record_realtime_event', lambda *args: None)
+    async def publish(_event):
+        return None
+    monkeypatch.setattr(mobile_api, '_publish_realtime_event', publish)
+
+    loop_thread = threading.get_ident()
+    storage_threads = []
+    def persist(path, **kwargs):
+        assert engine.pool.checkedout() == 0, 'R2 persistence must not hold a SQL connection'
+        assert path.exists()
+        storage_threads.append(threading.get_ident())
+        return str(path)
+    monkeypatch.setattr(mobile_api, 'storage_persist_file', persist)
+
+    try:
+        response = asyncio.run(mobile_api.mobile_patient_media_upload(
+            patient_id,
+            image=UploadFile(file=io.BytesIO(b'\xff\xd8\xffsynthetic'), filename='clinical.jpg'),
+            media_type='PHOTO',
+            request_key='mobile-media-key-0001',
+            batch_id='mobile-media-batch-0001',
+            user=user,
+        ))
+        assert response.status_code == 200
+        assert storage_threads and storage_threads[0] != loop_thread
+        with Session(engine) as session:
+            rows = session.exec(select(main.PatientMedia).where(
+                main.PatientMedia.patient_id == patient_id,
+                main.PatientMedia.owner_user_id == user_id,
+            )).all()
+            assert len(rows) == 1
+    finally:
+        engine.dispose()
