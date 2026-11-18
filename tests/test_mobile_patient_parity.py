@@ -1093,3 +1093,47 @@ def test_mobile_patient_delete_rejects_malformed_request_key_without_mutation(ch
             WorkJob.resource_id == 114,
         )).first() is None
 
+def test_patient_delete_receipt_never_claims_a_restored_patient_was_deleted(chat):
+    client, engine = chat
+    with Session(engine) as session:
+        session.add(main.Patient(id=115, anonymous_id="SYNTHETIC-DELETE-RESTORE", owner_user_id=1))
+        session.commit()
+
+    request_key = "synthetic-patient-delete-request-0003"
+    first = client.delete(f"/api/mobile/v1/patients/115?request_key={request_key}")
+    assert first.status_code == 200, first.text
+    with Session(engine) as session:
+        session.add(main.Patient(id=115, anonymous_id="SYNTHETIC-DELETE-RESTORE", owner_user_id=1))
+        session.commit()
+
+    replay = client.delete(f"/api/mobile/v1/patients/115?request_key={request_key}")
+    assert replay.status_code == 409, replay.text
+
+
+def test_patient_delete_tombstone_is_bounded_by_existing_work_history_retention(chat):
+    client, engine = chat
+    with Session(engine) as session:
+        session.add(main.Patient(id=116, anonymous_id="SYNTHETIC-DELETE-TTL", owner_user_id=1))
+        session.commit()
+
+    request_key = "synthetic-patient-delete-request-0004"
+    removed = client.delete(f"/api/mobile/v1/patients/116?request_key={request_key}")
+    assert removed.status_code == 200, removed.text
+    with Session(engine) as session:
+        receipt = session.exec(select(WorkJob).where(
+            WorkJob.kind == "PATIENT_DELETE_RECEIPT",
+            WorkJob.resource_id == 116,
+        )).one()
+        receipt.updated_at = datetime(2000, 1, 1)
+        session.add(receipt)
+        session.commit()
+
+    prune_history(engine)
+    with Session(engine) as session:
+        assert session.exec(select(WorkJob).where(
+            WorkJob.kind == "PATIENT_DELETE_RECEIPT",
+            WorkJob.resource_id == 116,
+        )).first() is None
+    # Once the bounded tombstone expires, absence is still represented by 404.
+    assert client.delete(f"/api/mobile/v1/patients/116?request_key={request_key}").status_code == 404
+
