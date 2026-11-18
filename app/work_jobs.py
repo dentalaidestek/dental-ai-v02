@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import time
 from contextvars import ContextVar
@@ -265,10 +266,57 @@ def retry(session, job):
 
 
 class WorkGarbage(SQLModel, table=True):
+    """Durable cleanup for generated results and private patient-media objects."""
     id: int | None = Field(default=None, primary_key=True)
     reference: str = Field(unique=True)
     available_at: datetime = Field(default_factory=lambda: now() + timedelta(days=1), index=True)
     attempts: int = 0
+
+
+_PATIENT_MEDIA_OBJECT = re.compile(
+    r"uploads/(?:patient_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)|"
+    r"patient-media/patient_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp))"
+)
+
+
+def is_patient_media_reference(reference: str) -> bool:
+    """Accept only the two server-generated patient-media object-key layouts."""
+    return isinstance(reference, str) and _PATIENT_MEDIA_OBJECT.fullmatch(reference) is not None
+
+
+def enqueue_patient_media_cleanup(session: Session, reference: str) -> bool:
+    """Queue an object delete in the same transaction that removes its media row.
+
+    The queue stores only the opaque storage key. Unrecognized legacy references
+    return False so callers can retain their existing synchronous fallback.
+    """
+    if not is_patient_media_reference(reference):
+        return False
+
+    stamp = now()
+    existing = session.exec(
+        select(WorkGarbage).where(WorkGarbage.reference == reference)
+    ).first()
+    if existing is not None:
+        if existing.available_at > stamp:
+            existing.available_at = stamp
+            session.add(existing)
+        return True
+
+    row = WorkGarbage(reference=reference, available_at=stamp)
+    try:
+        with session.begin_nested():
+            session.add(row)
+            session.flush()
+    except IntegrityError:
+        existing = session.exec(
+            select(WorkGarbage).where(WorkGarbage.reference == reference)
+        ).first()
+        if existing is None:
+            raise
+        existing.available_at = stamp
+        session.add(existing)
+    return True
 
 
 def collect_garbage(engine):
