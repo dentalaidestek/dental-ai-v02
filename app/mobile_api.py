@@ -2779,8 +2779,10 @@ async def mobile_delete_all_patient_media(patient_id:int, token:str=Depends(_mob
 # Native voice-exam adapter: reuse the existing web clinical engines, not their
 # cookie-authenticated route handlers. No transcript or raw audio is persisted.
 class MobileVoiceTextRequest(BaseModel):
-    transcript: str
+    model_config = {"extra": "forbid"}
+    transcript: str = RequestField(min_length=1, max_length=18_000)
     consent: bool = False
+    request_key: str = RequestField(pattern=r"^[A-Za-z0-9_-]{16,96}$")
 
 class MobileVoiceFinalRequest(BaseModel):
     context: dict
@@ -2804,17 +2806,97 @@ def _mobile_voice_patient(user: User, patient_id: int):
 @router.post("/patients/{patient_id}/voice-exam/text")
 def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, user: User = Depends(_mobile_user)):
     from app.voice_exam import core
+    from app.voice_asr_receipts import ReceiptKeyUnavailable, encryption_key
+    from app.voice_clinical_receipts import (
+        ReceiptConflict, ReceiptCorrupt, clinical_input_digest,
+        complete_receipt, finish_receipt, receipt_dedupe_key, reserve_receipt,
+    )
+    from starlette.concurrency import run_in_threadpool
+
+    def reply(status: int, code: str, detail: str):
+        return JSONResponse(
+            {"ok": False, "code": code, "detail": detail},
+            status_code=status,
+            headers={"Cache-Control": "private, no-store"},
+        )
+
     if not core.enabled():
-        raise HTTPException(status_code=503, detail="Sesli muayene etkin değil.")
-    revision = _mobile_voice_patient(user, patient_id)
+        return reply(503, "VOICE_CLINICAL_NOT_READY", "Sesli muayene etkin değil.")
     if not payload.consent:
-        raise HTTPException(status_code=400, detail="Veri işleme onayı gerekli.")
-    if not payload.transcript.strip() or len(payload.transcript) > core.MAX_TRANSCRIPT:
-        raise HTTPException(status_code=422, detail="Muayene metni geçersiz.")
+        return reply(400, "VOICE_CLINICAL_CONSENT_REQUIRED", "Klinik metin işleme onayı gerekli.")
     try:
-        return {"ok": True, "revision": revision, "review": core.extract(transcript=payload.transcript)}
-    except core.VoiceError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        receipt_dedupe_key(user.id, patient_id, payload.request_key)
+        key = encryption_key()
+        context = core.clinical_context(payload.context)
+        digest = clinical_input_digest(payload.transcript, context, key)
+    except ReceiptKeyUnavailable:
+        return reply(503, "VOICE_CLINICAL_NOT_READY", "Şifreli klinik kurtarma anahtarı yapılandırılmamış.")
+    except (ValueError, TypeError, core.VoiceError):
+        return reply(422, "VOICE_CLINICAL_INVALID_INPUT", "Klinik çıkarım girdisi doğrulanamadı.")
+
+    revision = _mobile_voice_patient(user, patient_id)
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            state = reserve_receipt(
+                session, owner_id=user.id, patient_id=patient_id,
+                request_key=payload.request_key, digest=digest, key=key,
+            )
+            session.commit()
+    except ReceiptConflict:
+        return reply(409, "VOICE_CLINICAL_KEY_REUSED", "Bu muayene bölümünün işlem anahtarı farklı içerikle kullanılmış.")
+    except ReceiptCorrupt:
+        return reply(409, "VOICE_CLINICAL_RECEIPT_INVALID", "Şifreli klinik sonuç doğrulanamadı; taslak korundu.")
+
+    if state["state"] == "REPLAY":
+        return JSONResponse(
+            {"ok": True, "revision": state["revision"], "review": state["review"], "replayed": True},
+            headers={"Cache-Control": "private, no-store"},
+        )
+    if state["state"] == "PROCESSING":
+        return reply(409, "VOICE_CLINICAL_IN_PROGRESS", "Aynı muayene bölümü hâlâ işleniyor. Aynı anahtarla daha sonra tekrar deneyin.")
+    if state["state"] == "EXPIRED":
+        return reply(410, "VOICE_CLINICAL_EXPIRED", "Klinik sonuç kurtarma süresi doldu. Aynı anahtar yeniden çalıştırılmaz.")
+    if state["state"] != "CLAIMED":
+        return reply(409, "VOICE_CLINICAL_OUTCOME_UNKNOWN", "Önceki klinik isteğin sonucu belirsiz. Aynı anahtarla ikinci AI çağrısı yapılmadı.")
+
+    lease_token = state["lease_token"]
+    try:
+        review = await run_in_threadpool(core.extract, transcript=payload.transcript, context=context)
+        if not isinstance(review, dict):
+            raise ValueError("Invalid clinical extraction response.")
+    except core.VoiceBusy:
+        with Session(engine, expire_on_commit=False) as session:
+            finish_receipt(session, owner_id=user.id, patient_id=patient_id,
+                request_key=payload.request_key, digest=digest, lease_token=lease_token, retryable=True)
+            session.commit()
+        return reply(429, "VOICE_CLINICAL_RETRYABLE", "Klinik değerlendirme yoğun. Aynı muayene bölümüyle tekrar deneyin.")
+    except core.VoiceConfigurationError:
+        with Session(engine, expire_on_commit=False) as session:
+            finish_receipt(session, owner_id=user.id, patient_id=patient_id,
+                request_key=payload.request_key, digest=digest, lease_token=lease_token, retryable=True)
+            session.commit()
+        return reply(503, "VOICE_CLINICAL_NOT_READY", "Klinik değerlendirme yapılandırması hazır değil; taslak korundu.")
+    except Exception:
+        with Session(engine, expire_on_commit=False) as session:
+            finish_receipt(session, owner_id=user.id, patient_id=patient_id,
+                request_key=payload.request_key, digest=digest, lease_token=lease_token, retryable=False)
+            session.commit()
+        logging.getLogger(__name__).warning("mobile voice clinical outcome is unknown")
+        return reply(502, "VOICE_CLINICAL_OUTCOME_UNKNOWN", "Klinik sonuç doğrulanamadı. Aynı anahtarla ikinci AI çağrısı yapılmadı; taslak korundu.")
+
+    with Session(engine, expire_on_commit=False) as session:
+        saved = complete_receipt(
+            session, owner_id=user.id, patient_id=patient_id,
+            request_key=payload.request_key, digest=digest, lease_token=lease_token,
+            key=key, review=review, revision=revision,
+        )
+        session.commit()
+    if not saved:
+        return reply(409, "VOICE_CLINICAL_OUTCOME_UNKNOWN", "Klinik sonuç güvenli biçimde kaydedilemedi. Aynı anahtarla ikinci AI çağrısı yapılmadı.")
+    return JSONResponse(
+        {"ok": True, "revision": revision, "review": review, "replayed": False},
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 @router.post("/patients/{patient_id}/voice-exam/finalize")
 def mobile_voice_finalize(patient_id: int, payload: MobileVoiceFinalRequest, user: User = Depends(_mobile_user)):
