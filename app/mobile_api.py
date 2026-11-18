@@ -2849,6 +2849,8 @@ async def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, us
         return reply(409, "VOICE_CLINICAL_RECEIPT_INVALID", "Şifreli klinik sonuç doğrulanamadı; taslak korundu.")
 
     if state["state"] == "REPLAY":
+        if state["revision"] != revision:
+            return reply(409, "VOICE_CLINICAL_PATIENT_CHANGED", "Hasta dosyası görüşme sırasında değişti. Taslak korunuyor; güncel hasta bilgilerini yeniden kontrol edin.")
         return JSONResponse(
             {"ok": True, "revision": state["revision"], "review": state["review"], "replayed": True},
             headers={"Cache-Control": "private, no-store"},
