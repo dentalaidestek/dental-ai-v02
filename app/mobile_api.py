@@ -28,7 +28,7 @@ from sqlmodel import SQLModel, Session, func, select, Field as SQLField
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_, or_, text
 from app.clinical_media import sanitize_clinical_media_image
-from app.tooth_surface_status import upsert_tooth_observation, upsert_tooth_surface_observation
+from app.tooth_surface_status import observation_revision, upsert_tooth_observation, upsert_tooth_surface_observation
 from app.upload_limits import (MAX_PATIENT_MEDIA_FILES, MAX_PATIENT_MEDIA_FILE_BYTES, MAX_PATIENT_MEDIA_BATCH_BYTES, MAX_ANALYSIS_IMAGE_BYTES, MAX_ANALYSIS_BATCH_BYTES)
 from app.work_jobs import WorkJob
 from starlette.requests import Request
@@ -509,11 +509,13 @@ class MobileToothUpdate(BaseModel):
     note: Optional[str] = None
     surface: Optional[str] = None
     surfaces: Optional[list[str]] = None
+    expected_revision: Optional[str] = None
 
 
 class MobileSurfaceUpdate(BaseModel):
     status: str
     note: Optional[str] = None
+    expected_revision: Optional[str] = None
 
 
 class MobileScheduleCreate(BaseModel):
@@ -770,21 +772,41 @@ def mobile_update_tooth_surface(
         raise HTTPException(status_code=422, detail="Geçersiz diş durumu.")
     if payload.note is not None and len(payload.note) > 2000:
         raise HTTPException(status_code=422, detail="Yüzey notu 2000 karakteri aşamaz.")
+    if payload.expected_revision is not None and not re.fullmatch(r"[0-9a-f]{64}", payload.expected_revision):
+        raise HTTPException(status_code=422, detail="Diş yüzeyi sürümü geçersiz.")
     with Session(engine, expire_on_commit=False) as session:
-        patient = session.get(Patient, patient_id)
+        patient = session.exec(select(Patient).where(Patient.id == patient_id).with_for_update()).first()
         if not patient or patient.owner_user_id != user.id:
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        current = session.exec(select(ToothSurfaceStatus).where(
+            ToothSurfaceStatus.patient_id == patient_id,
+            ToothSurfaceStatus.tooth_number == tooth_number,
+            ToothSurfaceStatus.surface == surface_name,
+        )).first()
+        current_revision = observation_revision(current, kind="surface", patient_id=patient_id,
+                                                tooth_number=tooth_number, surface=surface_name)
+        if payload.expected_revision is not None and payload.expected_revision != current_revision:
+            raise HTTPException(status_code=409, detail="Diş yüzeyi başka bir oturumda güncellendi. Güncel şemayı yükleyip yeniden uygulayın.")
         note = payload.note.strip() if payload.note else None
         upsert_tooth_surface_observation(
             session, ToothSurfaceStatus, patient_id, tooth_number,
             surface_name, payload.status, note, _utcnow_naive(),
         )
+        session.flush()
+        saved = session.exec(select(ToothSurfaceStatus).where(
+            ToothSurfaceStatus.patient_id == patient_id,
+            ToothSurfaceStatus.tooth_number == tooth_number,
+            ToothSurfaceStatus.surface == surface_name,
+        )).first()
+        revision = observation_revision(saved, kind="surface", patient_id=patient_id,
+                                        tooth_number=tooth_number, surface=surface_name)
         realtime = _record_realtime_event(session, user.id, "TOOTH_UPDATED", "patient", patient_id,
             {"patient_id": patient_id, "tooth_number": tooth_number,
              "surface": surface_name, "surface_status": payload.status})
         session.commit()
         on_loop(_publish_realtime_event, realtime)
-        return {"ok": True, "tooth_number": tooth_number, "surface": surface_name, "status": payload.status}
+        return {"ok": True, "tooth_number": tooth_number, "surface": surface_name,
+                "status": payload.status, "revision": revision}
 
 
 @router.post("/patients/{patient_id}/teeth/{tooth_number}")
@@ -809,10 +831,19 @@ def mobile_update_tooth(
     if payload.surface and payload.surfaces is not None:
         raise HTTPException(status_code=422, detail="Tekil ve çoklu yüzey birlikte gönderilemez.")
     requested_surfaces = payload.surfaces if payload.surfaces is not None else ([payload.surface] if payload.surface else [])
+    if payload.expected_revision is not None and not re.fullmatch(r"[0-9a-f]{64}", payload.expected_revision):
+        raise HTTPException(status_code=422, detail="Diş şeması sürümü geçersiz.")
     with Session(engine, expire_on_commit=False) as session:
-        patient = session.get(Patient, patient_id)
+        patient = session.exec(select(Patient).where(Patient.id == patient_id).with_for_update()).first()
         if not patient or patient.owner_user_id != user.id:
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        current = session.exec(select(ToothStatus).where(
+            ToothStatus.patient_id == patient_id, ToothStatus.tooth_number == tooth_number
+        )).first()
+        current_revision = observation_revision(current, kind="tooth", patient_id=patient_id,
+                                                tooth_number=tooth_number)
+        if payload.expected_revision is not None and payload.expected_revision != current_revision:
+            raise HTTPException(status_code=409, detail="Diş başka bir oturumda güncellendi. Güncel şemayı yükleyip yeniden uygulayın.")
         note = payload.note.strip() if payload.note else None
         updated_at = _utcnow_naive()
         upsert_tooth_observation(
@@ -829,10 +860,16 @@ def mobile_update_tooth(
         realtime = _record_realtime_event(session, user.id, "TOOTH_UPDATED", "patient", patient_id,
             {"patient_id": patient_id, "tooth_number": tooth_number, "status": payload.status,
              "surface": payload.surface, "surfaces": requested_surfaces, "note": note})
+        session.flush()
+        saved = session.exec(select(ToothStatus).where(
+            ToothStatus.patient_id == patient_id, ToothStatus.tooth_number == tooth_number
+        )).first()
+        revision = observation_revision(saved, kind="tooth", patient_id=patient_id,
+                                        tooth_number=tooth_number)
         session.commit()
         on_loop(_publish_realtime_event, realtime)
         return {"ok": True, "tooth_number": tooth_number, "status": payload.status,
-                "surface": payload.surface, "surfaces": requested_surfaces}
+                "surface": payload.surface, "surfaces": requested_surfaces, "revision": revision}
 
 
 class MobilePatientEdit(BaseModel):
