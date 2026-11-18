@@ -2782,6 +2782,7 @@ class MobileVoiceTextRequest(BaseModel):
     model_config = {"extra": "forbid"}
     transcript: str = RequestField(min_length=1, max_length=18_000)
     consent: bool = False
+    context: dict = RequestField(default_factory=dict)
     request_key: str = RequestField(pattern=r"^[A-Za-z0-9_-]{16,96}$")
 
 class MobileVoiceFinalRequest(BaseModel):
