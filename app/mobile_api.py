@@ -2810,7 +2810,8 @@ async def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, us
     from app.voice_asr_receipts import ReceiptKeyUnavailable, encryption_key
     from app.voice_clinical_receipts import (
         ReceiptConflict, ReceiptCorrupt, clinical_input_digest,
-        complete_receipt, finish_receipt, receipt_dedupe_key, reserve_receipt,
+        complete_receipt_transaction, finish_receipt_transaction,
+        receipt_dedupe_key, reserve_receipt_transaction,
     )
     from starlette.concurrency import run_in_threadpool
 
@@ -2837,12 +2838,11 @@ async def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, us
 
     revision = await run_in_threadpool(_mobile_voice_patient, user, patient_id)
     try:
-        with Session(engine, expire_on_commit=False) as session:
-            state = reserve_receipt(
-                session, owner_id=user.id, patient_id=patient_id,
-                request_key=payload.request_key, digest=digest, key=key,
-            )
-            session.commit()
+        state = await run_in_threadpool(
+            reserve_receipt_transaction, engine,
+            owner_id=user.id, patient_id=patient_id,
+            request_key=payload.request_key, digest=digest, key=key,
+        )
     except ReceiptConflict:
         return reply(409, "VOICE_CLINICAL_KEY_REUSED", "Bu muayene bölümünün işlem anahtarı farklı içerikle kullanılmış.")
     except ReceiptCorrupt:
