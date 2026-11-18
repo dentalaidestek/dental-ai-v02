@@ -29,7 +29,7 @@ test('only a focused real background or inactive transition refreshes a screen',
 
 test('profile, analysis history and tooth chart use the shared resume gate', () => {
   const root = path.join(__dirname, '../src');
-  for (const file of ['NativePatientProfile.tsx', 'NativePatientHistory.tsx', 'NativeToothChart.tsx']) {
+  for (const file of ['NativePatientProfile.tsx', 'NativePatientHistory.tsx', 'NativeToothChart.tsx', 'NativePatientMedia.tsx', 'NativeProgram.tsx']) {
     const source = fs.readFileSync(path.join(root, file), 'utf8');
     assert.match(source, /shouldRefreshOnAppResume/, file + ' must use the shared gate');
     assert.match(source, /AppState\.currentState/, file + ' must snapshot the initial app state');
