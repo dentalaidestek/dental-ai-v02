@@ -68,7 +68,8 @@ def test_program_edit_copy_complete_delete_reuse_web_lifecycle(program):
     with Session(engine) as s:assert len(s.exec(select(main.ScheduleEvent).where(main.ScheduleEvent.owner_user_id==1)).all())==3
     assert client.post(f'/api/mobile/v1/program/events/{ident}/complete').status_code==200
     assert client.delete(f'/api/mobile/v1/program/events/{ident}').status_code==200
-    assert client.get(f'/api/mobile/v1/program/events/{ident}').status_code==404
+    deleted=client.get(f'/api/mobile/v1/program/events/{ident}')
+    assert deleted.status_code==200 and deleted.json()['event']['status']=='DELETED'
 
 
 def test_program_create_receipt_replays_exact_event_and_rejects_changed_payload(program):
@@ -252,3 +253,55 @@ def test_month_calendar_exposes_the_same_first_three_event_markers_as_web(progra
     assert day['count']==5
     assert day['event_types']==types[:3]
     assert day['has_more'] is True
+
+def test_program_copy_deduplicates_by_patient_and_event_identity(program):
+    client,engine=program
+    values={'event_type':'APPOINTMENT','title':'Synthetic shared title','start_at':'2030-01-07T10:00',
+            'end_at':'2030-01-07T10:30','patient_id':8,'location':'Clinic','notes':'Synthetic note',
+            'reminder_minutes':'30','recurrence_rule':'NONE','request_key':'program-copy-source-000001'}
+    created=client.post('/api/mobile/v1/program/events',json=values)
+    assert created.status_code==200,created.text
+    ident=created.json()['event']['id']
+    target_start=datetime(2030,1,8,7,0)
+    target_end=datetime(2030,1,8,7,30)
+    with Session(engine) as s:
+        # Same title and time are not enough to suppress a different event.
+        s.add(main.ScheduleEvent(owner_user_id=1,event_type='CLASS',title=values['title'],
+            start_at=target_start,end_at=target_end,location='Classroom',notes=''))
+        s.add(main.ScheduleEvent(owner_user_id=1,event_type='APPOINTMENT',title=values['title'],
+            start_at=target_start,end_at=target_end,patient_id=None,location='Clinic',notes='Synthetic note',
+            reminder_minutes=30,notification_enabled=True))
+        s.commit()
+    copied=client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08']})
+    assert copied.status_code==200,copied.text
+    repeated=client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08']})
+    assert repeated.status_code==200,repeated.text
+    with Session(engine) as s:
+        rows=s.exec(select(main.ScheduleEvent).where(
+            main.ScheduleEvent.owner_user_id==1,
+            main.ScheduleEvent.start_at==target_start,
+            main.ScheduleEvent.title==values['title'],
+            main.ScheduleEvent.status!='DELETED',
+        )).all()
+        assert len(rows)==3
+        assert len([row for row in rows if row.event_type=='APPOINTMENT' and row.patient_id==8])==1
+        assert len([row for row in rows if row.event_type=='CLASS'])==1
+        assert len([row for row in rows if row.event_type=='APPOINTMENT' and row.patient_id is None])==1
+
+
+def test_deleted_program_event_state_remains_owner_scoped(program):
+    client,engine=program
+    values={'event_type':'TASK','title':'Synthetic deleted event','start_at':'2030-01-07T10:00',
+            'end_at':'','reminder_minutes':'NONE','recurrence_rule':'NONE','request_key':'program-delete-state-0001'}
+    created=client.post('/api/mobile/v1/program/events',json=values)
+    assert created.status_code==200,created.text
+    own_id=created.json()['event']['id']
+    with Session(engine) as s:
+        s.add(main.ScheduleEvent(id=987,owner_user_id=2,event_type='TASK',title='Other account deleted',
+            start_at=datetime(2030,1,7,7,0),status='DELETED'))
+        s.commit()
+    assert client.delete(f'/api/mobile/v1/program/events/{own_id}').status_code==200
+    own=client.get(f'/api/mobile/v1/program/events/{own_id}')
+    assert own.status_code==200 and own.json()['event']['status']=='DELETED'
+    assert client.get('/api/mobile/v1/program/events/987').status_code==404
+
