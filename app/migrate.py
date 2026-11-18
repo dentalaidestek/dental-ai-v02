@@ -14,9 +14,11 @@ PROGRAM_IDEMPOTENCY_REVISION = 15
 PROGRAM_QUERY_INDEX_REVISION = 16
 ACADEMIC_COURSE_RECEIPT_REVISION = 17
 TOOTH_CHART_OBSERVATION_REVISION = 18
-REVISION = TOOTH_CHART_OBSERVATION_REVISION
+TREATMENT_HISTORY_INDEX_REVISION = 19
+REVISION = TREATMENT_HISTORY_INDEX_REVISION
 PROGRAM_QUERY_INDEX_LOCK = 71048238
 TOOTH_CHART_OBSERVATION_LOCK = 71048240
+TREATMENT_HISTORY_INDEX_LOCK = 71048241
 
 
 def _ensure_mobile_push_device_table(engine):
@@ -366,7 +368,7 @@ def _upgrade_tooth_chart_observation_indexes(main):
             if not inspect(connection).has_table(table_name):
                 raise RuntimeError(f"Tooth chart migration requires {table_name}")
         revision = connection.execute(text("SELECT version FROM dental_schema_revision WHERE id=1")).scalar()
-        if revision == TOOTH_CHART_OBSERVATION_REVISION:
+        if revision in (TOOTH_CHART_OBSERVATION_REVISION, REVISION):
             for table_name, columns, index_name in index_specs:
                 indexes = inspect(connection).get_indexes(table_name)
                 if not any(item.get("name") == index_name and item.get("unique")
@@ -424,21 +426,138 @@ def _upgrade_tooth_chart_observation_indexes(main):
     return True
 
 
+def _upgrade_treatment_history_index(main):
+    """Install the owner/patient ordered treatment-history index and advance revision 19.
+
+    PostgreSQL builds the index concurrently under a session advisory lock. SQLite
+    uses a short transactional CREATE INDEX for deterministic local/API tests.
+    """
+    dialect = main.engine.dialect.name
+    if dialect not in ("postgresql", "sqlite"):
+        return False
+    index_name = "ix_treatment_patient_created_id"
+    expected_columns = ["patient_id", "created_at", "id"]
+
+    if dialect == "postgresql":
+        with main.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+            connection.execute(text("SET lock_timeout = '10s'"))
+            connection.execute(text("SET statement_timeout = '10min'"))
+            connection.execute(
+                text("SELECT pg_advisory_lock(:lock_key)"),
+                {"lock_key": TREATMENT_HISTORY_INDEX_LOCK},
+            )
+            try:
+                if not inspect(connection).has_table("dental_schema_revision"):
+                    return False
+                if not inspect(connection).has_table("treatment"):
+                    raise RuntimeError("Treatment history index migration requires treatment")
+                revision = connection.execute(
+                    text("SELECT version FROM dental_schema_revision WHERE id=1")
+                ).scalar()
+                valid = connection.execute(
+                    text("SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)"),
+                    {"name": index_name},
+                ).scalar()
+                if revision == TREATMENT_HISTORY_INDEX_REVISION:
+                    if valid is not True:
+                        raise RuntimeError("Treatment history index is missing or invalid at revision 19")
+                    return True
+                if revision != TOOTH_CHART_OBSERVATION_REVISION:
+                    return False
+                if valid is False:
+                    connection.execute(text(f"DROP INDEX CONCURRENTLY IF EXISTS {index_name}"))
+                    valid = None
+                if valid is not True:
+                    connection.execute(text(
+                        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_treatment_patient_created_id "
+                        "ON treatment (patient_id, created_at, id)"
+                    ))
+                valid = connection.execute(
+                    text("SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)"),
+                    {"name": index_name},
+                ).scalar()
+                if valid is not True:
+                    raise RuntimeError("Treatment history index was not built validly")
+                columns = inspect(connection).get_indexes("treatment")
+                if not any(item.get("name") == index_name and item.get("column_names") == expected_columns
+                           for item in columns):
+                    raise RuntimeError("Treatment history index columns do not match the query")
+                result = connection.execute(text(
+                    "UPDATE dental_schema_revision SET version=:version WHERE id=1 AND version=:prior"
+                ), {"version": TREATMENT_HISTORY_INDEX_REVISION,
+                    "prior": TOOTH_CHART_OBSERVATION_REVISION})
+                if result.rowcount != 1:
+                    current = connection.execute(
+                        text("SELECT version FROM dental_schema_revision WHERE id=1")
+                    ).scalar()
+                    if current != TREATMENT_HISTORY_INDEX_REVISION:
+                        raise RuntimeError("Schema changed during treatment history index migration")
+            finally:
+                connection.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": TREATMENT_HISTORY_INDEX_LOCK},
+                )
+    else:
+        with main.engine.begin() as connection:
+            if not inspect(connection).has_table("dental_schema_revision"):
+                return False
+            if not inspect(connection).has_table("treatment"):
+                raise RuntimeError("Treatment history index migration requires treatment")
+            revision = connection.execute(
+                text("SELECT version FROM dental_schema_revision WHERE id=1")
+            ).scalar()
+            indexes = inspect(connection).get_indexes("treatment")
+            present = any(item.get("name") == index_name and item.get("column_names") == expected_columns
+                          for item in indexes)
+            if revision == TREATMENT_HISTORY_INDEX_REVISION:
+                if not present:
+                    raise RuntimeError("Treatment history index is missing at revision 19")
+                return True
+            if revision != TOOTH_CHART_OBSERVATION_REVISION:
+                return False
+            connection.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_treatment_patient_created_id "
+                "ON treatment (patient_id, created_at, id)"
+            ))
+            result = connection.execute(text(
+                "UPDATE dental_schema_revision SET version=:version WHERE id=1 AND version=:prior"
+            ), {"version": TREATMENT_HISTORY_INDEX_REVISION,
+                "prior": TOOTH_CHART_OBSERVATION_REVISION})
+            if result.rowcount != 1:
+                current = connection.execute(
+                    text("SELECT version FROM dental_schema_revision WHERE id=1")
+                ).scalar()
+                if current != TREATMENT_HISTORY_INDEX_REVISION:
+                    raise RuntimeError("Schema changed during treatment history index migration")
+    logger.warning("migration.treatment_history_index complete revision=%s",
+                   TREATMENT_HISTORY_INDEX_REVISION)
+    return True
+
+
+
 def _apply_baseline():
     from app import main
-    # Revision 17 is the Academic receipt boundary; revision 18 enforces one
-    # current observation per patient/tooth and patient/tooth/surface.
+    # Revision 18 enforces one current tooth observation; revision 19 adds the
+    # bounded native treatment-history query index.
+    if _upgrade_treatment_history_index(main):
+        return
     if _upgrade_tooth_chart_observation_indexes(main):
+        if not _upgrade_treatment_history_index(main):
+            raise RuntimeError("Could not apply treatment history index revision 19")
         return
     _upgrade_learning_schema(main)
     if _upgrade_academic_course_receipts_schema(main):
         if not _upgrade_tooth_chart_observation_indexes(main):
             raise RuntimeError("Could not apply tooth chart observation revision 18")
+        if not _upgrade_treatment_history_index(main):
+            raise RuntimeError("Could not apply treatment history index revision 19")
         return
     if _upgrade_program_query_indexes(main):
         _upgrade_academic_course_receipts_schema(main)
         if not _upgrade_tooth_chart_observation_indexes(main):
             raise RuntimeError("Could not apply tooth chart observation revision 18")
+        if not _upgrade_treatment_history_index(main):
+            raise RuntimeError("Could not apply treatment history index revision 19")
         return
     if _upgrade_support_receipts_schema(main):
         _upgrade_program_idempotency_schema(main)
@@ -446,6 +565,8 @@ def _apply_baseline():
         _upgrade_academic_course_receipts_schema(main)
         if not _upgrade_tooth_chart_observation_indexes(main):
             raise RuntimeError("Could not apply tooth chart observation revision 18")
+        if not _upgrade_treatment_history_index(main):
+            raise RuntimeError("Could not apply treatment history index revision 19")
         return
     if _upgrade_recent_schema(main):
         _upgrade_program_idempotency_schema(main)
@@ -453,6 +574,8 @@ def _apply_baseline():
         _upgrade_academic_course_receipts_schema(main)
         if not _upgrade_tooth_chart_observation_indexes(main):
             raise RuntimeError("Could not apply tooth chart observation revision 18")
+        if not _upgrade_treatment_history_index(main):
+            raise RuntimeError("Could not apply treatment history index revision 19")
         return
     # A dedicated migration process owns the advisory lock through all of the
     # historical DDL transactions. It is released even on migration failure.
