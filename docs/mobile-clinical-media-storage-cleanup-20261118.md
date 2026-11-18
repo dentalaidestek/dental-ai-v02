@@ -27,3 +27,8 @@ Added `tests/test_patient_media_cleanup.py` for strict path admission, deduplica
 The tests are committed but were not executed in this GitHub-connector run. The starting-head Android and Security jobs had null step lists and null log URLs; a typecheck job-log fetch returned `BlobNotFound 404`. No TypeScript, pytest, Gradle, or PostgreSQL run is claimed.
 
 No main merge, production deploy, migration, APK/IPA publication, or patient-record mutation.
+
+
+## Native response validation follow-up
+
+The native delete transport previously accepted any JSON object returned with HTTP 200. It now requires `ok === true`, the exact requested `media_id`, and correctly typed optional `already_deleted` / `storage_cleanup_pending` receipt fields before the gallery clears its uncertain-delete state. Two renderer/transport regressions were added to the existing `clinicalMediaRecovery.cjs` file, which is already part of `npm run test:beta`. They are committed but remain unexecuted while Actions jobs terminate before steps.
