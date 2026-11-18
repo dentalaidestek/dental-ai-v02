@@ -109,7 +109,18 @@ export function updateTreatment(token:string,patientId:number,treatmentId:number
  validateTreatmentTarget(patientId,payload,treatmentId,requestKey,expectedRevision);
  return treatmentMutationRequest(`/patients/${patientId}/treatments/${treatmentId}`,token,{...payload,request_key:requestKey,expected_revision:expectedRevision});
 }
-export function deletePatient(token:string,id:number){return request<{ok:boolean;patient_id:number}>(`/patients/${id}`,token,{method:"DELETE"});}
+export type PatientDeleteResult={ok:boolean;patient_id:number;already_deleted?:boolean};
+export async function deletePatient(token:string,id:number,requestKey?:string):Promise<PatientDeleteResult>{
+ if(!Number.isSafeInteger(id)||id<=0)throw new Error("Geçersiz hasta kimliği.");
+ if(requestKey!==undefined&&!/^[A-Za-z0-9_-]{16,96}$/.test(requestKey))throw new Error("Hasta silme işlem anahtarı geçersiz.");
+ const path=`/patients/${id}`+(requestKey!==undefined?`?request_key=${encodeURIComponent(requestKey)}`:"");
+ const result=await request<PatientDeleteResult>(path,token,{method:"DELETE"});
+ if(!result||result.ok!==true||result.patient_id!==id||
+    (requestKey!==undefined&&typeof result.already_deleted!=="boolean")||
+    (result.already_deleted!==undefined&&typeof result.already_deleted!=="boolean"))
+  throw new ApiError(502,"Hasta silme işlem fişi doğrulanamadı. Aynı güvenli taslak korunuyor.");
+ return result;
+}
 export function editPatient(token:string,id:number,payload:{first_name:string;last_name:string;phone?:string;birth_date?:string;tc_kimlik_no?:string;address?:string;chief_complaint?:string;expected_revision?:string}){
  if(payload.expected_revision!==undefined&&!/^[a-f0-9]{64}$/.test(payload.expected_revision))throw new Error("Hasta kayıt sürümü geçersiz.");
  return request<{ok:boolean;patient:Patient;edit_revision?:string}>(`/patients/${id}`,token,{method:"PUT",body:JSON.stringify(payload)});
