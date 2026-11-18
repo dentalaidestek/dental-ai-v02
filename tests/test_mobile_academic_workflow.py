@@ -11,7 +11,7 @@ def course(engine,ident=1,owner=1):
 
 def test_native_academic_course_crud_and_ownership(chat):
     client,engine=chat
-    result=client.post('/api/mobile/v1/academic/library',json={'title':'Synthetic new course','description':'Synthetic description'})
+    result=client.post('/api/mobile/v1/academic/library',json={'title':'Synthetic new course','description':'Synthetic description','request_key':'synthetic-course-crud-key-0001'})
     assert result.status_code==200,result.text
     ident=result.json()['course']['id']
     assert client.put(f'/api/mobile/v1/academic/courses/{ident}',json={'title':'Renamed synthetic course'}).status_code==200
@@ -152,3 +152,53 @@ def test_cancelled_academic_run_rejects_late_completion(chat,monkeypatch):
     with Session(engine) as s:
         with pytest.raises(ValueError,match='iptal edildi|sohbet değişti'):
             academic_study_runs.complete_in_transaction(s,run_id=ident,owner=1,course=1,message_id=999)
+
+def test_native_academic_course_create_receipt_is_idempotent_and_owner_scoped(chat):
+    client,engine=chat
+    path='/api/mobile/v1/academic/library'
+    receipt_path=path+'/receipt'
+    payload={'title':'Synthetic receipt course','description':'Synthetic description','request_key':'synthetic-course-create-key-0001'}
+
+    first=client.post(path,json=payload)
+    assert first.status_code==200,first.text
+    course_id=first.json()['course']['id']
+    second=client.post(path,json=payload)
+    assert second.status_code==200,second.text
+    assert second.json()['course']['id']==course_id
+    receipt=client.get(receipt_path,params={'request_key':payload['request_key']})
+    assert receipt.status_code==200 and receipt.json()['workspace']['course']['id']==course_id
+
+    changed=client.post(path,json={**payload,'description':'Different synthetic description'})
+    assert changed.status_code==409
+    with Session(engine) as session:
+        owned=session.exec(select(main.StudyCourse).where(
+            main.StudyCourse.owner_user_id==1,
+            main.StudyCourse.title=='Synthetic receipt course',
+        )).all()
+        assert len(owned)==1
+
+    client.headers['Authorization']='Bearer token2'
+    hidden=client.get(receipt_path,params={'request_key':payload['request_key']})
+    assert hidden.status_code==200 and hidden.json()['workspace'] is None
+    other=client.post(path,json=payload)
+    assert other.status_code==200,other.text
+    assert other.json()['course']['id']!=course_id
+
+    client.headers['Authorization']='Bearer token1'
+    assert client.delete(f"/api/mobile/v1/academic/courses/{course_id}").status_code==200
+    deleted=client.get(receipt_path,params={'request_key':payload['request_key']})
+    assert deleted.status_code==410
+
+
+def test_native_academic_course_receipt_requires_valid_key_and_unique_schema(chat):
+    client,engine=chat
+    path='/api/mobile/v1/academic/library'
+    assert client.post(path,json={'title':'Synthetic course','description':''}).status_code==422
+    assert client.post(path,json={'title':'Synthetic course','description':'','request_key':'short'}).status_code==422
+    assert client.get(path+'/receipt',params={'request_key':'short'}).status_code==422
+    assert any(
+        getattr(item,'name',None)=='uq_studycoursecreatereceipt_owner_key'
+        and {column.name for column in item.columns}=={'owner_user_id','request_key'}
+        for item in main.StudyCourseCreateReceipt.__table__.constraints
+    )
+
