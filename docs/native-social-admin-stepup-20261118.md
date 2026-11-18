@@ -62,3 +62,13 @@ Regression coverage added:
 
 These tests are committed and included in the existing Admin Security and Security Recovery workflow commands. They were not executed in this connector session. Current branch head remains manual-workflow only; no Actions run was started. The exact hosted-runner allocation cause remains outside the repository API evidence. No production migration, deploy, main merge or native admin UI was added in this follow-up.
 
+## 2026-11-18 — native moderation screen
+
+Added NativeSocialAdmin and an ADMIN-only Home entry/stack route. The screen uses the web queue's POST/COMMENT/PUBLICATION filters and PENDING/PUBLISHED/REJECTED states, the reports list, detail view, decision history, operational moderation history, media preview, and version-checked publish/request-changes/reject actions. It does not create a parallel moderation backend or bypass the existing fixed-mailbox OTP.
+
+The five-minute step-up token is held only in a component ref/state (memory); it is never written to SecureStore or AsyncStorage. It is revoked best-effort and cleared on navigation blur/unmount, app background/inactive, expiry, and token/account change. Backend expiry and session binding remain authoritative if the device is offline during revoke. A role check hides the screen from non-ADMIN accounts, and every API operation still requires the backend's verified fixed-mailbox ADMIN and scoped step-up grant.
+
+The screen shows only bounded text/media/history fields, keeps decision reasons to 300 characters, warns against putting patient identifiers or health data in reasons, and uses the authenticated first-party image helper. Native admin decisions do not modify patient charts or clinical records.
+
+Added a source-contract regression for memory-only grant lifecycle and ADMIN/version gates. It is included in mobile test:beta and Security Recovery's native-social-security command. These checks and the full mobile typecheck/beta suite were not executed in this connector session; device-level navigation, OTP email delivery, image rendering, and real moderation decisions remain unaccepted.
+
