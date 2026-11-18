@@ -320,3 +320,21 @@ test('analysis detail rejects storage paths, unsafe filenames and internal job e
   assert.equal(result.job.id,5);
  }finally{global.fetch=original}
 });
+
+test('image-backed analysis accepts the canonical VISION work job and rejects unknown kinds',async()=>{
+ const original=global.fetch;
+ const patient={id:7,anonymous_id:'SYNTHETIC-7',age:null,chief_complaint:null};
+ const analysis={id:23,patient_id:7,status:'VISION_PENDING'};
+ const asset={id:2,original_filename:'scan.png',image_type:'PERIAPICAL',has_vision:false};
+ const valid={analysis,patient,assets:[asset],job:{id:52,kind:'VISION',status:'QUEUED',retryable:false}};
+ try{
+  global.fetch=async()=>new Response(JSON.stringify(valid),{status:200});
+  const result=await api.getAnalysis('token',23);
+  assert.equal(result.job.kind,'VISION');
+  assert.equal(result.job.status,'QUEUED');
+  for(const kind of ['UPLOAD_RECEIPT','UNKNOWN']){
+   global.fetch=async()=>new Response(JSON.stringify({...valid,job:{...valid.job,kind}}),{status:200});
+   await assert.rejects(()=>api.getAnalysis('token',23),error=>error.status===502);
+  }
+ }finally{global.fetch=original}
+});
