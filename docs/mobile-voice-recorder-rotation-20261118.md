@@ -39,7 +39,9 @@ The existing `npm run test:beta` already includes `tests/voiceWorkflow.cjs`; no 
 
 - The regression test source now exercises the pure lifecycle classifier and checks that the recorder clears the previous marker before stopping and uses the classifier for unexpected-stop handling.
 - The visual contract regression checks first-use hiding, compact microphone sizing, recording-only metering, and vertically stacked actions.
-- The helper is dependency-free and can be strict-compiled independently.
+- The dependency-free helper passed strict TypeScript compilation with `tsc --strict --noEmit --target ES2020 --module commonjs`.
+- Four isolated Node tests passed (4/4): expected rotation, genuine unexpected stop, clinician pause, and stale status without an active segment. These tests exercise the helper logic, not the complete React component.
+- GitHub source-contract checks passed 15/15 for lifecycle integration, first-use/recording-only UI states, compact layout, regression registration, and the documented PCM16 limitation.
 - Full `npm run typecheck`, `npm run test:beta`, Expo export, Gradle/APK, Python security regressions, PostgreSQL concurrency, and physical Android/iOS microphone/rotation tests have not been run in this environment. Do not treat committed test coverage as an executed test pass.
 
 ## CI diagnosis at the start of this work
