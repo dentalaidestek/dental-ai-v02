@@ -2804,7 +2804,7 @@ def _mobile_voice_patient(user: User, patient_id: int):
         return voice_exam._fingerprint(session, __import__("app.main", fromlist=["Patient"]), patient)
 
 @router.post("/patients/{patient_id}/voice-exam/text")
-def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, user: User = Depends(_mobile_user)):
+async def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, user: User = Depends(_mobile_user)):
     from app.voice_exam import core
     from app.voice_asr_receipts import ReceiptKeyUnavailable, encryption_key
     from app.voice_clinical_receipts import (
