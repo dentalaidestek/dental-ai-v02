@@ -30,6 +30,7 @@ import {
   chunkedDraftStore,
 } from "./socialDraft";
 import { usePagedRecords } from "./usePagedRecords";
+import NativeSocialMediaViewer from "./NativeSocialMediaViewer";
 
 const C = {
   navy: "#071B35",
@@ -1108,7 +1109,7 @@ function PostCard({
   onUpdate: (p: api.SocialPost | null) => void;
   onComments: () => void;
   onProfile: () => void;
-  onImage: (url: string) => void;
+  onImage: (media: api.SocialPost["media"], index: number) => void;
   onEdit: () => void;
   onFollow: (authorId: number, followed: boolean) => Promise<boolean>;
   onSupport: () => void;
@@ -1266,7 +1267,7 @@ function PostCard({
               key={item.id}
               accessibilityRole="button"
               accessibilityLabel={`Gönderi görselini aç ${index + 1} / ${gallery.length}`}
-              onPress={() => onImage(item.url)}
+              onPress={() => onImage(gallery, index)}
               style={s.galleryItem}
             >
               <Image
@@ -1505,7 +1506,7 @@ export function DentalFlow({
     [specialties, setSpecialties] = useState<string[]>([]),
     [compose, setCompose] = useState(false),
     [comments, setComments] = useState<api.SocialPost | null>(null),
-    [image, setImage] = useState<string | null>(null),
+    [image, setImage] = useState<{ media: api.SocialPost["media"]; index: number } | null>(null),
     [editing, setEditing] = useState<api.SocialPost | null>(null),
     [editText, setEditText] = useState(""),
     [saving, setSaving] = useState(false),
@@ -1554,6 +1555,9 @@ export function DentalFlow({
       feedFollowLocks.current.delete(authorId);
     }
   };
+  useEffect(() => {
+    setImage(null);
+  }, [token, user.id]);
   useEffect(() => {
     const request = ++profileGeneration.current;
     setStats(null);
@@ -1728,7 +1732,7 @@ export function DentalFlow({
             onUpdate={(p) => update(p, item.id)}
             onComments={() => setComments(item)}
             onProfile={() => profile(item.author_id, item.author_name)}
-            onImage={setImage}
+            onImage={(media, index) => setImage({ media, index })}
             onEdit={() => {
               setEditing(item);
               setEditText(item.text);
@@ -1777,13 +1781,14 @@ export function DentalFlow({
         />
       )}
       {image && (
-        <Sheet title="Fotoğraf" onClose={() => setImage(null)}>
-          <Image
-            source={api.socialImageSource(image, token)}
-            style={{ flex: 1 }}
-            resizeMode="contain"
-          />
-        </Sheet>
+        <NativeSocialMediaViewer
+          key={`${user.id}:${image.media.map((item) => item.id).join(",")}`}
+          visible={!!image}
+          token={token}
+          media={image.media}
+          initialIndex={image.index}
+          onClose={() => setImage(null)}
+        />
       )}
       {editing && (
         <Sheet
