@@ -38,7 +38,7 @@ export const createCourse=(t:string,title:string,description:string,request_key:
 export async function courseCreateReceipt(t:string,requestKey:string):Promise<Workspace|null>{
  if(!/^[-_a-zA-Z0-9]{16,80}$/.test(requestKey))throw Error('Geçersiz ders istek anahtarı.');
  const v=await request<{workspace:Workspace|null}>('/academic/library/receipt?request_key='+encodeURIComponent(requestKey),t);
- if(!v||!('workspace' in v)||(v.workspace!==null&&(!v.workspace.course||!Number.isSafeInteger(v.workspace.course.id)||v.workspace.course.id<1)))throw Error('Ders kayıt fişi doğrulanamadı.');
+ if(!v||!('workspace' in v)||(v.workspace!==null&&(!v.workspace.course||!Number.isSafeInteger(v.workspace.course.id)||v.workspace.course.id<1||!Array.isArray(v.workspace.materials)||!Number.isSafeInteger(v.workspace.max_file_bytes)||v.workspace.max_file_bytes<1||!Number.isSafeInteger(v.workspace.max_upload_count)||v.workspace.max_upload_count<1)))throw Error('Ders kayıt fişi doğrulanamadı.');
  return v.workspace;
 }
 export const renameCourse=(t:string,c:number,title:string)=>write<Workspace>(t,coursePath(c),'PUT',{title});
