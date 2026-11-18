@@ -469,3 +469,19 @@ test('approved voice history rejects unknown fields and invalid analysis referen
   await assert.rejects(()=>api.getVoiceHistory('token',1),/geçmişi doğrulanamadı/);
  }finally{global.fetch=original}
 });
+
+test('approved voice history accepts an empty quote when the original transcript was not retained',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>response(JSON.stringify({
+  ok:true,
+  revision:'a'.repeat(64),
+  fields:{medical_history:{value:'Önceki hekim onaylı astım beyanı',quote:'',analysis_id:17}},
+  notice:'Önceki hekim onaylı kayıt; güncelliğini doğrulayın.'
+ }));
+ try{
+  const result=await api.getVoiceHistory('token',8);
+  assert.equal(result.fields.medical_history.value,'Önceki hekim onaylı astım beyanı');
+  assert.equal(result.fields.medical_history.quote,'');
+  assert.equal(result.fields.medical_history.analysis_id,17);
+ }finally{global.fetch=original}
+});
