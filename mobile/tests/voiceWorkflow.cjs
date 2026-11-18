@@ -76,6 +76,38 @@ test('pending ASR failure retains recording and never triggers clinical handoff'
  const h=recorderUI({transcribe:async()=>{throw Error('Synthetic ASR failure')}}),finished=[];let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished:v=>finished.push(v)})));await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());await renderer.act(async()=>button(tree,'Muayeneyi bitir').props.onPress());assert.equal(finished.length,0);assert.equal(JSON.parse(h.store.get('draft')).segments.length,1);assert.ok(text(tree.toJSON()).includes('Synthetic ASR failure'));await renderer.act(async()=>tree.unmount());
 });
 
+
+test('backgrounding aborts a pending native ASR upload and replays the same receipt key on resume',async()=>{
+ const saved=JSON.stringify({version:1,userId:1,patientId:8,transcript:'Önceki metin',segments:[{id:'stable-background-segment',uri:'file:///cache/background.m4a',ready:true}],updatedAt:Date.now(),ended:false,audioStarted:true,elapsedMs:12000});
+ const calls=[],signals=[],finished=[];
+ const h=recorderUI({saved,transcribe:async(...args)=>{
+  calls.push(args);signals.push(args[4]);
+  if(calls.length===1)return await new Promise((resolve,reject)=>args[4].addEventListener('abort',()=>{const error=new Error('Aborted by background');error.name='AbortError';reject(error)},{once:true}));
+  return{transcript:'Arka plan sonrası güvenli tekrar',revision:'r'};
+ }});
+ let tree;const props={token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished:value=>finished.push(value)};
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,props)));
+ await renderer.act(async()=>new Promise(resolve=>setImmediate(resolve)));
+ await renderer.act(async()=>{button(tree,'Bekleyen sesleri yazıya çevir').props.onPress();await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(calls.length,1);
+ await renderer.act(async()=>{h.background();await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(signals[0].aborted,true);
+ let draft=JSON.parse(h.store.get('draft'));
+ assert.equal(draft.segments[0].id,'stable-background-segment');
+ assert.equal(draft.transcript,'Önceki metin');
+ assert.equal(finished.length,0);
+ await renderer.act(async()=>{h.foreground();await new Promise(resolve=>setImmediate(resolve))});
+ await renderer.act(async()=>{button(tree,'Bekleyen sesleri yazıya çevir').props.onPress();await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(calls.length,2);
+ assert.equal(calls[0][3],'stable-background-segment');
+ assert.equal(calls[1][3],'stable-background-segment');
+ draft=JSON.parse(h.store.get('draft'));
+ assert.equal(draft.segments.length,0);
+ assert.equal(draft.transcript,'Önceki metin\\nArka plan sonrası güvenli tekrar');
+ assert.equal(finished.length,0);
+ await renderer.act(async()=>tree.unmount());
+});
+
 function approvalUI(apply,storage=new Map()){
  const exports={},secure={getItemAsync:async key=>storage.get(key)||null,setItemAsync:async(k,v)=>storage.set(k,v),deleteItemAsync:async k=>storage.delete(k)},native={StyleSheet:{create:x=>x},...Object.fromEntries(['ActivityIndicator','Pressable','Text','TextInput','View'].map(x=>[x,x]))};
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeVoiceApproval.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
