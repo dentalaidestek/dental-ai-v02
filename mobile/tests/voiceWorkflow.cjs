@@ -108,6 +108,37 @@ test('backgrounding aborts a pending native ASR upload and replays the same rece
  await renderer.act(async()=>tree.unmount());
 });
 
+
+test('leaving the native voice screen aborts a paused-session ASR upload without losing its key',async()=>{
+ const saved=JSON.stringify({version:1,userId:1,patientId:8,transcript:'Önceki bölüm',segments:[{id:'stable-blur-segment',uri:'file:///cache/blur.m4a',ready:true}],updatedAt:Date.now(),ended:false,audioStarted:true,elapsedMs:18000});
+ const calls=[],signals=[];
+ const h=recorderUI({saved,transcribe:async(...args)=>{
+  calls.push(args);signals.push(args[4]);
+  if(calls.length===1)return await new Promise((resolve,reject)=>args[4].addEventListener('abort',()=>{const error=new Error('Aborted on blur');error.name='AbortError';reject(error)},{once:true}));
+  return{transcript:'Ekrana dönünce tamamlandı',revision:'r'};
+ }});
+ let tree;const props={token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished(){}};
+ const element=React.createElement(h.Component,props);
+ await renderer.act(async()=>tree=renderer.create(element));
+ await renderer.act(async()=>new Promise(resolve=>setImmediate(resolve)));
+ await renderer.act(async()=>{button(tree,'Bekleyen sesleri yazıya çevir').props.onPress();await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(calls.length,1);
+ await renderer.act(async()=>{h.focus(false);tree.update(element);await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(signals[0].aborted,true);
+ let draft=JSON.parse(h.store.get('draft'));
+ assert.equal(draft.segments[0].id,'stable-blur-segment');
+ assert.equal(draft.transcript,'Önceki bölüm');
+ await renderer.act(async()=>{h.focus(true);tree.update(element);await new Promise(resolve=>setImmediate(resolve))});
+ await renderer.act(async()=>{button(tree,'Bekleyen sesleri yazıya çevir').props.onPress();await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(calls.length,2);
+ assert.equal(calls[0][3],'stable-blur-segment');
+ assert.equal(calls[1][3],'stable-blur-segment');
+ draft=JSON.parse(h.store.get('draft'));
+ assert.equal(draft.segments.length,0);
+ assert.equal(draft.transcript,'Önceki bölüm\\nEkrana dönünce tamamlandı');
+ await renderer.act(async()=>tree.unmount());
+});
+
 function approvalUI(apply,storage=new Map()){
  const exports={},secure={getItemAsync:async key=>storage.get(key)||null,setItemAsync:async(k,v)=>storage.set(k,v),deleteItemAsync:async k=>storage.delete(k)},native={StyleSheet:{create:x=>x},...Object.fromEntries(['ActivityIndicator','Pressable','Text','TextInput','View'].map(x=>[x,x]))};
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeVoiceApproval.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
