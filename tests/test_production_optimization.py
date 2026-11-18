@@ -487,3 +487,48 @@ def test_mobile_patient_media_upload_releases_db_before_r2_persist(tmp_path, mon
             assert len(rows) == 1
     finally:
         engine.dispose()
+
+
+def test_mobile_patient_media_download_hydrates_r2_after_db_session_closes(tmp_path, monkeypatch):
+    from sqlmodel import Session, SQLModel, create_engine
+    from app import main, mobile_api
+
+    engine = create_engine(f'sqlite:///{tmp_path / "mobile-media-download.db"}')
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(mobile_api, 'engine', engine)
+    with Session(engine, expire_on_commit=False) as session:
+        user = main.User(username='mobile-media-reader', role='DOCTOR', display_name='Media Reader')
+        session.add(user); session.commit()
+        patient = main.Patient(anonymous_id='mobile-media-download-patient', owner_user_id=user.id)
+        session.add(patient); session.commit()
+        media = main.PatientMedia(
+            patient_id=patient.id,
+            owner_user_id=user.id,
+            original_filename='radiograph.jpg',
+            stored_filename='stored-radiograph.jpg',
+            file_path='r2://clinical/radiograph.jpg',
+            media_type='RADIOGRAPH',
+        )
+        session.add(media); session.commit()
+        user_id, patient_id, media_id = user.id, patient.id, media.id
+
+    target = tmp_path / 'hydrated-radiograph.jpg'
+    target.write_bytes(b'\xff\xd8\xffsynthetic')
+    loop_thread = threading.get_ident()
+    storage_threads = []
+    def hydrate(reference):
+        assert reference == 'r2://clinical/radiograph.jpg'
+        assert engine.pool.checkedout() == 0, 'R2 hydration must not hold a SQL connection'
+        storage_threads.append(threading.get_ident())
+        return target
+    monkeypatch.setattr(mobile_api, 'storage_ensure_local', hydrate)
+
+    try:
+        response = asyncio.run(mobile_api.mobile_patient_media_file(patient_id, media_id, user))
+        assert response.status_code == 200
+        assert response.media_type == 'image/jpeg'
+        assert 'radiograph.jpg' in response.headers.get('content-disposition', '')
+        assert response.headers.get('cache-control') == 'private, no-store'
+        assert storage_threads and storage_threads[0] != loop_thread
+    finally:
+        engine.dispose()
