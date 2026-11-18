@@ -4,6 +4,7 @@ import {useIsFocused} from '@react-navigation/native';
 import {AnalysisHistory,getAnalysisHistory} from './modernApi';
 import {getAnalysis,MobileAnalysis} from './analysisApi';
 import {useRealtime} from './realtime';
+import { shouldRefreshOnAppResume } from './appResumeRefresh';
 import {groupPatientAnalysisAssets,shouldShowLegacyPatientRadiograph} from './patientAnalysisPresentation';
 
 export function analysisStatus(item:{status:string;is_voice_review?:boolean}){
@@ -22,7 +23,16 @@ export default function NativePatientHistory({token,patientId,toothNumber,onOpen
  const load=useCallback(async(more=false)=>{if(locked.current)return;locked.current=true;const seq=++generation.current,owner=scope;setBusy(true);try{const page=await getAnalysisHistory(token,more?visible?.next??undefined:undefined,patientId,toothNumber);if(active.current!==owner||generation.current!==seq)return;setData(previous=>({scope:owner,items:more&&previous?.scope===owner?[...previous.items,...page.items.filter(x=>!previous.items.some(y=>y.id===x.id))]:page.items,next:page.next_before}));setError('')}catch(e){if(active.current===owner&&generation.current===seq)setError(e instanceof Error?e.message:'Analiz geçmişi alınamadı.')}finally{if(active.current===owner&&generation.current===seq){locked.current=false;setBusy(false)}}},[token,patientId,toothNumber,scope,visible?.next]);
  const loader=useRef(load);loader.current=load;
  useEffect(()=>{locked.current=false;setData(null);setSelected(null);setDetail(null);setError('');void loader.current();return()=>{generation.current++;detailRequest.current++}},[scope]);
- useEffect(()=>{if(focused)void loader.current();const listener=AppState.addEventListener('change',state=>{if(state==='active'&&focused)void loader.current()});return()=>listener.remove()},[focused,scope]);
+ useEffect(()=>{
+  if(focused)void loader.current();
+  let previousState=AppState.currentState;
+  const listener=AppState.addEventListener('change',nextState=>{
+   const shouldRefresh=shouldRefreshOnAppResume(previousState,nextState,focused);
+   previousState=nextState;
+   if(shouldRefresh)void loader.current();
+  });
+  return()=>listener.remove();
+ },[focused,scope]);
  useEffect(()=>{if(lastEvent&&['ANALYSIS_CREATED','ANALYSIS_UPDATED','PATIENT_UPDATED'].includes(String(lastEvent.event_type||lastEvent.type))&&Number(lastEvent.payload?.patient_id||lastEvent.entity_id)===patientId)void loader.current()},[lastEvent,patientId]);
  async function open(id:number){
   const seq=++detailRequest.current,owner=scope;setSelected(id);setDetail(null);setDetailError('');setZoom(1);setLegacyRadiographError(false);
