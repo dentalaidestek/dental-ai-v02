@@ -2906,13 +2906,12 @@ async def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, us
             session.commit()
         return reply(409, "VOICE_CLINICAL_PATIENT_CHANGED", "Hasta dosyası görüşme sırasında değişti. Taslak korunuyor; güncel hasta bilgilerini yeniden kontrol edin.")
     try:
-        with Session(engine, expire_on_commit=False) as session:
-            saved = complete_receipt(
-                session, owner_id=user.id, patient_id=patient_id,
-                request_key=payload.request_key, digest=digest, lease_token=lease_token,
-                key=key, review=review, revision=revision,
-            )
-            session.commit()
+        saved = await run_in_threadpool(
+            complete_receipt_transaction, engine,
+            owner_id=user.id, patient_id=patient_id,
+            request_key=payload.request_key, digest=digest,
+            lease_token=lease_token, key=key, review=review, revision=revision,
+        )
     except Exception:
         logging.getLogger(__name__).warning("mobile voice clinical receipt persistence failed")
         return reply(502, "VOICE_CLINICAL_OUTCOME_UNKNOWN", "Klinik sonuç kalıcı ve şifreli fişe yazılamadı. Aynı anahtarla ikinci AI çağrısı yapılmadı.")
