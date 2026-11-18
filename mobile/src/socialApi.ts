@@ -77,6 +77,11 @@ export type SocialModerationStatus = {
   version: number;
   moderation: SocialModeration;
 };
+export type SocialAdminStepUp = {
+  token: string;
+  expires_in: number;
+  scope: "SOCIAL_MODERATION";
+};
 export type SocialComment = {
   id: number;
   author_id: number;
@@ -409,6 +414,67 @@ export async function getPostModerationStatus(
     version: result.version as number,
     moderation: moderation as unknown as SocialModeration,
   };
+}
+
+export async function beginSocialAdminStepUp(token: string): Promise<{ expires_in: 600 }> {
+  const value = await socialRequest<unknown>(token, "/admin/step-up", {
+    method: "POST",
+  });
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    (value as Record<string, unknown>).ok !== true ||
+    (value as Record<string, unknown>).expires_in !== 600 ||
+    (value as Record<string, unknown>).delivery !== "fixed_mailbox"
+  ) {
+    throw new ApiError(502, "Yönetici doğrulama isteği doğrulanamadı.");
+  }
+  return { expires_in: 600 };
+}
+
+export async function verifySocialAdminStepUp(
+  token: string,
+  code: string,
+): Promise<SocialAdminStepUp> {
+  if (typeof code !== "string" || !/^[0-9]{6}$/.test(code)) {
+    throw new Error("Altı haneli yönetici doğrulama kodunu girin.");
+  }
+  const value = await socialRequest<unknown>(token, "/admin/step-up/verify", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ApiError(502, "Yönetici yetki yanıtı doğrulanamadı.");
+  }
+  const result = value as Record<string, unknown>;
+  if (
+    result.ok !== true ||
+    typeof result.token !== "string" ||
+    result.token.length < 32 ||
+    result.token.length > 256 ||
+    result.expires_in !== 300 ||
+    result.scope !== "SOCIAL_MODERATION"
+  ) {
+    throw new ApiError(502, "Yönetici yetki kapsamı doğrulanamadı.");
+  }
+  return { token: result.token, expires_in: 300, scope: "SOCIAL_MODERATION" };
+}
+
+export async function revokeSocialAdminStepUp(
+  token: string,
+  stepUpToken: string,
+): Promise<void> {
+  if (typeof stepUpToken !== "string" || stepUpToken.length < 32 || stepUpToken.length > 256) {
+    throw new Error("Geçersiz yönetici yetki anahtarı.");
+  }
+  const value = await socialRequest<unknown>(token, "/admin/step-up/revoke", {
+    method: "POST",
+    headers: { "X-Dental-Social-Admin-Step-Up": stepUpToken },
+  });
+  if (!value || typeof value !== "object" || Array.isArray(value) || (value as Record<string, unknown>).ok !== true) {
+    throw new ApiError(502, "Yönetici yetkisi kapatılamadı.");
+  }
 }
 
 export const getSocialStats = (t: string, id: number) =>

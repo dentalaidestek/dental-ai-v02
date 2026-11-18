@@ -4,6 +4,7 @@ import uuid
 import pytest
 from sqlmodel import Session, select
 from app import main
+from app.expert_social_models import SocialAdminStepUpChallenge, SocialAdminStepUpSession
 from test_api import env
 
 def native(client, token='t1'):
@@ -163,3 +164,153 @@ def test_native_following_hides_expert_when_verification_is_revoked(env):
     assert c.put('/api/expert-social/experts/1/follow',json={'followed':True}).status_code==200
     with Session(engine) as s:p=s.exec(select(main.ExpertProfile).where(main.ExpertProfile.user_id==1)).one();p.verification_status='REJECTED';s.add(p);s.commit()
     assert c.get('/api/expert-social/experts/2/following').json()['items']==[]
+
+
+
+def _prepare_native_social_admin(client, engine):
+    with Session(engine) as session:
+        admin = session.get(main.User, 4)
+        assert admin is not None
+        admin.role = "ADMIN"
+        admin.is_active = True
+        admin.email = main.ADMIN_FIXED_EMAIL
+        admin.email_verified_at = main._utcnow_naive()
+        session.add(admin)
+        session_hash = main.hash_session_token("t4")
+        challenge = session.get(SocialAdminStepUpChallenge, session_hash)
+        if challenge:
+            session.delete(challenge)
+        for grant in session.exec(
+            select(SocialAdminStepUpSession).where(
+                SocialAdminStepUpSession.session_hash == session_hash
+            )
+        ).all():
+            session.delete(grant)
+        browser = session.get(main.AdminVerifiedSession, session_hash)
+        if browser:
+            session.delete(browser)
+        session.commit()
+    native(client, "t4")
+    client.headers["X-Dental-Social"] = "1"
+
+
+def test_native_social_admin_stepup_is_fixed_mailbox_hashed_and_session_scoped(env, monkeypatch):
+    client, engine = env
+    _prepare_native_social_admin(client, engine)
+    delivered = []
+    monkeypatch.setattr(
+        main,
+        "send_email_verification_code",
+        lambda recipient, code: delivered.append((recipient, code)),
+    )
+    begin = client.post("/api/expert-social/admin/step-up")
+    assert begin.status_code == 200, begin.text
+    assert begin.headers["cache-control"] == "private, no-store"
+    assert delivered and delivered[0][0] == main.ADMIN_FIXED_EMAIL
+    with Session(engine) as session:
+        challenge = session.get(
+            SocialAdminStepUpChallenge, main.hash_session_token("t4")
+        )
+        assert challenge is not None
+        assert main.verify_password(delivered[0][1], challenge.code_hash)
+        assert challenge.code_hash != delivered[0][1]
+        assert challenge.attempts == 0
+        assert session.get(main.AdminVerifiedSession, main.hash_session_token("t4")) is None
+
+    client.headers.pop("X-Dental-Social-Admin-Step-Up", None)
+    verified = client.post(
+        "/api/expert-social/admin/step-up/verify",
+        json={"code": delivered[0][1]},
+    )
+    assert verified.status_code == 200, verified.text
+    payload = verified.json()
+    assert payload["scope"] == "SOCIAL_MODERATION"
+    assert payload["expires_in"] == 300
+    stepup = payload["token"]
+    assert isinstance(stepup, str) and 32 <= len(stepup) <= 256
+    assert verified.headers["cache-control"] == "private, no-store"
+
+    client.headers["X-Dental-Social-Admin-Step-Up"] = stepup
+    assert client.get("/api/expert-social/moderation").status_code == 200
+
+    # A different valid bearer session for the same admin cannot reuse this grant.
+    other_token = "t4-other-session"
+    with Session(engine) as session:
+        session.add(
+            main.SessionToken(
+                token_hash=main.hash_session_token(other_token),
+                user_id=4,
+                expires_at=main._utcnow_naive() + timedelta(hours=1),
+            )
+        )
+        session.commit()
+    native(client, other_token)
+    client.headers["X-Dental-Social-Admin-Step-Up"] = stepup
+    assert client.get("/api/expert-social/moderation").status_code == 403
+
+    native(client, "t4")
+    client.headers["X-Dental-Social-Admin-Step-Up"] = stepup
+    assert client.get("/api/expert-social/moderation").status_code == 200
+    revoked = client.post("/api/expert-social/admin/step-up/revoke")
+    assert revoked.status_code == 200
+    assert revoked.json() == {"ok": True}
+    assert client.get("/api/expert-social/moderation").status_code == 403
+
+    replay = client.post(
+        "/api/expert-social/admin/step-up/verify",
+        json={"code": delivered[0][1]},
+    )
+    assert replay.status_code == 403
+
+
+def test_native_social_admin_stepup_cooldown_attempt_limit_and_expiry(env, monkeypatch):
+    client, engine = env
+    _prepare_native_social_admin(client, engine)
+    delivered = []
+    monkeypatch.setattr(
+        main,
+        "send_email_verification_code",
+        lambda recipient, code: delivered.append((recipient, code)),
+    )
+    assert client.post("/api/expert-social/admin/step-up").status_code == 200
+    assert client.post("/api/expert-social/admin/step-up").status_code == 429
+    wrong_code = "000000" if delivered[0][1] != "000000" else "999999"
+    for _ in range(5):
+        response = client.post(
+            "/api/expert-social/admin/step-up/verify",
+            json={"code": wrong_code},
+        )
+        assert response.status_code == 401
+    locked = client.post(
+        "/api/expert-social/admin/step-up/verify",
+        json={"code": delivered[0][1]},
+    )
+    assert locked.status_code == 403
+
+    # A second independently issued native session can receive a grant.
+    other_token = "t4-expiry-session"
+    with Session(engine) as session:
+        session.add(
+            main.SessionToken(
+                token_hash=main.hash_session_token(other_token),
+                user_id=4,
+                expires_at=main._utcnow_naive() + timedelta(hours=1),
+            )
+        )
+        session.commit()
+    native(client, other_token)
+    assert client.post("/api/expert-social/admin/step-up").status_code == 200
+    verified = client.post(
+        "/api/expert-social/admin/step-up/verify",
+        json={"code": delivered[-1][1]},
+    )
+    assert verified.status_code == 200, verified.text
+    grant_hash = main.hash_session_token(verified.json()["token"])
+    with Session(engine) as session:
+        grant = session.get(SocialAdminStepUpSession, grant_hash)
+        assert grant is not None
+        grant.expires_at = main._utcnow_naive() - timedelta(seconds=1)
+        session.add(grant)
+        session.commit()
+    client.headers["X-Dental-Social-Admin-Step-Up"] = verified.json()["token"]
+    assert client.get("/api/expert-social/moderation").status_code == 403
