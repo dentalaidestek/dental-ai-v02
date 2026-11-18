@@ -945,8 +945,12 @@ def mobile_delete_patient(
                     or receipt.status != "DONE"
                 ):
                     raise HTTPException(status_code=409, detail="Hasta silme anahtarı başka bir işlem için kullanılmış.")
-                # The receipt is deliberately retained after the Patient row is
-                # removed, so a lost DELETE response can be replayed safely.
+                # A receipt and deletion commit atomically. If a row was later
+                # restored manually, do not claim that this replay deleted it.
+                if session.get(Patient, patient_id) is not None:
+                    raise HTTPException(status_code=409, detail="Hasta silme fişi mevcut kayıtla çakışıyor.")
+                # prune_history bounds these tombstones to 30 days. After expiry,
+                # a missing patient still returns 404 and the native client exits safely.
                 return {"ok": True, "patient_id": patient_id, "already_deleted": True}
 
         patient = session.get(Patient, patient_id)
