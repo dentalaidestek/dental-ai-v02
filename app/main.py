@@ -30,7 +30,7 @@ from dental_rag.rag import (
 )
 from app.clinical_rag_router import route_clinical_case
 from app.clinical_media import sanitize_clinical_media_image
-from app.tooth_surface_status import upsert_tooth_observation, upsert_tooth_surface_observation
+from app.tooth_surface_status import observation_revision, upsert_tooth_observation, upsert_tooth_surface_observation
 from app.vision_llm_context import structured_vision_payload
 from app.modality_classifier import classify_dental_image
 from vision_service.tooth_evidence import build_tooth_evidence_package
@@ -10627,6 +10627,8 @@ def update_tooth_status(
     status: str = Form(...),
     note: Optional[str] = Form(None),
     surface: Optional[str] = Form(None),
+    expected_revision: Optional[str] = Form(None),
+    expected_surface_revision: Optional[str] = Form(None),
 ):
     allowed_statuses = {
         "HEALTHY",
@@ -10655,14 +10657,38 @@ def update_tooth_status(
     if not user:
         return RedirectResponse("/login", status_code=303)
 
+    for revision in (expected_revision, expected_surface_revision):
+        if revision and not re.fullmatch(r"[0-9a-f]{64}", revision):
+            return HTMLResponse("Diş kaydı sürümü geçersiz. Sayfayı yenileyin.", status_code=422)
     with Session(engine, expire_on_commit=False) as s:
-        patient = s.get(Patient, patient_id)
+        patient = s.exec(select(Patient).where(Patient.id == patient_id).with_for_update()).first()
 
         if not patient:
             return HTMLResponse("Hasta bulunamadı", status_code=404)
 
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+
+        current_tooth = s.exec(select(ToothStatus).where(
+            ToothStatus.patient_id == patient_id, ToothStatus.tooth_number == tooth_number
+        )).first()
+        if expected_revision and not hmac.compare_digest(
+            observation_revision(current_tooth, kind="tooth", patient_id=patient_id, tooth_number=tooth_number),
+            expected_revision,
+        ):
+            return HTMLResponse("Diş başka bir oturumda güncellendi. Güncel şemayı yükleyip yeniden uygulayın.", status_code=409)
+        if surface:
+            current_surface = s.exec(select(ToothSurfaceStatus).where(
+                ToothSurfaceStatus.patient_id == patient_id,
+                ToothSurfaceStatus.tooth_number == tooth_number,
+                ToothSurfaceStatus.surface == surface,
+            )).first()
+            if expected_surface_revision and not hmac.compare_digest(
+                observation_revision(current_surface, kind="surface", patient_id=patient_id,
+                                     tooth_number=tooth_number, surface=surface),
+                expected_surface_revision,
+            ):
+                return HTMLResponse("Diş yüzeyi başka bir oturumda güncellendi. Güncel şemayı yükleyip yeniden uygulayın.", status_code=409)
 
         normalized_note = note.strip() if note else None
         updated_at = _utcnow_naive()
@@ -10793,6 +10819,26 @@ def tooth_chart(request: Request, patient_id: int):
                 ToothStatus.patient_id == patient_id
             )
         ).all()
+        surface_statuses = s.exec(
+            select(ToothSurfaceStatus).where(ToothSurfaceStatus.patient_id == patient_id)
+        ).all()
+        tooth_revisions = {
+            number: observation_revision(next((item for item in statuses if item.tooth_number == number), None),
+                                          kind="tooth", patient_id=patient_id, tooth_number=number)
+            for number in (
+                [f"{q}{n}" for q in "1234" for n in "12345678"] +
+                [f"{q}{n}" for q in "5678" for n in "12345"]
+            )
+        }
+        surface_revisions = {
+            f"{item.tooth_number}:{surface}": observation_revision(
+                next((row for row in surface_statuses
+                      if row.tooth_number == item.tooth_number and row.surface == surface), None),
+                kind="surface", patient_id=patient_id, tooth_number=item.tooth_number, surface=surface,
+            )
+            for item in statuses
+            for surface in ("OCCLUSAL", "INCISAL", "MESIAL", "DISTAL", "BUCCAL", "LINGUAL")
+        }
 
         status_map = {
             item.tooth_number: item.status
@@ -10871,6 +10917,8 @@ def tooth_chart(request: Request, patient_id: int):
                 "primary_lower_teeth": primary_lower_teeth,
                 "latest_analysis_tooth": latest_analysis_tooth,
                 "tooth_notes": {item.tooth_number: item.note or "" for item in statuses},
+                "tooth_revisions": tooth_revisions,
+                "surface_revisions": surface_revisions,
             },
         )
 
