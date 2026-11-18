@@ -911,13 +911,17 @@ function Comments({
     [parent, setParent] = useState<number | undefined>(),
     lock = useRef(false),
     commentLoadGeneration = useRef(0),
-    commentPageLock = useRef(false);
+    // Keep the exact pagination request that owns the lease. A first-page
+    // refresh invalidates an older page request without letting its finally
+    // block release a newer page request's lock.
+    commentPageRequest = useRef<number | null>(null);
   const d = useDraft(userId, `comment.${post.id}`);
   const load = useCallback(
     async (after = 0) => {
-      if (after && commentPageLock.current) return;
+      if (after && commentPageRequest.current !== null) return;
       const request = ++commentLoadGeneration.current;
-      if (after) commentPageLock.current = true;
+      if (after) commentPageRequest.current = request;
+      else commentPageRequest.current = null;
       setBusy(true);
       try {
         const page = await api.getComments(token, post.id, after);
@@ -940,20 +944,20 @@ function Comments({
       } catch (e) {
         if (request === commentLoadGeneration.current) setError(message(e));
       } finally {
-        if (request === commentLoadGeneration.current) {
-          if (after) commentPageLock.current = false;
-          setBusy(false);
+        if (commentPageRequest.current === request) {
+          commentPageRequest.current = null;
         }
+        if (request === commentLoadGeneration.current) setBusy(false);
       }
     },
     [post.id, token],
   );
   useEffect(() => {
-    commentPageLock.current = false;
+    commentPageRequest.current = null;
     void load();
     return () => {
       commentLoadGeneration.current++;
-      commentPageLock.current = false;
+      commentPageRequest.current = null;
     };
   }, [load]);
   async function send() {
