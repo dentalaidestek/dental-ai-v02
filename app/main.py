@@ -447,6 +447,9 @@ class Analysis(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow_naive)
 
 class ToothStatus(SQLModel, table=True):
+    __table_args__ = (
+        Index("uq_toothstatus_patient_tooth", "patient_id", "tooth_number", unique=True),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     patient_id: int = Field(index=True)
     tooth_number: str = Field(index=True)
@@ -457,6 +460,9 @@ class ToothStatus(SQLModel, table=True):
 
 class ToothSurfaceStatus(SQLModel, table=True):
     __tablename__ = "toothsurfacestatus"
+    __table_args__ = (
+        Index("uq_toothsurfacestatus_patient_tooth_surface", "patient_id", "tooth_number", "surface", unique=True),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     patient_id: int = Field(index=True)
