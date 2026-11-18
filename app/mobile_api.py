@@ -510,6 +510,7 @@ class MobileToothUpdate(BaseModel):
     surface: Optional[str] = None
     surfaces: Optional[list[str]] = None
     expected_revision: Optional[str]
+    surface_revisions: Optional[dict[str, Optional[str]]] = None
 
 
 class MobileSurfaceUpdate(BaseModel):
@@ -786,7 +787,9 @@ def mobile_update_tooth_surface(
         current_revision = observation_revision(current, kind="surface", patient_id=patient_id,
                                                 tooth_number=tooth_number, surface=surface_name)
         expected_was_sent = "expected_revision" in getattr(payload, "model_fields_set", getattr(payload, "__fields_set__", set()))
-        if expected_was_sent and payload.expected_revision != (current_revision if current is not None else None):
+        if not expected_was_sent:
+            raise HTTPException(status_code=428, detail="Diş yüzeyi sürümü gerekli. Şemayı yenileyip tekrar deneyin.")
+        if payload.expected_revision != (current_revision if current is not None else None):
             raise HTTPException(status_code=409, detail="Diş yüzeyi başka bir oturumda güncellendi. Güncel şemayı yükleyip yeniden uygulayın.")
         note = payload.note.strip() if payload.note else None
         upsert_tooth_surface_observation(
@@ -844,7 +847,9 @@ def mobile_update_tooth(
         current_revision = observation_revision(current, kind="tooth", patient_id=patient_id,
                                                 tooth_number=tooth_number)
         expected_was_sent = "expected_revision" in getattr(payload, "model_fields_set", getattr(payload, "__fields_set__", set()))
-        if expected_was_sent and payload.expected_revision != (current_revision if current is not None else None):
+        if not expected_was_sent:
+            raise HTTPException(status_code=428, detail="Diş şeması sürümü gerekli. Şemayı yenileyip tekrar deneyin.")
+        if payload.expected_revision != (current_revision if current is not None else None):
             raise HTTPException(status_code=409, detail="Diş başka bir oturumda güncellendi. Güncel şemayı yükleyip yeniden uygulayın.")
         note = payload.note.strip() if payload.note else None
         updated_at = _utcnow_naive()
