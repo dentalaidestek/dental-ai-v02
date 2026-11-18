@@ -11,7 +11,7 @@ function component(api,file='NativePatientProfile',storage=new Map()){
  const intentExports={};
  const intentCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/treatmentMutation.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
  vm.runInNewContext(intentCode,{exports:intentExports,Error,JSON,Date,Number,RegExp});
- const secure={getItemAsync:async key=>storage.get(key)||null,setItemAsync:async(key,value)=>storage.set(key,value),deleteItemAsync:async key=>storage.delete(key)};
+ const secure={getItemAsync:async key=>storage.has(key)?storage.get(key):null,setItemAsync:async(key,value)=>storage.set(key,value),deleteItemAsync:async key=>storage.delete(key)};
  let sequence=0;const focusState={current:true};
  const alertCalls=[];
  const native={StyleSheet:{create:s=>s},AppState:{addEventListener:()=>({remove(){}})},Platform:{OS:'android'},Alert:{alert:(title,message,buttons)=>alertCalls.push({title,message,buttons})},...Object.fromEntries(['Modal','ActivityIndicator','KeyboardAvoidingView','Pressable','RefreshControl','ScrollView','Text','TextInput','View'].map(s=>[s,s]))},exports={};
@@ -515,7 +515,7 @@ test('ambiguous patient delete replays the exact same key after restoring the du
 });
 
 test('corrupt patient delete intent fails closed and never creates a replacement request',async()=>{
- const storage=new Map([['dai.patient-delete.v1.1.8','not-json']]);let deletes=0;
+ const storage=new Map([['dai.patient-delete.v1.1.8','']]);let deletes=0;
  const Profile=component({getPatient:async()=>patient(8),deletePatient:async()=>{deletes++;return{ok:true,patient_id:8,already_deleted:false}}},'NativePatientProfile',storage);
  let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}));await Promise.resolve();await Promise.resolve()});
@@ -543,6 +543,16 @@ test('patient delete does not send a request when SecureStore cannot persist the
  await renderer.act(async()=>{Profile.alertCalls[1].buttons[1].onPress();await new Promise(resolve=>setImmediate(resolve));});
  assert.equal(deletes,0,'DELETE must not be sent before the idempotency key is durable');
  assert.ok(text(tree.toJSON()).includes('Sunucuya istek gönderilmedi'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('missing or no-longer-owned patient exits the stale profile route safely',async()=>{
+ const deleted=[];
+ const routed={...actions,deleted:()=>deleted.push(true)};
+ const Profile=component({getPatient:async()=>{throw Object.assign(new Error('Hasta bulunamadı.'),{status:404})}});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions:routed}));await Promise.resolve();await Promise.resolve()});
+ assert.deepEqual(deleted,[true],'a 404 must not leave a deleted patient profile in a permanent retry state');
  await renderer.act(async()=>tree.unmount());
 });
 
