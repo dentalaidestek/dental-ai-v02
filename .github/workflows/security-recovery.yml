@@ -78,6 +78,13 @@ on:
       - 'tests/test_mobile_push_receipts.py'
       - 'tests/test_mobile_push_registration.py'
       - 'mobile/src/clinicalApi.ts'
+      - 'mobile/src/NativeProgram.tsx'
+      - 'mobile/src/programApi.ts'
+      - 'mobile/src/programIntent.ts'
+      - 'mobile/src/programModel.ts'
+      - 'mobile/tests/programParity.cjs'
+      - 'mobile/tests/programIntent.cjs'
+      - 'mobile/tests/appointmentParity.cjs'
       - 'mobile/src/NativeClinicalReview.tsx'
       - 'mobile/src/NativeVisionViewer.tsx'
       - 'mobile/src/visionModel.ts'
@@ -110,7 +117,7 @@ permissions:
   contents: read
 concurrency:
   group: security-recovery-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   native-voice-security:
     runs-on: ubuntu-latest
@@ -176,6 +183,22 @@ jobs:
         run: npm ci
       - name: Validate Academic workflow, parser and private upload boundary
         run: node --test tests/academicWorkflow.cjs tests/academicComposer.cjs tests/academicFileSecurity.cjs
+  native-program-security:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install native Program regression dependencies
+        run: npm ci
+      - name: Validate account-scoped Program recovery, copy identity and appointment parity
+        run: node --test tests/programParity.cjs tests/programIntent.cjs tests/appointmentParity.cjs
   security:
     runs-on: ubuntu-latest
     timeout-minutes: 15
