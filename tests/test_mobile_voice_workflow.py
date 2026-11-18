@@ -301,3 +301,74 @@ def test_mobile_voice_text_replay_is_invalidated_by_later_patient_revision(chat,
     assert replay.status_code==409
     assert replay.json()["code"]=="VOICE_CLINICAL_PATIENT_CHANGED"
     assert len(calls)==1
+
+
+
+def test_mobile_voice_text_preflights_aes_gcm_before_provider_call(chat,monkeypatch):
+    client,engine=setup(chat,monkeypatch)
+    monkeypatch.setenv("VOICE_ASR_RECEIPT_KEY","11"*32)
+    from app import voice_asr_receipts
+    calls=[]
+    def unavailable():
+        raise voice_asr_receipts.ReceiptKeyUnavailable("synthetic AES-GCM unavailable")
+    monkeypatch.setattr(voice_asr_receipts,"_cipher",unavailable)
+    monkeypatch.setattr(voice_exam.core,"extract",lambda **kwargs:(calls.append(kwargs) or {"fields":{},"teeth":[]}))
+    response=client.post("/api/mobile/v1/patients/8/voice-exam/text",json={
+        "transcript":"Synthetic transcript","context":{},"consent":True,
+        "request_key":"session_1234567890_chunk_crypto",
+    })
+    assert response.status_code==503,response.text
+    assert response.json()["code"]=="VOICE_CLINICAL_NOT_READY"
+    assert calls==[]
+    with Session(engine) as session:
+        assert not session.exec(select(WorkJob).where(
+            WorkJob.kind=="VOICE_CLINICAL_RECEIPT"
+        )).all()
+
+
+def test_mobile_voice_text_receipt_database_work_is_offloaded(chat,monkeypatch):
+    client,engine=setup(chat,monkeypatch)
+    monkeypatch.setenv("VOICE_ASR_RECEIPT_KEY","11"*32)
+    from starlette import concurrency
+    original=concurrency.run_in_threadpool
+    offloaded=[]
+    async def observed(func,*args,**kwargs):
+        offloaded.append(getattr(func,"__name__","<callable>"))
+        return await original(func,*args,**kwargs)
+    monkeypatch.setattr(concurrency,"run_in_threadpool",observed)
+    monkeypatch.setattr(voice_exam.core,"extract",lambda **kwargs:{"fields":{},"teeth":[]})
+    response=client.post("/api/mobile/v1/patients/8/voice-exam/text",json={
+        "transcript":"Synthetic transcript for offload","context":{},"consent":True,
+        "request_key":"session_1234567890_chunk_offload",
+    })
+    assert response.status_code==200,response.text
+    assert "reserve_receipt_transaction" in offloaded
+    assert "complete_receipt_transaction" in offloaded
+
+
+def test_mobile_voice_text_retryable_receipt_transition_is_offloaded(chat,monkeypatch):
+    client,engine=setup(chat,monkeypatch)
+    monkeypatch.setenv("VOICE_ASR_RECEIPT_KEY","11"*32)
+    from starlette import concurrency
+    original=concurrency.run_in_threadpool
+    offloaded=[]
+    async def observed(func,*args,**kwargs):
+        offloaded.append(getattr(func,"__name__","<callable>"))
+        return await original(func,*args,**kwargs)
+    monkeypatch.setattr(concurrency,"run_in_threadpool",observed)
+    calls=[]
+    def busy_once(**kwargs):
+        calls.append(kwargs)
+        if len(calls)==1:
+            raise voice_exam.core.VoiceBusy("synthetic capacity")
+        return {"fields":{},"teeth":[]}
+    monkeypatch.setattr(voice_exam.core,"extract",busy_once)
+    payload={"transcript":"Synthetic retryable transcript","context":{},"consent":True,
+             "request_key":"session_1234567890_chunk_offload_retry"}
+    first=client.post("/api/mobile/v1/patients/8/voice-exam/text",json=payload)
+    second=client.post("/api/mobile/v1/patients/8/voice-exam/text",json=payload)
+    assert first.status_code==429
+    assert second.status_code==200,second.text
+    assert offloaded.count("finish_receipt_transaction")==1
+    assert offloaded.count("reserve_receipt_transaction")==2
+    assert offloaded.count("complete_receipt_transaction")==1
