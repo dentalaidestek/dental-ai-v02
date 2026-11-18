@@ -3,6 +3,9 @@ global.IS_REACT_ACT_ENVIRONMENT=true;
 const presentationExports={};
 const presentationCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/patientProfilePresentation.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
 vm.runInNewContext(presentationCode,{exports:presentationExports});
+const deleteIntentExports={};
+const deleteIntentCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/patientDeleteIntent.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+vm.runInNewContext(deleteIntentCode,{exports:deleteIntentExports,Error,JSON,Number,RegExp,Object});
 function component(api,file='NativePatientProfile',storage=new Map()){
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/'+file+'.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const intentExports={};
@@ -13,7 +16,7 @@ function component(api,file='NativePatientProfile',storage=new Map()){
  const alertCalls=[];
  const native={StyleSheet:{create:s=>s},AppState:{addEventListener:()=>({remove(){}})},Platform:{OS:'android'},Alert:{alert:(title,message,buttons)=>alertCalls.push({title,message,buttons})},...Object.fromEntries(['Modal','ActivityIndicator','KeyboardAvoidingView','Pressable','RefreshControl','ScrollView','Text','TextInput','View'].map(s=>[s,s]))},exports={};
  const endpoints={getPatient:async()=>patient(8),createTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),updateTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),...api};
- vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:name==='./patientProfilePresentation'?presentationExports:{default:'Child'}});
+ vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:name==='./patientDeleteIntent'?deleteIntentExports:name==='./patientProfilePresentation'?presentationExports:{default:'Child'}});
  const Original=exports.default;
  const Wrapped=props=>React.createElement(Original,{userId:1,...props});
  Wrapped.storage=storage;
@@ -274,11 +277,12 @@ test('patient edit reconciliation compares every web-editable field after trim/n
 
 test('patient deletion gate requires all profile and treatment intents to be known and settled',()=>{
  const can=presentationExports.patientProfileCanDeletePatient;
- const ready={busy:false,uncertain:false,treatmentIntentReady:true,treatmentIntentBlocked:false,hasPendingTreatment:false};
+ const ready={busy:false,uncertain:false,treatmentIntentReady:true,treatmentIntentBlocked:false,hasPendingTreatment:false,deleteIntentReady:true,deleteIntentBlocked:false,hasPendingDelete:false};
  assert.equal(can(ready),true);
  for(const patch of [
   {busy:true},{uncertain:true},{treatmentIntentReady:false},
-  {treatmentIntentBlocked:true},{hasPendingTreatment:true}
+  {treatmentIntentBlocked:true},{hasPendingTreatment:true},
+   {deleteIntentReady:false},{deleteIntentBlocked:true},{hasPendingDelete:true}
  ]) assert.equal(can({...ready,...patch}),false,JSON.stringify(patch));
 });
 
@@ -440,3 +444,105 @@ test('mismatched patient identity cannot resolve an ambiguous edit or enable del
  assert.equal(remove.props.disabled,true);
  await renderer.act(async()=>tree.unmount());
 });
+
+test('patient delete intent parser is bound to one account and patient',()=>{
+ const created=deleteIntentExports.createPatientDeleteIntent(1,8,'synthetic-patient-delete-0001');
+ assert.equal(created.version,1);
+ assert.equal(created.userId,1);
+ assert.equal(created.patientId,8);
+ assert.equal(created.requestKey,'synthetic-patient-delete-0001');
+ assert.equal(deleteIntentExports.patientDeleteIntentStorageKey(1,8),'dai.patient-delete.v1.1.8');
+ assert.throws(()=>deleteIntentExports.parsePatientDeleteIntent(JSON.stringify(created),2,8));
+ assert.throws(()=>deleteIntentExports.parsePatientDeleteIntent(JSON.stringify(created),1,9));
+ assert.throws(()=>deleteIntentExports.parsePatientDeleteIntent('not-json',1,8));
+ assert.throws(()=>deleteIntentExports.createPatientDeleteIntent(1,8,'short'));
+});
+
+test('native patient delete persists its request key before the server mutation and clears it after success',async()=>{
+ const storage=new Map(),calls=[],deleted=[];
+ const routed={...actions,deleted:()=>deleted.push(true)};
+ const Profile=component({
+  getPatient:async()=>patient(8),
+  deletePatient:async(_token,id,key)=>{calls.push({id,key,stored:storage.has('dai.patient-delete.v1.1.8')});return{ok:true,patient_id:id,already_deleted:false};}
+ },'NativePatientProfile',storage);
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions:routed}));await Promise.resolve();await Promise.resolve()});
+ const info=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Bilgileri')));
+ await renderer.act(async()=>info.props.onPress());
+ const remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
+ assert.equal(remove.props.disabled,false);
+ await renderer.act(async()=>remove.props.onPress());
+ await renderer.act(async()=>Profile.alertCalls[0].buttons[1].onPress());
+ await renderer.act(async()=>{Profile.alertCalls[1].buttons[1].onPress();await new Promise(resolve=>setImmediate(resolve));});
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].id,8);
+ assert.equal(calls[0].stored,true,'the durable intent must exist before DELETE');
+ assert.match(calls[0].key,/^synthetic-treatment-request-/);
+ assert.equal(storage.has('dai.patient-delete.v1.1.8'),false);
+ assert.deepEqual(deleted,[true]);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('ambiguous patient delete replays the exact same key after restoring the durable intent',async()=>{
+ const storage=new Map(),calls=[],deleted=[];let attempt=0;
+ const routed={...actions,deleted:()=>deleted.push(true)};
+ const Profile=component({
+  getPatient:async()=>patient(8),
+  deletePatient:async(_token,id,key)=>{
+   calls.push({id,key,stored:storage.has('dai.patient-delete.v1.1.8')});
+   if(attempt++===0)throw Object.assign(new Error('Yanıt kayboldu'),{status:503});
+   return{ok:true,patient_id:id,already_deleted:true};
+  }
+ },'NativePatientProfile',storage);
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions:routed}));await Promise.resolve();await Promise.resolve()});
+ const press=async(label)=>{const node=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(node,'missing '+label);await renderer.act(async()=>node.props.onPress())};
+ await press('Hasta Bilgileri');
+ await press('Hasta Kaydını Sil');
+ await renderer.act(async()=>Profile.alertCalls[0].buttons[1].onPress());
+ await renderer.act(async()=>{Profile.alertCalls[1].buttons[1].onPress();await new Promise(resolve=>setImmediate(resolve));});
+ assert.equal(calls.length,1);
+ assert.equal(storage.has('dai.patient-delete.v1.1.8'),true,'ambiguous result must retain the request key');
+ await press('Bekleyen Silme İşlemini Doğrula');
+ await renderer.act(async()=>Profile.alertCalls[2].buttons[1].onPress());
+ await renderer.act(async()=>{Profile.alertCalls[3].buttons[1].onPress();await new Promise(resolve=>setImmediate(resolve));});
+ assert.equal(calls.length,2);
+ assert.equal(calls[0].key,calls[1].key,'recovery must replay the exact original request key');
+ assert.equal(calls[1].stored,true);
+ assert.equal(storage.has('dai.patient-delete.v1.1.8'),false);
+ assert.deepEqual(deleted,[true]);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('corrupt patient delete intent fails closed and never creates a replacement request',async()=>{
+ const storage=new Map([['dai.patient-delete.v1.1.8','not-json']]);let deletes=0;
+ const Profile=component({getPatient:async()=>patient(8),deletePatient:async()=>{deletes++;return{ok:true,patient_id:8,already_deleted:false}}},'NativePatientProfile',storage);
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}));await Promise.resolve();await Promise.resolve()});
+ const info=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Bilgileri')));
+ await renderer.act(async()=>info.props.onPress());
+ const remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
+ assert.equal(remove.props.disabled,true);
+ assert.ok(text(tree.toJSON()).includes('Güvenli hasta silme kaydı okunamadı'));
+ assert.equal(deletes,0);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('patient delete does not send a request when SecureStore cannot persist the intent',async()=>{
+ const storage=new Map();const originalSet=storage.set.bind(storage);
+ storage.set=(key,value)=>{if(String(key).startsWith('dai.patient-delete.'))throw new Error('synthetic secure storage failure');return originalSet(key,value)};
+ let deletes=0;
+ const Profile=component({getPatient:async()=>patient(8),deletePatient:async()=>{deletes++;return{ok:true,patient_id:8,already_deleted:false}}},'NativePatientProfile',storage);
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}));await Promise.resolve();await Promise.resolve()});
+ const info=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Bilgileri')));
+ await renderer.act(async()=>info.props.onPress());
+ const remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
+ await renderer.act(async()=>remove.props.onPress());
+ await renderer.act(async()=>Profile.alertCalls[0].buttons[1].onPress());
+ await renderer.act(async()=>{Profile.alertCalls[1].buttons[1].onPress();await new Promise(resolve=>setImmediate(resolve));});
+ assert.equal(deletes,0,'DELETE must not be sent before the idempotency key is durable');
+ assert.ok(text(tree.toJSON()).includes('Sunucuya istek gönderilmedi'));
+ await renderer.act(async()=>tree.unmount());
+});
+
