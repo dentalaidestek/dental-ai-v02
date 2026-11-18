@@ -102,7 +102,11 @@ test("native Dental Flow viewer wires pinch, pan, swipe, retry and authenticated
   assert.ok(component.includes('accessibilityLabel="Önceki görsel"'));
   assert.ok(component.includes('accessibilityLabel="Sonraki görsel"'));
   assert.ok(component.includes("requestKeyRef.current !== requestKey"));
+  assert.ok(component.includes("}, [visible, token, initialIndex, itemsKey]);"));
+  assert.ok(component.includes("opacity: loading || failed ? 0 : 1"));
   assert.ok(screen.includes("NativeSocialMediaViewer"));
   assert.ok(screen.includes("onImage={(media, index) => setImage({ media, index })}"));
+  assert.ok(screen.includes('key={`${user.id}:${token}:'));
   assert.ok(screen.includes("setImage(null);"));
+  assert.ok(screen.includes("}, [token, user.id]);"));
 });
