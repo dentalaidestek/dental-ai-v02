@@ -163,7 +163,7 @@ def test_native_academic_course_create_receipt_is_idempotent_and_owner_scoped(ch
     first=client.post(path,json=payload)
     assert first.status_code==200,first.text
     course_id=first.json()['course']['id']
-    second=client.post(path,json=payload)
+    second=client.post(path,json={**payload,'title':'  Synthetic   receipt course  ','description':' Synthetic description '})
     assert second.status_code==200,second.text
     assert second.json()['course']['id']==course_id
     receipt=client.get(receipt_path,params={'request_key':payload['request_key']})
