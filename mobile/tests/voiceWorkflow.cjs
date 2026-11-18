@@ -151,6 +151,8 @@ test('leaving the native voice screen aborts a paused-session ASR upload without
  await renderer.act(async()=>tree.unmount());
 });
 
+test('native recorder stops and keeps its local segment when consent is unchecked',async()=>{const calls=[],h=recorderUI({transcribe:async()=>{calls.push('upload');return{transcript:'not expected',revision:'r'}}}),props={token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished(){}};let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,props)));await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());await renderer.act(async()=>tree.update(React.createElement(h.Component,{...props,consent:false})));await renderer.act(async()=>new Promise(resolve=>setImmediate(resolve)));const draft=JSON.parse(h.store.get('draft'));assert.equal(h.calls.filter(x=>x==='stop').length,1);assert.equal(calls.length,0);assert.equal(draft.segments.length,1);assert.equal(draft.segments[0].ready,true);await renderer.act(async()=>tree.unmount());});
+
 function approvalUI(apply,storage=new Map()){
  const exports={},secure={getItemAsync:async key=>storage.get(key)||null,setItemAsync:async(k,v)=>storage.set(k,v),deleteItemAsync:async k=>storage.delete(k)},native={StyleSheet:{create:x=>x},...Object.fromEntries(['ActivityIndicator','Pressable','Text','TextInput','View'].map(x=>[x,x]))};
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeVoiceApproval.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
