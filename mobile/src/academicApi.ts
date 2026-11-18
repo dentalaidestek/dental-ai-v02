@@ -34,11 +34,11 @@ export const coursePath=(course:number)=>`/academic/courses/${id(course)}`;
 export async function library(token:string,q='',before?:number){const v=await request<{items:Course[];next_before:number|null}>('/academic/library?q='+encodeURIComponent(q)+(before?'&before='+id(before):''),token);if(!Array.isArray(v.items)||v.items.some(c=>!c||!Number.isSafeInteger(c.id)||c.id<1||typeof c.title!=='string'))throw Error('Ders listesi doğrulanamadı.');return v}
 export async function workspace(token:string,course:number,before?:number){const v=await request<Workspace>(coursePath(course)+'/workspace'+(before?'?before='+id(before):''),token);if(v.course?.id!==course||!Array.isArray(v.materials)||!Number.isSafeInteger(v.max_file_bytes)||v.max_file_bytes<1||!Number.isSafeInteger(v.max_upload_count)||v.max_upload_count<1)throw Error('Ders kaynakları doğrulanamadı.');return v}
 const write=<T>(token:string,path:string,method:string,payload?:unknown)=>request<T>(path,token,{method,...(payload===undefined?{}:{body:JSON.stringify(payload)})});
-export const createCourse=(t:string,title:string,description:string,request_key:string)=>write<Workspace>(t,'/academic/library','POST',{title,description,request_key});
+export const createCourse=(t:string,title:string,description:string,request_key:string)=>{if(!/^[-_a-zA-Z0-9]{16,80}$/.test(request_key))throw Error('Geçersiz ders istek anahtarı.');return write<Workspace>(t,'/academic/library','POST',{title,description,request_key})};
 export async function courseCreateReceipt(t:string,requestKey:string):Promise<Workspace|null>{
  if(!/^[-_a-zA-Z0-9]{16,80}$/.test(requestKey))throw Error('Geçersiz ders istek anahtarı.');
  const v=await request<{workspace:Workspace|null}>('/academic/library/receipt?request_key='+encodeURIComponent(requestKey),t);
- if(!v||!('workspace' in v)||(v.workspace!==null&&(!v.workspace.course||!Number.isSafeInteger(v.workspace.course.id)||v.workspace.course.id<1||!Array.isArray(v.workspace.materials)||!Number.isSafeInteger(v.workspace.max_file_bytes)||v.workspace.max_file_bytes<1||!Number.isSafeInteger(v.workspace.max_upload_count)||v.workspace.max_upload_count<1)))throw Error('Ders kayıt fişi doğrulanamadı.');
+ if(!v||!('workspace' in v)||(v.workspace!==null&&(!v.workspace||!v.workspace.course||!Number.isSafeInteger(v.workspace.course.id)||v.workspace.course.id<1||!Array.isArray(v.workspace.materials)||!Number.isSafeInteger(v.workspace.max_file_bytes)||v.workspace.max_file_bytes<1||!Number.isSafeInteger(v.workspace.max_upload_count)||v.workspace.max_upload_count<1)))throw Error('Ders kayıt fişi doğrulanamadı.');
  return v.workspace;
 }
 export const renameCourse=(t:string,c:number,title:string)=>write<Workspace>(t,coursePath(c),'PUT',{title});
