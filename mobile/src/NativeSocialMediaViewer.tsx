@@ -15,9 +15,8 @@ import {
   normalizeSocialMediaItems,
   pinchSocialZoom,
   socialSwipeDirection,
-  SocialMediaItem,
-  SocialPan,
 } from "./socialMediaViewer";
+import type { SocialMediaItem, SocialPan } from "./socialMediaViewer";
 
 type Point = { x: number; y: number };
 type Gesture =
@@ -285,7 +284,7 @@ export default function NativeSocialMediaViewer({
               style={[
                 styles.image,
                 {
-                  opacity: loading ? 0 : 1,
+                  opacity: loading || failed ? 0 : 1,
                   transform: [
                     { translateX: pan.x },
                     { translateY: pan.y },
