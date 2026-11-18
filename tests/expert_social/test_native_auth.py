@@ -206,6 +206,8 @@ def test_native_social_admin_stepup_is_fixed_mailbox_hashed_and_session_scoped(e
     begin = client.post("/api/expert-social/admin/step-up")
     assert begin.status_code == 200, begin.text
     assert begin.headers["cache-control"] == "private, no-store"
+    assert "Authorization" in begin.headers["vary"]
+    assert "X-Dental-Social-Admin-Step-Up" in begin.headers["vary"]
     assert delivered and delivered[0][0] == main.ADMIN_FIXED_EMAIL
     with Session(engine) as session:
         challenge = session.get(
@@ -229,6 +231,8 @@ def test_native_social_admin_stepup_is_fixed_mailbox_hashed_and_session_scoped(e
     stepup = payload["token"]
     assert isinstance(stepup, str) and 32 <= len(stepup) <= 256
     assert verified.headers["cache-control"] == "private, no-store"
+    assert "Authorization" in verified.headers["vary"]
+    assert "X-Dental-Social-Admin-Step-Up" in verified.headers["vary"]
 
     client.headers["X-Dental-Social-Admin-Step-Up"] = stepup
     assert client.get("/api/expert-social/moderation").status_code == 200
