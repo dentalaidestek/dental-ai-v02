@@ -11239,8 +11239,12 @@ def delete_patient_media(request: Request, patient_id: int, media_id: int):
         return RedirectResponse("/login", status_code=303)
 
     file_path = None
+    queued = False
     with Session(engine, expire_on_commit=False) as s:
-        patient = s.get(Patient, patient_id)
+        patient_query = select(Patient).where(Patient.id == patient_id)
+        if engine.dialect.name == "postgresql":
+            patient_query = patient_query.with_for_update()
+        patient = s.exec(patient_query).first()
         media = s.get(PatientMedia, media_id)
         if not patient or not media or media.patient_id != patient_id:
             return HTMLResponse("Klinik görüntü bulunamadı.", status_code=404)
@@ -11249,10 +11253,11 @@ def delete_patient_media(request: Request, patient_id: int, media_id: int):
         if user.role != "ADMIN" and media.owner_user_id != user.id:
             return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
         file_path = media.file_path
+        queued = work_jobs.enqueue_patient_media_cleanup(s, file_path)
         s.delete(media)
         s.commit()
 
-    if file_path:
+    if file_path and not queued:
         storage_delete(file_path)
     return RedirectResponse(f"/patients/{patient_id}#clinical-media", status_code=303)
 
@@ -11263,27 +11268,40 @@ def delete_all_patient_media(request: Request, patient_id: int):
     if not user:
         return RedirectResponse("/login", status_code=303)
 
-    file_paths: list[str] = []
+    fallback_paths: list[str] = []
     with Session(engine, expire_on_commit=False) as s:
-        patient = s.get(Patient, patient_id)
+        patient_query = select(Patient).where(Patient.id == patient_id)
+        if engine.dialect.name == "postgresql":
+            patient_query = patient_query.with_for_update()
+        patient = s.exec(patient_query).first()
         if not patient:
             return HTMLResponse("Hasta bulunamadı", status_code=404)
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
 
         media_owner_id = patient.owner_user_id if patient.owner_user_id is not None else user.id
-        media_items = s.exec(
-            select(PatientMedia).where(
+        # Bound ORM memory while keeping the patient row locked for the entire
+        # metadata-delete transaction. Uploads and other deletes take the same lock.
+        while True:
+            media_query = select(PatientMedia).where(
                 PatientMedia.patient_id == patient_id,
                 PatientMedia.owner_user_id == media_owner_id,
-            )
-        ).all()
-        for media in media_items:
-            file_paths.append(media.file_path)
-            s.delete(media)
+            ).order_by(PatientMedia.id).limit(100)
+            if engine.dialect.name == "postgresql":
+                media_query = media_query.with_for_update()
+            media_items = s.exec(media_query).all()
+            if not media_items:
+                break
+            for media in media_items:
+                if not work_jobs.enqueue_patient_media_cleanup(s, media.file_path):
+                    fallback_paths.append(media.file_path)
+                s.delete(media)
+            s.flush()
+            s.expunge_all()
         s.commit()
 
-    for file_path in file_paths:
+    # Only legacy/unrecognized paths retain the old synchronous fallback.
+    for file_path in fallback_paths:
         storage_delete(file_path)
     return RedirectResponse(f"/patients/{patient_id}#clinical-media", status_code=303)
 
