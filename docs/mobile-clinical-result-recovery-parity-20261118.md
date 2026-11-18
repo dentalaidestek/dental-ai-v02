@@ -35,10 +35,10 @@ Native path reviewed: `NativeClinicalReview → clinicalApi → NativeVisionView
 
 ## Current-head CI
 
-Final branch head for this batch: `a2cbfa45fd34dab14c653b288ac19b8847c7f1ae`.
+CI code head before the final test-fixture correction: `a2cbfa45fd34dab14c653b288ac19b8847c7f1ae`. A follow-up test-only commit changed the LF/CRLF regression to use actual newline characters rather than literal backslash sequences. Final branch head: `a76528b0dbdf73abc82d994e1f7812b6b6c9c3d4`.
 
-- Android CI run `44248688912`: typecheck job `134613782868`, APK job `134613783239`.
-- Security Recovery run `44248688930`: new `native-clinical-security` job `134613783279`, plus existing voice/social/academic/Python jobs.
-- All reported jobs completed as failure with `steps=null` and `logs_url=null`; fetching the new clinical job log returned `BlobNotFound 404`. The TypeScript compiler, Node tests, pytest and Gradle did not start. This is a pre-step GitHub Actions runner/job-log allocation failure, not evidence of a source-level test failure. The exact hosted-runner/account/billing cause is not exposed by the available GitHub records.
+- Android CI run `44249077479`: typecheck job `134615048636`, APK job `134615048875`.
+- Security Recovery run `44249077401`: new `native-clinical-security` job `134615049033`, plus existing voice/social/academic/Python jobs.
+- All reported jobs completed as failure with `steps=null` and `logs_url=null`; fetching both the typecheck and clinical job logs returned `BlobNotFound 404`. The TypeScript compiler, Node tests, pytest and Gradle did not start. This is a pre-step GitHub Actions runner/job-log allocation failure, not evidence of a source-level test failure. The exact hosted-runner/account/billing cause is not exposed by the available GitHub records.
 
 No main merge, production deploy, migration, APK/IPA publication or patient-record mutation was performed.
