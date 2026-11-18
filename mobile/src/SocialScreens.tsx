@@ -1782,7 +1782,7 @@ export function DentalFlow({
       )}
       {image && (
         <NativeSocialMediaViewer
-          key={`${user.id}:${image.media.map((item) => item.id).join(",")}`}
+          key={`${user.id}:${token}:${image.media.map((item) => item.id).join(",")}`}
           visible={!!image}
           token={token}
           media={image.media}
