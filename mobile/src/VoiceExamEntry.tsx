@@ -74,6 +74,7 @@ function ReviewRemovableSection({name,items,onRemove,disabled}:{name:string;item
 
 export default function VoiceExamEntry({token,userId,initialPatientId}:{token:string;userId?:number;initialPatientId?:number}){
  const [audioBusy,setAudioBusy]=useState(false),[deviceCheckBusy,setDeviceCheckBusy]=useState(false),[applyBusy,setApplyBusy]=useState(false),[audioSession,setAudioSession]=useState({started:false,finished:false});
+ const [voiceSessionId,setVoiceSessionId]=useState("");
  const [privacyExpanded,setPrivacyExpanded]=useState(false),[processing,setProcessing]=useState(false),[editingFields,setEditingFields]=useState(false),[review,setReview]=useState<VoiceExtraction|null>(null),[finalResult,setFinalResult]=useState<Record<string,unknown>|null>(null),[clinicalError,setClinicalError]=useState(""),[stage,setStage]=useState<"select"|"exam">("select"),[consent,setConsent]=useState(false),[transcript,setTranscript]=useState(""),[creatingAnonymous,setCreatingAnonymous]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<Patient|null>(null);
  const [extractionProgress,setExtractionProgress]=useState("");
  const [historyFields,setHistoryFields]=useState<Record<string,VoiceHistoryField>>({}),[historyNotice,setHistoryNotice]=useState(""),[historyError,setHistoryError]=useState(""),[historyLoading,setHistoryLoading]=useState(false),[historyConfirmed,setHistoryConfirmed]=useState(false),[historyApplied,setHistoryApplied]=useState(false);
@@ -83,7 +84,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  const processingLock=useRef(false),processingOwner=useRef(0),generation=useRef(0),scope=useRef(token+":"+(selected?.id||0)),anonymousLock=useRef<string|null>(null),startAfterSelection=useRef(false),accountScope=useRef(token+":"+(userId||0));
  const forceFreshExtraction=useRef(false);
  scope.current=token+":"+(selected?.id||0);accountScope.current=token+":"+(userId||0);
- useEffect(()=>{const enterExam=startAfterSelection.current;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("");setTranscript("");setConsent(false);setHistoryFields({});setHistoryNotice("");setHistoryError("");setHistoryLoading(false);setHistoryConfirmed(false);setHistoryApplied(false);setStage(enterExam?"exam":"select")},[token,selected?.id]);
+ useEffect(()=>{const enterExam=startAfterSelection.current;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("");setTranscript("");setConsent(false);setVoiceSessionId("");setHistoryFields({});setHistoryNotice("");setHistoryError("");setHistoryLoading(false);setHistoryConfirmed(false);setHistoryApplied(false);setStage(enterExam?"exam":"select")},[token,selected?.id]);
  useEffect(()=>{setCreatingAnonymous(false);setSelected(null);setAudioBusy(false);setApplyBusy(false)},[token]);
  useEffect(()=>{let active=true;if(initialPatientId){void getPatient(token,initialPatientId).then(r=>{if(active)setSelected(r.patient)}).catch(()=>{if(active)setError("Seçili hasta bulunamadı veya erişim izni yok.")})}return()=>{active=false}},[token,initialPatientId]);
  async function createAnonymousPatient(){
@@ -119,23 +120,26 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   setHistoryApplied(true);setHistoryError("");
   if(review){setReview(mergeVoiceHistory(review,historyFields));setFinalResult(null);setClinicalError("");}
  }
- async function processText(completeText?:string){
+ async function processText(completeText?:string,sessionIdOverride?:string){
   const text=completeText??transcript;
   if(!selected||!consent||!text.trim()||processingLock.current||(audioBusy||deviceCheckBusy||audioSession.started&&!audioSession.finished)&&!completeText)return;
   if(text.length>72000){setClinicalError("Muayene metni 72.000 karakter sınırını aşıyor. Yerel taslak korunuyor.");return;}
   processingLock.current=true;
   const request=++generation.current,currentScope=scope.current,patientId=selected.id;
+  const activeSessionId=sessionIdOverride||voiceSessionId||Crypto.randomUUID();if(!voiceSessionId)setVoiceSessionId(activeSessionId);
   processingOwner.current=request;setProcessing(true);setClinicalError("");setExtractionProgress("");
   try{
    const chunks=splitVoiceTranscript(text);
    const transcriptHash=await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,text);
-   const checkpointKey=userId?`dai.voice.extraction.${userId}.${patientId}`:"";
+   const checkpointKey=userId?`dai.voice.extraction.${userId}.${patientId}.${activeSessionId}`:"";
+   const legacyCheckpointKey=userId?`dai.voice.extraction.${userId}.${patientId}`:"";
    let resume: {cursor:number;revision:string;review:VoiceExtraction["review"]}|undefined;
    if(userId){
+    if(legacyCheckpointKey)await extractionStore.deleteItemAsync(legacyCheckpointKey);
     if(forceFreshExtraction.current){await extractionStore.deleteItemAsync(checkpointKey);forceFreshExtraction.current=false;}
     else{
      const raw=await extractionStore.getItemAsync(checkpointKey);
-     const saved=parseVoiceExtractionCheckpoint(raw,userId,patientId,transcriptHash,chunks.length);
+     const saved=parseVoiceExtractionCheckpoint(raw,userId,patientId,transcriptHash,chunks.length,activeSessionId);
      if(saved)resume={cursor:saved.cursor,revision:saved.revision,review:saved.review as VoiceExtraction["review"]};
      else if(raw)await extractionStore.deleteItemAsync(checkpointKey);
     }
@@ -145,7 +149,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
     onProgress:(completed,total)=>{if(request===generation.current&&currentScope===scope.current)setExtractionProgress(`Görüşme bölümleri işleniyor: ${completed}/${total}`);},
     onCheckpoint:async checkpoint=>{
      if(request!==generation.current||currentScope!==scope.current)throw Error("Hesap veya hasta değişti. Muayene taslağı korunuyor.");
-     if(userId)await extractionStore.setItemAsync(checkpointKey,JSON.stringify({version:1,userId,patientId,transcriptHash,...checkpoint,updatedAt:Date.now()}));
+     if(userId)await extractionStore.setItemAsync(checkpointKey,JSON.stringify({version:1,userId,patientId,sessionId:activeSessionId,transcriptHash,...checkpoint,updatedAt:Date.now()}));
     }
    });
    if(request!==generation.current||currentScope!==scope.current)return;
@@ -234,7 +238,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    </Pressable>
    <Pressable accessibilityRole="button" accessibilityState={{expanded:privacyExpanded}} onPress={()=>setPrivacyExpanded(v=>!v)} style={{marginTop:14,paddingVertical:10}}><Text style={{fontWeight:"700",color:navy}}>Veriler ve taslak hakkında {privacyExpanded?"−":"+"}</Text></Pressable>
    {privacyExpanded&&<Text style={{color:muted,lineHeight:20}}>Kayıt sırasında ses parçaları konuşma metni için işlenir. Klinik çıkarım yalnız muayeneyi bitirdiğinizde veya metni değerlendirdiğinizde yapılır. Metin cihazın güvenli deposunda, bekleyen sesler özel uygulama alanında tutulur. Ham ses ve tam konuşma metni hasta dosyasına otomatik yazılmaz. Gereksiz kimlik bilgilerini konuşmayın. Taslağı bu ekrandan temizleyebilirsiniz.</Text>}
-   {!!userId&&<NativeVoiceRecorder key={token+":"+selected?.id} token={token} userId={userId} patientId={selected!.id} consent={consent} value={transcript} disabled={processing||applyBusy||deviceCheckBusy} onBusyChanged={setAudioBusy} onSessionState={setAudioSession} onTranscript={v=>{generation.current++;setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} onFinished={v=>{setTranscript(v);void processText(v)}}/>}
+   {!!userId&&<NativeVoiceRecorder key={token+":"+selected?.id} token={token} userId={userId} patientId={selected!.id} consent={consent} value={transcript} disabled={processing||applyBusy||deviceCheckBusy} onBusyChanged={setAudioBusy} onSessionState={state=>{setAudioSession({started:state.started,finished:state.finished});setVoiceSessionId(state.sessionId)}} onTranscript={v=>{generation.current++;setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} onFinished={(v,sessionId)=>{setVoiceSessionId(sessionId);setTranscript(v);void processText(v,sessionId)}}/>}
    <Text style={{fontWeight:"800",color:navy,marginTop:20}}>Muayene metni</Text>
    <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} editable={!processing&&!audioBusy&&!deviceCheckBusy&&!applyBusy} onChangeText={v=>{generation.current++;setClinicalError("");setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
    <Text style={{color:muted,fontSize:12,marginTop:8}}>{transcript.length}/72000 karakter · Uzun görüşmeler 12.000 karakterlik güvenli bölümlere ayrılır; tamamlanan bölümler cihazın şifreli taslağında korunur.</Text>
