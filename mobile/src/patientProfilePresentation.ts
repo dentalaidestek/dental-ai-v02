@@ -93,19 +93,25 @@ export type PatientProfileDeleteGate = Readonly<{
   treatmentIntentReady: boolean;
   treatmentIntentBlocked: boolean;
   hasPendingTreatment: boolean;
+  deleteIntentReady: boolean;
+  deleteIntentBlocked: boolean;
+  hasPendingDelete: boolean;
 }>;
 
 /**
- * A patient can only be deleted after every local clinical mutation intent is
- * known and settled. This prevents deleting the parent record while an
- * idempotent treatment create/update may still have reached the server.
+ * A patient can only start a new deletion after profile/treatment writes and
+ * any prior delete intent have been restored and reconciled. A pending delete
+ * is resolved with its original request key, never replaced with a new key.
  */
 export function patientProfileCanDeletePatient(gate: PatientProfileDeleteGate): boolean {
   return gate.busy === false &&
     gate.uncertain === false &&
     gate.treatmentIntentReady === true &&
     gate.treatmentIntentBlocked === false &&
-    gate.hasPendingTreatment === false;
+    gate.hasPendingTreatment === false &&
+    gate.deleteIntentReady === true &&
+    gate.deleteIntentBlocked === false &&
+    gate.hasPendingDelete === false;
 }
 
 /** Compare the exact editable patient fields after the backend's trim/null normalization. */
