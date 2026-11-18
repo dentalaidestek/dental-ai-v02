@@ -258,3 +258,26 @@ test('native course creation resolves a lost response from the server receipt wi
  await renderer.act(async()=>tree.unmount());
 });
 
+test('course create intents accept legacy records but require a stable key for new records',()=>{
+ const a=api(),legacy={version:1,user:1,title:'Synthetic legacy course',description:'',known_ids:[1]},current={version:2,user:1,title:'Synthetic new course',description:'',known_ids:[],request_key:'synthetic-course-key-0001'};
+ assert.equal(a.parseCourseCreateIntent(JSON.stringify(legacy),1).version,1);
+ assert.equal(a.parseCourseCreateIntent(JSON.stringify(current),1).request_key,current.request_key);
+ assert.throws(()=>a.parseCourseCreateIntent(JSON.stringify({...current,request_key:undefined}),1));
+ assert.throws(()=>a.parseCourseCreateIntent(JSON.stringify({...current,request_key:'short'}),1));
+ assert.throws(()=>a.parseCourseCreateIntent(JSON.stringify(current),2));
+});
+
+test('course create client sends the key and receipt lookup stays on the private native route',async()=>{
+ const calls=[],workspace={course:{id:9,title:'Synthetic course'},materials:[],max_file_bytes:157286400,max_upload_count:12,next_before:null};
+ const a=api(async(...args)=>{calls.push(args);return calls.length===1?workspace:{workspace:null}});
+ const created=await a.createCourse('private-token','Synthetic course','Synthetic description','synthetic-course-key-0001');
+ assert.equal(created.course.id,9);
+ assert.equal(calls[0][0],'/academic/library');
+ assert.equal(calls[0][1],'private-token');
+ assert.deepEqual(JSON.parse(calls[0][2].body),{title:'Synthetic course',description:'Synthetic description',request_key:'synthetic-course-key-0001'});
+ assert.equal(await a.courseCreateReceipt('private-token','synthetic-course-key-0001'),null);
+ assert.equal(calls[1][0],'/academic/library/receipt?request_key=synthetic-course-key-0001');
+ assert.equal(calls[1][1],'private-token');
+ await assert.rejects(a.courseCreateReceipt('private-token','short'));
+});
+
