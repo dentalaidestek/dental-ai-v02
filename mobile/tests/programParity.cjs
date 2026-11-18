@@ -369,3 +369,19 @@ test('authentication and validation failures never bypass the conflict-check gat
  assert.ok(tree.root.findAllByType('Text').some(node=>text(node).includes('unauthorized')));
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('malformed conflict-advice responses do not become a transient bypass',async()=>{
+ let alerts=0,writes=0;
+ const Editor=component('NativeProgramEditor',{
+  checkProgramConflicts:async()=>{throw new Error('invalid conflict response')},
+  onAlert:()=>{alerts++},
+  saveProgramEvent:async(_token,payload)=>{writes++;return{id:7,...payload,start_local:payload.start_at}}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),initialPatientId:8,onSaved(){},onClose(){}}));await tick()});
+ await renderer.act(async()=>button(tree,'Programa Ekle').props.onPress());
+ assert.equal(alerts,0);assert.equal(writes,0);
+ assert.ok(tree.root.findAllByType('Text').some(node=>text(node).includes('invalid conflict response')));
+ await renderer.act(async()=>tree.unmount());
+});
