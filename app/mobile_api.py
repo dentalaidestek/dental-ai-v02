@@ -2216,13 +2216,16 @@ async def mobile_patient_media_upload(
                 file_digest.update(chunk)
         legacy_digest = _patient_media_payload_hash(file_digest.hexdigest(), media_type, tooth, normalized_note, original_name)
         digest = keyed_fingerprint(legacy_digest, fingerprint_key, user.id, patient_id)
+
+        # Fast replay/ownership preflight. Never hold a database connection while
+        # a large object is uploaded to R2; the authoritative receipt/quota check
+        # is repeated under the patient lock after storage completes.
         with Session(engine, expire_on_commit=False) as session:
             patient = session.exec(select(Patient).where(
                 Patient.id == patient_id, Patient.owner_user_id == user.id
-            ).with_for_update()).first()
+            )).first()
             if not patient:
                 raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
-            _lock_patient_media_receipt(session, receipt_key)
             if receipt_key:
                 existing = _find_patient_media_receipt(
                     session, user, patient_id, receipt_key, digest,
@@ -2234,37 +2237,70 @@ async def mobile_patient_media_upload(
                     replay_response = JSONResponse(existing)
                     _mobile_private_no_store(replay_response)
                     return replay_response
-            # The locked patient row makes this cross-request counter atomic across workers.
-            batch_count, batch_bytes = _patient_media_batch_usage(session, user, patient_id, batch_id)
-            if batch_count >= MAX_PATIENT_MEDIA_FILES:
-                raise HTTPException(status_code=413, detail=f"Bir klinik arşiv yükleme grubunda en fazla {MAX_PATIENT_MEDIA_FILES} görüntü olabilir.")
-            if batch_bytes + file_bytes > MAX_PATIENT_MEDIA_BATCH_BYTES:
-                raise HTTPException(status_code=413, detail="Bir klinik arşiv yükleme grubunun toplamı 96 MiB sınırını aşamaz.")
-            persisted = True
-            storage_persist_file(destination)
-            media = PatientMedia(
-                patient_id=patient_id,
-                owner_user_id=user.id,
-                original_filename=original_name,
-                stored_filename=stored,
-                file_path=str(destination),
-                media_type=media_type,
-                tooth_number=tooth,
-                note=normalized_note,
-            )
-            session.add(media)
-            session.flush()
-            _store_patient_media_receipt(session, user, patient_id, media, receipt_key, digest, batch_id, file_bytes)
-            realtime = _record_realtime_event(
-                session, user.id, "PATIENT_MEDIA_CREATED", "patient", patient_id,
-                {"patient_id": patient_id, "media_id": media.id, "filename": media.original_filename},
-            )
             session.commit()
-            result = _patient_media_result(media, replayed=False)
+
+        # R2/network I/O is deliberately outside the SQL transaction and off
+        # the ASGI event loop. PostgreSQL row locks are acquired only afterwards.
+        persisted = True
+        await run_in_threadpool(storage_persist_file, destination)
+
+        replay_result = None
+        with Session(engine, expire_on_commit=False) as session:
+            patient = session.exec(select(Patient).where(
+                Patient.id == patient_id, Patient.owner_user_id == user.id
+            ).with_for_update()).first()
+            if not patient:
+                raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+            _lock_patient_media_receipt(session, receipt_key)
+            if receipt_key:
+                replay_result = _find_patient_media_receipt(
+                    session, user, patient_id, receipt_key, digest,
+                    legacy_digest=legacy_digest, key=fingerprint_key,
+                )
+            if replay_result is None:
+                # The locked patient row makes this cross-request counter atomic
+                # across workers; re-check after storage because another request
+                # may have committed while this upload was in flight.
+                batch_count, batch_bytes = _patient_media_batch_usage(session, user, patient_id, batch_id)
+                if batch_count >= MAX_PATIENT_MEDIA_FILES:
+                    raise HTTPException(status_code=413, detail=f"Bir klinik arşiv yükleme grubunda en fazla {MAX_PATIENT_MEDIA_FILES} görüntü olabilir.")
+                if batch_bytes + file_bytes > MAX_PATIENT_MEDIA_BATCH_BYTES:
+                    raise HTTPException(status_code=413, detail="Bir klinik arşiv yükleme grubunun toplamı 96 MiB sınırını aşamaz.")
+                media = PatientMedia(
+                    patient_id=patient_id,
+                    owner_user_id=user.id,
+                    original_filename=original_name,
+                    stored_filename=stored,
+                    file_path=str(destination),
+                    media_type=media_type,
+                    tooth_number=tooth,
+                    note=normalized_note,
+                )
+                session.add(media)
+                session.flush()
+                _store_patient_media_receipt(session, user, patient_id, media, receipt_key, digest, batch_id, file_bytes)
+                realtime = _record_realtime_event(
+                    session, user.id, "PATIENT_MEDIA_CREATED", "patient", patient_id,
+                    {"patient_id": patient_id, "media_id": media.id, "filename": media.original_filename},
+                )
+                session.commit()
+                result = _patient_media_result(media, replayed=False)
+            else:
+                session.commit()
+
+        if replay_result is not None:
+            try:
+                await run_in_threadpool(storage_delete, str(destination))
+            except Exception:
+                logging.exception("Failed to clean replayed clinical media object: %s", destination)
+            destination.unlink(missing_ok=True)
+            replay_response = JSONResponse(replay_result)
+            _mobile_private_no_store(replay_response)
+            return replay_response
     except IntegrityError:
         try:
             if persisted:
-                storage_delete(str(destination))
+                await run_in_threadpool(storage_delete, str(destination))
         except Exception:
             logging.exception("Failed to clean duplicate clinical media object: %s", destination)
         destination.unlink(missing_ok=True)
@@ -2278,16 +2314,16 @@ async def mobile_patient_media_upload(
                         session, user, patient_id, receipt_key, digest,
                         legacy_digest=legacy_digest, key=fingerprint_key,
                     )
+                    session.commit()
                     if existing:
-                        session.commit()
                         replay_response = JSONResponse(existing)
-                    _mobile_private_no_store(replay_response)
-                    return replay_response
+                        _mobile_private_no_store(replay_response)
+                        return replay_response
         raise HTTPException(status_code=409, detail="Klinik görüntü işlemi aynı anda tamamlandı. Galeriyi yenileyip işlem fişini doğrulayın.")
     except Exception:
         try:
             if persisted:
-                storage_delete(str(destination))
+                await run_in_threadpool(storage_delete, str(destination))
         except Exception:
             logging.exception("Failed to clean orphan clinical media upload: %s", destination)
         try:
@@ -2299,7 +2335,6 @@ async def mobile_patient_media_upload(
     upload_response = JSONResponse(result)
     _mobile_private_no_store(upload_response)
     return upload_response
-
 
 @router.get("/patients/{patient_id}/media/uploads/{request_key}")
 def mobile_patient_media_upload_status(
