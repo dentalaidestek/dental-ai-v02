@@ -25,7 +25,8 @@ function component(api,file='NativePatientProfile',storage=new Map()){
  return Wrapped;
 }
 const actions=Object.fromEntries(['chart','analysis','appointment','expert','voice','analysisResult','deleted'].map(k=>[k,()=>{}]));
-const patient=id=>({patient:{id,first_name:'Synthetic'+id,last_name:'Test',anonymous_id:'SYN-'+id,chief_complaint:'Complaint',age:0},edit_revision:'a'.repeat(64),teeth:[],surfaces:[],treatments:[{id:1,treatment_name:'Root canal',material:'Synthetic material',result:'Synthetic result',doctor_note:'Synthetic note',edit_revision:'c'.repeat(64)}],media:[]});
+const patient=id=>({patient:{id,first_name:'Synthetic'+id,last_name:'Test',anonymous_id:'SYN-'+id,chief_complaint:'Complaint',age:0},edit_revision:'a'.repeat(64),teeth:[],surfaces:[],treatments:[{id:1,treatment_name:'Root canal',material:'Synthetic material',result:'Synthetic result',doctor_note:'Synthetic note',edit_revision:'c'.repeat(64),created_at:'2026-11-18T10:00:00'}],media:[]});
+const pagedPatient=(id,cursor)=>{const value=patient(id);value.treatments=[{id:1,treatment_name:'Root canal',edit_revision:'c'.repeat(64),created_at:'2026-11-18T10:00:00'},{id:2,treatment_name:'Second treatment',edit_revision:'d'.repeat(64),created_at:'2026-11-17T10:00:00'},{id:3,treatment_name:'Third treatment',edit_revision:'e'.repeat(64),created_at:'2026-11-16T10:00:00'}];value.treatments_next_cursor=cursor;return value};
 const text=node=>typeof node==='string'?node:Array.isArray(node)?node.map(text).join(''):node?.children?node.children.map(text).join(''):'';
 test('presentation model preserves zero age, safe identity fallbacks, and web action order',()=>{
  assert.equal(presentationExports.patientProfileName(' Ada ',' Kaya '),'Ada Kaya');
@@ -576,11 +577,11 @@ test('pending patient deletion makes nested clinical media and analysis surfaces
 
 
 test('patient profile loads older treatment records in bounded pages and can collapse them again',async()=>{
- const base=patient(8),cursor='A'.repeat(32),calls=[];
+ const base=pagedPatient(8,'A'.repeat(32)),cursor='A'.repeat(32),calls=[];
  base.treatments=[
-  {id:1,treatment_name:'Initial treatment 1',edit_revision:'1'.repeat(64)},
-  {id:2,treatment_name:'Initial treatment 2',edit_revision:'2'.repeat(64)},
-  {id:3,treatment_name:'Initial treatment 3',edit_revision:'3'.repeat(64)}
+  {id:1,treatment_name:'Initial treatment 1',edit_revision:'1'.repeat(64),created_at:'2026-11-18T10:00:00'},
+  {id:2,treatment_name:'Initial treatment 2',edit_revision:'2'.repeat(64),created_at:'2026-11-17T10:00:00'},
+  {id:3,treatment_name:'Initial treatment 3',edit_revision:'3'.repeat(64),created_at:'2026-11-16T10:00:00'}
  ];
  base.treatments_next_cursor=cursor;
  const Profile=component({
@@ -610,7 +611,7 @@ test('patient profile loads older treatment records in bounded pages and can col
 });
 
 test('treatment page errors preserve the first page and retry the same cursor',async()=>{
- const base=patient(8),cursor='B'.repeat(32),calls=[];base.treatments_next_cursor=cursor;
+ const cursor='B'.repeat(32),base=pagedPatient(8,cursor),calls=[];
  let fail=true;
  const Profile=component({
   getPatient:async()=>base,
@@ -630,7 +631,7 @@ test('treatment page errors preserve the first page and retry the same cursor',a
 });
 
 test('duplicate treatment page rows are rejected without replacing verified clinical history',async()=>{
- const base=patient(8),cursor='C'.repeat(32);base.treatments_next_cursor=cursor;
+ const cursor='C'.repeat(32),base=pagedPatient(8,cursor);
  const Profile=component({getPatient:async()=>base,getPatientTreatments:async()=>({items:[{id:1,treatment_name:'Stale duplicate',edit_revision:'a'.repeat(64),created_at:'2026-11-18T10:00:00'}],next_cursor:null})});let tree;
  const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>{item.props.onPress();await new Promise(resolve=>setImmediate(resolve))});};
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'owner-token',patientId:8,actions}))});
@@ -644,7 +645,7 @@ test('duplicate treatment page rows are rejected without replacing verified clin
 test('late treatment page from a previous patient cannot leak into the next account',async()=>{
  const cursor='D'.repeat(32);let resolveOld;
  const Profile=component({
-  getPatient:async(_token,id)=>{const value=patient(id);if(id===8)value.treatments_next_cursor=cursor;return value},
+  getPatient:async(_token,id)=>id===8?pagedPatient(id,cursor):patient(id),
   getPatientTreatments:async()=>new Promise(resolve=>{resolveOld=resolve})
  });let tree;
  const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress());};
@@ -660,7 +661,7 @@ test('late treatment page from a previous patient cannot leak into the next acco
 });
 
 test('rapid double tap on treatment pagination sends only one request',async()=>{
- const base=patient(8),cursor='E'.repeat(32);base.treatments_next_cursor=cursor;
+ const cursor='E'.repeat(32),base=pagedPatient(8,cursor);
  let resolvePage,calls=0;
  const Profile=component({getPatient:async()=>base,getPatientTreatments:async()=>{calls++;return new Promise(resolve=>{resolvePage=resolve})}});let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'owner-token',patientId:8,actions}))});
