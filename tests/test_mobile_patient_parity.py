@@ -1213,3 +1213,102 @@ def test_patient_treatment_history_is_bounded_snapshot_paginated_and_owner_scope
 
     client.headers["Authorization"] = "Bearer token2"
     assert client.get(f"/api/mobile/v1/patients/801/treatments?cursor={cursor}").status_code == 404
+
+
+def _assert_clinical_private_response(response):
+    assert response.headers.get("cache-control") == "private, no-store"
+    assert response.headers.get("pragma") == "no-cache"
+    assert "authorization" in response.headers.get("vary", "").lower()
+
+
+def test_mobile_patient_media_responses_are_private_and_owner_scoped(chat, monkeypatch, tmp_path):
+    client, engine = chat
+    real_path = Path
+
+    # Keep the upload fixture entirely inside pytest's temporary directory.
+    monkeypatch.setattr(
+        mobile_api,
+        "Path",
+        lambda value: real_path(value) if real_path(value).is_absolute() else tmp_path / value,
+    )
+    monkeypatch.setattr(
+        mobile_api,
+        "storage_ensure_local",
+        lambda value: real_path(value) if real_path(value).is_absolute() else tmp_path / value,
+    )
+    monkeypatch.setattr(mobile_api, "storage_persist_file", lambda _path: None)
+
+    with Session(engine) as session:
+        session.add_all([
+            main.Patient(id=801, anonymous_id="SYNTHETIC-MEDIA-801", owner_user_id=1),
+            main.Patient(id=802, anonymous_id="SYNTHETIC-MEDIA-802", owner_user_id=2),
+        ])
+        session.commit()
+
+    raw = io.BytesIO()
+    Image.new("RGB", (16, 16), "white").save(raw, format="PNG")
+    request_key = "native-media-request-key-0001"
+    batch_id = "native-media-batch-key-0001"
+    upload_args = {
+        "data": {
+            "media_type": "RADIOGRAPH",
+            "request_key": request_key,
+            "batch_id": batch_id,
+        },
+        "files": {"file": ("synthetic-clinical.png", raw.getvalue(), "image/png")},
+    }
+
+    uploaded = client.post("/api/mobile/v1/patients/801/media", **upload_args)
+    assert uploaded.status_code == 200, uploaded.text
+    _assert_clinical_private_response(uploaded)
+    uploaded_body = uploaded.json()
+    assert uploaded_body["replayed"] is False
+    media_id = uploaded_body["media"]["id"]
+
+    # A lost response may be replayed with the same key; the acknowledgement
+    # contains clinical metadata and must carry the same cache policy.
+    replay = client.post("/api/mobile/v1/patients/801/media", **upload_args)
+    assert replay.status_code == 200, replay.text
+    _assert_clinical_private_response(replay)
+    assert replay.json()["replayed"] is True
+
+    with Session(engine) as session:
+        session.add(main.PatientMedia(
+            patient_id=801,
+            owner_user_id=1,
+            original_filename="synthetic-older.png",
+            stored_filename="synthetic-older.png",
+            file_path="uploads/patient-media/synthetic-older.png",
+            media_type="PHOTO",
+        ))
+        session.commit()
+
+    first_page = client.get("/api/mobile/v1/patients/801/media?limit=1")
+    assert first_page.status_code == 200, first_page.text
+    _assert_clinical_private_response(first_page)
+    assert len(first_page.json()["items"]) == 1
+    before = first_page.json()["next_before"]
+    assert isinstance(before, int) and before > 0
+
+    second_page = client.get(f"/api/mobile/v1/patients/801/media?before={before}&limit=1")
+    assert second_page.status_code == 200, second_page.text
+    _assert_clinical_private_response(second_page)
+    assert len(second_page.json()["items"]) == 1
+    assert second_page.json()["next_before"] is None
+
+    receipt = client.get(f"/api/mobile/v1/patients/801/media/uploads/{request_key}")
+    assert receipt.status_code == 200, receipt.text
+    _assert_clinical_private_response(receipt)
+    assert receipt.json()["found"] is True
+    assert receipt.json()["media"]["id"] == media_id
+
+    image_response = client.get(f"/api/mobile/v1/patients/801/media/{media_id}/file")
+    assert image_response.status_code == 200, image_response.text
+    _assert_clinical_private_response(image_response)
+    assert image_response.content.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
+
+    # The same URLs must not reveal patient media or upload receipts to another account.
+    client.headers["Authorization"] = "Bearer token2"
+    assert client.get("/api/mobile/v1/patients/801/media").status_code == 404
+    assert client.get(f"/api/mobile/v1/patients/801/media/uploads/{request_key}").status_code == 404
+    assert client.get(f"/api/mobile/v1/patients/801/media/{media_id}/file").status_code == 404
