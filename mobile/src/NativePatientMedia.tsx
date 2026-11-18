@@ -12,6 +12,7 @@ import {deleteAllPatientMedia,deleteMedia,getMedia} from './modernApi';
 import NativeAnalysisUpload from './NativeAnalysisUpload';
 import {cleanupOrphanedClinicalMediaVaultFiles,cleanupStaleClinicalMediaTemps,deleteClinicalMediaTemp,deleteClinicalMediaVaultFile,decryptClinicalMediaFile,encryptClinicalMediaFile,isClinicalMediaVaultUri,validateClinicalMediaVaultFile} from './clinicalMediaVault';
 import {useRealtime} from './realtime';
+import { shouldRefreshOnAppResume } from './appResumeRefresh';
 import {CLINICAL_MEDIA_PICKER_MAX_FILES,normalizeClinicalMediaAssets} from './clinicalMediaPicker';
 import {CLINICAL_MEDIA_BATCH_ID_PATTERN,ensureClinicalMediaBatchId} from './clinicalMediaBatch';
 import {classifyClinicalMediaUploadFailure} from './clinicalMediaRecovery';
@@ -42,7 +43,17 @@ export default function NativePatientMedia({token,userId,patientId,patient,onAna
  const load=useCallback(async(more=false)=>{if(loadLock.current||(more&&(mutation.current||uncertain||loadedOwner!==owner)))return;loadLock.current=true;const sequence=++request.current;setLoading(true);try{const page=await getMedia(token,patientId,more?cursor??undefined:undefined);if(!current()||sequence!==request.current)return;setItems(previous=>more?[...previous,...page.items.filter(x=>!previous.some(y=>y.id===x.id))]:page.items);setCursor(page.next_before);setLoadedOwner(owner);setError('');if(!more){setSelected([]);setPreview(null);setZoom(1)}}catch(e){if(current()&&sequence===request.current){if(!more){setItems([]);setCursor(null);setSelected([]);setPreview(null);setZoom(1)}setLoadedOwner(owner);setError(e instanceof Error?e.message:'Görseller alınamadı.')}}finally{if(current()&&sequence===request.current){loadLock.current=false;setLoading(false)}}},[token,patientId,cursor,uncertain,loadedOwner]);
  const loader=useRef(load);loader.current=load;
  useEffect(()=>{mounted.current=true;request.current++;pickerGeneration.current++;loadLock.current=false;mutation.current=false;setBusy(false);setOpen(false);setComposeOpen(false);setComposeIds([]);setComposeTooth('');setComposeNotes('');setLoading(false);setItems([]);setCursor(null);setLoadedOwner('');setError('');setSelected([]);setPreview(null);setPending([]);setPendingBatchId('');setPendingOwner('');setToothNumber('');setClinicalNotes('');setMediaToothNumber('');setMediaNote('');setUncertain(false);setUncertainDelete(undefined);setProgress('');setByteProgress({loaded:0,total:0,lengthComputable:false});setUploadReady(false);setUploadBlocked(false);let active=true;void(async()=>{try{await cleanupStaleClinicalMediaTemps();const raw=await uploadStore.getItemAsync(uploadKey);const saved=parsePendingUpload(raw,userId,patientId);if(saved&&active&&current()){const batchId=ensureClinicalMediaBatchId(saved.batchId,Crypto.randomUUID);const version=saved.files.every(file=>!!file.encryptedUri)?3:1;const migrated:PendingUpload={...saved,version,batchId};await uploadStore.setItemAsync(uploadKey,JSON.stringify(storedPending(migrated)));if(!active||!current())return;setPendingBatchId(batchId);setPending(saved.files);setMediaType(saved.mediaType);setMediaToothNumber(saved.toothNumber||'');setMediaNote(saved.note||'');setPendingOwner(owner);setProgress(`Önceki oturumdan ${saved.files.length} bekleyen klinik görüntü bulundu.`)}if(active&&current())await cleanupOrphanedClinicalMediaVaultFiles(userId,patientId,saved?.files.flatMap(file=>file.encryptedUri?[file.encryptedUri]:[])??[])}catch(e){if(active&&current()){setUploadBlocked(true);setError(e instanceof Error?e.message:'Güvenli klinik görüntü taslağı okunamadı.')}}finally{if(active&&current())setUploadReady(true)}})();return()=>{active=false;mounted.current=false;request.current++;pickerGeneration.current++;loadLock.current=false}},[token,userId,patientId,uploadKey]);
- useEffect(()=>{if(!focused)return;void loader.current();const listener=AppState.addEventListener('change',state=>{if(state==='active'&&focused)void loader.current()});return()=>listener.remove()},[focused,owner]);
+ useEffect(()=>{
+  if(!focused)return;
+  void loader.current();
+  let previousState=AppState.currentState;
+  const listener=AppState.addEventListener('change',nextState=>{
+   const shouldRefresh=shouldRefreshOnAppResume(previousState,nextState,focused);
+   previousState=nextState;
+   if(shouldRefresh)void loader.current();
+  });
+  return()=>listener.remove();
+ },[focused,owner]);
  useEffect(()=>{if(lastEvent&&['PATIENT_MEDIA_CREATED','PATIENT_MEDIA_DELETED'].includes(String(lastEvent.event_type||lastEvent.type))&&Number(lastEvent.payload?.patient_id||lastEvent.entity_id)===patientId&&!mutation.current)void loader.current()},[lastEvent,patientId]);
  const visibleItems=loadedOwner===owner?items:[];
  useEffect(()=>{if(readOnly){setComposeOpen(false);setComposeIds([])}},[readOnly]);
