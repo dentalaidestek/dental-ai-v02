@@ -19,7 +19,7 @@
     const title=panel.querySelector('[data-live-title]');if(title)title.textContent=({idle:finished?'Dinleme tamamlandı':'Başlamaya hazır',connecting:'Mikrofon hazırlanıyor',listening:'Dinleniyor',stopping:'Dinleme durduruluyor',paused:'Duraklatıldı',error:hasListened?'Dinleme durdu':'Mikrofon açılamadı'})[next]||next;
     start.textContent=next==='paused'||(next==='error'&&hasListened)?'▶  Devam et':next==='error'?'Tekrar dene':'Mikrofonu başlat';
     if(next==='error'&&!hasListened)finish.hidden=true;
-    start.disabled=!consent.checked||reviewBlocked||!['idle','paused','error'].includes(state);pause.disabled=state!=='listening';finish.disabled=!['listening','paused','error'].includes(state);root.dispatchEvent(new CustomEvent('voice-live-state',{detail:{active:['connecting','listening','stopping'].includes(state)}}))}
+    start.disabled=!consent.checked||reviewBlocked||!['idle','paused','error'].includes(state);pause.disabled=state!=='listening';finish.disabled=!consent.checked||!['listening','paused','error'].includes(state);root.dispatchEvent(new CustomEvent('voice-live-state',{detail:{active:['connecting','listening','stopping'].includes(state)}}))}
   function microphoneOff(){node?.disconnect();if(node)node.port.onmessage=null;source?.disconnect();stream?.getTracks().forEach(t=>t.stop());if(ctx)ctx.close().catch(()=>{});node=null;source=null;stream=null;ctx=null;clearTimeout(setupTimer);clearTimeout(sessionTimer);clearTimeout(drainTimer)}
   function emitBatch(){clearTimeout(batchTimer);batchTimer=null;if(!batch)return;const text=batch;batch='';root.dispatchEvent(new CustomEvent('voice-live-segment',{detail:{text}}))}
   function closePrivate(){hasListened=false;finished=false;lastFlush=false;incomplete=false;stopClock();elapsed=0;drawTime();root.dataset.showReview='false';generation++;clearTimeout(batchTimer);batch='';preview.textContent='';microphoneOff();if(socket){socket.onmessage=null;socket.onclose=null;socket.onerror=null;socket.close();socket=null}stateChanged('idle')}
@@ -62,11 +62,13 @@
     }catch(error){if(at===generation)fail(error.name==='NotAllowedError'?'Mikrofon erişimi engellendi. Tarayıcıda dentalai.tr site izinlerinden mikrofonu açın. Uygulama içindeyseniz Android uygulama mikrofon iznini de kontrol edin veya sayfayı Chrome’da açın.':error.name==='NotFoundError'?'Kullanılabilir mikrofon bulunamadı. Cihaz bağlantısını kontrol edin.':error.name==='NotReadableError'?'Mikrofon kullanılamıyor. Mikrofonu kullanan diğer uygulamaları kapatıp tekrar deneyin.':'Canlı ses başlatılamadı.')}
   }
   async function stop(end){
-    if(['paused','error'].includes(state)&&!end)return;
-    finished=end;if(['paused','error'].includes(state)){emitBatch();stateChanged('idle');root.dispatchEvent(new CustomEvent('voice-live-ended',{detail:{finished:true,flushed:lastFlush&&!incomplete}}));announce('Dinleme bitti. Özeti kontrol et.');return}
+    const requestedFinish=!!end&&consent.checked;
+    if(['paused','error'].includes(state)&&!requestedFinish){if(end&&!consent.checked)announce('Önce görüşme aktarım onayını yeniden verin.');return}
+    finished=requestedFinish;if(['paused','error'].includes(state)){emitBatch();stateChanged('idle');root.dispatchEvent(new CustomEvent('voice-live-ended',{detail:{finished:requestedFinish,flushed:lastFlush&&!incomplete}}));if(requestedFinish)announce('Dinleme bitti. Özeti kontrol et.');return}
     if(state!=='listening')return;stateChanged('stopping');source?.disconnect();announce('Son konuşma bölümü tamamlanıyor…');
     if(node){await Promise.race([new Promise(resolve=>{flushDone=resolve;node.port.postMessage({type:'flush'})}),new Promise(resolve=>setTimeout(resolve,300))])}flushDone=null;if(state!=='stopping')return;microphoneOff();
-    if(socket?.readyState===WebSocket.OPEN){socket.send(JSON.stringify({type:end?'finish':'pause'}));drainTimer=setTimeout(()=>{if(state==='stopping')fail('Son konuşma yanıtı zamanında gelmedi. Biriken metin korunuyor; metni kontrol edip değerlendirin.')},8000)}else fail('Bağlantı kesildi.');
+    const shouldFinish=!!end&&consent.checked;finished=shouldFinish;
+    if(socket?.readyState===WebSocket.OPEN){socket.send(JSON.stringify({type:shouldFinish?'finish':'pause'}));drainTimer=setTimeout(()=>{if(state==='stopping')fail('Son konuşma yanıtı zamanında gelmedi. Biriken metin korunuyor; metni kontrol edip değerlendirin.')},8000)}else fail('Bağlantı kesildi.');
   }
   if(reviewButton)reviewButton.addEventListener('click',()=>{
     root.dataset.showReview='true';
@@ -77,6 +79,17 @@
     const transcript=root.querySelector('[data-voice-transcript]'),recovery=transcript?.closest('details');
     if(recovery){recovery.open=true;recovery.scrollIntoView?.({behavior:'smooth',block:'start'});transcript.focus({preventScroll:true})}
   });
+  function consentChanged(){
+    if(consent.checked){if(['idle','paused','error'].includes(state))start.disabled=reviewBlocked;return}
+    if(state==='connecting'){
+      generation++;finished=false;emitBatch();microphoneOff();
+      if(socket){socket.onmessage=null;socket.onerror=null;socket.onclose=null;socket.close();socket=null}
+      preview.textContent='';stateChanged(hasListened?'paused':'idle');
+      announce('Onay geri çekildi. Mikrofon kapatıldı; biriken konuşma metni korundu.');
+    }else if(state==='listening'){void stop(false)}
+    else if(state==='stopping'){finished=false}
+  }
+  consent.addEventListener('change',consentChanged);
   stateChanged('idle');
   start.addEventListener('click',begin);pause.addEventListener('click',()=>stop(false));finish.addEventListener('click',()=>stop(true));
   root.addEventListener('voice-review-state',event=>{reviewBlocked=event.detail.blocked;
