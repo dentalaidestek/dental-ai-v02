@@ -14,7 +14,7 @@ class StudyCourseCreateReceipt(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    owner_user_id: int = Field(index=True)
+    owner_user_id: int = Field(foreign_key="user.id", ondelete="CASCADE", index=True)
     request_key: str = Field(max_length=80)
     payload_hash: str = Field(max_length=64)
     # Intentionally no FK: receipt must survive course deletion.
