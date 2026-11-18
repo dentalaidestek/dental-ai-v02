@@ -2835,7 +2835,7 @@ async def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, us
     except (ValueError, TypeError, core.VoiceError):
         return reply(422, "VOICE_CLINICAL_INVALID_INPUT", "Klinik çıkarım girdisi doğrulanamadı.")
 
-    revision = _mobile_voice_patient(user, patient_id)
+    revision = await run_in_threadpool(_mobile_voice_patient, user, patient_id)
     try:
         with Session(engine, expire_on_commit=False) as session:
             state = reserve_receipt(
@@ -2885,14 +2885,36 @@ async def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, us
         logging.getLogger(__name__).warning("mobile voice clinical outcome is unknown")
         return reply(502, "VOICE_CLINICAL_OUTCOME_UNKNOWN", "Klinik sonuç doğrulanamadı. Aynı anahtarla ikinci AI çağrısı yapılmadı; taslak korundu.")
 
-    with Session(engine, expire_on_commit=False) as session:
-        saved = complete_receipt(
-            session, owner_id=user.id, patient_id=patient_id,
-            request_key=payload.request_key, digest=digest, lease_token=lease_token,
-            key=key, review=review, revision=revision,
-        )
-        session.commit()
+    try:
+        current_revision = await run_in_threadpool(_mobile_voice_patient, user, patient_id)
+    except HTTPException:
+        with Session(engine, expire_on_commit=False) as session:
+            finish_receipt(session, owner_id=user.id, patient_id=patient_id,
+                request_key=payload.request_key, digest=digest, lease_token=lease_token, retryable=False)
+            session.commit()
+        raise
+    if current_revision != revision:
+        with Session(engine, expire_on_commit=False) as session:
+            finish_receipt(session, owner_id=user.id, patient_id=patient_id,
+                request_key=payload.request_key, digest=digest, lease_token=lease_token, retryable=False)
+            session.commit()
+        return reply(409, "VOICE_CLINICAL_PATIENT_CHANGED", "Hasta dosyası görüşme sırasında değişti. Taslak korunuyor; güncel hasta bilgilerini yeniden kontrol edin.")
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            saved = complete_receipt(
+                session, owner_id=user.id, patient_id=patient_id,
+                request_key=payload.request_key, digest=digest, lease_token=lease_token,
+                key=key, review=review, revision=revision,
+            )
+            session.commit()
+    except Exception:
+        logging.getLogger(__name__).warning("mobile voice clinical receipt persistence failed")
+        return reply(502, "VOICE_CLINICAL_OUTCOME_UNKNOWN", "Klinik sonuç kalıcı ve şifreli fişe yazılamadı. Aynı anahtarla ikinci AI çağrısı yapılmadı.")
     if not saved:
+        with Session(engine, expire_on_commit=False) as session:
+            finish_receipt(session, owner_id=user.id, patient_id=patient_id,
+                request_key=payload.request_key, digest=digest, lease_token=lease_token, retryable=False)
+            session.commit()
         return reply(409, "VOICE_CLINICAL_OUTCOME_UNKNOWN", "Klinik sonuç güvenli biçimde kaydedilemedi. Aynı anahtarla ikinci AI çağrısı yapılmadı.")
     return JSONResponse(
         {"ok": True, "revision": revision, "review": review, "replayed": False},
