@@ -56,7 +56,7 @@ jobs:
       - name: Install native social regression dependencies
         run: npm ci
       - name: Validate Dental Flow moderation, identity and draft behavior
-        run: node --test tests/social.cjs tests/socialScreens.cjs tests/socialMediaViewer.cjs
+        run: node --test tests/social.cjs tests/socialScreens.cjs tests/socialModerationRefresh.cjs tests/socialMediaViewer.cjs
   native-academic-security:
     runs-on: ubuntu-latest
     defaults:
