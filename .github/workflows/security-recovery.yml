@@ -80,6 +80,7 @@ on:
       - 'mobile/src/NativeVoiceRecorder.tsx'
       - 'mobile/src/voiceSession.ts'
       - 'mobile/tests/nativeVoiceAudio.cjs'
+      - 'mobile/tests/voiceWorkflow.cjs'
       - 'mobile/src/SocialScreens.tsx'
       - 'mobile/src/socialApi.ts'
       - 'mobile/tests/social.cjs'
@@ -116,8 +117,8 @@ jobs:
           cache-dependency-path: mobile/package-lock.json
       - name: Install native voice regression dependencies
         run: npm ci
-      - name: Validate private voice audio path containment
-        run: node --test tests/nativeVoiceAudio.cjs
+      - name: Validate native voice recovery and private audio path containment
+        run: node --test tests/nativeVoiceAudio.cjs tests/voiceWorkflow.cjs
   native-social-security:
     runs-on: ubuntu-latest
     defaults:
