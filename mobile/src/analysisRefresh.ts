@@ -26,3 +26,12 @@ export function analysisPollDelay(attempt:number,random=Math.random()):number{
 }
 
 export const MAX_ANALYSIS_POLL_ATTEMPTS=40;
+
+const permanentRefreshStatuses=new Set([400,401,403,404,409,410,422]);
+
+/** Retry transport/server failures, but stop on auth, ownership and validation failures. */
+export function analysisRefreshCanRetry(error:unknown):boolean{
+ if(!error||typeof error!=='object'||!('status' in error))return true;
+ const status=Number((error as {status?:unknown}).status);
+ return !Number.isFinite(status)||!permanentRefreshStatuses.has(status);
+}
