@@ -1,11 +1,11 @@
 import {request} from './api';
 export type Course={id:number;title:string;description?:string;material_count?:number};
 export type Material={id:number;name:string;mime:string;size:number;index_status:string;url:string};
-export type CourseCreateIntent={version:1;user:number;title:string;description:string;known_ids:number[]};
+export type CourseCreateIntent={version:1|2;user:number;title:string;description:string;known_ids:number[];request_key?:string};
 export type UploadIntent={version:1;user:number;course:number;name:string;uri:string;size:number|null;known_ids:number[]};
 export function parseCourseCreateIntent(raw:string,user:number):CourseCreateIntent{
  const value=JSON.parse(raw);
- if(value?.version!==1||value.user!==user||typeof value.title!=='string'||value.title.trim().length<2||value.title.length>120||typeof value.description!=='string'||value.description.length>500||!Array.isArray(value.known_ids)||value.known_ids.some((id:unknown)=>!Number.isSafeInteger(id)||Number(id)<1))throw Error('Bekleyen ders oluşturma isteği doğrulanamadı.');
+ if((value?.version!==1&&value?.version!==2)||value.user!==user||typeof value.title!=='string'||value.title.trim().length<2||value.title.length>120||typeof value.description!=='string'||value.description.length>500||!Array.isArray(value.known_ids)||value.known_ids.some((id:unknown)=>!Number.isSafeInteger(id)||Number(id)<1)||(value.version===2&&(typeof value.request_key!=='string'||!/^[-_a-zA-Z0-9]{16,80}$/.test(value.request_key)))||(value.version===1&&value.request_key!==undefined))throw Error('Bekleyen ders oluşturma isteği doğrulanamadı.');
  return value as CourseCreateIntent;
 }
 export function findCreatedCourse(items:Course[],intent:CourseCreateIntent):Course|null{
@@ -34,7 +34,13 @@ export const coursePath=(course:number)=>`/academic/courses/${id(course)}`;
 export async function library(token:string,q='',before?:number){const v=await request<{items:Course[];next_before:number|null}>('/academic/library?q='+encodeURIComponent(q)+(before?'&before='+id(before):''),token);if(!Array.isArray(v.items)||v.items.some(c=>!c||!Number.isSafeInteger(c.id)||c.id<1||typeof c.title!=='string'))throw Error('Ders listesi doğrulanamadı.');return v}
 export async function workspace(token:string,course:number,before?:number){const v=await request<Workspace>(coursePath(course)+'/workspace'+(before?'?before='+id(before):''),token);if(v.course?.id!==course||!Array.isArray(v.materials)||!Number.isSafeInteger(v.max_file_bytes)||v.max_file_bytes<1||!Number.isSafeInteger(v.max_upload_count)||v.max_upload_count<1)throw Error('Ders kaynakları doğrulanamadı.');return v}
 const write=<T>(token:string,path:string,method:string,payload?:unknown)=>request<T>(path,token,{method,...(payload===undefined?{}:{body:JSON.stringify(payload)})});
-export const createCourse=(t:string,title:string,description:string)=>write<Workspace>(t,'/academic/library','POST',{title,description});
+export const createCourse=(t:string,title:string,description:string,request_key:string)=>write<Workspace>(t,'/academic/library','POST',{title,description,request_key});
+export async function courseCreateReceipt(t:string,requestKey:string):Promise<Workspace|null>{
+ if(!/^[-_a-zA-Z0-9]{16,80}$/.test(requestKey))throw Error('Geçersiz ders istek anahtarı.');
+ const v=await request<{workspace:Workspace|null}>('/academic/library/receipt?request_key='+encodeURIComponent(requestKey),t);
+ if(!v||!('workspace' in v)||(v.workspace!==null&&(!v.workspace.course||!Number.isSafeInteger(v.workspace.course.id)||v.workspace.course.id<1)))throw Error('Ders kayıt fişi doğrulanamadı.');
+ return v.workspace;
+}
 export const renameCourse=(t:string,c:number,title:string)=>write<Workspace>(t,coursePath(c),'PUT',{title});
 export const deleteCourse=(t:string,c:number)=>write<{ok:boolean}>(t,coursePath(c),'DELETE');
 export const deleteMaterial=(t:string,c:number,m:number)=>write<{ok:boolean}>(t,coursePath(c)+`/materials/${id(m)}`,'DELETE');
