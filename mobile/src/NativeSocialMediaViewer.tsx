@@ -141,7 +141,7 @@ export default function NativeSocialMediaViewer({
     return () => {
       gesture.current = null;
     };
-  }, [visible, initialIndex, itemsKey]);
+  }, [visible, token, initialIndex, itemsKey]);
 
   function onStageLayout(event: any) {
     const layout = event?.nativeEvent?.layout;
