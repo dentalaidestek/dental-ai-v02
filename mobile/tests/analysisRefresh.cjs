@@ -91,4 +91,13 @@ test('native analysis refresh is bounded and does not keep a fixed interval afte
  assert.match(source,/MAX_ANALYSIS_POLL_ATTEMPTS/);
  assert.match(source,/analysisPollDelay\(attempt\)/);
  assert.doesNotMatch(source,/setInterval\(/);
+ assert.match(source,/request!==refreshGeneration\.current/);
+ assert.match(source,/analysisRefreshCanRetry\(e\)/);
+});
+
+test('analysis refresh retries transient failures but stops on auth, ownership and validation errors',()=>{
+ const {analysisRefreshCanRetry}=refreshExports;
+ for(const status of [408,429,500,502,503])assert.equal(analysisRefreshCanRetry({status}),true,String(status));
+ for(const status of [400,401,403,404,409,410,422])assert.equal(analysisRefreshCanRetry({status}),false,String(status));
+ assert.equal(analysisRefreshCanRetry(new Error('offline')),true);
 });
