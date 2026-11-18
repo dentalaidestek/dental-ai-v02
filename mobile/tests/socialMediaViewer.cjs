@@ -31,22 +31,22 @@ test("social media viewer accepts only bounded first-party media receipts", () =
     JSON.stringify(viewer.normalizeSocialMediaItems(valid)),
     JSON.stringify(valid),
   );
-  assert.deepEqual(viewer.normalizeSocialMediaItems([
+  assert.equal(JSON.stringify(viewer.normalizeSocialMediaItems([
     ...valid,
     { id: 6, url: "/api/expert-social/media/6" },
     { id: 7, url: "/api/expert-social/media/7" },
     { id: 8, url: "/api/expert-social/media/8" },
-  ]), []);
-  assert.deepEqual(viewer.normalizeSocialMediaItems([
+  ])), "[]");
+  assert.equal(JSON.stringify(viewer.normalizeSocialMediaItems([
     { id: 4, url: "https://attacker.example/api/expert-social/media/4" },
-  ]), []);
-  assert.deepEqual(viewer.normalizeSocialMediaItems([
+  ])), "[]");
+  assert.equal(JSON.stringify(viewer.normalizeSocialMediaItems([
     { id: 4, url: "/api/expert-social/media/5" },
-  ]), []);
-  assert.deepEqual(viewer.normalizeSocialMediaItems([
+  ])), "[]");
+  assert.equal(JSON.stringify(viewer.normalizeSocialMediaItems([
     { id: 4, url: "/api/expert-social/media/4" },
     { id: 4, url: "/api/expert-social/media/4" },
-  ]), []);
+  ])), "[]");
 });
 
 test("social media zoom is finite and clamped to the web viewer's 1x–5x range", () => {
@@ -65,8 +65,8 @@ test("social media pan is bounded to the scaled image and reset at fit size", ()
   const portrait = viewer.clampSocialPan(-900, 900, 400, 800, 800, 1600, 2);
   assert.equal(portrait.x, -200);
   assert.equal(portrait.y, 400);
-  assert.deepEqual(viewer.clampSocialPan(50, 50, 400, 800, 900, 1600, 1), { x: 0, y: 0 });
-  assert.deepEqual(viewer.clampSocialPan(50, 50, 0, 800, 900, 1600, 2), { x: 0, y: 0 });
+  assert.equal(JSON.stringify(viewer.clampSocialPan(50, 50, 400, 800, 900, 1600, 1)), JSON.stringify({ x: 0, y: 0 }));
+  assert.equal(JSON.stringify(viewer.clampSocialPan(50, 50, 0, 800, 900, 1600, 2)), JSON.stringify({ x: 0, y: 0 }));
 });
 
 test("horizontal swipe changes media only at fit size and outside the vertical gesture threshold", () => {
