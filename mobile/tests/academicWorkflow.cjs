@@ -281,5 +281,8 @@ test('course create client sends the key and receipt lookup stays on the private
  assert.equal(calls[1][0],'/academic/library/receipt?request_key=synthetic-course-key-0001');
  assert.equal(calls[1][1],'private-token');
  await assert.rejects(a.courseCreateReceipt('private-token','short'));
+ await assert.rejects(a.createCourse('private-token','Synthetic course','','short'));
+ const malformed=api(async()=>({workspace:{course:{id:9,title:'Synthetic course'}}}));
+ await assert.rejects(malformed.courseCreateReceipt('private-token','synthetic-course-key-0001'));
 });
 
