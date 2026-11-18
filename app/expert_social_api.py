@@ -56,7 +56,9 @@ from app.expert_consultation_requests import consultation_expert_is_verified
 HEADERS = {
     "Cache-Control": "private, no-store",
     "X-Content-Type-Options": "nosniff",
-    "Vary": "Cookie",
+    # The same private route serves cookie-authenticated web and Bearer-authenticated
+    # native clients; include both authorization dimensions even with no-store.
+    "Vary": "Cookie, Authorization, X-Dental-Social-Admin-Step-Up",
 }
 NETWORK_SLOTS = asyncio.Semaphore(3)
 IMAGE_SLOT = threading.BoundedSemaphore(1)
@@ -400,6 +402,33 @@ def register(app, main):
                 or not live_session
             ):
                 raise HTTPException(403, "Yönetici oturumu artık geçerli değil.")
+            # Step-up rows are short-lived credentials, not an audit log.
+            # Opportunistically purge a bounded batch of expired rows on the rare
+            # challenge-issue path; never scan or block the feed/request hot path.
+            expired_challenge_hashes = session.exec(
+                select(SocialAdminStepUpChallenge.session_hash)
+                .where(SocialAdminStepUpChallenge.expires_at <= current_time)
+                .order_by(SocialAdminStepUpChallenge.expires_at.asc())
+                .limit(100)
+            ).all()
+            if expired_challenge_hashes:
+                session.exec(
+                    delete(SocialAdminStepUpChallenge).where(
+                        SocialAdminStepUpChallenge.session_hash.in_(expired_challenge_hashes)
+                    )
+                )
+            expired_grant_hashes = session.exec(
+                select(SocialAdminStepUpSession.token_hash)
+                .where(SocialAdminStepUpSession.expires_at <= current_time)
+                .order_by(SocialAdminStepUpSession.expires_at.asc())
+                .limit(100)
+            ).all()
+            if expired_grant_hashes:
+                session.exec(
+                    delete(SocialAdminStepUpSession).where(
+                        SocialAdminStepUpSession.token_hash.in_(expired_grant_hashes)
+                    )
+                )
             previous = session.exec(
                 select(SocialAdminStepUpChallenge)
                 .where(SocialAdminStepUpChallenge.session_hash == session_hash)
