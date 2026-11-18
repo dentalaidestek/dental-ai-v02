@@ -19,7 +19,7 @@ async function call<T>(path:string,token:string,options:RequestInit={}):Promise<
 }
 
 export type AnalysisPatientSummary=Pick<Patient,'id'|'anonymous_id'|'age'|'chief_complaint'>;
-export type MobileAnalysisJob={id:number;kind:'PRELIMINARY'|'FINAL';status:string;retryable:boolean};
+export type MobileAnalysisJob={id:number;kind:'VISION'|'PRELIMINARY'|'FINAL';status:string;retryable:boolean};
 export type MobileAnalysis={
   analysis:{id:number;patient_id:number;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at?:string;is_voice_review?:boolean;legacy_radiograph_available?:boolean};
   patient:AnalysisPatientSummary;
@@ -62,7 +62,7 @@ function validAnalysisAsset(value:any):boolean{
 function validAnalysisJob(value:any):boolean{
  if(value===undefined||value===null)return true;
  return !!value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).every(key=>analysisJobFields.has(key))&&
-  Number.isSafeInteger(value.id)&&value.id>0&&['PRELIMINARY','FINAL'].includes(value.kind)&&
+  Number.isSafeInteger(value.id)&&value.id>0&&['VISION','PRELIMINARY','FINAL'].includes(value.kind)&&
   typeof value.status==='string'&&value.status.length>0&&value.status.length<=40&&typeof value.retryable==='boolean';
 }
 
