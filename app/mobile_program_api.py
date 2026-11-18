@@ -278,7 +278,7 @@ class ProgramValues(BaseModel):
     start_at:str=Field(max_length=30)
     end_at:str=Field(default='',max_length=30)
     patient_id:Optional[int]=None
-    location:str=Field(default='',max_length=1000)
+    location:str=Field(default='',max_length=160)
     notes:str=Field(default='',max_length=2000)
     reminder_minutes:str='30'
     recurrence_rule:str='NONE'
@@ -296,7 +296,7 @@ def program_conflicts(payload:ProgramValues,exclude_id:Optional[int]=Query(None,
         if end==start:end=start+timedelta(minutes=1)
         occurrences=web._user_schedule_occurrences(session,user.id,web._date_to_local_start(start.date()),web._date_to_local_end(end.date()))
         conflicts=[item for item in occurrences if item['status']=='ACTIVE' and item['id']!=exclude_id and item['start_local']<end and (item['end_local'] or item['start_local']+timedelta(minutes=1))>start]
-        return {'advisory':True,'total':len(conflicts),'items':[{'id':item['id'],'title':item['title'],'start_local':item['start_local'].strftime('%Y-%m-%dT%H:%M')} for item in conflicts[:10]]}
+        return {'advisory':True,'total':len(conflicts)}
 
 @router.post('/program/events')
 def create_program_event(payload:ProgramValues,user=Depends(_mobile_user)):
