@@ -57,6 +57,7 @@ export type VoiceExtraction={ok:boolean;revision:string;replayed?:boolean;review
 export type VoiceExtractionCheckpointData={cursor:number;revision:string;review:VoiceExtraction["review"]};
 export type ExtractVoiceOptions={
  sessionId?:string;
+ transcriptHash?:string;
  resume?:VoiceExtractionCheckpointData;
  onProgress?:(completed:number,total:number)=>void;
  onCheckpoint?:(checkpoint:VoiceExtractionCheckpointData)=>Promise<void>|void;
@@ -125,7 +126,8 @@ export async function extractVoice(token:string,patientId:number,transcript:stri
  const chunks=splitVoiceTranscript(transcript);
  if(!chunks.length)throw Error("Muayene metni boş olamaz. Metniniz korunuyor.");
  const sessionId=options.sessionId||("ephemeral_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2));
- if(!/^[A-Za-z0-9_-]{16,80}$/.test(sessionId))throw Error("Muayene oturum anahtarı doğrulanamadı.");
+ const transcriptHash=options.transcriptHash||"0".repeat(64);
+ if(!/^[A-Za-z0-9_-]{16,80}$/.test(sessionId)||!/^[a-f0-9]{64}$/.test(transcriptHash))throw Error("Muayene oturum anahtarı doğrulanamadı.");
  let cursor=0,revision="",review:VoiceExtraction["review"]|undefined;
  if(options.resume){
   const saved=options.resume;
@@ -138,7 +140,7 @@ export async function extractVoice(token:string,patientId:number,transcript:stri
   const context=review?contextFromVoiceReview(review):{};
   // Stable for the same examination, transcript and chunk after process death.
   // The server independently binds this key to an HMAC of transcript + context.
-  const requestKey=sessionId.replace(/-/g,"")+"_"+index;
+  const requestKey=sessionId.replace(/-/g,"")+"_"+index+"_"+transcriptHash.slice(0,16);
   const result=await send<VoiceExtraction>(token,`/patients/${patientId}/voice-exam/text`,{transcript:chunks[index],consent:true,context,request_key:requestKey});
   if(!result.review||typeof result.revision!=="string"||!/^[a-f0-9]{64}$/.test(result.revision))
    throw Error("Klinik çıkarım yanıtı eksik. Metninizi koruyup tekrar deneyin.");
