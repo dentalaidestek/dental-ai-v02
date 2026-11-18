@@ -22,6 +22,7 @@ No provider, prompt, clinical taxonomy, database schema, patient record, or prod
 - Native recording opt-out stops capture and retains the private segment without ASR.
 - Native opt-out during an ASR request aborts the request and retains the same local segment.
 - Native opt-out while the finish gate is cutting the active clip prevents the subsequent ASR drain and clinical handoff.
+- Native opt-out while the OS microphone permission prompt is pending prevents audio-mode activation and recorder startup.
 - Browser live opt-out sends pause, retains finalized text, and never marks the examination finished.
 - Browser UI keeps consent withdrawable while live capture is active.
 
