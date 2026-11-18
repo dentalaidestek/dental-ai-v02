@@ -68,9 +68,11 @@ export function clampSocialPan(
   const fit = Math.min(stageWidth / imageWidth, stageHeight / imageHeight);
   const maxX = Math.max(0, (imageWidth * fit * zoom - stageWidth) / 2);
   const maxY = Math.max(0, (imageHeight * fit * zoom - stageHeight) / 2);
+  const boundedX = Math.max(-maxX, Math.min(maxX, Number.isFinite(x) ? x : 0));
+  const boundedY = Math.max(-maxY, Math.min(maxY, Number.isFinite(y) ? y : 0));
   return {
-    x: Math.max(-maxX, Math.min(maxX, Number.isFinite(x) ? x : 0)),
-    y: Math.max(-maxY, Math.min(maxY, Number.isFinite(y) ? y : 0)),
+    x: boundedX === 0 ? 0 : boundedX,
+    y: boundedY === 0 ? 0 : boundedY,
   };
 }
 
