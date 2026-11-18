@@ -1,5 +1,6 @@
 import {request} from './api';
 import {ProgramDraft,programPayload,validWallTime} from './programModel';
+import type {ProgramActionIntent} from './programIntent';
 export type ProgramView='today'|'week'|'month';
 export type ProgramOccurrence={key:string;event_id:number;event_type:string;title:string;status:string;start_local:string;end_local:string;patient_id:number|null;patient_name:string|null;location:string|null;notes:string|null;recurrence_rule:string};
 export type ProgramEvent=Omit<ProgramOccurrence,'key'|'event_id'>&{id:number;reminder_minutes:string;recurrence_until:string};
@@ -33,3 +34,60 @@ export async function checkProgramConflicts(token:string,draft:ProgramDraft,even
  if(result.advisory!==true||!Number.isSafeInteger(result.total)||result.total<0||!Array.isArray(result.items)||result.items.length>10||result.items.some(item=>!item||!Number.isSafeInteger(item.id)||typeof item.title!=='string'||!validWallTime(item.start_local)))throw Error('Saat çakışması kontrol edilemedi. Yeniden deneyin.');
  return result;
 }
+
+export type ProgramActionVerification='APPLIED'|'NOT_APPLIED'|'UNKNOWN';
+
+function expectedCopyEnd(source:ProgramEvent,targetDay:string):string{
+ if(!source.end_local)return '';
+ const sourceStart=Date.parse(source.start_local+':00Z');
+ const sourceEnd=Date.parse(source.end_local+':00Z');
+ const targetStart=Date.parse(targetDay+'T'+source.start_local.slice(11)+':00Z');
+ if(!Number.isFinite(sourceStart)||!Number.isFinite(sourceEnd)||!Number.isFinite(targetStart)||sourceEnd<sourceStart)throw Error('Kopyalanan program saati doğrulanamadı.');
+ return new Date(targetStart+(sourceEnd-sourceStart)).toISOString().slice(0,16);
+}
+
+/**
+ * A calendar refresh alone is not proof that a timed-out action committed.
+ * Verify the exact owned event state; for copies, inspect every requested day
+ * through the same stable cursor/legacy offset contract used by the calendar.
+ */
+export async function verifyProgramAction(token:string,intent:ProgramActionIntent):Promise<ProgramActionVerification>{
+ const source=await getProgramEvent(token,intent.event_id);
+ if(intent.action==='delete'){
+  if(source.status==='DELETED')return 'APPLIED';
+  if(source.status==='ACTIVE'||source.status==='COMPLETED')return 'NOT_APPLIED';
+  return 'UNKNOWN';
+ }
+ if(intent.action==='complete'){
+  if(source.status==='COMPLETED')return 'APPLIED';
+  if(source.status==='ACTIVE')return 'NOT_APPLIED';
+  return 'UNKNOWN';
+ }
+ let allFound=true;
+ for(const day of intent.days){
+  const expectedStart=day+'T'+source.start_local.slice(11);
+  const expectedEnd=expectedCopyEnd(source,day);
+  let cursor:string|undefined;
+  let offset=0;
+  let pages=0;
+  let found=false;
+  while(true){
+   const page=await getProgram(token,'today',day,cursor,offset);
+   found=page.items.some(item=>
+    item.event_type===source.event_type&&item.title===source.title&&
+    item.start_local===expectedStart&&item.end_local===expectedEnd&&
+    item.patient_id===source.patient_id&&(item.location||'')===(source.location||'')&&
+    (item.notes||'')===(source.notes||'')&&item.recurrence_rule==='NONE'
+   );
+   if(found)break;
+   if(page.next_cursor){cursor=page.next_cursor;offset=0;}
+   else if(page.next_offset!==null){cursor=undefined;offset=page.next_offset;}
+   else break;
+   pages++;
+   if(pages>=20)return 'UNKNOWN';
+  }
+  if(!found)allFound=false;
+ }
+ return allFound?'APPLIED':'NOT_APPLIED';
+}
+
