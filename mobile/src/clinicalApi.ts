@@ -19,6 +19,50 @@ export function clinicalNoteLine(value:ClinicalNoteIntent){
  return value.finding?prefix+'Manuel bulgu: '+value.finding+(value.note?' — '+value.note:''):prefix+value.note;
 }
 
+export function clinicalNoteIsPresent(notes:unknown,intent:ClinicalNoteIntent):boolean{
+ if(typeof notes!=='string'||!notes)return false;
+ const expected=clinicalNoteLine(intent);
+ return notes.split(/\r?\n/).some(line=>line===expected);
+}
+
+const CLINICAL_RESULT_STATUSES=new Set(['INITIAL','ANALYSIS_COMPLETE','FINAL','NEEDS_INFO','READY','AI_ANALYZING','AI_ANALYZED','AI_ERROR','AI_INVALID']);
+const CLINICAL_TEXT_LIMITS:Record<string,number>={most_likely:4000,preferred_approach:4000,uncertainty:4000,preliminary_assessment:4000,error:1000};
+const CLINICAL_LIST_LIMITS:Record<string,{items:number;chars:number}>={findings:{items:3,chars:2000},treatment_options:{items:3,chars:2000},treatment_cautions:{items:3,chars:2000},differential:{items:2,chars:2000},recommended_evaluation:{items:2,chars:2000}};
+function boundedText(value:unknown,limit:number,allowEmpty=false):value is string{
+ return typeof value==='string'&&value.length<=limit&&(allowEmpty||!!value.trim());
+}
+function boundedTextList(value:unknown,items:number,chars:number):value is string[]{
+ return Array.isArray(value)&&value.length<=items&&value.every(item=>boundedText(item,chars));
+}
+function validClinicalResult(value:unknown):value is ClinicalResult|null{
+ if(value===null)return true;
+ if(!value||typeof value!=='object'||Array.isArray(value))return false;
+ const result=value as Record<string,unknown>;
+ if(typeof result.status!=='string'||!CLINICAL_RESULT_STATUSES.has(result.status))return false;
+ const allowEmpty=['NEEDS_INFO','READY','AI_ANALYZING','AI_ERROR','AI_INVALID'].includes(result.status);
+ for(const [field,limit] of Object.entries(CLINICAL_TEXT_LIMITS)){
+  if(field in result&&!boundedText(result[field],limit,allowEmpty))return false;
+ }
+ for(const [field,limit] of Object.entries(CLINICAL_LIST_LIMITS)){
+  if(field in result&&!boundedTextList(result[field],limit.items,limit.chars))return false;
+ }
+ if('questions' in result){
+  if(!Array.isArray(result.questions)||result.questions.length>3||result.questions.some(item=>!item||typeof item!=='object'||Array.isArray(item)||!boundedText((item as Record<string,unknown>).question,2000)|| (item as Record<string,unknown>).type!=='TEXT'))return false;
+ }
+ if(result.status==='INITIAL'||result.status==='ANALYSIS_COMPLETE'){
+  if(!boundedText(result.most_likely,4000)||!boundedText(result.preferred_approach,4000)||!boundedText(result.uncertainty,4000)
+   ||!boundedTextList(result.findings,3,2000)||!boundedTextList(result.treatment_options,3,2000)
+   ||!boundedTextList(result.treatment_cautions,3,2000)||!boundedTextList(result.differential,2,2000)
+   ||!boundedTextList(result.recommended_evaluation,2,2000)||!Array.isArray(result.questions))return false;
+ }
+ if(result.status==='FINAL'){
+  if(!boundedText(result.most_likely,4000)||!boundedText(result.preferred_approach,4000)
+   ||!boundedTextList(result.findings,3,2000)||!boundedTextList(result.treatment_options,3,2000)
+   ||!boundedTextList(result.treatment_cautions,3,2000)||!boundedTextList(result.differential,2,2000))return false;
+ }
+ return true;
+}
+
 const id=(value:number)=>{if(!Number.isSafeInteger(value)||value<1)throw Error('Geçersiz analiz kimliği.');return value};
 const path=(analysis:number)=>'/analyses/'+id(analysis);
 export async function getClinical(token:string,analysis:number){
@@ -28,7 +72,7 @@ export async function getClinical(token:string,analysis:number){
  const validAssets=assets.length<=4&&new Set(assets.map(x=>x?.id)).size===assets.length&&assets.every(x=>x&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).every(key=>allowedAssetKeys.has(key))&&Number.isSafeInteger(x.id)&&x.id>0&&typeof x.image_type==='string'&&/^[A-Z][A-Z0-9_]{0,39}$/.test(x.image_type)&&typeof x.has_vision==='boolean'&&typeof x.url==='string'&&x.url===`/api/mobile/v1/analyses/${analysis}/assets/${x.id}`);
  const job=r?.job;
  const validJob=job===null||!!job&&Number.isSafeInteger(job.id)&&job.id>0&&['VISION','PRELIMINARY','FINAL'].includes(job.kind)&&typeof job.status==='string'&&job.status.length>0&&job.status.length<=40&&typeof job.retryable==='boolean';
- if(!r||r.analysis_id!==analysis||!Number.isSafeInteger(r.patient_id)||r.patient_id<1||typeof r.patient_anonymous_id!=='string'||!r.patient_anonymous_id.trim()||r.patient_anonymous_id.length>80||!validAssets||!/^([0-9a-f]{64})$/.test(r.revision)||typeof r.status!=='string'||typeof r.clinical_notes!=='string'&&r.clinical_notes!==null||typeof r.tooth_number!=='string'&&r.tooth_number!==null||!validJob||r.result!==null&&(!r.result||typeof r.result!=='object'||typeof r.result.status!=='string'))throw Error('Klinik sonuç doğrulanamadı.');
+ if(!r||r.analysis_id!==analysis||!Number.isSafeInteger(r.patient_id)||r.patient_id<1||typeof r.patient_anonymous_id!=='string'||!r.patient_anonymous_id.trim()||r.patient_anonymous_id.length>80||!validAssets||!/^([0-9a-f]{64})$/.test(r.revision)||typeof r.status!=='string'||typeof r.clinical_notes!=='string'&&r.clinical_notes!==null||typeof r.tooth_number!=='string'&&r.tooth_number!==null||!validJob||!validClinicalResult(r.result))throw Error('Klinik sonuç doğrulanamadı.');
  return r;
 }
 export function parseClinicalIntent(raw:string,user:number,analysis:number):ClinicalIntent{const r=JSON.parse(raw);if(r.user!==user||r.analysis!==analysis||!/^([0-9a-f]{64})$/.test(r.revision)||!r.answers||typeof r.answers!=='object'||Array.isArray(r.answers)||Object.keys(r.answers).length>3||Object.entries(r.answers).some(([k,v])=>!/^answer_[0-2]$/.test(k)||typeof v!=='string'||!v.trim()||v.length>2000))throw Error('Bekleyen klinik cevap kaydı okunamadı. Analiz geçmişini kontrol edin.');return r}
