@@ -475,6 +475,9 @@ class ToothSurfaceStatus(SQLModel, table=True):
 
 
 class Treatment(SQLModel, table=True):
+    __table_args__ = (
+        Index("ix_treatment_patient_created_id", "patient_id", "created_at", "id"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     patient_id: int = Field(index=True)
     tooth_number: Optional[str] = Field(default=None, index=True)
