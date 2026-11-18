@@ -113,6 +113,7 @@ export default function NativeSocialAdmin({ token, user }: Props) {
       setExpiresAt(0);
       setItems([]);
       setCursor(null);
+      cursorRef.current = null;
       setDetail(null);
     }
     return () => {
@@ -203,7 +204,6 @@ export default function NativeSocialAdmin({ token, user }: Props) {
           ? page.items
           : [...current, ...page.items.filter((row) => !current.some((old) => old.id === row.id))]);
         cursorRef.current = page.next_cursor;
-        cursorRef.current = page.next_cursor;
         setCursor(page.next_cursor);
       } else {
         const page = await api.getSocialAdminQueue(token, grant, kind, status, before);
@@ -211,6 +211,7 @@ export default function NativeSocialAdmin({ token, user }: Props) {
         setItems((current) => reset
           ? page.items
           : [...current, ...page.items.filter((row) => !current.some((old) => old.id === row.id))]);
+        cursorRef.current = page.next_cursor;
         setCursor(page.next_cursor);
         setAging(page.aging);
       }
