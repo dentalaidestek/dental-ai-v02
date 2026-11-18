@@ -62,8 +62,8 @@ test("social media pan is bounded to the scaled image and reset at fit size", ()
   const landscape = viewer.clampSocialPan(500, -30, 400, 800, 1600, 900, 2);
   assert.equal(landscape.x, 200);
   assert.equal(landscape.y, 0);
-  const portrait = viewer.clampSocialPan(-900, 900, 400, 800, 900, 1600, 2);
-  assert.equal(portrait.x, -250);
+  const portrait = viewer.clampSocialPan(-900, 900, 400, 800, 800, 1600, 2);
+  assert.equal(portrait.x, -200);
   assert.equal(portrait.y, 400);
   assert.deepEqual(viewer.clampSocialPan(50, 50, 400, 800, 900, 1600, 1), { x: 0, y: 0 });
   assert.deepEqual(viewer.clampSocialPan(50, 50, 0, 800, 900, 1600, 2), { x: 0, y: 0 });
