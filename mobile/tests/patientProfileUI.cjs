@@ -15,7 +15,7 @@ function component(api,file='NativePatientProfile',storage=new Map()){
  let sequence=0;const focusState={current:true};
  const alertCalls=[];
  const native={StyleSheet:{create:s=>s},AppState:{addEventListener:()=>({remove(){}})},Platform:{OS:'android'},Alert:{alert:(title,message,buttons)=>alertCalls.push({title,message,buttons})},...Object.fromEntries(['Modal','ActivityIndicator','KeyboardAvoidingView','Pressable','RefreshControl','ScrollView','Text','TextInput','View'].map(s=>[s,s]))},exports={};
- const endpoints={getPatient:async()=>patient(8),createTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),updateTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),...api};
+ const endpoints={getPatient:async()=>patient(8),getPatientTreatments:async()=>({items:[],next_cursor:null}),createTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),updateTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),...api};
  vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:name==='./patientDeleteIntent'?deleteIntentExports:name==='./patientProfilePresentation'?presentationExports:{default:'Child'}});
  const Original=exports.default;
  const Wrapped=props=>React.createElement(Original,{userId:1,...props});
@@ -573,3 +573,101 @@ test('pending patient deletion makes nested clinical media and analysis surfaces
  await renderer.act(async()=>tree.unmount());
 });
 
+
+
+test('patient profile loads older treatment records in bounded pages and can collapse them again',async()=>{
+ const base=patient(8),cursor='A'.repeat(32),calls=[];
+ base.treatments=[
+  {id:1,treatment_name:'Initial treatment 1',edit_revision:'1'.repeat(64)},
+  {id:2,treatment_name:'Initial treatment 2',edit_revision:'2'.repeat(64)},
+  {id:3,treatment_name:'Initial treatment 3',edit_revision:'3'.repeat(64)}
+ ];
+ base.treatments_next_cursor=cursor;
+ const Profile=component({
+  getPatient:async()=>base,
+  getPatientTreatments:async(token,id,before)=>{
+   calls.push({token,id,before});
+   return {items:[
+    {id:4,treatment_name:'Paged treatment 4',edit_revision:'4'.repeat(64),created_at:'2026-11-18T10:00:00'},
+    {id:5,treatment_name:'Paged treatment 5',edit_revision:'5'.repeat(64),created_at:'2026-11-18T09:00:00'}
+   ],next_cursor:null};
+  }
+ });let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>{item.props.onPress();await new Promise(resolve=>setImmediate(resolve))});};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'owner-token',patientId:8,actions}))});
+ assert.ok(text(tree.toJSON()).includes('Initial treatment 3'));
+ assert.equal(text(tree.toJSON()).includes('Paged treatment 4'),false,'older records must not be downloaded or rendered initially');
+ await press('Diğer tedavileri göster');
+ assert.deepEqual(calls,[{token:'owner-token',id:8,before:cursor}]);
+ assert.ok(text(tree.toJSON()).includes('Paged treatment 4'));
+ assert.ok(text(tree.toJSON()).includes('Paged treatment 5'));
+ await press('Tedavileri gizle');
+ assert.equal(text(tree.toJSON()).includes('Paged treatment 4'),false);
+ await press('Diğer tedavileri göster');
+ assert.ok(text(tree.toJSON()).includes('Paged treatment 4'));
+ assert.equal(calls.length,1,'already fetched pages are shown locally without a duplicate API read');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('treatment page errors preserve the first page and retry the same cursor',async()=>{
+ const base=patient(8),cursor='B'.repeat(32),calls=[];base.treatments_next_cursor=cursor;
+ let fail=true;
+ const Profile=component({
+  getPatient:async()=>base,
+  getPatientTreatments:async(_token,_id,before)=>{calls.push(before);if(fail)throw Error('Sentetik çevrimdışı hata');return {items:[{id:9,treatment_name:'Recovered treatment',edit_revision:'9'.repeat(64),created_at:'2026-11-18T10:00:00'}],next_cursor:null}}
+ });let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>{item.props.onPress();await new Promise(resolve=>setImmediate(resolve))});};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'owner-token',patientId:8,actions}))});
+ await press('Diğer tedavileri göster');
+ assert.ok(text(tree.toJSON()).includes('Sentetik çevrimdışı hata'));
+ assert.ok(text(tree.toJSON()).includes('Root canal'),'verified first-page treatment must remain visible');
+ assert.equal(text(tree.toJSON()).includes('Recovered treatment'),false);
+ fail=false;
+ await press('Tekrar dene');
+ assert.deepEqual(calls,[cursor,cursor]);
+ assert.ok(text(tree.toJSON()).includes('Recovered treatment'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('duplicate treatment page rows are rejected without replacing verified clinical history',async()=>{
+ const base=patient(8),cursor='C'.repeat(32);base.treatments_next_cursor=cursor;
+ const Profile=component({getPatient:async()=>base,getPatientTreatments:async()=>({items:[{id:1,treatment_name:'Stale duplicate',edit_revision:'a'.repeat(64),created_at:'2026-11-18T10:00:00'}],next_cursor:null})});let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>{item.props.onPress();await new Promise(resolve=>setImmediate(resolve))});};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'owner-token',patientId:8,actions}))});
+ await press('Diğer tedavileri göster');
+ assert.ok(text(tree.toJSON()).includes('tekrarlanan kayıt algılandı'));
+ assert.ok(text(tree.toJSON()).includes('Root canal'));
+ assert.equal(text(tree.toJSON()).includes('Stale duplicate'),false);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('late treatment page from a previous patient cannot leak into the next account',async()=>{
+ const cursor='D'.repeat(32);let resolveOld;
+ const Profile=component({
+  getPatient:async(_token,id)=>{const value=patient(id);if(id===8)value.treatments_next_cursor=cursor;return value},
+  getPatientTreatments:async()=>new Promise(resolve=>{resolveOld=resolve})
+ });let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress());};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'old-token',patientId:8,actions}))});
+ await press('Diğer tedavileri göster');
+ assert.equal(typeof resolveOld,'function');
+ await renderer.act(async()=>{tree.update(React.createElement(Profile,{token:'new-token',patientId:9,actions}));await new Promise(resolve=>setImmediate(resolve))});
+ await renderer.act(async()=>{resolveOld({items:[{id:99,treatment_name:'Private old patient treatment',edit_revision:'9'.repeat(64),created_at:'2026-11-18T10:00:00'}],next_cursor:null});await new Promise(resolve=>setImmediate(resolve))});
+ const rendered=text(tree.toJSON());
+ assert.ok(rendered.includes('Synthetic9'));
+ assert.equal(rendered.includes('Private old patient treatment'),false);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('rapid double tap on treatment pagination sends only one request',async()=>{
+ const base=patient(8),cursor='E'.repeat(32);base.treatments_next_cursor=cursor;
+ let resolvePage,calls=0;
+ const Profile=component({getPatient:async()=>base,getPatientTreatments:async()=>{calls++;return new Promise(resolve=>{resolvePage=resolve})}});let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'owner-token',patientId:8,actions}))});
+ const button=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Diğer tedavileri göster')));
+ assert.ok(button);
+ await renderer.act(async()=>{button.props.onPress();button.props.onPress();});
+ assert.equal(calls,1);
+ await renderer.act(async()=>{resolvePage({items:[],next_cursor:null});await new Promise(resolve=>setImmediate(resolve))});
+ await renderer.act(async()=>tree.unmount());
+});
