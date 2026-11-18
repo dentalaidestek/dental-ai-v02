@@ -72,3 +72,7 @@ The screen shows only bounded text/media/history fields, keeps decision reasons 
 
 Added a source-contract regression for memory-only grant lifecycle and ADMIN/version gates. It is included in mobile test:beta and Security Recovery's native-social-security command. These checks and the full mobile typecheck/beta suite were not executed in this connector session; device-level navigation, OTP email delivery, image rendering, and real moderation decisions remain unaccepted.
 
+### OTP input lifecycle follow-up
+
+The final screen review found that an OTP typed before leaving the screen could remain in component memory while the screen was blurred, and an app-background transition before grant issuance did not clear it. The screen now clears the OTP input/challenge state on blur and on every non-active AppState transition, even when no step-up grant has been issued. The source-contract regression asserts that reset. This does not revoke the server challenge (which remains one-use and expires after ten minutes); it removes the local code from the native UI state.
+
