@@ -2868,10 +2868,12 @@ async def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, us
         if not isinstance(review, dict):
             raise ValueError("Invalid clinical extraction response.")
     except core.VoiceBusy:
-        with Session(engine, expire_on_commit=False) as session:
-            finish_receipt(session, owner_id=user.id, patient_id=patient_id,
-                request_key=payload.request_key, digest=digest, lease_token=lease_token, retryable=True)
-            session.commit()
+        await run_in_threadpool(
+            finish_receipt_transaction, engine,
+            owner_id=user.id, patient_id=patient_id,
+            request_key=payload.request_key, digest=digest,
+            lease_token=lease_token, retryable=True,
+        )
         return reply(429, "VOICE_CLINICAL_RETRYABLE", "Klinik değerlendirme yoğun. Aynı muayene bölümüyle tekrar deneyin.")
     except core.VoiceConfigurationError:
         with Session(engine, expire_on_commit=False) as session:
@@ -2880,10 +2882,12 @@ async def mobile_voice_text(patient_id: int, payload: MobileVoiceTextRequest, us
             session.commit()
         return reply(503, "VOICE_CLINICAL_NOT_READY", "Klinik değerlendirme yapılandırması hazır değil; taslak korundu.")
     except Exception:
-        with Session(engine, expire_on_commit=False) as session:
-            finish_receipt(session, owner_id=user.id, patient_id=patient_id,
-                request_key=payload.request_key, digest=digest, lease_token=lease_token, retryable=False)
-            session.commit()
+        await run_in_threadpool(
+            finish_receipt_transaction, engine,
+            owner_id=user.id, patient_id=patient_id,
+            request_key=payload.request_key, digest=digest,
+            lease_token=lease_token, retryable=False,
+        )
         logging.getLogger(__name__).warning("mobile voice clinical outcome is unknown")
         return reply(502, "VOICE_CLINICAL_OUTCOME_UNKNOWN", "Klinik sonuç doğrulanamadı. Aynı anahtarla ikinci AI çağrısı yapılmadı; taslak korundu.")
 
