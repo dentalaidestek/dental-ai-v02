@@ -100,18 +100,18 @@ test('patient media upload sends a stable receipt key and reports real multipart
    send(body){this.body=body;this.upload.onprogress?.({loaded:50,total:100,lengthComputable:true});this.status=200;this.responseText=JSON.stringify({media:{id:3,original_filename:'scan.png',media_type:'RADIOGRAPH'},replayed:false});this.onload();}
   };
   const {uploadPatientMedia}=require('../src/api.ts');
-  const result=await uploadPatientMedia('token',7,{uri:'file:///synthetic.png',name:'scan.png',type:'image/png'},undefined,'RADIOGRAPH','stable-media-request-key-0001','stable-media-batch-id-0001',value=>progress.push(value));
+  const result=await uploadPatientMedia('token',7,{uri:'file:///synthetic.png',name:'scan.png',type:'image/png'},'36','RADIOGRAPH','stable-media-request-key-0001','stable-media-batch-id-0001',value=>progress.push(value),'Periapikal kontrol');
   assert.equal(result.media.id,3);
   assert.equal(request.method,'POST');
   assert.equal(request.url,'https://dentalai.tr/api/mobile/v1/patients/7/media');
   assert.equal(request.headers.Authorization,'Bearer token');
   assert.equal(request.headers['Content-Type'],undefined);
   assert.equal(request.withCredentials,false);
-  assert.deepEqual(fields.map(([name])=>name),['media_type','request_key','batch_id','file']);
+  assert.deepEqual(fields.map(([name])=>name),['media_type','request_key','batch_id','file','tooth_number','note']);
   assert.equal(fields[0][1],'RADIOGRAPH');
   assert.equal(fields[1][1],'stable-media-request-key-0001');
   assert.equal(fields[2][1],'stable-media-batch-id-0001');
-  assert.deepEqual(fields[3][1],{uri:'file:///synthetic.png',name:'scan.png',type:'image/png'});
+  assert.deepEqual(fields[3][1],{uri:'file:///synthetic.png',name:'scan.png',type:'image/png'});\n  assert.equal(fields[4][1],'36');\n  assert.equal(fields[5][1],'Periapikal kontrol');
   assert.deepEqual(progress,[{loaded:50,total:100,lengthComputable:true}]);
  }finally{global.XMLHttpRequest=originalXHR;global.FormData=originalForm;}
 });
