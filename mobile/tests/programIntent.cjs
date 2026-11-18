@@ -55,3 +55,36 @@ test('invalid account or patient scope is rejected before SecureStore access',as
  await assert.rejects(()=>m.api.loadProgramRequestKey(0,42),/kapsam/);
  await assert.rejects(()=>m.api.loadProgramRequestKey(7,-1),/kapsam/);
 });
+
+test('Program action recovery stores only a minimal account-scoped event intent',async()=>{
+ const store=new Map(),m=moduleFor(store);
+ const intent={version:1,action:'copy',event_id:42,days:['2030-01-08','2030-01-09']};
+ await m.api.saveProgramActionIntent(7,intent);
+ const raw=store.get('dai.program.action.v1.7');
+ assert.equal(raw,JSON.stringify(intent));
+ assert.equal(await m.api.loadProgramActionIntent(7).then(value=>JSON.stringify(value)),JSON.stringify(intent));
+ assert.equal(await m.api.loadProgramActionIntent(8),null);
+ assert.ok(!raw.includes('patient_id'));
+ assert.ok(!raw.includes('title'));
+});
+
+test('Program action recovery rejects malformed dates, duplicate days and extra sensitive fields',async()=>{
+ const store=new Map(),m=moduleFor(store);
+ await assert.rejects(()=>m.api.saveProgramActionIntent(7,{version:1,action:'copy',event_id:42,days:['2030-02-30']}),/doğrulanamadı/);
+ await assert.rejects(()=>m.api.saveProgramActionIntent(7,{version:1,action:'copy',event_id:42,days:['2030-01-08','2030-01-08']}),/doğrulanamadı/);
+ await assert.rejects(()=>m.api.saveProgramActionIntent(7,{version:1,action:'delete',event_id:42,title:'Patient name'}),/doğrulanamadı/);
+ assert.equal(store.has('dai.program.action.v1.7'),false);
+});
+
+test('Program action intent clearing compares the complete saved intent',async()=>{
+ const store=new Map(),m=moduleFor(store);
+ const older={version:1,action:'complete',event_id:42};
+ const newer={version:1,action:'delete',event_id:43};
+ await m.api.saveProgramActionIntent(7,older);
+ await m.api.saveProgramActionIntent(7,newer).catch(()=>{});
+ await m.api.clearProgramActionIntent(7,newer);
+ assert.equal(await m.api.loadProgramActionIntent(7).then(value=>JSON.stringify(value)),JSON.stringify(older));
+ await m.api.clearProgramActionIntent(7,older);
+ assert.equal(await m.api.loadProgramActionIntent(7),null);
+});
+
