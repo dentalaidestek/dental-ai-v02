@@ -16,7 +16,7 @@ The native path is `NativePatientMedia → NativeAnalysisUpload → NativeDental
 
 ## Commits
 
-Eight focused commits were added: `7618963c`, `8e022cbe`, `7c505841`, `d20e3c6c`, `cc05af48`, `d2258c3f`, `9760d979`, `1468ee9b`. Final HEAD: `1468ee9bf898c90c06700fb127c4d4b2e85612f6`.
+Seven code/test commits: `7618963c`, `8e022cbe`, `7c505841`, `d20e3c6c`, `cc05af48`, `9760d979`, `1468ee9b`. The implementation was recorded in `d2258c3f`; the report was subsequently corrected in a separate documentation commit.
 
 ## Verification and limitations
 
