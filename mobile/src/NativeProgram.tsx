@@ -5,6 +5,7 @@ import {getProgram,ProgramOccurrence,ProgramPage,ProgramView,programAction,verif
 import {loadProgramActionIntent,saveProgramActionIntent,clearProgramActionIntent} from './programIntent';
 import type {ProgramActionIntent} from './programIntent';
 import {dayTitle,wallTimeLabel} from './programModel';
+import { shouldRefreshOnAppResume } from './appResumeRefresh';
 import {useRealtime} from './realtime';
 import NativeProgramEditor from './NativeProgramEditor';
 
@@ -24,7 +25,17 @@ export default function NativeProgram({token,userId}:{token:string;userId:number
  const loader=useRef(load);loader.current=load;
  useEffect(()=>{mounted.current=true;setData(null);setError('');setEditor(null);setCopy(null);setActionId(null);mutationLock.current=false;setMutationBusy(false);void loader.current();return()=>{mounted.current=false;sequence.current++}},[scope]);
  useEffect(()=>{let live=true;setActionIntentReady(false);pendingActionRef.current=null;setUncertain(false);void loadProgramActionIntent(userId).then(intent=>{if(!live)return;pendingActionRef.current=intent;if(intent){setUncertain(true);setError('Önceki Program işlemi sunucuda doğrulanmadan yeni işlem başlatılamaz.')}}).catch(e=>{if(live){setUncertain(true);setError(e instanceof Error?e.message:'Bekleyen Program işlemi okunamadı.')}}).finally(()=>{if(live)setActionIntentReady(true)});return()=>{live=false}},[token,userId]);
- useEffect(()=>{if(focused&&!previousFocus.current)void loader.current();previousFocus.current=focused;const subscription=AppState.addEventListener('change',state=>{if(focused&&state==='active')void loader.current()});return()=>subscription.remove()},[focused,token]);
+ useEffect(()=>{
+  if(focused&&!previousFocus.current)void loader.current();
+  previousFocus.current=focused;
+  let previousState=AppState.currentState;
+  const subscription=AppState.addEventListener('change',nextState=>{
+   const shouldRefresh=shouldRefreshOnAppResume(previousState,nextState,focused);
+   previousState=nextState;
+   if(shouldRefresh)void loader.current();
+  });
+  return()=>subscription.remove();
+ },[focused,token]);
  useEffect(()=>{if(lastEvent&&['PROGRAM_CREATED','PROGRAM_UPDATED','PROGRAM_COMPLETED','PROGRAM_DELETED'].includes(String(lastEvent.event_type||lastEvent.type)))void loader.current()},[lastEvent]);
  useEffect(()=>{const listener=BackHandler.addEventListener('hardwareBackPress',()=>{if(mutationLock.current)return true;if(copy){setCopy(null);return true}return false});return()=>listener.remove()},[copy]);
  const button=(label:string,action:()=>void,disabled=false,allowWhenUncertain=false)=><Pressable accessibilityRole="button" disabled={!actionIntentReady||disabled||mutationBusy||uncertain&&!allowWhenUncertain} onPress={action} style={{padding:12,minHeight:44,opacity:(!actionIntentReady||disabled||mutationBusy||uncertain&&!allowWhenUncertain)?0.5:1}}><Text style={{color:'#1769AA',fontWeight:'800'}}>{label}</Text></Pressable>;
