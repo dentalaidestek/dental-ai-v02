@@ -1,7 +1,7 @@
 const ts=require('typescript'),fs=require('node:fs'),assert=require('node:assert/strict');
 const {test}=require('node:test');
 require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,filename);
-const {getPatients,getPatient}=require('../src/api.ts');
+const {getPatients,getPatient,getPatientTreatments}=require('../src/api.ts');
 const reply=body=>({ok:true,status:200,text:async()=>JSON.stringify(body)});
 test('duplicate patient conflicts preserve only a valid existing record id',async()=>{
  const {createPatient,ApiError}=require('../src/api.ts');const original=global.fetch;
@@ -280,5 +280,66 @@ test('native patient edit sends the loaded revision and rejects malformed revisi
   assert.equal(body.expected_revision,revision);
   global.fetch=()=>{throw Error('unexpected network call')};
   await assert.rejects(()=>editPatient('token',8,{first_name:'Synthetic',last_name:'Patient',expected_revision:'bad'}),/kayıt sürümü/);
+ }finally{global.fetch=original}
+});
+
+
+test('patient detail accepts only the bounded first treatment page and a valid continuation cursor',async()=>{
+ const original=global.fetch,cursor='A'.repeat(32);
+ const base={patient:{id:8},teeth:[],surfaces:[],treatments:[],media:[]};
+ try{
+  global.fetch=async()=>reply({...base,treatments:[{id:1,treatment_name:'One'},{id:2,treatment_name:'Two'},{id:3,treatment_name:'Three'}],treatments_next_cursor:cursor});
+  assert.equal((await getPatient('token',8)).treatments_next_cursor,cursor);
+  global.fetch=async()=>reply({...base,treatments:[{id:1,treatment_name:'One'},{id:2,treatment_name:'Two'},{id:3,treatment_name:'Three'},{id:4,treatment_name:'Four'}]});
+  await assert.rejects(()=>getPatient('token',8),/beklenmeyen profil/);
+  global.fetch=async()=>reply({...base,treatments_next_cursor:'bad cursor'});
+  await assert.rejects(()=>getPatient('token',8),/beklenmeyen profil/);
+ }finally{global.fetch=original}
+});
+
+test('treatment history pages use the patient-scoped opaque cursor and validate every record',async()=>{
+ const original=global.fetch,cursor='B'.repeat(32),next='C'.repeat(32),calls=[];
+ global.fetch=async(url,init)=>{
+  calls.push({url,init});
+  return reply({items:[{id:7,tooth_number:'36',treatment_name:'Dolgu',edit_revision:'d'.repeat(64),analysis_id:null,created_at:'2026-11-18T10:00:00'}],next_cursor:null});
+ };
+ try{
+  const page=await getPatientTreatments('secret',8,cursor);
+  assert.equal(page.items[0].id,7);
+  assert.match(calls[0].url,new RegExp('/patients/8/treatments\\?cursor='+cursor));
+  assert.equal(calls[0].init.credentials,'omit');
+  assert.equal(calls[0].init.headers.Authorization,'Bearer secret');
+  global.fetch=async()=>reply({items:Array.from({length:20},(_,i)=>({id:i+1,treatment_name:'T'+i,edit_revision:'e'.repeat(64),created_at:'2026-11-18T10:00:00'})),next_cursor:next});
+  assert.equal((await getPatientTreatments('token',8,cursor)).next_cursor,next);
+ }finally{global.fetch=original}
+});
+
+test('invalid patient ids and cursors are rejected before treatment-history network access',async()=>{
+ const original=global.fetch;let calls=0;global.fetch=()=>{calls++;throw Error('unexpected network call')};
+ try{
+  await assert.rejects(()=>getPatientTreatments('token',0,'A'.repeat(32)),/Geçersiz hasta/);
+  await assert.rejects(()=>getPatientTreatments('token',8,'bad'),/imleci geçersiz/);
+  assert.equal(calls,0);
+ }finally{global.fetch=original}
+});
+
+test('malformed, duplicate, cyclic and truncated treatment pages are rejected',async()=>{
+ const {ApiError}=require('../src/api.ts'),original=global.fetch,cursor='D'.repeat(32);
+ const item=id=>({id,treatment_name:'Synthetic',edit_revision:'f'.repeat(64),created_at:'2026-11-18T10:00:00'});
+ const invalid=[
+  {items:[item(1),item(1)],next_cursor:null},
+  {items:[{...item(1),tooth_number:'89'}],next_cursor:null},
+  {items:[{...item(1),edit_revision:'bad'}],next_cursor:null},
+  {items:[{id:1,treatment_name:'Missing date',edit_revision:'f'.repeat(64)}],next_cursor:null},
+  {items:[item(1)],next_cursor:'invalid cursor'},
+  {items:[item(1)],next_cursor:cursor},
+  {items:[],next_cursor:'E'.repeat(32)},
+  {items:Array.from({length:21},(_,i)=>item(i+1)),next_cursor:null}
+ ];
+ try{
+  for(const body of invalid){
+   global.fetch=async()=>reply(body);
+   await assert.rejects(()=>getPatientTreatments('token',8,cursor),error=>error instanceof ApiError&&error.status===502);
+  }
  }finally{global.fetch=original}
 });
