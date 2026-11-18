@@ -151,7 +151,9 @@ def test_native_voice_history_returns_only_owned_completed_voice_approvals(chat,
     assert len(body['revision'])==64
     assert set(body['fields'])=={'medical_history','medications','allergies'}
     assert body['fields']['medical_history']['value']=='Astım'
+    assert body['fields']['medical_history']['quote']==''
     assert body['fields']['medications']['analysis_id']==approved.id
+    assert body['fields']['medications']['quote']==''
     assert 'Must not leak' not in response.text
     assert 'Other owner secret' not in response.text
     assert 'Not completed' not in response.text
