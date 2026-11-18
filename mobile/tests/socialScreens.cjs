@@ -1,17 +1,17 @@
 const ts=require('typescript'),fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),{test}=require('node:test');
 const tick=()=>new Promise(r=>setImmediate(r));
 function harness(){
- const state=[],alerts=[],refs=[],previous=[],effects=[],requests=[],uploads=[],previews=[],posts=[],shared=[],opened=[],getPostCalls=[],storeValues=new Map();let cursor=0,ri=0,ei=0,getPostResponse=null;
+ const state=[],alerts=[],refs=[],previous=[],effects=[],requests=[],uploads=[],previews=[],posts=[],shared=[],opened=[],getPostCalls=[],getModerationCalls=[],storeValues=new Map();let cursor=0,ri=0,ei=0,getPostResponse=null;
  const store={getItemAsync:async k=>storeValues.get(k)||null,setItemAsync:async(k,v)=>storeValues.set(k,v),deleteItemAsync:async k=>storeValues.delete(k)};
  const picker={assets:[],options:null,requestMediaLibraryPermissionsAsync:async()=>({granted:true}),launchImageLibraryAsync:async options=>{picker.options=options;return {canceled:false,assets:picker.assets}}};
  const react={useState:initial=>{const id=cursor++;if(!(id in state))state[id]=typeof initial==='function'?initial():initial;return [state[id],v=>state[id]=typeof v==='function'?v(state[id]):v]},useRef:v=>{const i=ri++;return refs[i]||(refs[i]={current:v})},useEffect:(f,deps)=>{const i=ei++;if(!previous[i]||deps.some((v,j)=>!Object.is(v,previous[i].deps[j])))effects.push(()=>{previous[i]?.cleanup?.();previous[i]={deps,cleanup:f()}})},createElement:(type,props,...children)=>({type,props:{...props,children}})};react.default=react;
  const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8')+'\nexport const __test={PostCard,CommentThread,Composer};';
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText,exports={};
  const native={Alert:{alert:(...args)=>alerts.push(args)},Share:{share:async options=>{shared.push(options);return {action:'sharedAction'}}},Linking:{openURL:async url=>opened.push(url)},Platform:{OS:'ios'},StyleSheet:{create:s=>s},Pressable:'Pressable',Text:'Text',View:'View',Image:'Image',ScrollView:'ScrollView',KeyboardAvoidingView:'KeyboardAvoidingView',Modal:'Modal',SafeAreaView:'SafeAreaView',ActivityIndicator:'ActivityIndicator',FlatList:'FlatList'};
- const api={getPost:async(_t,id)=>{getPostCalls.push([_t,id]);return getPostResponse||{id,author_id:1,author_name:'Expert',text:'Refreshed',status:'PUBLISHED',version:2,owned:true,pinned:false,comments_closed:false,liked:false,like_count:0,comment_count:0,media:[],created_at:'2026-11-17T13:20:00Z'}},getComments:async(...args)=>{requests.push(args);return {items:[{id:20,text:'reply',author_name:'R',parent_id:10}],next_cursor:null}},setFollow:async(_t,_id,followed)=>({following_by_viewer:followed}),socialPostUrl:(authorId,postId)=>'https://dentalai.tr/expert-support/expert/'+authorId+'?post='+postId,socialImageSource:(url,token)=>({uri:url,headers:{Authorization:'Bearer '+token}}),uploadSocialImage:async(_token,file)=>{uploads.push(file);return {id:uploads.length,url:'/api/expert-social/media/'+uploads.length}},getLinkPreview:async(_token,url)=>{previews.push(url);return {available:true,id:77,url,domain:'example.org',site_name:'Example',title:'Example title',description:'Safe preview',cover:{id:81,url:'/api/expert-social/media/81'}}},createPost:async(_token,payload)=>{posts.push(payload);return {id:90,author_id:1,author_name:'Expert',text:payload.text,status:'PUBLISHED',version:1,owned:true,pinned:false,comments_closed:false,liked:false,like_count:0,comment_count:0,media:[],created_at:'2026-11-17'}}};
+ const api={getPost:async(_t,id)=>{getPostCalls.push([_t,id]);return getPostResponse||{id,author_id:1,author_name:'Expert',text:'Refreshed',status:'PUBLISHED',version:2,owned:true,pinned:false,comments_closed:false,liked:false,like_count:0,comment_count:0,media:[],created_at:'2026-11-17T13:20:00Z'}},getPostModerationStatus:async(_t,id)=>{getModerationCalls.push([_t,id]);return moderationResponse||{target_type:'POST',target_id:id,status:'PUBLISHED',version:2,moderation:{registered:true,content_version:2,revision:2,state:'HUMAN_DONE',wait_type:'NONE',reasons:[],reason:'Otomatik kontrol tamamlandı.',retryable:false}}},getComments:async(...args)=>{requests.push(args);return {items:[{id:20,text:'reply',author_name:'R',parent_id:10}],next_cursor:null}},setFollow:async(_t,_id,followed)=>({following_by_viewer:followed}),socialPostUrl:(authorId,postId)=>'https://dentalai.tr/expert-support/expert/'+authorId+'?post='+postId,socialImageSource:(url,token)=>({uri:url,headers:{Authorization:'Bearer '+token}}),uploadSocialImage:async(_token,file)=>{uploads.push(file);return {id:uploads.length,url:'/api/expert-social/media/'+uploads.length}},getLinkPreview:async(_token,url)=>{previews.push(url);return {available:true,id:77,url,domain:'example.org',site_name:'Example',title:'Example title',description:'Safe preview',cover:{id:81,url:'/api/expert-social/media/81'}}},createPost:async(_token,payload)=>{posts.push(payload);return {id:90,author_id:1,author_name:'Expert',text:payload.text,status:'PUBLISHED',version:1,owned:true,pinned:false,comments_closed:false,liked:false,like_count:0,comment_count:0,media:[],created_at:'2026-11-17'}}};
  const draftModule={chunkedDraftStore:()=>store,draftKey:(userId,scope)=>userId+':'+scope,readDraft:async(s,key)=>{const value=await s.getItemAsync(key);return value?JSON.parse(value):null},submitDraft:async(s,key,draft,send)=>{const intent={...draft,attempted:true};await s.setItemAsync(key,JSON.stringify(intent));const result=await send(intent);await s.deleteItemAsync(key);return result}};
  vm.runInNewContext(code,{exports,require:n=>n==='react'?react:n==='react-native'?native:n==='react-native-safe-area-context'?{SafeAreaView:'SafeAreaView'}:n==='./socialApi'?api:n==='./socialDraft'?draftModule:n==='expo-secure-store'?store:n==='expo-image-picker'?picker:n==='expo-crypto'?{randomUUID:()=> 'synthetic-id'}:{}});
- return {alerts,refs,requests,shared,opened,uploads,previews,posts,picker,storeValues,getPostCalls,api,setGetPostResponse:value=>getPostResponse=value,render:(name,props)=>{cursor=ri=ei=0;const tree=exports.__test[name](props);while(effects.length)effects.shift()();return tree}};
+ return {alerts,refs,requests,shared,opened,uploads,previews,posts,picker,storeValues,getPostCalls,getModerationCalls,api,setGetPostResponse:value=>getPostResponse=value,setModerationResponse:value=>moderationResponse=value,render:(name,props)=>{cursor=ri=ei=0;const tree=exports.__test[name](props);while(effects.length)effects.shift()();return tree}};
 }
 function nodes(tree){if(!tree||typeof tree!=='object')return [];return [tree,...(tree.props?.children||[]).flat(Infinity).flatMap(nodes)];}
 const text=n=>typeof n==='string'?n:!n||typeof n!=='object'?'':(n.props?.children||[]).flat(Infinity).map(text).join('');
@@ -35,16 +35,17 @@ test('published Dental Flow cards follow the author and share a canonical post U
  await share.props.onPress();assert.deepEqual(h.shared[0],{message:'https://dentalai.tr/expert-support/expert/7?post=42',url:'https://dentalai.tr/expert-support/expert/7?post=42'});
 });
 
-test('owner pending Dental Flow post displays moderation reason and refreshes authoritative status',async()=>{
+test('owner pending Dental Flow post refreshes only the minimal moderation receipt',async()=>{
  const h=harness(),updates=[],post={id:12,author_id:1,author_name:'Expert',author_specialty:'Ortodonti',text:'Pending',media:[],status:'PENDING',version:1,owned:true,comments_closed:false,liked:false,like_count:0,comment_count:0,created_at:'2026-11-17T13:20:00Z',moderation:{registered:true,content_version:1,revision:1,state:'WAITING_HUMAN',wait_type:'HUMAN_REVIEW',reasons:['IMAGE_REVIEW'],reason:'Görsel yönetici incelemesi bekliyor.',retryable:false}};
- h.setGetPostResponse({...post,status:'PUBLISHED',version:2,moderation:{...post.moderation,state:'HUMAN_DONE',wait_type:'NONE',reason:'Otomatik kontrol tamamlandı.'}});
+ h.setModerationResponse({target_type:'POST',target_id:12,status:'PUBLISHED',version:2,moderation:{...post.moderation,state:'HUMAN_DONE',wait_type:'NONE',reason:'Otomatik kontrol tamamlandı.'}});
  const tree=h.render('PostCard',{token:'synthetic',userId:1,post,showExpertActions:false,onUpdate:p=>updates.push(p),onComments(){},onProfile(){},onImage(){},onEdit(){},onFollow(){},onSupport(){}});
  assert.ok(text(tree).includes('Görsel yönetici incelemesi bekliyor'));
  assert.ok(text(tree).includes('İnceleme bekliyor'));
  const refresh=nodes(tree).find(n=>n.props?.accessibilityLabel==='Yayın durumunu yenile');
  assert.ok(refresh,'owner can refresh the authoritative moderation result');
  await refresh.props.onPress();await tick();
- assert.deepEqual(h.getPostCalls,[['synthetic',12]]);
+ assert.deepEqual(h.getModerationCalls,[['synthetic',12]]);
+ assert.deepEqual(h.getPostCalls,[],'status refresh must not download post text or media');
  assert.equal(updates[0].status,'PUBLISHED');
  assert.equal(updates[0].author_specialty,'Ortodonti','refresh must preserve feed presentation metadata');
 });
@@ -307,3 +308,15 @@ test('Dental Flow keeps a safe link card visible when metadata preview is unavai
  await card.props.onPress();
  assert.deepEqual(h.opened,['https://example.org/article']);
 });
+test('Dental Flow reconnect refresh is event-driven, owner-only and bounded',()=>{
+ const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
+ const helper=fs.readFileSync(require.resolve('../src/socialModerationRefresh.ts'),'utf8');
+ assert.ok(source.includes('AppState.addEventListener("change"'));
+ assert.ok(source.includes('navigation?.addListener?.("focus"'));
+ assert.ok(source.includes('api.getPostModerationStatus'));
+ assert.ok(source.includes('selectOwnedModerationCandidates(pages.items)'));
+ assert.ok(helper.includes('SOCIAL_MODERATION_RESUME_LIMIT = 5'));
+ assert.ok(helper.includes('SOCIAL_MODERATION_RESUME_COOLDOWN_MS = 15_000'));
+ assert.doesNotMatch(source,/setInterval\s*\(/,'reconnect refresh must not introduce polling');
+});
+
