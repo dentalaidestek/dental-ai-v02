@@ -2164,7 +2164,9 @@ async def mobile_patient_media_upload(
                 if existing:
                     session.commit()
                     destination.unlink(missing_ok=True)
-                    return JSONResponse(existing, headers={"Cache-Control": "private, no-store"})
+                    replay_response = JSONResponse(existing)
+                    _mobile_private_no_store(replay_response)
+                    return replay_response
             # The locked patient row makes this cross-request counter atomic across workers.
             batch_count, batch_bytes = _patient_media_batch_usage(session, user, patient_id, batch_id)
             if batch_count >= MAX_PATIENT_MEDIA_FILES:
@@ -2211,7 +2213,9 @@ async def mobile_patient_media_upload(
                     )
                     if existing:
                         session.commit()
-                        return JSONResponse(existing, headers={"Cache-Control": "private, no-store"})
+                        replay_response = JSONResponse(existing)
+                    _mobile_private_no_store(replay_response)
+                    return replay_response
         raise HTTPException(status_code=409, detail="Klinik görüntü işlemi aynı anda tamamlandı. Galeriyi yenileyip işlem fişini doğrulayın.")
     except Exception:
         try:
@@ -2225,7 +2229,9 @@ async def mobile_patient_media_upload(
             logging.exception("Failed to clean local clinical media upload: %s", destination)
         raise
     await _publish_realtime_event(realtime)
-    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
+    upload_response = JSONResponse(result)
+    _mobile_private_no_store(upload_response)
+    return upload_response
 
 
 @router.get("/patients/{patient_id}/media/uploads/{request_key}")
