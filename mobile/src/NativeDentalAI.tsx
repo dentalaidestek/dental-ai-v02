@@ -5,11 +5,13 @@ import{ActivityIndicator,AppState,Pressable,ScrollView,Text,TextInput,View}from"
 import * as SecureStore from "expo-secure-store";
 import{getPatient,getPatients,Patient}from"./api";
 import{getAnalysis,startAnalysisAI,MobileAnalysis,analysisPatientLabel}from"./analysisApi";
+import{analysisNeedsPolling,analysisPollDelay,MAX_ANALYSIS_POLL_ATTEMPTS}from"./analysisRefresh";
 import{useRealtime}from"./realtime";
 
 export default function NativeDentalAI({token,userId,initialAnalysisId,initialPatientId}:{token:string;userId?:number;initialAnalysisId?:number;initialPatientId?:number}){
  const{lastEvent}=useRealtime();
  const[patients,setPatients]=useState<Patient[]>([]),[patientSearch,setPatientSearch]=useState(""),[patientQuery,setPatientQuery]=useState(""),[patientTotal,setPatientTotal]=useState(0),[patientBusy,setPatientBusy]=useState(false),[patientError,setPatientError]=useState(""),[patientId,setPatientId]=useState<number|null>(null),[analysis,setAnalysis]=useState<MobileAnalysis|null>(null),[busy,setBusy]=useState(false),[err,setErr]=useState("");
+ const[pollRevision,setPollRevision]=useState(0);
  const selectedRecord=useRef<Patient|null>(null);const patientsRef=useRef(patients);patientsRef.current=patients;
  const activeId=useRef<number|undefined>(initialAnalysisId), refreshGeneration=useRef(0),patientGeneration=useRef(0),patientPageLock=useRef(false);const actionLock=useRef(false);const actionGeneration=useRef(0);const selectionGeneration=useRef(0);const sessionScope=useRef(`${token}:${userId||0}`);sessionScope.current=`${token}:${userId||0}`;useEffect(()=>{selectionGeneration.current++;actionGeneration.current++;actionLock.current=false;patientGeneration.current++;patientPageLock.current=false;setPatientSearch("");setPatientQuery("");setPatientTotal(0);setPatientBusy(false);setPatientError("");setBusy(false);setPatients([]);selectedRecord.current=null;setPatientId(null);setAnalysis(null);setErr("");activeId.current=initialAnalysisId},[token,userId,initialAnalysisId,initialPatientId]);
  useEffect(()=>{
@@ -30,11 +32,19 @@ export default function NativeDentalAI({token,userId,initialAnalysisId,initialPa
  useEffect(()=>{
   let active=true;
   const subscription=AppState.addEventListener('change',state=>{
-   const id=activeId.current;if(state!=='active'||!id||!patientId)return;
+   if(state!=='active')return;
+   const id=activeId.current,selectedPatient=patientId,scope=sessionScope.current;
+   if(!id||selectedPatient===null){setPollRevision(value=>value+1);return}
    const request=++refreshGeneration.current;
    void getAnalysis(token,id).then(result=>{
-    if(active&&request===refreshGeneration.current&&result.analysis.id===id&&result.analysis.patient_id===patientId)setAnalysis(result);
-   }).catch(e=>{if(active&&request===refreshGeneration.current)setErr(e instanceof Error?e.message:'Analiz yenilenemedi.')});
+    if(active&&request===refreshGeneration.current&&scope===sessionScope.current&&result.analysis.id===id&&result.analysis.patient_id===selectedPatient){
+     setAnalysis(result);setPollRevision(value=>value+1);
+    }
+   }).catch(e=>{
+    if(active&&request===refreshGeneration.current&&scope===sessionScope.current){
+     setErr(e instanceof Error?e.message:'Analiz yenilenemedi.');setPollRevision(value=>value+1);
+    }
+   });
   });
   return()=>{active=false;subscription.remove()};
  },[token,patientId]);
@@ -52,8 +62,38 @@ export default function NativeDentalAI({token,userId,initialAnalysisId,initialPa
  const selectedPatient=selectedRecord.current&&selectedRecord.current.id===patientId?selectedRecord.current:null;
  const choices=selectedRecord.current&&selectedRecord.current.id===patientId&&!patients.some(p=>p.id===patientId)?[selectedRecord.current,...patients]:patients;
  useEffect(()=>()=>{refreshGeneration.current++},[token,analysis?.analysis.id]);
- useEffect(()=>{if(!analysis||!lastEvent)return;const e=lastEvent as any;const id=Number(e.entity_id||e.analysis_id||e.payload?.analysis_id||0);if((e.entity_type==="analysis"||["ANALYSIS_CREATED","ANALYSIS_UPDATED","ANALYSIS_COMPLETED","VISION_READY"].includes(String(e.event_type||e.type)))&&id===analysis.analysis.id){const generation=++refreshGeneration.current,scope=sessionScope.current,selectedPatient=patientId,analysisId=analysis.analysis.id;getAnalysis(token,analysisId).then(result=>{if(generation===refreshGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&activeId.current===analysisId&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient)setAnalysis(result)}).catch(()=>{})}},[lastEvent,analysis?.analysis.id,token,patientId]);
- useEffect(()=>{const current=analysis?.analysis;if(!current||["AI_ANALYZED","COMPLETED","FAILED","ERROR","CANCELLED"].includes(String(current.status).toUpperCase()))return;let disposed=false,inFlight=false;const scope=sessionScope.current,analysisId=current.id;const timer=setInterval(()=>{if(disposed||inFlight||AppState.currentState!=="active"||scope!==sessionScope.current)return;inFlight=true;const request=++refreshGeneration.current;void getAnalysis(token,analysisId).then(result=>{if(!disposed&&scope===sessionScope.current&&request===refreshGeneration.current&&activeId.current===analysisId&&patientId!==null&&current.patient_id===patientId&&result.analysis.id===analysisId&&result.analysis.patient_id===patientId)setAnalysis(result)}).catch(()=>{}).finally(()=>{inFlight=false})},15000);return()=>{disposed=true;clearInterval(timer)}},[token,analysis?.analysis.id,analysis?.analysis.status,userId,patientId]);
+ useEffect(()=>{if(!analysis||!lastEvent)return;const e=lastEvent as any;const id=Number(e.entity_id||e.analysis_id||e.payload?.analysis_id||0);if((e.entity_type==="analysis"||["ANALYSIS_CREATED","ANALYSIS_UPDATED","ANALYSIS_COMPLETED","VISION_READY"].includes(String(e.event_type||e.type)))&&id===analysis.analysis.id){const generation=++refreshGeneration.current,scope=sessionScope.current,selectedPatient=patientId,analysisId=analysis.analysis.id;getAnalysis(token,analysisId).then(result=>{if(generation===refreshGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&activeId.current===analysisId&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient){setAnalysis(result);setPollRevision(value=>value+1)}}).catch(()=>{})}},[lastEvent,analysis?.analysis.id,token,patientId]);
+ useEffect(()=>{
+  if(!analysis||!analysisNeedsPolling(analysis)||patientId===null)return;
+  let disposed=false,attempts=0;
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  const scope=sessionScope.current,analysisId=analysis.analysis.id,selectedPatient=patientId;
+  const schedule=(attempt:number)=>{if(!disposed)timer=setTimeout(()=>void poll(),analysisPollDelay(attempt));};
+  const poll=async()=>{
+   if(disposed||scope!==sessionScope.current||AppState.currentState!=="active")return;
+   if(attempts>=MAX_ANALYSIS_POLL_ATTEMPTS){
+    if(!disposed&&scope===sessionScope.current)setErr("Analiz sunucuda sürüyor. Otomatik kontrol sınırına ulaşıldı; Sonucu Yenile ile devam edin.");
+    return;
+   }
+   const attempt=attempts++,request=++refreshGeneration.current;
+   try{
+    const result=await getAnalysis(token,analysisId);
+    if(disposed||scope!==sessionScope.current||request!==refreshGeneration.current||activeId.current!==analysisId||
+       patientId!==selectedPatient||result.analysis.id!==analysisId||result.analysis.patient_id!==selectedPatient)return;
+    setAnalysis(result);
+    if(analysisNeedsPolling(result)){
+     if(attempts<MAX_ANALYSIS_POLL_ATTEMPTS)schedule(attempts);
+     else setErr("Analiz sunucuda sürüyor. Otomatik kontrol sınırına ulaşıldı; Sonucu Yenile ile devam edin.");
+    }
+   }catch{
+    if(disposed||scope!==sessionScope.current)return;
+    if(attempts<MAX_ANALYSIS_POLL_ATTEMPTS)schedule(attempts);
+    else setErr("Analiz durumu otomatik doğrulanamadı. Yeniden denemek için Sonucu Yenile.");
+   }
+  };
+  schedule(0);
+  return()=>{disposed=true;if(timer)clearTimeout(timer)};
+ },[token,analysis?.analysis.id,analysis?.analysis.status,analysis?.job?.id,analysis?.job?.status,userId,patientId,pollRevision]);
  async function openUploaded(id:number){
   const scope=sessionScope.current,selectedPatient=patientId,selection=selectionGeneration.current;
   if(!selectedPatient||!Number.isSafeInteger(id)||id<=0)return;
@@ -77,7 +117,7 @@ export default function NativeDentalAI({token,userId,initialAnalysisId,initialPa
     }catch{ /* Secure-store failure must not invalidate an authorized on-screen result. */ }
   }
  }
- async function refresh(){if(!analysis||actionLock.current)return;actionLock.current=true;const generation=++actionGeneration.current,scope=sessionScope.current,analysisId=analysis.analysis.id,selectedPatient=patientId;setBusy(true);try{const result=await getAnalysis(token,analysisId);if(generation===actionGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient)setAnalysis(result)}catch(e:any){if(generation===actionGeneration.current&&scope===sessionScope.current)setErr(e?.message||"Durum alınamadı.")}finally{if(generation===actionGeneration.current&&scope===sessionScope.current){actionLock.current=false;setBusy(false)}}}
+ async function refresh(){if(!analysis||actionLock.current)return;actionLock.current=true;const generation=++actionGeneration.current,scope=sessionScope.current,analysisId=analysis.analysis.id,selectedPatient=patientId;setBusy(true);try{const result=await getAnalysis(token,analysisId);if(generation===actionGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient){setAnalysis(result);setPollRevision(value=>value+1);setErr("")}}catch(e:any){if(generation===actionGeneration.current&&scope===sessionScope.current)setErr(e?.message||"Durum alınamadı.")}finally{if(generation===actionGeneration.current&&scope===sessionScope.current){actionLock.current=false;setBusy(false)}}}
  async function start(){if(!analysis||actionLock.current)return;actionLock.current=true;const generation=++actionGeneration.current,scope=sessionScope.current,analysisId=analysis.analysis.id,selectedPatient=patientId;setBusy(true);setErr("");try{if(selectedPatient===null||analysis.analysis.patient_id!==selectedPatient)throw Error("Analiz kimliği seçili hastayla eşleşmiyor.");await startAnalysisAI(token,analysisId);if(generation!==actionGeneration.current||scope!==sessionScope.current)return;const result=await getAnalysis(token,analysisId);if(generation===actionGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient)setAnalysis(result)}catch(e:any){if(generation===actionGeneration.current&&scope===sessionScope.current)setErr(e?.message||"Analiz başlatılamadı.")}finally{if(generation===actionGeneration.current&&scope===sessionScope.current){actionLock.current=false;setBusy(false)}}}
  return <View style={{paddingBottom:30}}>
   <Text style={{fontSize:13,fontWeight:"800",color:"#718096",marginBottom:8}}>Hasta seç</Text>
