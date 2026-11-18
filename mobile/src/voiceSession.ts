@@ -106,7 +106,7 @@ export function markVoiceSegmentTranscribed(draft:VoiceDraft,id:string,transcrip
  if(!segment||segment.transcribed)return draft;
  if(!segment.ready)throw Error('Ses bölümü tamamlanmadan yazıya çevrilemez.');
  if(typeof transcript!=='string'||!transcript.trim())throw Error('Ses kaydından konuşma metni alınamadı.');
- const next=[draft.transcript.trim(),transcript.trim()].filter(Boolean).join('\\n');
+ const next=[draft.transcript.trim(),transcript.trim()].filter(Boolean).join('\n');
  if(next.length>VOICE_TEXT_LIMIT||voiceUtf8Bytes(next)>VOICE_TEXT_BYTE_LIMIT)
   throw Error('Muayene metni 72.000 karakter / 216 KB sınırına ulaştı. Ses dosyası korunuyor; metni kontrol edip muayeneyi bitirin.');
  return {
@@ -123,4 +123,32 @@ export function removeVoiceSegment(draft:VoiceDraft,id:string):VoiceDraft{
  if(!segment)return draft;
  if(!segment.transcribed)throw Error('Yazıya çevrilmemiş ses bölümü taslaktan kaldırılamaz.');
  return {...draft,segments:draft.segments.filter(item=>item.id!==id),updatedAt:Date.now()};
+}
+
+
+export type VoiceSegmentFileInfo={exists:boolean;size?:number};
+
+/** Mark a recovered private-cache segment uploadable only after file validation. */
+export function markVoiceSegmentReady(draft:VoiceDraft,id:string):VoiceDraft{
+ const segment=draft.segments.find(item=>item.id===id);
+ if(!segment||segment.ready||segment.transcribed)return draft;
+ return {...draft,segments:draft.segments.map(item=>item.id===id?{...item,ready:true}:item),updatedAt:Date.now()};
+}
+
+/** Explicitly discard only an interrupted, not-yet-transcribed segment. */
+export function discardInterruptedVoiceSegment(draft:VoiceDraft,id:string):VoiceDraft{
+ const segment=draft.segments.find(item=>item.id===id);
+ if(!segment)return draft;
+ if(segment.transcribed)throw Error('Yazıya çevrilmiş ses bölümü temizleme fişi olmadan kaldırılamaz.');
+ if(segment.ready)throw Error('Tamamlanmış ses bölümü bu işlemle kaldırılamaz.');
+ return {...draft,segments:draft.segments.filter(item=>item.id!==id),updatedAt:Date.now()};
+}
+
+/** Recover only a direct private-cache file inside the server's byte contract. */
+export function recoverInterruptedVoiceSegment(draft:VoiceDraft,id:string,info:VoiceSegmentFileInfo):VoiceDraft{
+ const segment=draft.segments.find(item=>item.id===id);
+ if(!segment||segment.ready||segment.transcribed)return draft;
+ if(info.exists===false)return discardInterruptedVoiceSegment(draft,id);
+ if(info.exists!==true||typeof info.size!=='number'||!Number.isFinite(info.size)||info.size<100||info.size>8*1024*1024)return draft;
+ return markVoiceSegmentReady(draft,id);
 }
