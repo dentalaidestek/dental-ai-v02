@@ -125,7 +125,7 @@ export async function extractVoice(token:string,patientId:number,transcript:stri
  const chunks=splitVoiceTranscript(transcript);
  if(!chunks.length)throw Error("Muayene metni boş olamaz. Metniniz korunuyor.");
  const sessionId=options.sessionId||("ephemeral_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2));
- if(!/^[A-Za-z0-9_-]{16,96}$/.test(sessionId))throw Error("Muayene oturum anahtarı doğrulanamadı.");
+ if(!/^[A-Za-z0-9_-]{16,80}$/.test(sessionId))throw Error("Muayene oturum anahtarı doğrulanamadı.");
  let cursor=0,revision="",review:VoiceExtraction["review"]|undefined;
  if(options.resume){
   const saved=options.resume;
