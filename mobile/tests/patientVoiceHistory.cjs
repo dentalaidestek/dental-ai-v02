@@ -1,15 +1,33 @@
 const fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),assert=require('node:assert/strict'),{test}=require('node:test'),React=require('react'),renderer=require('react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
-const presentation={};
+const presentation={},resumePolicy={};
 const helperCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/patientVoiceHistoryPresentation.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
 vm.runInNewContext(helperCode,{exports:presentation});
+const refreshCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/patientVoiceHistoryRefresh.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+vm.runInNewContext(refreshCode,{exports:resumePolicy});
 const history=(value='Olumsuz beyan: sistemik rahatsızlık yok')=>({ok:true,revision:'a'.repeat(64),notice:'Önceki hekim onaylı sesli muayene kayıtlarıdır.',fields:{medical_history:{value,quote:value,analysis_id:17},medications:{value:'Metformin beyanı',quote:'Metformin kullanıyorum',analysis_id:17},allergies:{value:'Olmadığı belirtildi: penisilin alerjisi',quote:'Alerjim yok',analysis_id:17}}});
-function mount(getVoiceHistory){
+function mount(getVoiceHistory,initialAppState='active'){
  const source=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativePatientVoiceHistory.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2020}}).outputText;
- const exports={},native={ActivityIndicator:'ActivityIndicator',Pressable:'Pressable',Text:'Text',View:'View'};
+ const exports={},listeners=new Set(),focusState={current:true};
+ const native={
+  ActivityIndicator:'ActivityIndicator',Pressable:'Pressable',Text:'Text',View:'View',
+  AppState:{
+   currentState:initialAppState,
+   addEventListener:(event,listener)=>{
+    assert.equal(event,'change');listeners.add(listener);
+    return {remove:()=>listeners.delete(listener)};
+   }
+  }
+ };
  let event=null;
- vm.runInNewContext(source,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true}:name==='./voiceApi'?{getVoiceHistory}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:name==='./patientVoiceHistoryPresentation'?presentation:{default:name.slice(2)}});
- return {Component:exports.default,setEvent:value=>{event=value}};
+ vm.runInNewContext(source,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./voiceApi'?{getVoiceHistory}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:name==='./patientVoiceHistoryPresentation'?presentation:name==='./patientVoiceHistoryRefresh'?resumePolicy:{default:name.slice(2)}});
+ return {
+  Component:exports.default,
+  setEvent:value=>{event=value},
+  setAppState:state=>{native.AppState.currentState=state;for(const listener of [...listeners])listener(state)},
+  setFocused:value=>{focusState.current=value},
+  listenerCount:()=>listeners.size,
+ };
 }
 const content=node=>typeof node==='string'?node:Array.isArray(node)?node.map(content).join(''):node?.children?node.children.map(content).join(''):'';
 const press=(tree,label)=>tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(item=>content(item)===label));
@@ -67,4 +85,77 @@ test('failed profile refresh hides the previously loaded clinical values',async(
  assert.ok(rendered.includes('Güncel anamnez yenilenemedi'));
  assert.equal(rendered.includes('Önceki onaylı ilaç beyanı'),false);
  await renderer.act(async()=>tree.unmount());
+});
+
+test('resume policy refreshes only a focused screen after background or inactive transitions',()=>{
+ const shouldRefresh=resumePolicy.shouldRefreshPatientVoiceHistoryOnResume;
+ assert.equal(shouldRefresh('background','active',true),true);
+ assert.equal(shouldRefresh('inactive','active',true),true);
+ assert.equal(shouldRefresh('active','active',true),false);
+ assert.equal(shouldRefresh('background','active',false),false);
+ assert.equal(shouldRefresh('active','background',true),false);
+ assert.equal(shouldRefresh('background','inactive',true),false);
+ assert.equal(shouldRefresh(null,'active',true),false);
+});
+
+test('approved anamnesis refreshes once when the focused app returns from background',async()=>{
+ let calls=0;const api=mount(async()=>history('foreground snapshot '+(++calls)));let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(api.Component,{token:'owner-token',patientId:8}));await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(calls,1);
+ await renderer.act(async()=>{
+  api.setAppState('background');
+  api.setAppState('active');
+  api.setAppState('active');
+  await new Promise(resolve=>setImmediate(resolve));
+ });
+ assert.equal(calls,2,'repeated active notifications must not create duplicate reads');
+ assert.ok(content(tree.toJSON()).includes('foreground snapshot 2'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('a blurred patient profile does not refresh on app resume and refreshes when focused again',async()=>{
+ let calls=0;const api=mount(async()=>history('focus snapshot '+(++calls)));let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(api.Component,{token:'owner-token',patientId:8}));await new Promise(resolve=>setImmediate(resolve))});
+ api.setFocused(false);
+ await renderer.act(async()=>tree.update(React.createElement(api.Component,{token:'owner-token',patientId:8})));
+ await renderer.act(async()=>{
+  api.setAppState('background');api.setAppState('active');
+  await new Promise(resolve=>setImmediate(resolve));
+ });
+ assert.equal(calls,1,'a non-visible patient screen must not fetch clinical history');
+ api.setFocused(true);
+ await renderer.act(async()=>{tree.update(React.createElement(api.Component,{token:'owner-token',patientId:8}));await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(calls,2,'navigation focus still refreshes the selected patient');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('a late resume response cannot replace anamnesis after switching patient',async()=>{
+ let patientEightCalls=0,resolveResume;
+ const api=mount(async(_token,id)=>{
+  if(id===8){patientEightCalls++;if(patientEightCalls===1)return history('patient eight initial');return new Promise(resolve=>{resolveResume=resolve});}
+  return history('patient nine current');
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(api.Component,{token:'owner-token',patientId:8}));await new Promise(resolve=>setImmediate(resolve))});
+ await renderer.act(async()=>{
+  api.setAppState('background');api.setAppState('active');
+  await Promise.resolve();
+ });
+ assert.equal(typeof resolveResume,'function');
+ await renderer.act(async()=>{tree.update(React.createElement(api.Component,{token:'owner-token',patientId:9}));await new Promise(resolve=>setImmediate(resolve))});
+ await renderer.act(async()=>{resolveResume(history('private patient eight late response'));await new Promise(resolve=>setImmediate(resolve))});
+ const rendered=content(tree.toJSON());
+ assert.ok(rendered.includes('patient nine current'));
+ assert.equal(rendered.includes('private patient eight late response'),false);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('anamnesis AppState listener is removed when the patient profile unmounts',async()=>{
+ let calls=0;const api=mount(async()=>history('only current '+(++calls)));let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(api.Component,{token:'owner-token',patientId:8}));await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(api.listenerCount(),1);
+ await renderer.act(async()=>tree.unmount());
+ assert.equal(api.listenerCount(),0);
+ api.setAppState('background');api.setAppState('active');
+ assert.equal(calls,1,'an unmounted patient screen must not issue background clinical reads');
 });
