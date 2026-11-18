@@ -781,3 +781,8 @@ Regression coverage added in `mobile/tests/voiceWorkflow.cjs`, `tests/voice_live
 Commits: `6f9add4`, `24c9e23`, `1c21765`, `6ea169a`, `b2dfcf1`, `8cd747d`, `bd1bc9e`, `272979d`, `d559e27`, `fad4c8f`, `1b4c4e8`, `6c5c2e6`, `9a7edae`, `917aef9`, `e528967`, `051b7f9`.
 
 Tests are committed but not executed. The current-head workflow has no run/check; earlier hosted jobs had runner ID 0, empty steps and missing log blobs. Physical Android/iOS and real-browser acceptance remain open. No main merge or production deploy.
+
+
+## Program cache privacy and day grouping — 2026-11-19
+
+Web-first review of `program.html`, `mobile_program_api.py`, the shared `_mobile_private_no_store` helper and native `NativeProgram` found two gaps: account-scoped Program responses lacked explicit private/no-store headers, and the native weekly occurrence list did not identify the date for each day's events. All nine Program response paths now use `Cache-Control: private, no-store`, `Pragma: no-cache` and `Vary: Authorization`. Native event lists now add one accessible date heading per date boundary, including correct continuation across appended cursor pages. Python route-header and native renderer regressions are committed and already registered in Security Recovery / `npm run test:beta`; neither suite was executed in this connector-only run. Details: `docs/mobile-program-cache-and-day-groups-20261119.md`. No migration, main merge or deploy.
