@@ -70,6 +70,13 @@ export type SocialPost = {
   created_at: string;
   moderation?: SocialModeration;
 };
+export type SocialModerationStatus = {
+  target_type: "POST";
+  target_id: number;
+  status: "PUBLISHED" | "PENDING" | "REJECTED";
+  version: number;
+  moderation: SocialModeration;
+};
 export type SocialComment = {
   id: number;
   author_id: number;
@@ -347,6 +354,63 @@ export async function getPost(t: string, id: number): Promise<SocialPost> {
   }
   return post as unknown as SocialPost;
 }
+export async function getPostModerationStatus(
+  t: string,
+  id: number,
+): Promise<SocialModerationStatus> {
+  if (!Number.isSafeInteger(id) || id < 1) {
+    throw new Error("Geçersiz gönderi kimliği.");
+  }
+  const value = await socialRequest<unknown>(
+    t,
+    `/moderation-status/POST/${id}`,
+  );
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ApiError(502, "Yayın inceleme yanıtı doğrulanamadı.");
+  }
+  const result = value as Record<string, unknown>;
+  const moderation = result.moderation as Record<string, unknown> | null;
+  const states = [
+    "WAITING_HUMAN",
+    "WAITING_OWNER",
+    "FAILED",
+    "RUNNING",
+    "AUTO_DONE",
+    "HUMAN_DONE",
+  ];
+  if (
+    result.target_type !== "POST" ||
+    result.target_id !== id ||
+    !["PUBLISHED", "PENDING", "REJECTED"].includes(String(result.status)) ||
+    !Number.isSafeInteger(result.version) ||
+    (result.version as number) < 1 ||
+    !moderation ||
+    typeof moderation !== "object" ||
+    Array.isArray(moderation) ||
+    typeof moderation.registered !== "boolean" ||
+    !states.includes(String(moderation.state)) ||
+    typeof moderation.wait_type !== "string" ||
+    moderation.wait_type.length > 80 ||
+    typeof moderation.reason !== "string" ||
+    moderation.reason.length > 1000 ||
+    !Array.isArray(moderation.reasons) ||
+    moderation.reasons.length > 12 ||
+    moderation.reasons.some(
+      (reason) => typeof reason !== "string" || reason.length > 80,
+    ) ||
+    typeof moderation.retryable !== "boolean"
+  ) {
+    throw new ApiError(502, "Yayın inceleme alanları doğrulanamadı.");
+  }
+  return {
+    target_type: "POST",
+    target_id: id,
+    status: result.status as SocialModerationStatus["status"],
+    version: result.version as number,
+    moderation: moderation as unknown as SocialModeration,
+  };
+}
+
 export const getSocialStats = (t: string, id: number) =>
   socialRequest<{
     followers: number;
