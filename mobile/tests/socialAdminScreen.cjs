@@ -10,7 +10,7 @@ test('native moderation grant stays in memory and closes on blur, background and
  assert.match(source,/isStepUpRequired\(e\)/);
  assert.match(source,/clearGrant\(true\)/);
  assert.match(source,/setChallengeSent\(false\)/);
- assert.match(source,/setCode\(" "\)|setCode\(""/);
+ assert.match(source,/setCode\(""/);
  assert.doesNotMatch(source,/SecureStore|AsyncStorage|setItemAsync|localStorage/);
 });
 
