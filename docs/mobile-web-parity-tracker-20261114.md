@@ -701,3 +701,16 @@ Tests are committed, not yet executed. Starting HEAD `365ddb4740e88ca25728e562b1
 ## 2026-11-18 — Durable clinical-media object cleanup
 
 Web-first review of the patient gallery and native media API found that database deletion could commit before R2 object deletion. A failed remote delete then left an unreferenced clinical object without a durable retry record; delete-all also loaded all rows and performed remote deletes synchronously. The existing WorkGarbage queue now accepts only strict server-generated web/native patient-media object keys, records cleanup in the same transaction as metadata deletion, protects any object still referenced by a live PatientMedia row, and retries storage failures after five minutes. Web delete-all processes 100-row chunks under the patient row lock to bound ORM memory. The native single-delete route uses the same queue. New focused tests cover allow-listing, dedupe, rollback, live-reference protection and retry. No schema migration or new service. Tests are committed, not run; Actions runner evidence remains a pre-step failure, not a source-test result. No main merge or production deployment.
+
+
+## 2026-11-18 — Dental Akış yönetici MFA sınırı ve web kuyruk yarış düzeltmesi
+
+Web-first review: `admin_social.html`, `expert-social-admin.js`, `expert_social_api.py` and `main.py` admin login/OTP. A real web UI race was found: changing kind/status or switching from moderation queue to reports while a request was in flight silently discarded the new load because one global loading flag blocked it. The old response could then remain visible under the newly selected filter. The web queue now snapshots mode/kind/status/cursor per request and uses a generation guard; reset loads supersede stale requests while pagination stays single-flight. Item pages are bounded to 30.
+
+A security review confirmed native admin moderation must remain closed for now: `actor()` deliberately does not populate `social_admin` for Bearer requests, while `admin()` requires `_admin_only` cookie + `AdminVerifiedSession` created only after the fixed-mailbox OTP flow. A role-only native screen would bypass the current second factor. No native admin endpoint or fake admin button was added. A dedicated short-lived/revocable native step-up/MFA contract is the blocker before native admin queue parity.
+
+Added `tests/expert_social_admin_queue.cjs` for stale filter/mode response suppression and expanded `tests/expert_social/test_native_auth.py` across queue, reports, detail and decision routes, including verified-cookie non-transfer to Bearer requests. Registered Node and Python regressions in manual-only Admin Security/Security Recovery workflows.
+
+Commits in this batch: `af0fe88`, `7cc7312`, `ed29a6f`, `be21348`, `ff5a3ea`, `a629c0b`.
+
+The new Node/pytest tests are committed but were not executed in this connector runtime. Full mobile typecheck, beta suite, Expo export, Gradle and physical-device tests remain unverified. Workflows remain `workflow_dispatch` only; no dispatch was sent. No main merge, live deploy, production migration or admin decision.
