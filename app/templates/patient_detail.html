@@ -132,6 +132,12 @@
                 <button type="button" class="patient-media-pick patient-media-radiograph" data-media-type="RADIOGRAPH">🩻 <span>Röntgen Ekle</span></button>
                 <button type="button" class="patient-media-pick patient-media-photo" data-media-type="PHOTO">📷 <span>Fotoğraf Ekle</span></button>
             </div>
+            <div class="patient-media-metadata-fields">
+                <label for="patientMediaToothNumber">FDI diş numarası (isteğe bağlı)</label>
+                <input type="text" id="patientMediaToothNumber" name="tooth_number" inputmode="numeric" pattern="(1[1-8]|2[1-8]|3[1-8]|4[1-8])" maxlength="2" placeholder="Örn: 36">
+                <label for="patientMediaNote">Klinik not (isteğe bağlı)</label>
+                <textarea id="patientMediaNote" name="note" maxlength="2000" rows="2" placeholder="Görüntüye ait kısa klinik not"></textarea>
+            </div>
             <p class="muted">Klinik arşive tek seferde en fazla {{ patient_media_upload_limit|default(12) }} görüntü ekleyebilirsiniz. Bir AI analizinde kayıtlı ve yeni görüntülerin toplamı en fazla {{ analysis_image_limit }} olabilir.</p>
             <div class="patient-media-pending" id="patientMediaPending" hidden>
                 <span id="patientMediaSelected">Henüz görüntü seçilmedi.</span>
