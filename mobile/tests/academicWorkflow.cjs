@@ -10,11 +10,12 @@ const running={id:12,status:'RUNNING',stage:'Synthetic generation',question:'Syn
 test('academic cancellation uses the selected course and validates the run id',async()=>{const calls=[],a=api(async(...args)=>{calls.push(args);return{run:{...running,status:'CANCELLED',stage:'Kullanıcı tarafından iptal edildi',partial:'',error:'Bu çalışma iptal edildi.'}}});const result=await a.cancelRun('token',3,12);assert.equal(result.status,'CANCELLED');assert.equal(calls[0][0],'/academic/courses/3/runs/12/cancel');assert.equal(calls[0][1],'token');assert.equal(calls[0][2].method,'POST');await assert.rejects(a.cancelRun('token',3,0));});
 test('academic file access rejects external and cross-course bearer destinations',()=>{const a=api();assert.equal(a.academicFilePath(1,'/notes/courses/1/ai/messages/2/pdf?part=1'),'/api/mobile/v1/academic/courses/1/messages/2/pdf?part=1');for(const p of ['https://evil.test','/api/mobile/v1/academic/courses/2/materials/1/file','/api/mobile/v1/academic/courses/1/materials/../file','/notes/courses/1/ai/messages/2/pdf?other=1'])assert.throws(()=>a.academicFilePath(1,p));});
 test('academic persisted intent is user and course bound and rejects malformed work',()=>{const a=api(),v={user:1,course:3,request_key:'synthetic-key-0001',message:'Synthetic question'};assert.equal(a.parseIntent(JSON.stringify(v),1,3).message,v.message);assert.throws(()=>a.parseIntent(JSON.stringify(v),2,3));assert.throws(()=>a.parseIntent(JSON.stringify(v),1,4));assert.throws(()=>a.parseIntent(JSON.stringify({...v,message:''}),1,3));assert.throws(()=>a.validateRun({run:{...running,status:'mystery'}}));});
-function ui(overrides={},saved=null,timerApi={}){const exports={},calls=[],storage=new Map(),a=api();if(saved)storage.set('dai.academic.run.1.3',JSON.stringify(saved));const native={StyleSheet:{create:x=>x},Platform:{OS:'android'},Alert:{alert(){}},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','KeyboardAvoidingView','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};native.FlatList=props=>React.createElement('FlatList',props,props.ListHeaderComponent,...props.data.map((item,index)=>React.createElement(React.Fragment,{key:index},props.renderItem({item,index}))),props.ListFooterComponent,props.data.length?null:props.ListEmptyComponent);
- const endpoint={...a,library:async()=>({items:[{id:3,title:'Synthetic course'}],next_before:null}),workspace:async()=>({course:{id:3,title:'Synthetic course'},materials:[],max_file_bytes:157286400,max_upload_count:12,next_before:null}),timeline:async()=>({items:[],next_before:null}),quizzes:async()=>({quizzes:[]}),indexStatus:async()=>({ready:true,state:'ready',total:1,completed:1,files:[]}),learning:async()=>({learning:{practiced_facts:0,due_count:0,correct:0,wrong:0,weak_count:0,review:[]}}),activeRun:async()=>null,receipt:async()=>null,createRun:async(_t,_c,intent)=>{calls.push(intent);return running},...overrides};
+function ui(overrides={},saved=null,timerApi={}){const exports={},calls=[],courseCalls=[],storage=new Map(),a=api();if(saved)storage.set('dai.academic.run.1.3',JSON.stringify(saved));const native={StyleSheet:{create:x=>x},Platform:{OS:'android'},Alert:{alert(){}},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','KeyboardAvoidingView','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};native.FlatList=props=>React.createElement('FlatList',props,props.ListHeaderComponent,...props.data.map((item,index)=>React.createElement(React.Fragment,{key:index},props.renderItem({item,index}))),props.ListFooterComponent,props.data.length?null:props.ListEmptyComponent);
+ const endpoint={...a,library:async()=>({items:[{id:3,title:'Synthetic course'}],next_before:null}),courseCreateReceipt:async()=>null,createCourse:async(_t,title,description,request_key)=>{courseCalls.push({title,description,request_key});return{course:{id:4,title,description},materials:[],max_file_bytes:157286400,max_upload_count:12,next_before:null}},workspace:async()=>({course:{id:3,title:'Synthetic course'},materials:[],max_file_bytes:157286400,max_upload_count:12,next_before:null}),timeline:async()=>({items:[],next_before:null}),quizzes:async()=>({quizzes:[]}),indexStatus:async()=>({ready:true,state:'ready',total:1,completed:1,files:[]}),learning:async()=>({learning:{practiced_facts:0,due_count:0,correct:0,wrong:0,weak_count:0,review:[]}}),activeRun:async()=>null,receipt:async()=>null,createRun:async(_t,_c,intent)=>{calls.push(intent);return running},...overrides};
  const secure={getItemAsync:async k=>storage.get(k)||null,setItemAsync:async(k,v)=>storage.set(k,v),deleteItemAsync:async k=>storage.delete(k)};
- vm.runInNewContext(compile('../src/NativeAcademic.tsx'),{exports,setTimeout:timerApi.setTimeout||setTimeout,clearTimeout:timerApi.clearTimeout||clearTimeout,AbortController,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{useIsFocused:()=>true}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=> '00000000-0000-4000-8000-000000000001'}:n==='./socialDraft'?{chunkedDraftStore:()=>secure}:n==='./academicApi'?endpoint:n==='./NativeAcademicComposer'?{default:composerComponent(native)}:n==='expo-document-picker'?{getDocumentAsync:async()=>({canceled:true})}:n==='./nativeAcademicFiles'?{uploadAcademic:async()=>{}}:{default:'NativeAcademicFile'}});return{Component:exports.default,calls,storage,endpoint};}
-async function open(h){let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1})));const course=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(c=>text(c)==='Synthetic course'));await renderer.act(async()=>course.props.onPress());return tree}
+ vm.runInNewContext(compile('../src/NativeAcademic.tsx'),{exports,setTimeout:timerApi.setTimeout||setTimeout,clearTimeout:timerApi.clearTimeout||clearTimeout,AbortController,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{useIsFocused:()=>true}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=> '00000000-0000-4000-8000-000000000001'}:n==='./socialDraft'?{chunkedDraftStore:()=>secure}:n==='./academicApi'?endpoint:n==='./NativeAcademicComposer'?{default:composerComponent(native)}:n==='expo-document-picker'?{getDocumentAsync:async()=>({canceled:true})}:n==='./nativeAcademicFiles'?{uploadAcademic:async()=>{}}:{default:'NativeAcademicFile'}});return{Component:exports.default,calls,courseCalls,storage,endpoint};}
+async function openLibrary(h){let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1})));return tree}
+async function open(h){const tree=await openLibrary(h);const course=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(c=>text(c)==='Synthetic course'));await renderer.act(async()=>course.props.onPress());return tree}
 test('native academic starts a durable job once despite rapid double tap',async()=>{const h=ui(),tree=await open(h);await renderer.act(async()=>tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Akademik soru').props.onChangeText('Synthetic question'));await renderer.act(async()=>{const b=button(tree,'Gönder');b.props.onPress();b.props.onPress();await new Promise(r=>setImmediate(r))});assert.equal(h.calls.length,1);assert.equal(h.calls[0].message,'Synthetic question');assert.ok(text(tree.toJSON()).includes('RUNNING'));assert.equal(button(tree,'20 Soru Hazırla').props.disabled,true);await renderer.act(async()=>tree.unmount())});
 test('uncertain study creation reuses persisted UUID and exact question after reopen',async()=>{const saved={user:1,course:3,request_key:'synthetic-existing-key',message:'Original synthetic question'},calls=[],h=ui({createRun:async(_t,_c,intent)=>{calls.push(intent);return running}},saved),tree=await open(h);await renderer.act(async()=>button(tree,'Aynı İsteği Doğrula / Sürdür').props.onPress());assert.equal(calls.length,1);assert.equal(calls[0].request_key,saved.request_key);assert.equal(calls[0].message,saved.message);assert.equal(h.storage.size,0);await renderer.act(async()=>tree.unmount())});
 test('known server receipt restores the existing job without another generation',async()=>{const saved={user:1,course:3,request_key:'synthetic-existing-key',message:'Original synthetic question'},h=ui({receipt:async()=>running},saved),tree=await open(h);assert.equal(h.calls.length,0);assert.ok(text(tree.toJSON()).includes('RUNNING'));assert.equal(h.storage.size,0);await renderer.act(async()=>tree.unmount())});
@@ -207,3 +208,53 @@ test('uncertain Academic course creation survives restart and opens only after a
  assert.equal(h.storage.has(key),false);
  await renderer.act(async()=>reopened.unmount());
 });
+
+test('native course creation persists a stable request key and retries the exact payload',async()=>{
+ const calls=[];let attempts=0;
+ const h=ui({
+  createCourse:async(_t,title,description,key)=>{
+   calls.push({title,description,key});
+   if(attempts++===0)throw Error('Synthetic lost response');
+   return{course:{id:4,title,description},materials:[],max_file_bytes:157286400,max_upload_count:12,next_before:null};
+  },
+  courseCreateReceipt:async()=>null
+ });
+ const tree=await openLibrary(h);
+ const fields=tree.root.findAllByType('TextInput');
+ await renderer.act(async()=>fields.find(n=>n.props.placeholder==='Ders adı').props.onChangeText('Synthetic receipt course'));
+ await renderer.act(async()=>fields.find(n=>n.props.placeholder==='Açıklama').props.onChangeText('Synthetic description'));
+ await renderer.act(async()=>{button(tree,'Dersi Oluştur').props.onPress();await new Promise(r=>setImmediate(r))});
+ const saved=JSON.parse(h.storage.get('dai.academic.course-create.1'));
+ assert.equal(saved.version,2);
+ assert.match(saved.request_key,/^[-_a-zA-Z0-9]{16,80}$/);
+ assert.equal(calls.length,1);
+ await renderer.act(async()=>{button(tree,'Aynı isteği güvenle yeniden dene').props.onPress();await new Promise(r=>setImmediate(r))});
+ assert.equal(calls.length,2);
+ assert.deepEqual(calls[1],calls[0]);
+ assert.equal(h.storage.has('dai.academic.course-create.1'),false);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('native course creation resolves a lost response from the server receipt without another POST',async()=>{
+ let committed=null,posts=0,receiptReads=0;
+ const h=ui({
+  createCourse:async(_t,title,description)=>{
+   posts++;
+   committed={course:{id:44,title,description},materials:[],max_file_bytes:157286400,max_upload_count:12,next_before:null};
+   throw Error('Synthetic response lost after commit');
+  },
+  courseCreateReceipt:async()=>{receiptReads++;return committed}
+ });
+ const tree=await openLibrary(h);
+ const field=tree.root.findAllByType('TextInput').find(n=>n.props.placeholder==='Ders adı');
+ await renderer.act(async()=>field.props.onChangeText('Synthetic committed course'));
+ await renderer.act(async()=>{button(tree,'Dersi Oluştur').props.onPress();await new Promise(r=>setImmediate(r))});
+ assert.equal(posts,1);
+ assert.ok(h.storage.has('dai.academic.course-create.1'));
+ await renderer.act(async()=>{button(tree,'Sunucu kaydını doğrula').props.onPress();await new Promise(r=>setImmediate(r))});
+ assert.equal(receiptReads,1);
+ assert.equal(posts,1);
+ assert.equal(h.storage.has('dai.academic.course-create.1'),false);
+ await renderer.act(async()=>tree.unmount());
+});
+
