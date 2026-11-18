@@ -13,7 +13,7 @@ function VoiceEvidence({item}:{item:{quote?:string;origin?:string;edited?:boolea
  const evidence=voiceEvidencePresentation(item);
  return <View style={{marginLeft:3,marginBottom:8,padding:10,borderRadius:9,backgroundColor:'#F6FAFD',borderWidth:1,borderColor:'#E1E7EF'}}>
   <Text style={{fontSize:12,fontWeight:'800',color:'#63748A'}}>{evidence.label}</Text>
-  {evidence.hasEvidence?<Text selectable style={{color:'#071B35',lineHeight:19,marginTop:4}}>{evidence.quote}</Text>:<Text style={{color:'#9A6700',lineHeight:19,marginTop:4}}>Dayanak metni sunulmadı; bu alanı ayrıca doğrulayın.</Text>}
+  {evidence.hasEvidence?<Text selectable style={{color:'#071B35',lineHeight:19,marginTop:4}}>{evidence.quote}</Text>:<Text style={{color:'#9A6700',lineHeight:19,marginTop:4}}>{evidence.notice}</Text>}
   {evidence.edited&&<Text style={{color:'#9A6700',lineHeight:18,marginTop:5}}>Hekim tarafından düzenlendi; dayanakla karşılaştırın.</Text>}
  </View>;
 }
