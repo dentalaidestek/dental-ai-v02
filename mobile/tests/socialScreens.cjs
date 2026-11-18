@@ -1,7 +1,7 @@
 const ts=require('typescript'),fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),{test}=require('node:test');
 const tick=()=>new Promise(r=>setImmediate(r));
 function harness(){
- const state=[],alerts=[],refs=[],previous=[],effects=[],requests=[],uploads=[],previews=[],posts=[],shared=[],opened=[],getPostCalls=[],getModerationCalls=[],storeValues=new Map();let cursor=0,ri=0,ei=0,getPostResponse=null;
+ const state=[],alerts=[],refs=[],previous=[],effects=[],requests=[],uploads=[],previews=[],posts=[],shared=[],opened=[],getPostCalls=[],getModerationCalls=[],storeValues=new Map();let cursor=0,ri=0,ei=0,getPostResponse=null,moderationResponse=null;
  const store={getItemAsync:async k=>storeValues.get(k)||null,setItemAsync:async(k,v)=>storeValues.set(k,v),deleteItemAsync:async k=>storeValues.delete(k)};
  const picker={assets:[],options:null,requestMediaLibraryPermissionsAsync:async()=>({granted:true}),launchImageLibraryAsync:async options=>{picker.options=options;return {canceled:false,assets:picker.assets}}};
  const react={useState:initial=>{const id=cursor++;if(!(id in state))state[id]=typeof initial==='function'?initial():initial;return [state[id],v=>state[id]=typeof v==='function'?v(state[id]):v]},useRef:v=>{const i=ri++;return refs[i]||(refs[i]={current:v})},useEffect:(f,deps)=>{const i=ei++;if(!previous[i]||deps.some((v,j)=>!Object.is(v,previous[i].deps[j])))effects.push(()=>{previous[i]?.cleanup?.();previous[i]={deps,cleanup:f()}})},createElement:(type,props,...children)=>({type,props:{...props,children}})};react.default=react;
