@@ -4,6 +4,9 @@ const vm=require('node:vm');
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+const refreshExports={};
+const refreshSource=ts.transpileModule(fs.readFileSync(require.resolve('../src/analysisRefresh.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+vm.runInNewContext(refreshSource,{exports:refreshExports,Math});
 const result=(id=7,status='VISION_READY')=>({analysis:{id,status},assets:[],ai_result:null});
 function harness(fetchAnalysis){
  const states=[[],null,null,result(),false,''],previous=[],refs=[],effects=[];
@@ -11,7 +14,7 @@ function harness(fetchAnalysis){
  const react={useCallback:f=>f,useRef:value=>{const i=refIndex++;return refs[i]??(refs[i]={current:value})},useState:()=>{const i=stateIndex++;return [states[i],value=>{states[i]=value}]},useEffect:(f,deps)=>{const i=effectIndex++;if(!previous[i]||deps.some((v,j)=>!Object.is(v,previous[i].deps[j]))){effects.push(()=>{previous[i]?.cleanup?.();previous[i]={deps,cleanup:f()}})}},createElement:()=>null};react.default=react;
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeDentalAI.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const exports={};
- vm.runInNewContext(code,{exports,require:name=>name==='react'?react:name==='react-native'?{AppState:{addEventListener:()=>({remove(){}})}}:name==='./api'?{getPatients:async()=>({items:[]})}:name==='./analysisApi'?{getAnalysis:fetchAnalysis}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:{}});
+ vm.runInNewContext(code,{exports,require:name=>name==='react'?react:name==='react-native'?{AppState:{addEventListener:()=>({remove(){}})}}:name==='./api'?{getPatients:async()=>({items:[]})}:name==='./analysisApi'?{getAnalysis:fetchAnalysis}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:name==='./analysisRefresh'?refreshExports:{}});
  const render=()=>{stateIndex=0;effectIndex=0;refIndex=0;exports.default({token});while(effects.length)effects.shift()();};
  return {states,render,setEvent:value=>{event=value;render()},setToken:value=>{token=value;render()},unmount:()=>previous.forEach(x=>x?.cleanup?.())};
 }
@@ -58,4 +61,34 @@ test('new analysis callback validates patient and account before remembering a j
  assert.match(callback,/scope!==sessionScope\.current/);
  assert.match(callback,/selection!==selectionGeneration\.current/);
  assert.match(callback,/selectedRecord\.current\?\.id!==selectedPatient/);
+});
+
+test('analysis polling stops at web-visible terminal states and completed work jobs',()=>{
+ const {analysisNeedsPolling}=refreshExports;
+ for(const status of ['VISION_READY','VISION_ERROR','AI_ANALYZED','AI_FINAL','ANALYSIS_COMPLETE','COMPLETED','FAILED','ERROR','CANCELLED']){
+  assert.equal(analysisNeedsPolling({analysis:{status},job:null}),false,status+' must not poll');
+ }
+ assert.equal(analysisNeedsPolling({analysis:{status:'VISION_PENDING'},job:{status:'QUEUED'}}),true);
+ for(const status of ['DONE','FAILED','CANCELLED']){
+  assert.equal(analysisNeedsPolling({analysis:{status:'AI_ANALYZING'},job:{status}}),false,status+' job must not poll');
+ }
+});
+
+test('analysis polling uses bounded exponential backoff, jitter and a finite attempt cap',()=>{
+ const {analysisPollDelay,MAX_ANALYSIS_POLL_ATTEMPTS}=refreshExports;
+ assert.equal(analysisPollDelay(0,.5),15000);
+ assert.equal(analysisPollDelay(1,.5),30000);
+ assert.equal(analysisPollDelay(2,.5),60000);
+ assert.equal(analysisPollDelay(99,.5),60000);
+ assert.equal(analysisPollDelay(0,0),13500);
+ assert.equal(analysisPollDelay(0,1),16500);
+ assert.equal(MAX_ANALYSIS_POLL_ATTEMPTS,40);
+});
+
+test('native analysis refresh is bounded and does not keep a fixed interval after VISION_READY',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativeDentalAI.tsx'),'utf8');
+ assert.match(source,/analysisNeedsPolling\(analysis\)/);
+ assert.match(source,/MAX_ANALYSIS_POLL_ATTEMPTS/);
+ assert.match(source,/analysisPollDelay\(attempt\)/);
+ assert.doesNotMatch(source,/setInterval\(/);
 });
