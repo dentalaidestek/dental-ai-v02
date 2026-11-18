@@ -23,10 +23,17 @@ export function voiceEvidencePresentation(value: VoiceEvidenceLike): VoiceEviden
 
   return {
     label: fromHistory
-      ? "Önceki hekim onaylı kayıttaki dayanak"
+      ? "Önceki hekim onaylı alan değeri"
       : "Bu muayenedeki konuşma dayanağı",
-    quote,
-    hasEvidence: quote.length > 0,
+    // Older drafts may contain the approved value in quote; it is not a verbatim quote.
+    quote: fromHistory ? "" : quote,
+    hasEvidence: !fromHistory && quote.length > 0,
     edited: value?.edited === true,
+    fromHistory,
+    notice: fromHistory
+      ? "Bu değer önceki hekim onaylı kayıttan alınmıştır. Özgün konuşma alıntısı hasta dosyasında saklanmıyor; güncelliğini hastayla doğrulayın."
+      : quote.length > 0
+        ? ""
+        : "Bu muayene alanı için konuşma dayanağı sunulmadı; kaydetmeden önce ayrıca doğrulayın.",
   };
 }
