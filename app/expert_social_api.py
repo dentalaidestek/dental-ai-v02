@@ -529,7 +529,17 @@ def register(app, main):
                 challenge.attempts += 1
                 session.add(challenge)
                 session.commit()
-                raise HTTPException(401, "Kod yanlış veya geçersiz.")
+                # This is a valid authenticated session with an invalid second
+                # factor. A machine-readable code lets native clients avoid
+                # treating an OTP typo as bearer-session expiry.
+                return JSONResponse(
+                    {
+                        "detail": "Kod yanlış veya geçersiz.",
+                        "code": "SOCIAL_ADMIN_OTP_INVALID",
+                    },
+                    status_code=401,
+                    headers=HEADERS,
+                )
             challenge.used_at = current_time
             session.add(challenge)
             previous_grants = session.exec(
