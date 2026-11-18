@@ -3,7 +3,7 @@ global.IS_REACT_ACT_ENVIRONMENT=true;
 const compile=f=>ts.transpileModule(fs.readFileSync(require.resolve(f),'utf8'),{fileName:f,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.React}}).outputText;
 const text=n=>typeof n==='string'?n:!n?'':(n.children||[]).map(text).join('');
 const button=(t,label)=>t.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(c=>text(c)===label));
-const revision='a'.repeat(64),base={analysis_id:1,patient_id:8,patient_anonymous_id:'SYNTHETIC-008',status:'AI_ANALYZED',revision,result:{status:'INITIAL',most_likely:'Synthetic likely condition',findings:['Synthetic string finding'],treatment_options:['Synthetic treatment'],treatment_cautions:['Synthetic caution'],recommended_evaluation:['Synthetic clinical exam'],uncertainty:'Synthetic uncertainty',questions:[{question:'Synthetic question?',type:'TEXT'}]},assets:[],clinical_notes:null,tooth_number:null,job:null};
+const revision='a'.repeat(64),base={analysis_id:1,patient_id:8,patient_anonymous_id:'SYNTHETIC-008',status:'AI_ANALYZED',revision,result:{status:'INITIAL',most_likely:'Synthetic likely condition',findings:['Synthetic string finding'],treatment_options:['Synthetic treatment'],treatment_cautions:['Synthetic caution'],preferred_approach:'Synthetic preferred approach',differential:['Synthetic differential'],recommended_evaluation:['Synthetic clinical exam'],uncertainty:'Synthetic uncertainty',questions:[{question:'Synthetic question?',type:'TEXT'}]},assets:[],clinical_notes:null,tooth_number:null,job:null};
 function api(request=async()=>({})){const exports={};vm.runInNewContext(compile('../src/clinicalApi.ts'),{exports,Error,require:()=>({request})});return exports}
 function harness(overrides={},saved){const exports={},storage=new Map(),calls=[],a=api();if(saved)storage.set('dai.clinical.final.1.1',JSON.stringify(saved));const secure={getItemAsync:async k=>storage.get(k)||null,setItemAsync:async(k,v)=>storage.set(k,v),deleteItemAsync:async k=>storage.delete(k)},native={StyleSheet:{create:x=>x},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
  const endpoint={...a,getClinical:async()=>base,submitClinical:async(_t,intent)=>{calls.push(intent);return{ok:true,job:{id:7,kind:'FINAL',status:'QUEUED'}}},saveClinicalNote:async()=>({ok:true}),...overrides};
@@ -135,4 +135,27 @@ test('native clinical image cards use modality labels rather than uploaded filen
  assert.ok(rendered.includes('Periapikal'));
  assert.ok(!rendered.includes('patient-secret.png'));
  await renderer.act(async()=>t.unmount());
+});
+
+
+test('saved clinical note reconciliation recognizes LF and CRLF lines without substring matches',()=>{
+ const a=api(),pending={user:1,analysis:1,note:'Synthetic note',finding:'Manual finding',tooth:'36'};
+ const line=a.clinicalNoteLine(pending);
+ assert.equal(a.clinicalNoteIsPresent(line+'\\nOther note',pending),true);
+ assert.equal(a.clinicalNoteIsPresent((line+'\\nOther note').replace(/\\n/g,'\\r\\n'),pending),true);
+ assert.equal(a.clinicalNoteIsPresent('prefix '+line,pending),false);
+ assert.equal(a.clinicalNoteIsPresent(null,pending),false);
+});
+
+test('clinical workspace rejects malformed or oversized result fields before native rendering',async()=>{
+ const invalidQuestion=api(async()=>({...base,result:{...base.result,questions:[{question:'Synthetic question?',type:'HTML'}]}}));
+ await assert.rejects(()=>invalidQuestion.getClinical('A',1),/Klinik sonuç doğrulanamadı/);
+ const tooLong=api(async()=>({...base,result:{...base.result,preferred_approach:'x'.repeat(4001)}}));
+ await assert.rejects(()=>tooLong.getClinical('A',1),/Klinik sonuç doğrulanamadı/);
+ const tooMany=api(async()=>({...base,result:{...base.result,treatment_options:['1','2','3','4']}}));
+ await assert.rejects(()=>tooMany.getClinical('A',1),/Klinik sonuç doğrulanamadı/);
+ const validFinal=api(async()=>({...base,result:{status:'FINAL',most_likely:'Synthetic likely condition',findings:['Synthetic finding'],treatment_options:['Synthetic treatment'],treatment_cautions:[],preferred_approach:'Synthetic preferred approach',differential:[]}}));
+ assert.equal((await validFinal.getClinical('A',1)).result.status,'FINAL');
+ const validError=api(async()=>({...base,result:{status:'AI_ERROR',error:'Synthetic provider error'}}));
+ assert.equal((await validError.getClinical('A',1)).result.status,'AI_ERROR');
 });
