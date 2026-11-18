@@ -140,7 +140,7 @@ export async function extractVoice(token:string,patientId:number,transcript:stri
   const context=review?contextFromVoiceReview(review):{};
   // Stable for the same examination, transcript and chunk after process death.
   // The server independently binds this key to an HMAC of transcript + context.
-  const requestKey=sessionId.replace(/-/g,"")+"_"+index+"_"+transcriptHash.slice(0,16);
+  const requestKey=sessionId.replace(/-/g,"").slice(0,24)+"_"+index+"_"+transcriptHash;
   const result=await send<VoiceExtraction>(token,`/patients/${patientId}/voice-exam/text`,{transcript:chunks[index],consent:true,context,request_key:requestKey});
   if(!result.review||typeof result.revision!=="string"||!/^[a-f0-9]{64}$/.test(result.revision))
    throw Error("Klinik çıkarım yanıtı eksik. Metninizi koruyup tekrar deneyin.");
