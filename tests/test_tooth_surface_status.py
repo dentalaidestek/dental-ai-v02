@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import re
 import pytest
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
@@ -170,3 +171,35 @@ def test_native_tooth_and_surface_compare_and_swap_rejects_stale_devices(chat, m
         "status": "HEALTHY", "note": "old surface snapshot", "expected_revision": surface_revision,
     })
     assert stale_surface_update.status_code == 409, stale_surface_update.text
+
+
+
+def test_web_tooth_chart_posts_snapshot_revision_and_rejects_stale_form(chat, monkeypatch):
+    client, engine = chat
+    monkeypatch.setattr(main, "engine", engine)
+    with Session(engine) as session:
+        session.add(main.Patient(id=28, anonymous_id="SYNTHETIC-WEB-CAS-28", owner_user_id=1))
+        session.commit()
+    web_user = main.User(
+        id=1, username="chat-user-1", display_name="Synthetic 1", role="DOCTOR",
+        is_active=True, email_verified_at=main._utcnow_naive(),
+    )
+    monkeypatch.setattr(main, "get_current_user", lambda _request: web_user)
+    page = client.get("/patients/28/teeth")
+    assert page.status_code == 200, page.text
+    match = re.search(r'name="expected_revision" id="toothExpectedRevision" value="([a-f0-9]{64})"', page.text)
+    assert match, "web chart must bind the selected tooth's snapshot revision"
+    revision = match.group(1)
+    first = client.post("/patients/28/teeth/36", data={
+        "status": "CARIES", "note": "web first", "expected_revision": revision,
+    }, follow_redirects=False)
+    assert first.status_code == 303, first.text
+    stale = client.post("/patients/28/teeth/36", data={
+        "status": "HEALTHY", "note": "stale web form", "expected_revision": revision,
+    }, follow_redirects=False)
+    assert stale.status_code == 409, stale.text
+    with Session(engine) as session:
+        tooth = session.exec(select(main.ToothStatus).where(
+            main.ToothStatus.patient_id == 28, main.ToothStatus.tooth_number == "36"
+        )).one()
+        assert tooth.status == "CARIES"
