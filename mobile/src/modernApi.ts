@@ -108,10 +108,21 @@ export const getAnalysisHistory=async(t:string,before?:number,patientId?:number,
    throw Error("Analiz sunucusundan geçersiz liste alındı. Tekrar deneyin.");
  return {...r,next_before};
 };
-export const deleteMedia=(t:string,patientId:number,mediaId:number)=>{
+export type DeleteMediaResult={
+ ok:true;
+ media_id:number;
+ already_deleted?:boolean;
+ storage_cleanup_pending?:boolean|null;
+};
+export const deleteMedia=async(t:string,patientId:number,mediaId:number):Promise<DeleteMediaResult>=>{
  if(!Number.isSafeInteger(patientId)||patientId<=0||!Number.isSafeInteger(mediaId)||mediaId<=0)
   throw Error("Geçersiz hasta veya klinik medya kimliği.");
- return req<{ok:boolean;media_id:number}>(`/patients/${patientId}/media/${mediaId}`,t,{method:"DELETE"});
+ const result=await req<DeleteMediaResult>(`/patients/${patientId}/media/${mediaId}`,t,{method:"DELETE"});
+ if(!result||result.ok!==true||result.media_id!==mediaId||
+    (result.already_deleted!==undefined&&typeof result.already_deleted!=="boolean")||
+    (result.storage_cleanup_pending!==undefined&&result.storage_cleanup_pending!==null&&typeof result.storage_cleanup_pending!=="boolean"))
+  throw Error("Klinik görsel silme yanıtı doğrulanamadı. Galeriyi yenileyip durumu kontrol edin.");
+ return result;
 };
 export const getMedia=async(t:string,p:number,before?:number)=>{
  if(!Number.isSafeInteger(p)||p<=0||(before!==undefined&&(!Number.isSafeInteger(before)||before<=0)))
