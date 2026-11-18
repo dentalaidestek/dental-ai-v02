@@ -50,3 +50,15 @@ test('native gallery uses durable-intent-first cleanup for explicit draft cleari
  assert.match(source,/\(\)=>uploadStore\.deleteItemAsync\(uploadKey\)/);
  assert.match(source,/\(\)=>cleanupOrphanedClinicalMediaVaultFiles\(userId,patientId,\[\]\)/);
 });
+
+
+test('native clinical media draft retains FDI and note metadata across recovery',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/type PendingUpload=.*toothNumber\?:string;note\?:string/);
+ assert.match(source,/toothNumber:toothNumber\.trim\(\)\|\|undefined,note:clinicalNotes\.trim\(\)\.slice\(0,2000\)\|\|undefined/);
+ assert.match(source,/setToothNumber\(saved\.toothNumber\|\|''\);setClinicalNotes\(saved\.note\|\|''\)/);
+ assert.match(source,/uploadPatientMedia\(token,patientId,\{uri:tempUri,name:file\.name,type:file\.type\},toothNumber\.trim\(\)\|\|undefined,mediaType,file\.requestKey,pendingBatchId/);
+ assert.match(source,/clinicalNotes\.trim\(\)\.slice\(0,2000\)\|\|undefined\);/);
+ assert.match(source,/Klinik arşiv FDI diş numarası/);
+ assert.match(source,/Klinik arşiv notu/);
+});
