@@ -4,8 +4,8 @@ require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f
 const api=require('../src/voiceApi.ts');
 const response=(body,status=200)=>({ok:status>=200&&status<300,status,text:async()=>body});
 test('voice extraction sends consent, bearer and patient path',async()=>{
- const original=global.fetch;let call;global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'r1',review:{fields:{}}}))};
- try{const result=await api.extractVoice('secret',12,'muayene konuşması');assert.equal(result.ok,true);assert.match(call.url,/\/patients\/12\/voice-exam\/text$/);assert.equal(call.init.headers.Authorization,'Bearer secret');assert.deepEqual(JSON.parse(call.init.body),{transcript:'muayene konuşması',consent:true})}finally{global.fetch=original}
+ const original=global.fetch;let call;global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review:{fields:{}}}))};
+ try{const result=await api.extractVoice('secret',12,'muayene konuşması',{sessionId:'session_1234567890'});assert.equal(result.ok,true);assert.match(call.url,/\/patients\/12\/voice-exam\/text$/);assert.equal(call.init.headers.Authorization,'Bearer secret');assert.deepEqual(JSON.parse(call.init.body),{transcript:'muayene konuşması',consent:true,context:{},request_key:'session_1234567890_0'})}finally{global.fetch=original}
 });
 test('voice API surfaces HTTP errors without masking details',async()=>{
  const original=global.fetch;global.fetch=async()=>response(JSON.stringify({detail:'Hasta erişim yetkisi yok'}),403);
@@ -55,7 +55,7 @@ test('voice API reports aborted clinical requests without discarding transcript'
 
 test('voice extraction retains clinical uncertainty as text for final review',async()=>{
  const original=global.fetch;
- global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',review:{fields:{},uncertain:'İlaç dozu doğrulanamadı'}}));
+ global.fetch=async()=>response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review:{fields:{},uncertain:'İlaç dozu doğrulanamadı'}}));
  try{const result=await api.extractVoice('token',9,'muayene');assert.equal(result.review.uncertain,'İlaç dozu doğrulanamadı')}finally{global.fetch=original}
 });
 
@@ -128,7 +128,7 @@ test('native voice audio rejects unsupported formats and oversized files without
 });
 test('native voice audio rejects missing transcription and retains actionable error',async()=>{
  const original=global.fetch;
- global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1'}));
+ global.fetch=async()=>response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}));
  try{await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/yanıtı eksik/)}finally{global.fetch=original}
 });
 
@@ -136,7 +136,7 @@ test('clinical communication coaching from extraction is accepted in final paylo
  const original=global.fetch;let finalRequest;
  const communication=[{quote:'Tedaviden çekiniyorum',observation:'Kaygı',suggestion:'Açıklama yap'}];
  global.fetch=async(url,init)=>{
-  if(String(url).endsWith('/text'))return response(JSON.stringify({ok:true,revision:'r1',review:{fields:{},communication,decision_barriers:[],follow_up_questions:[]}}));
+  if(String(url).endsWith('/text'))return response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review:{fields:{},communication,decision_barriers:[],follow_up_questions:[]}}));
   finalRequest=JSON.parse(init.body);return response(JSON.stringify({ok:true,final:{summary:[]}}));
  };
  try{
@@ -168,7 +168,7 @@ test('clinical extraction rejects malformed fields and list shapes before UI use
    {fields:{},uncertain:['şüpheli']},
    {fields:{},appointment:[]}
   ]){
-   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',review}));
+   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review}));
    await assert.rejects(()=>api.extractVoice('token',1,'muayene'),/alanları geçersiz/);
   }
  }finally{global.fetch=original}
@@ -198,7 +198,7 @@ test('clinical text API rejects invalid patient and oversized transcripts before
 
 test('native voice transcription rejects oversized text before it reaches UI',async()=>{
  const original=global.fetch;
- global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',transcript:'a'.repeat(72001)}));
+ global.fetch=async()=>response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',transcript:'a'.repeat(72001)}));
  try{
   await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/sınır dışında/);
  }finally{global.fetch=original}
@@ -208,7 +208,7 @@ test('ASR refuses oversized and empty transcription while preserving local audio
  const original=global.fetch;
  try{
   for(const transcript of ['', '   ', 'x'.repeat(18001)]){
-   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',transcript}));
+   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',transcript}));
    await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/sınır dışında/);
   }
   global.fetch=async()=>response(JSON.stringify({ok:true,revision:' ',transcript:'Diş ağrısı'}));
@@ -251,7 +251,7 @@ test('voice extraction refuses malformed FDI teeth, communication and evidence',
    {fields:{},source_requests:[{term:'amoxicillin',quote:123}]},
    {fields:{},decision_barriers:[null]}
   ]){
-   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',review}));
+   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review}));
    await assert.rejects(()=>api.extractVoice('token',4,'muayene'),/alanları geçersiz/);
   }
  }finally{global.fetch=original}
@@ -301,7 +301,7 @@ test('voice extraction rejects unknown fields and oversized evidence before rend
    {fields:{},teeth:[{tooth:'44',status:'existing',quote:'x'.repeat(1501)}]},
    {fields:{},teeth:Array.from({length:53},()=>({tooth:'44',status:'existing',quote:'ağrı'}))}
   ]){
-   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',review}));
+   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review}));
    await assert.rejects(()=>api.extractVoice('token',4,'muayene'),/alanları geçersiz/);
   }
  }finally{global.fetch=original}
@@ -310,7 +310,7 @@ test('voice extraction rejects unknown fields and oversized evidence before rend
 test('voice clinical tooth statuses match server allowlist in both directions',async()=>{
  const original=global.fetch;let calls=0;
  try{
-  global.fetch=async()=>{calls++;return response(JSON.stringify({ok:true,revision:'r1',review:{fields:{},teeth:[{tooth:'44',status:'CURRENT',quote:'ağrı'}]}}))};
+  global.fetch=async()=>{calls++;return response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review:{fields:{},teeth:[{tooth:'44',status:'CURRENT',quote:'ağrı'}]}}))};
   await assert.rejects(()=>api.extractVoice('token',4,'görüşme'),/alanları geçersiz/);
   assert.equal(calls,1);
   global.fetch=async()=>{calls++;throw Error('unexpected finalization request')};
@@ -335,7 +335,7 @@ test('voice extraction bounds lists and rejects unexpected appointment attribute
    {fields:{},appointment:{quote:123}},
    {fields:{},appointment:{quote:'x'.repeat(1501)}}
   ]){
-   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'r1',review}));
+   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review}));
    await assert.rejects(()=>api.extractVoice('token',4,'görüşme'),/alanları geçersiz/);
   }
  }finally{global.fetch=original}
@@ -483,5 +483,18 @@ test('approved voice history accepts an empty quote when the original transcript
   assert.equal(result.fields.medical_history.value,'Önceki hekim onaylı astım beyanı');
   assert.equal(result.fields.medical_history.quote,'');
   assert.equal(result.fields.medical_history.analysis_id,17);
+ }finally{global.fetch=original}
+});
+
+test('clinical chunk request key is stable for one session and changes for a new session',async()=>{
+ const original=global.fetch,calls=[];
+ global.fetch=async(_url,init)=>{calls.push(JSON.parse(init.body));return response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review:{fields:{}}}))};
+ try{
+  await api.extractVoice('token',7,'same transcript',{sessionId:'session_1234567890'});
+  await api.extractVoice('token',7,'same transcript',{sessionId:'session_1234567890'});
+  await api.extractVoice('token',7,'same transcript',{sessionId:'session_1234567891'});
+  assert.equal(calls[0].request_key,calls[1].request_key);
+  assert.notEqual(calls[0].request_key,calls[2].request_key);
+  assert.equal(calls[0].context && typeof calls[0].context,'object');
  }finally{global.fetch=original}
 });
