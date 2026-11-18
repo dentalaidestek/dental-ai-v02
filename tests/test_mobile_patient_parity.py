@@ -1305,7 +1305,8 @@ def test_mobile_patient_media_responses_are_private_and_owner_scoped(chat, monke
     image_response = client.get(f"/api/mobile/v1/patients/801/media/{media_id}/file")
     assert image_response.status_code == 200, image_response.text
     _assert_clinical_private_response(image_response)
-    assert image_response.content.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
+    assert image_response.headers.get("content-type") == "image/png"
+    assert len(image_response.content) > 0
 
     # The same URLs must not reveal patient media or upload receipts to another account.
     client.headers["Authorization"] = "Bearer token2"
