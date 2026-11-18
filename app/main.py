@@ -82,6 +82,7 @@ from app.expert_consultation_requests import (
 )
 from app.academic_learning import StudyLearningState,StudyReview,StudyAttempt
 from app.academic_study_runs import StudyRun
+from app.academic_course_receipts import StudyCourseCreateReceipt
 from app.academic_recovery_store import AcademicRecoveryEvent
 from app.study_retrieval_v2 import materialize_visual_sources, invalidate_retrieval_caches, invalidate_user_retrieval_caches
 from app.study_v2_service import (
