@@ -778,6 +778,6 @@ Fixed the web live and MediaRecorder paths, made consent withdrawable during act
 
 Regression coverage added in `mobile/tests/voiceWorkflow.cjs`, `tests/voice_live_browser.cjs`, and `tests/voice_exam_browser_state.cjs`. Documentation: `docs/mobile-voice-consent-withdrawal-20261119.md`.
 
-Commits: `6f9add4`, `24c9e23`, `1c21765`, `6ea169a`, `b2dfcf1`, `8cd747d`, `bd1bc9e`, `272979d`, `d559e27`, `fad4c8f`, `1b4c4e8`.
+Commits: `6f9add4`, `24c9e23`, `1c21765`, `6ea169a`, `b2dfcf1`, `8cd747d`, `bd1bc9e`, `272979d`, `d559e27`, `fad4c8f`, `1b4c4e8`, `6c5c2e6`, `9a7edae`.
 
 Tests are committed but not executed. The current-head workflow has no run/check; earlier hosted jobs had runner ID 0, empty steps and missing log blobs. Physical Android/iOS and real-browser acceptance remain open. No main merge or production deploy.
