@@ -263,7 +263,14 @@ def program_mutation(request_key:str,user=Depends(_mobile_user)):
 @router.get('/program/events/{event_id}')
 def program_event(event_id:int,user=Depends(_mobile_user)):
     from app import main as web
-    with Session(web.engine,expire_on_commit=False) as session:return {'event':_event(session,web,_owned(session,web,user,event_id),user)}
+    # Recovery reads must be able to distinguish a soft-deleted event from an
+    # event that is still active. Keep the same owner boundary; mutation routes
+    # continue to use _owned(), which rejects deleted rows.
+    with Session(web.engine,expire_on_commit=False) as session:
+        event=session.get(web.ScheduleEvent,event_id)
+        if not event or event.owner_user_id!=user.id:
+            raise HTTPException(status_code=404,detail='Program kaydı bulunamadı.')
+        return {'event':_event(session,web,event,user)}
 
 class ProgramValues(BaseModel):
     event_type:str=Field(max_length=40)
