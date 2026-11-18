@@ -2,7 +2,7 @@ from test_mobile_chat_actions import chat
 from app import main, mobile_analysis_api, mobile_api
 from app.work_jobs import WorkJob, prune_history
 from sqlmodel import Session, select
-from datetime import datetime
+from datetime import datetime, timedelta
 from PIL import Image
 import io
 import json
@@ -1137,3 +1137,79 @@ def test_patient_delete_tombstone_is_bounded_by_existing_work_history_retention(
     # Once the bounded tombstone expires, absence is still represented by 404.
     assert client.delete(f"/api/mobile/v1/patients/116?request_key={request_key}").status_code == 404
 
+
+
+
+def test_patient_treatment_history_is_bounded_snapshot_paginated_and_owner_scoped(chat, monkeypatch):
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    base = datetime(2026, 11, 18, 12, 0, 0)
+    with Session(engine) as session:
+        session.add_all([
+            main.Patient(id=801, anonymous_id="SYNTHETIC-TREATMENT-PAGE-801", owner_user_id=1),
+            main.Patient(id=802, anonymous_id="SYNTHETIC-TREATMENT-PAGE-802", owner_user_id=1),
+            main.Patient(id=803, anonymous_id="SYNTHETIC-TREATMENT-PAGE-803", owner_user_id=2),
+        ])
+        session.flush()
+        session.add_all([
+            main.Treatment(
+                patient_id=801,
+                treatment_name=f"Synthetic treatment {index:02d}",
+                created_at=base - timedelta(minutes=index // 2),
+            )
+            for index in range(25)
+        ])
+        session.commit()
+        expected = session.exec(
+            select(main.Treatment)
+            .where(main.Treatment.patient_id == 801)
+            .order_by(main.Treatment.created_at.desc(), main.Treatment.id.desc())
+        ).all()
+        expected_ids = [row.id for row in expected]
+
+    detail = client.get("/api/mobile/v1/patients/801")
+    assert detail.status_code == 200, detail.text
+    assert detail.headers["cache-control"] == "private, no-store"
+    assert "authorization" in detail.headers.get("vary", "").lower()
+    first_body = detail.json()
+    assert [row["id"] for row in first_body["treatments"]] == expected_ids[:3]
+    cursor = first_body["treatments_next_cursor"]
+    assert isinstance(cursor, str) and 24 <= len(cursor) <= 512
+    assert "SYNTHETIC" not in cursor
+
+    # A row inserted after page one must not leak into this history snapshot.
+    with Session(engine) as session:
+        session.add(main.Treatment(
+            patient_id=801,
+            treatment_name="Synthetic treatment inserted after snapshot",
+            created_at=base + timedelta(days=1),
+        ))
+        session.commit()
+
+    page_one = client.get(f"/api/mobile/v1/patients/801/treatments?cursor={cursor}")
+    assert page_one.status_code == 200, page_one.text
+    assert page_one.headers["cache-control"] == "private, no-store"
+    assert "authorization" in page_one.headers.get("vary", "").lower()
+    page_one_body = page_one.json()
+    assert [row["id"] for row in page_one_body["items"]] == expected_ids[3:23]
+    assert page_one_body["next_cursor"]
+
+    page_two = client.get(
+        f"/api/mobile/v1/patients/801/treatments?cursor={page_one_body['next_cursor']}"
+    )
+    assert page_two.status_code == 200, page_two.text
+    assert [row["id"] for row in page_two.json()["items"]] == expected_ids[23:]
+    assert page_two.json()["next_cursor"] is None
+    combined = [row["id"] for row in first_body["treatments"] + page_one_body["items"] + page_two.json()["items"]]
+    assert combined == expected_ids
+    assert len(combined) == len(set(combined)) == 25
+
+    assert client.get(f"/api/mobile/v1/patients/802/treatments?cursor={cursor}").status_code == 422
+    assert client.get(f"/api/mobile/v1/patients/801/treatments?cursor={cursor}!").status_code == 422
+    empty = client.get("/api/mobile/v1/patients/802")
+    assert empty.status_code == 200
+    assert empty.json()["treatments"] == []
+    assert empty.json()["treatments_next_cursor"] is None
+
+    client.headers["Authorization"] = "Bearer token2"
+    assert client.get(f"/api/mobile/v1/patients/801/treatments?cursor={cursor}").status_code == 404
