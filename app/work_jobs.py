@@ -321,6 +321,8 @@ def enqueue_patient_media_cleanup(session: Session, reference: str) -> bool:
 
 def collect_garbage(engine):
     from app.object_storage import delete
+    from app.main import Analysis, GuestAnalysis, PatientMedia
+
     with Session(engine, expire_on_commit=False) as session:
         query = select(WorkGarbage).where(WorkGarbage.available_at <= now()).order_by(WorkGarbage.id).limit(1)
         if engine.dialect.name == 'postgresql':
@@ -333,19 +335,39 @@ def collect_garbage(engine):
         session.add(garbage)
         session.commit()
         session.close()
-        # Only immutable generated results belong in this queue.
-        if not str(garbage.reference).startswith('uploads/ai_results/'):
+
+        reference = str(garbage.reference)
+        patient_media = is_patient_media_reference(reference)
+        if not reference.startswith('uploads/ai_results/') and not patient_media:
             return
-        # Never erase a successfully published result after an ambiguous commit.
-        in_use = session.exec(text("SELECT 1 FROM analysis WHERE result_path=:ref UNION ALL SELECT 1 FROM guestanalysis WHERE result_path=:ref LIMIT 1"), params={"ref": garbage.reference}).first()
+
+        # Never erase a published result or an object still referenced by a live
+        # patient-media row. A later delete creates a fresh cleanup receipt.
+        if patient_media:
+            in_use = session.exec(
+                select(PatientMedia.id).where(PatientMedia.file_path == reference).limit(1)
+            ).first()
+        else:
+            in_use = session.exec(
+                text("SELECT 1 FROM analysis WHERE result_path=:ref UNION ALL SELECT 1 FROM guestanalysis WHERE result_path=:ref LIMIT 1"),
+                params={"ref": reference},
+            ).first()
         session.close()
+
         if in_use:
             session.exec(__import__('sqlalchemy').delete(WorkGarbage).where(WorkGarbage.id == garbage.id))
             session.commit()
             return
         try:
-            delete(garbage.reference)
+            delete(reference)
         except Exception:
+            # Keep the durable row; its five-minute retry time was committed above.
+            import logging
+            logging.getLogger(__name__).warning(
+                "Private object cleanup failed; retry remains queued (attempt=%s)",
+                garbage.attempts,
+                exc_info=True,
+            )
             return
         session.exec(__import__('sqlalchemy').delete(WorkGarbage).where(WorkGarbage.id == garbage.id))
         session.commit()
