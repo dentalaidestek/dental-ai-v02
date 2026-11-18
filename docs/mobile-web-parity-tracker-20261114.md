@@ -714,3 +714,10 @@ Added `tests/expert_social_admin_queue.cjs` for stale filter/mode response suppr
 Commits in this batch: `af0fe88`, `7cc7312`, `ed29a6f`, `be21348`, `ff5a3ea`, `a629c0b`.
 
 The new Node/pytest tests are committed but were not executed in this connector runtime. Full mobile typecheck, beta suite, Expo export, Gradle and physical-device tests remain unverified. Workflows remain `workflow_dispatch` only; no dispatch was sent. No main merge, live deploy, production migration or admin decision.
+
+
+## 2026-11-18 — Patient approved-anamnesis foreground recovery
+
+Web-first review of `patient_detail.html` confirmed that the profile renders only doctor-approved voice-exam fields and a fresh server snapshot on page open. Native `NativePatientVoiceHistory` refreshed on navigation focus and realtime events, but not when the app returned from background; the parent profile's general patient refresh did not refresh this separate anamnesis request. Added a focused background/inactive-to-active refresh policy, with no polling or new API, and kept the existing patient/account generation guard. Five renderer regressions cover resume, repeated active events, blurred screens, patient switching during a pending response and listener cleanup. The existing beta test registration already included this test; Security Recovery's native clinical job now includes it too.
+
+Evidence: `docs/mobile-patient-voice-history-resume-20261118.md`. Standalone helper Node test 1/1 and strict helper TypeScript compile passed. The five committed React renderer tests and full app checks were not executed here. Current-head PR CI remains without an associated run; the last inspected old Android push run failed before steps with an empty job record and `BlobNotFound 404`. No main merge, production deploy, migration or patient-data mutation.
