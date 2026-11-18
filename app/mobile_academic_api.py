@@ -84,7 +84,65 @@ class CourseInput(BaseModel):
 class CourseCreateInput(BaseModel):
     title:str=Field(max_length=120)
     description:str=Field(default='',max_length=500)
-    request_key:str=Field(min_length=16,max_length=80,pattern=r'^[A-Za-z0-9_-]{16,80}
+    request_key:str=Field(min_length=16,max_length=80)
+
+
+@router.post('/academic/library')
+def create_course(payload:CourseCreateInput,user=Depends(_account_user)):
+    from app import main as web
+    from app.academic_course_receipts import StudyCourseCreateReceipt,course_payload_hash
+    if not re.fullmatch(r'[A-Za-z0-9_-]{16,80}',payload.request_key):
+        raise HTTPException(422,'Geçersiz ders istek anahtarı.')
+    clean_title=' '.join((payload.title or '').strip().split())
+    clean_description=(payload.description or '').strip()
+    if len(clean_title)<2 or len(clean_title)>120:
+        raise HTTPException(400,'Ders adı 2 ile 120 karakter arasında olmalıdır.')
+    if len(clean_description)>500:
+        raise HTTPException(400,'Ders açıklaması en fazla 500 karakter olabilir.')
+    digest=course_payload_hash(title=clean_title,description=clean_description)
+    course_id=None
+    try:
+        with Session(web.engine,expire_on_commit=False) as session:
+            if web.engine.dialect.name=='postgresql':
+                session.execute(text('SELECT pg_advisory_xact_lock(:owner_id,:namespace)'),
+                    {'owner_id':user.id,'namespace':71048239})
+            receipt=session.exec(select(StudyCourseCreateReceipt).where(
+                StudyCourseCreateReceipt.owner_user_id==user.id,
+                StudyCourseCreateReceipt.request_key==payload.request_key,
+            )).first()
+            if receipt is not None:
+                if receipt.payload_hash!=digest:
+                    raise HTTPException(409,'İstek anahtarı farklı bir ders içeriği için kullanılmış.')
+                course=session.get(web.StudyCourse,receipt.course_id)
+                if course is None or course.owner_user_id!=user.id:
+                    raise HTTPException(410,'Bu istekle oluşturulan ders daha sonra silinmiş. Yeni bir ders isteği başlatın.')
+                course_id=course.id
+            else:
+                course=web.StudyCourse(owner_user_id=user.id,title=clean_title,description=clean_description or None)
+                session.add(course)
+                session.flush()
+                session.add(StudyCourseCreateReceipt(
+                    owner_user_id=user.id,request_key=payload.request_key,
+                    payload_hash=digest,course_id=course.id,
+                ))
+                session.commit()
+                course_id=course.id
+    except IntegrityError:
+        replay=_course_create_receipt_workspace(user,payload.request_key,digest)
+        if replay is not None:
+            return replay
+        raise HTTPException(503,'Ders kaydı doğrulanamadı. Aynı istek anahtarıyla yeniden deneyin.')
+    if course_id is None:
+        raise HTTPException(500,'Ders oluşturma sonucu doğrulanamadı.')
+    return _workspace(user,course_id)
+
+
+@router.get('/academic/library/receipt')
+def course_create_receipt(request_key:str=Query(...,min_length=16,max_length=80),user=Depends(_account_user)):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{16,80}',request_key):
+        raise HTTPException(422,'Geçersiz ders istek anahtarı.')
+    return {'workspace':_course_create_receipt_workspace(user,request_key)}
+
 @router.get('/academic/courses/{course_id}/workspace')
 def workspace(course_id:int,before:int|None=Query(None,ge=1),user=Depends(_account_user)):return _workspace(user,course_id,before)
 
