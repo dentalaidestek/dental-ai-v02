@@ -67,7 +67,7 @@ test('patient profile rejects malformed nested clinical collections before tooth
    global.fetch=async()=>reply(body);
    await assert.rejects(()=>getPatient('token',8),/beklenmeyen profil/);
   }
-  global.fetch=async()=>reply({...valid,teeth:[{id:1,tooth_number:'11',status:'HEALTHY'}],surfaces:[{id:2,tooth_number:'11',surface:'MESIAL',status:'CARIES'}],treatments:[{id:3,treatment_name:'Dolgu'}],media:[{id:4,original_filename:'image.jpg'}]});
+  global.fetch=async()=>reply({...valid,teeth:[{id:1,tooth_number:'11',status:'HEALTHY'}],surfaces:[{id:2,tooth_number:'11',surface:'MESIAL',status:'CARIES'}],treatments:[{id:3,treatment_name:'Dolgu',edit_revision:'a'.repeat(64),created_at:'2026-11-18T10:00:00'}],media:[{id:4,original_filename:'image.jpg'}]});
   assert.equal((await getPatient('token',8)).surfaces[0].surface,'MESIAL');
  }finally{global.fetch=original}
 });
@@ -288,9 +288,9 @@ test('patient detail accepts only the bounded first treatment page and a valid c
  const original=global.fetch,cursor='A'.repeat(32);
  const base={patient:{id:8},teeth:[],surfaces:[],treatments:[],media:[]};
  try{
-  global.fetch=async()=>reply({...base,treatments:[{id:1,treatment_name:'One'},{id:2,treatment_name:'Two'},{id:3,treatment_name:'Three'}],treatments_next_cursor:cursor});
+  global.fetch=async()=>reply({...base,treatments:[{id:1,treatment_name:'One',edit_revision:'1'.repeat(64),created_at:'2026-11-18T10:00:00'},{id:2,treatment_name:'Two',edit_revision:'2'.repeat(64),created_at:'2026-11-17T10:00:00'},{id:3,treatment_name:'Three',edit_revision:'3'.repeat(64),created_at:'2026-11-16T10:00:00'}],treatments_next_cursor:cursor});
   assert.equal((await getPatient('token',8)).treatments_next_cursor,cursor);
-  global.fetch=async()=>reply({...base,treatments:[{id:1,treatment_name:'One'},{id:2,treatment_name:'Two'},{id:3,treatment_name:'Three'},{id:4,treatment_name:'Four'}]});
+  global.fetch=async()=>reply({...base,treatments:[{id:1,treatment_name:'One',edit_revision:'1'.repeat(64),created_at:'2026-11-18T10:00:00'},{id:2,treatment_name:'Two',edit_revision:'2'.repeat(64),created_at:'2026-11-17T10:00:00'},{id:3,treatment_name:'Three',edit_revision:'3'.repeat(64),created_at:'2026-11-16T10:00:00'},{id:4,treatment_name:'Four',edit_revision:'4'.repeat(64),created_at:'2026-11-15T10:00:00'}]});
   await assert.rejects(()=>getPatient('token',8),/beklenmeyen profil/);
   global.fetch=async()=>reply({...base,treatments_next_cursor:'bad cursor'});
   await assert.rejects(()=>getPatient('token',8),/beklenmeyen profil/);
