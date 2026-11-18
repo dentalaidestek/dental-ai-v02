@@ -10831,12 +10831,12 @@ def tooth_chart(request: Request, patient_id: int):
             )
         }
         surface_revisions = {
-            f"{item.tooth_number}:{surface}": observation_revision(
+            f"{tooth_number}:{surface}": observation_revision(
                 next((row for row in surface_statuses
-                      if row.tooth_number == item.tooth_number and row.surface == surface), None),
-                kind="surface", patient_id=patient_id, tooth_number=item.tooth_number, surface=surface,
+                      if row.tooth_number == tooth_number and row.surface == surface), None),
+                kind="surface", patient_id=patient_id, tooth_number=tooth_number, surface=surface,
             )
-            for item in statuses
+            for tooth_number in tooth_revisions
             for surface in ("OCCLUSAL", "INCISAL", "MESIAL", "DISTAL", "BUCCAL", "LINGUAL")
         }
 
