@@ -29,3 +29,50 @@ test('the native gallery explains a missing server key and keeps the encrypted d
  assert.match(source,/Şifreli taslak cihazda korunuyor/);
  assert.match(source,/Sunucu ayarı düzelene kadar taslağı silmeyin/);
 });
+
+const vm=require('node:vm');
+function loadModernApiWithDeleteResponse(body,status=200){
+ const source=fs.readFileSync(path.join(__dirname,'../src/modernApi.ts'),'utf8');
+ const compiled=ts.transpileModule(source,{fileName:'modernApi.ts',compilerOptions:{
+  module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020
+ }}).outputText;
+ const exports={};
+ class ApiError extends Error{constructor(code,message){super(message);this.status=code}}
+ vm.runInNewContext(compiled,{
+  exports,Error,AbortController,setTimeout,clearTimeout,FormData:class FormData{},
+  fetch:async()=>({ok:status>=200&&status<300,status,text:async()=>JSON.stringify(body)}),
+  require:name=>{
+   if(name==='./chatFiles')return{validateChatFile:()=>true};
+   if(name==='./api')return{ApiError};
+   if(name==='./sessionExpiry')return{revalidateSession:async()=>{}};
+   throw Error('Unexpected module '+name);
+  }
+ });
+ return exports;
+}
+
+test('native media delete accepts only the exact media receipt, including an idempotent replay',async()=>{
+ const api=loadModernApiWithDeleteResponse({
+  ok:true,media_id:42,already_deleted:true,storage_cleanup_pending:null
+ });
+ const result=await api.deleteMedia('synthetic-token',7,42);
+ assert.equal(result.ok,true);
+ assert.equal(result.media_id,42);
+ assert.equal(result.already_deleted,true);
+});
+
+test('native media delete rejects a mismatched ID, false success or malformed optional receipt fields',async()=>{
+ const invalid=[
+  {ok:true,media_id:43},
+  {ok:false,media_id:42},
+  {ok:true,media_id:42,already_deleted:'yes'},
+  {ok:true,media_id:42,storage_cleanup_pending:'pending'}
+ ];
+ for(const body of invalid){
+  const api=loadModernApiWithDeleteResponse(body);
+  await assert.rejects(
+   ()=>api.deleteMedia('synthetic-token',7,42),
+   /Klinik görsel silme yanıtı doğrulanamadı/
+  );
+ }
+});
