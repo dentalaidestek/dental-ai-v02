@@ -768,3 +768,16 @@ Native PCM16/WebSocket/interim-transcript parity remains open: the native record
 
 No transcript, audio, patient record, or production data changed. No workflow was dispatched; no main merge, migration, live deploy, or APK/IPA publication.
 
+
+
+## Consent withdrawal regression — 2026-11-19
+
+Re-inspected the web voice flow before changing native behavior. Found that both web and native consent controls were disabled while the microphone was active; the live browser controller had no consent-change handler, and the native recorder could continue into ASR if opt-out raced its finish gate.
+
+Fixed the web live and MediaRecorder paths, made consent withdrawable during active capture, and added native abort/pause plus a ref-backed guard against stale drain/finish callbacks. Existing app-private recording recovery and exact ASR receipt keys are preserved. The web file-recorder blob is held only in page memory after opt-out and requires explicit re-consent/retry.
+
+Regression coverage added in `mobile/tests/voiceWorkflow.cjs`, `tests/voice_live_browser.cjs`, and `tests/voice_exam_browser_state.cjs`. Documentation: `docs/mobile-voice-consent-withdrawal-20261119.md`.
+
+Commits: `6f9add4`, `24c9e23`, `1c21765`, `6ea169a`, `b2dfcf1`, `8cd747d`, `bd1bc9e`, `272979d`, `d559e27`, `fad4c8f`, `1b4c4e8`.
+
+Tests are committed but not executed. The current-head workflow has no run/check; earlier hosted jobs had runner ID 0, empty steps and missing log blobs. Physical Android/iOS and real-browser acceptance remain open. No main merge or production deploy.
