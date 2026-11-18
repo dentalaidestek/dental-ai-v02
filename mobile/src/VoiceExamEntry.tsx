@@ -126,7 +126,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   if(text.length>72000){setClinicalError("Muayene metni 72.000 karakter sınırını aşıyor. Yerel taslak korunuyor.");return;}
   processingLock.current=true;
   const request=++generation.current,currentScope=scope.current,patientId=selected.id;
-  const activeSessionId=sessionIdOverride||voiceSessionId||Crypto.randomUUID();if(!voiceSessionId)setVoiceSessionId(activeSessionId);
+  const activeSessionId=forceFreshExtraction.current?Crypto.randomUUID():(sessionIdOverride||voiceSessionId||Crypto.randomUUID());if(!voiceSessionId||forceFreshExtraction.current)setVoiceSessionId(activeSessionId);
   processingOwner.current=request;setProcessing(true);setClinicalError("");setExtractionProgress("");
   try{
    const chunks=splitVoiceTranscript(text);
@@ -145,6 +145,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
     }
    }
    const result=await extractVoice(token,patientId,text,{
+    sessionId:activeSessionId,
     resume,
     onProgress:(completed,total)=>{if(request===generation.current&&currentScope===scope.current)setExtractionProgress(`Görüşme bölümleri işleniyor: ${completed}/${total}`);},
     onCheckpoint:async checkpoint=>{
@@ -198,7 +199,9 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  async function recheckVoice(){
   if(!selected)return;
   forceFreshExtraction.current=true;
-  await processText();
+  const nextSessionId=Crypto.randomUUID();
+  setVoiceSessionId(nextSessionId);
+  await processText(transcript,nextSessionId);
  }
  async function finalize(){if(!selected||!consent||!review||processingLock.current||audioBusy||deviceCheckBusy||audioSession.started&&!audioSession.finished)return;processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const data=review.review;const response=await finalizeVoice(token,selected.id,{context:{fields:data.fields||{},teeth:data.teeth||[],literature_topics:data.literature_topics||[],source_requests:data.source_requests||[],...(data.appointment?{appointment:data.appointment}:{})},insights:data.communication||data.insights||[],uncertain:(data.uncertain||'').slice(0,3000),conversation_text:transcript});if(request===generation.current&&currentScope===scope.current)setFinalResult(response.final as Record<string,unknown>)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Son değerlendirme tamamlanamadı.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
  
@@ -240,7 +243,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    {privacyExpanded&&<Text style={{color:muted,lineHeight:20}}>Kayıt sırasında ses parçaları konuşma metni için işlenir. Klinik çıkarım yalnız muayeneyi bitirdiğinizde veya metni değerlendirdiğinizde yapılır. Metin cihazın güvenli deposunda, bekleyen sesler özel uygulama alanında tutulur. Ham ses ve tam konuşma metni hasta dosyasına otomatik yazılmaz. Gereksiz kimlik bilgilerini konuşmayın. Taslağı bu ekrandan temizleyebilirsiniz.</Text>}
    {!!userId&&<NativeVoiceRecorder key={token+":"+selected?.id} token={token} userId={userId} patientId={selected!.id} consent={consent} value={transcript} disabled={processing||applyBusy||deviceCheckBusy} onBusyChanged={setAudioBusy} onSessionState={state=>{setAudioSession({started:state.started,finished:state.finished});setVoiceSessionId(state.sessionId)}} onTranscript={v=>{generation.current++;setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} onFinished={(v,sessionId)=>{setVoiceSessionId(sessionId);setTranscript(v);void processText(v,sessionId)}}/>}
    <Text style={{fontWeight:"800",color:navy,marginTop:20}}>Muayene metni</Text>
-   <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} editable={!processing&&!audioBusy&&!deviceCheckBusy&&!applyBusy} onChangeText={v=>{generation.current++;setClinicalError("");setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
+   <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} editable={!processing&&!audioBusy&&!deviceCheckBusy&&!applyBusy} onChangeText={v=>{generation.current++;setClinicalError("");setVoiceSessionId(Crypto.randomUUID());setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
    <Text style={{color:muted,fontSize:12,marginTop:8}}>{transcript.length}/72000 karakter · Uzun görüşmeler 12.000 karakterlik güvenli bölümlere ayrılır; tamamlanan bölümler cihazın şifreli taslağında korunur.</Text>
    {!!extractionProgress&&<Text accessibilityLiveRegion="polite" style={{color:muted,marginTop:10}}>{extractionProgress}</Text>}
    {!!clinicalError&&<Text style={{color:"#B42318",marginTop:12}}>{clinicalError}</Text>}
