@@ -17,29 +17,47 @@ test('native audio transport sends binary recording with consent and validates r
  vm.runInNewContext(source,{exports,setTimeout,clearTimeout,require:n=>n==='expo-file-system/legacy'?filesystem:n==='./api'?{ApiError:class extends Error{constructor(status,message){super(message);this.status=status}}}:{revalidateSession:async()=>{}}});
  const result=await exports.transcribeNativeRecording('token',8,'file:///cache/audio.m4a','voice-workflow-audio-00000001');assert.equal(result.transcript,'Synthetic speech');assert.equal(calls[0][2].headers['X-Voice-Consent'],'yes');assert.equal(calls[0][2].headers['Content-Type'],'audio/mp4');assert.equal(calls[0][2].headers.Cookie,'');assert.equal(calls[0][2].uploadType,0);
 });
-function recorderUI({saved=null,transcribe=async()=>({transcript:'Synthetic dictated speech',revision:'r'})}={}){
- const exports={},store=new Map(),calls=[],timers=[],state={isRecording:false,durationMillis:0,mediaServicesDidReset:false},audio={uri:'file:///cache/record.m4a',prepareToRecordAsync:async options=>{if(!options?.extension)throw Error('iOS segment preparation must receive fresh recording options');calls.push('prepare')},record(){state.isRecording=true;calls.push('record')},stop:async()=>{state.isRecording=false;calls.push('stop')}};
+
+test('voice transcript segments use real line breaks for display and chunk boundaries',()=>{
+ const api=require('../src/voiceSession.ts');
+ const base={...api.newVoiceDraft(1,8,1000),transcript:'Önceki bölüm',segments:[{id:'segment-1',uri:'file:///cache/segment-1.m4a',ready:true}]};
+ const appended=api.appendVoiceSegment(base,'segment-1','Yeni bölüm');
+ assert.equal(appended.transcript,'Önceki bölüm\nYeni bölüm');
+ assert.equal(appended.transcript.includes('\\n'),false);
+ const receipt=api.markVoiceSegmentTranscribed(base,'segment-1','Yeni bölüm');
+ assert.equal(receipt.transcript,'Önceki bölüm\nYeni bölüm');
+ assert.equal(receipt.transcript.includes('\\n'),false);
+ const chunks=api.splitVoiceTranscript('a'.repeat(7000)+'\n'+'b'.repeat(7000));
+ assert.equal(chunks[0],'a'.repeat(7000)+'\n');
+ assert.equal(chunks[1],'b'.repeat(7000));
+});
+
+function recorderUI({saved=null,transcribe=async()=>({transcript:'Synthetic dictated speech',revision:'r'}),stopFailures=0,restoredFileInfo={exists:true,size:1024}}={}){
+ const exports={},store=new Map(),calls=[],timers=[],files=new Map(),state={isRecording:false,durationMillis:0,mediaServicesDidReset:false};
+ if(saved){try{for(const segment of JSON.parse(saved).segments||[])files.set(segment.uri,{...restoredFileInfo})}catch{}}
+ let audioUri='file:///cache/record-0.m4a',stopFailuresRemaining=stopFailures;
+ const audio={get uri(){return audioUri},prepareToRecordAsync:async options=>{if(!options?.extension)throw Error('iOS segment preparation must receive fresh recording options');const index=calls.filter(value=>value==='prepare').length+1;audioUri='file:///cache/record-'+index+'.m4a';files.set(audioUri,{exists:true,size:1024});calls.push('prepare')},record(){state.isRecording=true;calls.push('record')},stop:async()=>{calls.push('stop');if(stopFailuresRemaining>0){stopFailuresRemaining--;throw Error('Synthetic stop failure')}state.isRecording=false}};
  let focused=true,clockNow=Date.now(),nextInterval=0;const intervals=new Map();
  const secure={getItemAsync:async key=>store.get(key)||null,setItemAsync:async(k,v)=>store.set(k,v),deleteItemAsync:async k=>store.delete(k)};
  const native={StyleSheet:{create:x=>x},Alert:{alert(){}},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Pressable','Text','TextInput','View'].map(x=>[x,x]))};
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeVoiceRecorder.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
- vm.runInNewContext(code,{exports,Date:{now:()=>clockNow},setInterval:fn=>{const id=++nextInterval;intervals.set(id,fn);return id},clearInterval:id=>intervals.delete(id),setTimeout:(fn,ms)=>ms===15000?(timers.push(fn),timers.length):setTimeout(fn,ms),clearTimeout:id=>{if(typeof id!=='number')clearTimeout(id)},AbortController,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='expo-audio'?{useAudioRecorder:()=>audio,useAudioRecorderState:()=>state,RecordingPresets:{HIGH_QUALITY:{extension:'.m4a',android:{outputFormat:'mpeg4',audioEncoder:'aac'},ios:{}}},requestRecordingPermissionsAsync:async()=>({granted:true}),setAudioModeAsync:async()=>{}}:n==='expo-file-system/legacy'?{cacheDirectory:'file:///cache/',deleteAsync:async()=>{}}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=>String(calls.length)+'-synthetic'}:n==='@react-navigation/native'?{useIsFocused:()=>focused,usePreventRemove(){}}:n==='./socialDraft'?{chunkedDraftStore:()=>({getItemAsync:async()=>saved,setItemAsync:async(_k,v)=>{store.set('draft',v)},deleteItemAsync:async()=>{}})}:n==='./voiceSession'?require('../src/voiceSession.ts'):{transcribeNativeRecording:transcribe}});
- return{Component:exports.default,calls,store,timers,focus:value=>{focused=value},advance:ms=>{clockNow+=ms;for(const fn of intervals.values())fn()}};
+ vm.runInNewContext(code,{exports,Date:{now:()=>clockNow},setInterval:fn=>{const id=++nextInterval;intervals.set(id,fn);return id},clearInterval:id=>intervals.delete(id),setTimeout:(fn,ms)=>ms===15000?(timers.push(fn),timers.length):setTimeout(fn,ms),clearTimeout:id=>{if(typeof id!=='number')clearTimeout(id)},AbortController,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='expo-audio'?{useAudioRecorder:()=>audio,useAudioRecorderState:()=>state,RecordingPresets:{HIGH_QUALITY:{extension:'.m4a',android:{outputFormat:'mpeg4',audioEncoder:'aac'},ios:{}}},requestRecordingPermissionsAsync:async()=>({granted:true}),setAudioModeAsync:async()=>{}}:n==='expo-file-system/legacy'?{cacheDirectory:'file:///cache/',deleteAsync:async uri=>files.set(uri,{exists:false,size:0}),getInfoAsync:async uri=>files.get(uri)||{exists:false,size:0}}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=>String(calls.length)+'-synthetic'}:n==='@react-navigation/native'?{useIsFocused:()=>focused,usePreventRemove(){}}:n==='./socialDraft'?{chunkedDraftStore:()=>({getItemAsync:async()=>saved,setItemAsync:async(_k,v)=>{store.set('draft',v)},deleteItemAsync:async()=>{}})}:n==='./voiceSession'?require('../src/voiceSession.ts'):{transcribeNativeRecording:transcribe}});
+ return{Component:exports.default,calls,store,timers,files,focus:value=>{focused=value},advance:ms=>{clockNow+=ms;for(const fn of intervals.values())fn()}};
 }
 test('native microphone pauses/resumes and only finishes clinical handoff after ASR',async()=>{
  const h=recorderUI(),transcripts=[],finished=[];let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript:v=>transcripts.push(v),onFinished:v=>finished.push(v)})));
- await renderer.act(async()=>button(tree,'Muayeneyi Başlat').props.onPress());assert.ok(h.calls.includes('record'));assert.equal(finished.length,0);
- await renderer.act(async()=>button(tree,'Duraklat').props.onPress());assert.ok(h.calls.includes('stop'));assert.equal(finished.length,0);assert.equal(transcripts.at(-1),'Synthetic dictated speech');
- await renderer.act(async()=>button(tree,'Devam Et').props.onPress());assert.equal(h.calls.filter(x=>x==='record').length,2);await renderer.act(async()=>button(tree,'Muayeneyi Bitir').props.onPress());assert.equal(finished.length,1);assert.ok(finished[0].includes('Synthetic dictated speech'));await renderer.act(async()=>tree.unmount());
+ await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());assert.ok(h.calls.includes('record'));assert.equal(finished.length,0);
+ await renderer.act(async()=>button(tree,'Ⅱ  Duraklat').props.onPress());assert.ok(h.calls.includes('stop'));assert.equal(finished.length,0);assert.equal(transcripts.at(-1),'Synthetic dictated speech');
+ await renderer.act(async()=>button(tree,'▶  Devam et').props.onPress());assert.equal(h.calls.filter(x=>x==='record').length,2);await renderer.act(async()=>button(tree,'Muayeneyi bitir').props.onPress());assert.equal(finished.length,1);assert.ok(finished[0].includes('Synthetic dictated speech'));await renderer.act(async()=>tree.unmount());
 });
 test('native microphone elapsed time accumulates across recording chunks and pauses',async()=>{
  const h=recorderUI(),finished=[];let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished:v=>finished.push(v)})));
- await renderer.act(async()=>button(tree,'Muayeneyi Başlat').props.onPress());await renderer.act(async()=>h.advance(4200));await renderer.act(async()=>button(tree,'Duraklat').props.onPress());assert.equal(JSON.parse(h.store.get('draft')).elapsedMs,4200);assert.ok(text(tree.toJSON()).includes('00:04'));
- await renderer.act(async()=>button(tree,'Devam Et').props.onPress());await renderer.act(async()=>h.advance(2300));await renderer.act(async()=>button(tree,'Muayeneyi Bitir').props.onPress());assert.equal(JSON.parse(h.store.get('draft')).elapsedMs,6500);assert.ok(text(tree.toJSON()).includes('00:06'));assert.equal(finished.length,1);await renderer.act(async()=>tree.unmount());
+ await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());await renderer.act(async()=>h.advance(4200));await renderer.act(async()=>button(tree,'Ⅱ  Duraklat').props.onPress());assert.equal(JSON.parse(h.store.get('draft')).elapsedMs,4200);assert.ok(text(tree.toJSON()).includes('00:04'));
+ await renderer.act(async()=>button(tree,'▶  Devam et').props.onPress());await renderer.act(async()=>h.advance(2300));await renderer.act(async()=>button(tree,'Muayeneyi bitir').props.onPress());assert.equal(JSON.parse(h.store.get('draft')).elapsedMs,6500);assert.ok(text(tree.toJSON()).includes('00:06'));assert.equal(finished.length,1);await renderer.act(async()=>tree.unmount());
 });
 
 test('pending ASR failure retains recording and never triggers clinical handoff',async()=>{
- const h=recorderUI({transcribe:async()=>{throw Error('Synthetic ASR failure')}}),finished=[];let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished:v=>finished.push(v)})));await renderer.act(async()=>button(tree,'Muayeneyi Başlat').props.onPress());await renderer.act(async()=>button(tree,'Muayeneyi Bitir').props.onPress());assert.equal(finished.length,0);assert.equal(JSON.parse(h.store.get('draft')).segments.length,1);assert.ok(text(tree.toJSON()).includes('Synthetic ASR failure'));await renderer.act(async()=>tree.unmount());
+ const h=recorderUI({transcribe:async()=>{throw Error('Synthetic ASR failure')}}),finished=[];let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished:v=>finished.push(v)})));await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());await renderer.act(async()=>button(tree,'Muayeneyi bitir').props.onPress());assert.equal(finished.length,0);assert.equal(JSON.parse(h.store.get('draft')).segments.length,1);assert.ok(text(tree.toJSON()).includes('Synthetic ASR failure'));await renderer.act(async()=>tree.unmount());
 });
 
 function approvalUI(apply,storage=new Map()){
@@ -61,7 +79,7 @@ test('secure voice text can survive restart beyond the default social draft chun
 
 test('restored voice text is not overwritten by an initially empty parent field',async()=>{
  const saved={version:1,userId:1,patientId:8,transcript:'Restored synthetic speech',segments:[],updatedAt:Date.now(),ended:true,elapsedMs:65000},h=recorderUI({saved:JSON.stringify(saved)}),values=[];let tree;
- await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:false,value:'',onTranscript:v=>values.push(v),onFinished(){}})));assert.equal(values.at(-1),'Restored synthetic speech');assert.ok(text(tree.toJSON()).includes('01:05'));assert.equal(button(tree,'Taslağı ve Yerel Sesleri Sil').props.disabled,false);await renderer.act(async()=>tree.unmount());
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:false,value:'',onTranscript:v=>values.push(v),onFinished(){}})));assert.equal(values.at(-1),'Restored synthetic speech');assert.ok(text(tree.toJSON()).includes('01:05'));assert.equal(button(tree,'Taslağı ve yerel sesleri sil').props.disabled,false);await renderer.act(async()=>tree.unmount());
 });
 test('voice appointment is explicit and uses clinician-selected date and time',async()=>{
  const calls=[],h=approvalUI(async(_t,_p,payload)=>{calls.push(payload);return{ok:true,analysis_id:19}});let tree;
@@ -70,7 +88,7 @@ test('voice appointment is explicit and uses clinician-selected date and time',a
 });
 
 test('ASR failure during live chunk rotation stops the next microphone chunk',async()=>{
- const h=recorderUI({transcribe:async()=>{throw Error('Synthetic ASR outage')}});let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished(){}})));await renderer.act(async()=>button(tree,'Muayeneyi Başlat').props.onPress());await renderer.act(async()=>{h.timers[0]();await new Promise(r=>setImmediate(r))});assert.equal(h.calls.filter(x=>x==='record').length,2);assert.equal(h.calls.filter(x=>x==='stop').length,2);assert.equal(JSON.parse(h.store.get('draft')).segments.length,2);await renderer.act(async()=>tree.unmount());
+ const h=recorderUI({transcribe:async()=>{throw Error('Synthetic ASR outage')}});let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished(){}})));await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());await renderer.act(async()=>{h.timers[0]();await new Promise(r=>setImmediate(r))});assert.equal(h.calls.filter(x=>x==='record').length,2);assert.equal(h.calls.filter(x=>x==='stop').length,2);assert.equal(JSON.parse(h.store.get('draft')).segments.length,2);await renderer.act(async()=>tree.unmount());
 });
 
 test('exam entry never performs clinical extraction during live transcription',async()=>{
@@ -90,7 +108,7 @@ test('unreadable approval intent blocks a new clinical write',async()=>{
 });
 
 test('leaving the focused screen stops microphone and retains the pending clip',async()=>{
- const calls=[],h=recorderUI({transcribe:async()=>{calls.push('ASR');return{transcript:'Synthetic',revision:'r'}}});const props={token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished(){}};let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,props)));await renderer.act(async()=>button(tree,'Muayeneyi Başlat').props.onPress());await renderer.act(async()=>{h.focus(false);tree.update(React.createElement(h.Component,props));await new Promise(r=>setImmediate(r))});assert.equal(h.calls.filter(x=>x==='stop').length,1);assert.equal(calls.length,0);assert.equal(JSON.parse(h.store.get('draft')).segments.length,1);await renderer.act(async()=>tree.unmount());
+ const calls=[],h=recorderUI({transcribe:async()=>{calls.push('ASR');return{transcript:'Synthetic',revision:'r'}}});const props={token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished(){}};let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,props)));await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());await renderer.act(async()=>{h.focus(false);tree.update(React.createElement(h.Component,props));await new Promise(r=>setImmediate(r))});assert.equal(h.calls.filter(x=>x==='stop').length,1);assert.equal(calls.length,0);assert.equal(JSON.parse(h.store.get('draft')).segments.length,1);await renderer.act(async()=>tree.unmount());
 });
 
 
@@ -212,6 +230,44 @@ test('native voice history is loaded privately, requires patient confirmation, a
  await renderer.act(async()=>tree.unmount());
 });
 
+
+
+test('app restart recovers a bounded interrupted private recording with its original request key',async()=>{
+ const saved=JSON.stringify({version:1,userId:1,patientId:8,transcript:'Önceki konuşma',segments:[{id:'stable-interrupted-segment',uri:'file:///cache/interrupted.m4a',ready:false}],updatedAt:Date.now(),ended:false,audioStarted:true,elapsedMs:4200});
+ const calls=[],transcripts=[],h=recorderUI({saved,transcribe:async(...args)=>{calls.push(args);return{transcript:'Kurtarılan bölüm',revision:'r'}}});let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript:value=>transcripts.push(value),onFinished(){}})));
+ await renderer.act(async()=>new Promise(resolve=>setImmediate(resolve)));
+ assert.ok(button(tree,'Bekleyen sesleri yazıya çevir'));
+ await renderer.act(async()=>button(tree,'Bekleyen sesleri yazıya çevir').props.onPress());
+ assert.equal(calls.length,1);assert.equal(calls[0][3],'stable-interrupted-segment');
+ assert.equal(transcripts.at(-1),'Önceki konuşma\nKurtarılan bölüm');
+ assert.equal(JSON.parse(h.store.get('draft')).segments.length,0);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('missing interrupted audio removes only its receipt and preserves earlier transcript',async()=>{
+ const saved=JSON.stringify({version:1,userId:1,patientId:8,transcript:'Korunacak önceki metin',segments:[{id:'missing-segment',uri:'file:///cache/missing.m4a',ready:false}],updatedAt:Date.now(),ended:false,audioStarted:true,elapsedMs:1200});
+ const h=recorderUI({saved,restoredFileInfo:{exists:false,size:0}}),transcripts=[];let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript:value=>transcripts.push(value),onFinished(){}})));
+ await renderer.act(async()=>new Promise(resolve=>setImmediate(resolve)));
+ assert.equal(JSON.parse(h.store.get('draft')).segments.length,0);
+ assert.equal(JSON.parse(h.store.get('draft')).transcript,'Korunacak önceki metin');
+ assert.equal(transcripts.at(-1),'Korunacak önceki metin');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('failed recorder stop keeps the same segment active until a later stop and ASR succeed',async()=>{
+ const asr=[],h=recorderUI({stopFailures:1,transcribe:async(...args)=>{asr.push(args);return{transcript:'Durdurulduktan sonra yazıldı',revision:'r'}}});let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished(){}})));
+ await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());
+ await renderer.act(async()=>button(tree,'Ⅱ  Duraklat').props.onPress());
+ assert.equal(h.calls.filter(value=>value==='stop').length,1);assert.ok(text(tree.toJSON()).includes('Synthetic stop failure'));
+ await renderer.act(async()=>button(tree,'Ⅱ  Duraklat').props.onPress());
+ assert.equal(h.calls.filter(value=>value==='stop').length,2);assert.equal(asr.length,1);
+ assert.equal(JSON.parse(h.store.get('draft')).segments.length,0);
+ assert.ok(JSON.parse(h.store.get('draft')).transcript.includes('Durdurulduktan sonra yazıldı'));
+ await renderer.act(async()=>tree.unmount());
+});
 
 test('native voice recorder exposes the web session microphone, timer, meter and transcript preview',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativeVoiceRecorder.tsx'),'utf8');
