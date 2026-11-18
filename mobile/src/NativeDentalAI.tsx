@@ -5,7 +5,7 @@ import{ActivityIndicator,AppState,Pressable,ScrollView,Text,TextInput,View}from"
 import * as SecureStore from "expo-secure-store";
 import{getPatient,getPatients,Patient}from"./api";
 import{getAnalysis,startAnalysisAI,MobileAnalysis,analysisPatientLabel}from"./analysisApi";
-import{analysisNeedsPolling,analysisPollDelay,MAX_ANALYSIS_POLL_ATTEMPTS}from"./analysisRefresh";
+import{analysisNeedsPolling,analysisPollDelay,analysisRefreshCanRetry,MAX_ANALYSIS_POLL_ATTEMPTS}from"./analysisRefresh";
 import{useRealtime}from"./realtime";
 
 export default function NativeDentalAI({token,userId,initialAnalysisId,initialPatientId}:{token:string;userId?:number;initialAnalysisId?:number;initialPatientId?:number}){
@@ -42,7 +42,8 @@ export default function NativeDentalAI({token,userId,initialAnalysisId,initialPa
     }
    }).catch(e=>{
     if(active&&request===refreshGeneration.current&&scope===sessionScope.current){
-     setErr(e instanceof Error?e.message:'Analiz yenilenemedi.');setPollRevision(value=>value+1);
+     setErr(e instanceof Error?e.message:'Analiz yenilenemedi.');
+     if(analysisRefreshCanRetry(e))setPollRevision(value=>value+1);
     }
    });
   });
@@ -62,7 +63,7 @@ export default function NativeDentalAI({token,userId,initialAnalysisId,initialPa
  const selectedPatient=selectedRecord.current&&selectedRecord.current.id===patientId?selectedRecord.current:null;
  const choices=selectedRecord.current&&selectedRecord.current.id===patientId&&!patients.some(p=>p.id===patientId)?[selectedRecord.current,...patients]:patients;
  useEffect(()=>()=>{refreshGeneration.current++},[token,analysis?.analysis.id]);
- useEffect(()=>{if(!analysis||!lastEvent)return;const e=lastEvent as any;const id=Number(e.entity_id||e.analysis_id||e.payload?.analysis_id||0);if((e.entity_type==="analysis"||["ANALYSIS_CREATED","ANALYSIS_UPDATED","ANALYSIS_COMPLETED","VISION_READY"].includes(String(e.event_type||e.type)))&&id===analysis.analysis.id){const generation=++refreshGeneration.current,scope=sessionScope.current,selectedPatient=patientId,analysisId=analysis.analysis.id;getAnalysis(token,analysisId).then(result=>{if(generation===refreshGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&activeId.current===analysisId&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient){setAnalysis(result);setPollRevision(value=>value+1)}}).catch(()=>{})}},[lastEvent,analysis?.analysis.id,token,patientId]);
+ useEffect(()=>{if(!analysis||!lastEvent)return;const e=lastEvent as any;const id=Number(e.entity_id||e.analysis_id||e.payload?.analysis_id||0);if((e.entity_type==="analysis"||["ANALYSIS_CREATED","ANALYSIS_UPDATED","ANALYSIS_COMPLETED","VISION_READY"].includes(String(e.event_type||e.type)))&&id===analysis.analysis.id){const generation=++refreshGeneration.current,scope=sessionScope.current,selectedPatient=patientId,analysisId=analysis.analysis.id;getAnalysis(token,analysisId).then(result=>{if(generation===refreshGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&activeId.current===analysisId&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient){setAnalysis(result);setPollRevision(value=>value+1)}}).catch(e=>{if(generation===refreshGeneration.current&&scope===sessionScope.current){if(analysisRefreshCanRetry(e))setPollRevision(value=>value+1);else setErr(e instanceof Error?e.message:'Analiz yenilenemedi.')}})}},[lastEvent,analysis?.analysis.id,token,patientId]);
  useEffect(()=>{
   if(!analysis||!analysisNeedsPolling(analysis)||patientId===null)return;
   let disposed=false,attempts=0;
@@ -85,8 +86,9 @@ export default function NativeDentalAI({token,userId,initialAnalysisId,initialPa
      if(attempts<MAX_ANALYSIS_POLL_ATTEMPTS)schedule(attempts);
      else setErr("Analiz sunucuda sürüyor. Otomatik kontrol sınırına ulaşıldı; Sonucu Yenile ile devam edin.");
     }
-   }catch{
-    if(disposed||scope!==sessionScope.current)return;
+   }catch(e){
+    if(disposed||scope!==sessionScope.current||request!==refreshGeneration.current)return;
+    if(!analysisRefreshCanRetry(e)){setErr(e instanceof Error?e.message:'Analiz durumu doğrulanamadı.');return}
     if(attempts<MAX_ANALYSIS_POLL_ATTEMPTS)schedule(attempts);
     else setErr("Analiz durumu otomatik doğrulanamadı. Yeniden denemek için Sonucu Yenile.");
    }
@@ -117,7 +119,7 @@ export default function NativeDentalAI({token,userId,initialAnalysisId,initialPa
     }catch{ /* Secure-store failure must not invalidate an authorized on-screen result. */ }
   }
  }
- async function refresh(){if(!analysis||actionLock.current)return;actionLock.current=true;const generation=++actionGeneration.current,scope=sessionScope.current,analysisId=analysis.analysis.id,selectedPatient=patientId;setBusy(true);try{const result=await getAnalysis(token,analysisId);if(generation===actionGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient){setAnalysis(result);setPollRevision(value=>value+1);setErr("")}}catch(e:any){if(generation===actionGeneration.current&&scope===sessionScope.current)setErr(e?.message||"Durum alınamadı.")}finally{if(generation===actionGeneration.current&&scope===sessionScope.current){actionLock.current=false;setBusy(false)}}}
+ async function refresh(){if(!analysis||actionLock.current)return;actionLock.current=true;const generation=++actionGeneration.current,scope=sessionScope.current,analysisId=analysis.analysis.id,selectedPatient=patientId;setBusy(true);try{const result=await getAnalysis(token,analysisId);if(generation===actionGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient){setAnalysis(result);setPollRevision(value=>value+1);setErr("")}}catch(e:any){if(generation===actionGeneration.current&&scope===sessionScope.current){setErr(e?.message||"Durum alınamadı.");if(analysisRefreshCanRetry(e))setPollRevision(value=>value+1)}}finally{if(generation===actionGeneration.current&&scope===sessionScope.current){actionLock.current=false;setBusy(false)}}}
  async function start(){if(!analysis||actionLock.current)return;actionLock.current=true;const generation=++actionGeneration.current,scope=sessionScope.current,analysisId=analysis.analysis.id,selectedPatient=patientId;setBusy(true);setErr("");try{if(selectedPatient===null||analysis.analysis.patient_id!==selectedPatient)throw Error("Analiz kimliği seçili hastayla eşleşmiyor.");await startAnalysisAI(token,analysisId);if(generation!==actionGeneration.current||scope!==sessionScope.current)return;const result=await getAnalysis(token,analysisId);if(generation===actionGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient)setAnalysis(result)}catch(e:any){if(generation===actionGeneration.current&&scope===sessionScope.current)setErr(e?.message||"Analiz başlatılamadı.")}finally{if(generation===actionGeneration.current&&scope===sessionScope.current){actionLock.current=false;setBusy(false)}}}
  return <View style={{paddingBottom:30}}>
   <Text style={{fontSize:13,fontWeight:"800",color:"#718096",marginBottom:8}}>Hasta seç</Text>
