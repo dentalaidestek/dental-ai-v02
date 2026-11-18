@@ -313,9 +313,9 @@ def test_program_shared_validator_enforces_web_form_length_limits(program):
     with Session(engine) as s:
         user=s.get(main.User,1)
         base=('APPOINTMENT','Synthetic valid title','2030-01-07T10:00','2030-01-07T10:30','8','','','NONE',None,'NONE','')
-        values,error=main._validate_schedule_input(s,user,*base[:6],'x'*161,*base[7:])
+        values,error=main._validate_schedule_input(s,user,*base[:5],'x'*161,*base[6:])
         assert values is None and error=='Konum en fazla 160 karakter olabilir.'
-        values,error=main._validate_schedule_input(s,user,*base[:7],'x'*2001,*base[8:])
+        values,error=main._validate_schedule_input(s,user,*base[:6],'x'*2001,*base[7:])
         assert values is None and error=='Notlar en fazla 2000 karakter olabilir.'
 
 
