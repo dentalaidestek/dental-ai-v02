@@ -785,7 +785,8 @@ def mobile_update_tooth_surface(
         )).first()
         current_revision = observation_revision(current, kind="surface", patient_id=patient_id,
                                                 tooth_number=tooth_number, surface=surface_name)
-        if payload.expected_revision is not None and payload.expected_revision != current_revision:
+        expected_was_sent = "expected_revision" in getattr(payload, "model_fields_set", getattr(payload, "__fields_set__", set()))
+        if expected_was_sent and payload.expected_revision != (current_revision if current is not None else None):
             raise HTTPException(status_code=409, detail="Diş yüzeyi başka bir oturumda güncellendi. Güncel şemayı yükleyip yeniden uygulayın.")
         note = payload.note.strip() if payload.note else None
         upsert_tooth_surface_observation(
@@ -842,7 +843,8 @@ def mobile_update_tooth(
         )).first()
         current_revision = observation_revision(current, kind="tooth", patient_id=patient_id,
                                                 tooth_number=tooth_number)
-        if payload.expected_revision is not None and payload.expected_revision != current_revision:
+        expected_was_sent = "expected_revision" in getattr(payload, "model_fields_set", getattr(payload, "__fields_set__", set()))
+        if expected_was_sent and payload.expected_revision != (current_revision if current is not None else None):
             raise HTTPException(status_code=409, detail="Diş başka bir oturumda güncellendi. Güncel şemayı yükleyip yeniden uygulayın.")
         note = payload.note.strip() if payload.note else None
         updated_at = _utcnow_naive()
