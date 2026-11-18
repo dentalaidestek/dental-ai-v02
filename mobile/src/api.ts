@@ -194,13 +194,19 @@ export async function getToothChartFocus(token:string,patientId:number):Promise<
   throw new ApiError(502,"Diş şeması başlangıç dişi doğrulanamadı.");
  return result.latest_analysis_tooth;
 }
-function validateToothPayload(payload:{status:ToothStatusCode;note?:string;surface?:ToothSurfaceCode;surfaces?:ToothSurfaceCode[]}){
+function validateToothPayload(payload:{status:ToothStatusCode;note?:string;surface?:ToothSurfaceCode;surfaces?:ToothSurfaceCode[];surface_revisions?:Record<string,string|null>}){
  if(!payload||!validToothStatuses.has(payload.status))throw new Error("Geçersiz diş durumu.");
  if(payload.surface!==undefined&&!validToothSurfaces.has(payload.surface))throw new Error("Geçersiz diş yüzeyi.");
  if(payload.surfaces!==undefined&&(!Array.isArray(payload.surfaces)||payload.surfaces.some(s=>!validToothSurfaces.has(s))))throw new Error("Geçersiz diş yüzeyi.");
+ if(payload.surfaces?.length){
+  if(!payload.surface_revisions||Object.keys(payload.surface_revisions).length!==payload.surfaces.length||
+     payload.surfaces.some(surface=>!Object.prototype.hasOwnProperty.call(payload.surface_revisions,surface)||
+       (payload.surface_revisions![surface]!==null&&!/^[a-f0-9]{64}$/.test(payload.surface_revisions![surface]||""))))
+   throw new Error("Seçilen diş yüzeylerinin sürümü alınamadı; şemayı yenileyin.");
+ }
 }
 export function updateToothSurface(token:string,patientId:number,toothNumber:string,surface:ToothSurfaceCode,payload:{status:ToothStatusCode;note?:string;expected_revision:string|null}){validateToothTarget(patientId,toothNumber);if(!validToothSurfaces.has(surface))throw new Error("Geçersiz diş yüzeyi.");validateToothPayload(payload);if(payload.expected_revision!==null&&!/^[a-f0-9]{64}$/.test(payload.expected_revision))throw new Error("Diş yüzeyi sürümü alınamadı; şemayı yenileyin.");return request<{ok:boolean;tooth_number:string;surface:string;status:string;revision:string}>(`/patients/${patientId}/teeth/${toothNumber}/surfaces/${surface}`,token,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
-export function updateTooth(token:string,patientId:number,toothNumber:string,payload:{status:ToothStatusCode;note?:string;surface?:ToothSurfaceCode;surfaces?:ToothSurfaceCode[];expected_revision:string|null}){validateToothTarget(patientId,toothNumber);validateToothPayload(payload);if(payload.expected_revision!==null&&!/^[a-f0-9]{64}$/.test(payload.expected_revision))throw new Error("Diş şeması sürümü alınamadı; şemayı yenileyin.");return request<{ok:boolean;tooth_number:string;status:string;surface?:string;revision:string}>(`/patients/${patientId}/teeth/${toothNumber}`,token,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
+export function updateTooth(token:string,patientId:number,toothNumber:string,payload:{status:ToothStatusCode;note?:string;surface?:ToothSurfaceCode;surfaces?:ToothSurfaceCode[];surface_revisions?:Record<string,string|null>;expected_revision:string|null}){validateToothTarget(patientId,toothNumber);validateToothPayload(payload);if(payload.expected_revision!==null&&!/^[a-f0-9]{64}$/.test(payload.expected_revision))throw new Error("Diş şeması sürümü alınamadı; şemayı yenileyin.");return request<{ok:boolean;tooth_number:string;status:string;surface?:string;revision:string}>(`/patients/${patientId}/teeth/${toothNumber}`,token,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
 
 export type NotificationItem={id:number;title:string;message:string;notice_type?:string;target_url?:string|null;is_read:boolean;created_at:string};
 export type Expert={id:number;display_name:string;specialty?:string|null;academic_title?:string|null;institution?:string|null;availability:string;consultation_price?:number|null};
