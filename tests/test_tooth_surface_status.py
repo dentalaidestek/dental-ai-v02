@@ -27,15 +27,22 @@ def test_web_and_native_tooth_writes_converge_on_one_owner_scoped_row(chat, monk
         follow_redirects=False,
     )
     assert web.status_code == 303, web.text
+    snapshot = client.get("/api/mobile/v1/patients/8")
+    assert snapshot.status_code == 200, snapshot.text
+    tooth_revision = next(item["revision"] for item in snapshot.json()["teeth"]
+                          if item["tooth_number"] == "36")
+    surface_revision = next(item["revision"] for item in snapshot.json()["surfaces"]
+                            if item["tooth_number"] == "36" and item["surface"] == "MESIAL")
     surface = client.put(
         "/api/mobile/v1/patients/8/teeth/36/surfaces/MESIAL",
-        json={"status": "FILLING", "note": "native surface observation"},
+        json={"status": "FILLING", "note": "native surface observation",
+              "expected_revision": surface_revision},
     )
     assert surface.status_code == 200, surface.text
     tooth = client.post(
         "/api/mobile/v1/patients/8/teeth/36",
         json={"status": "ROOT_CANAL", "note": "native whole-tooth observation",
-              "surfaces": ["MESIAL", "DISTAL"]},
+              "surfaces": ["MESIAL", "DISTAL"], "expected_revision": tooth_revision},
     )
     assert tooth.status_code == 200, tooth.text
     with Session(engine) as session:
@@ -51,7 +58,7 @@ def test_web_and_native_tooth_writes_converge_on_one_owner_scoped_row(chat, monk
     client.headers["Authorization"] = "Bearer token3"
     denied = client.put(
         "/api/mobile/v1/patients/8/teeth/36/surfaces/MESIAL",
-        json={"status": "HEALTHY", "note": "must not be stored"},
+        json={"status": "HEALTHY", "note": "must not be stored", "expected_revision": None},
     )
     assert denied.status_code == 404
 
