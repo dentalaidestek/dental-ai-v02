@@ -87,6 +87,8 @@ export default function NativeSocialAdmin({ token, user }: Props) {
     if (updateUi && mounted.current) {
       setStepUpToken(null);
       setExpiresAt(0);
+      setChallengeSent(false);
+      setCode("");
       setItems([]);
       setCursor(null);
       cursorRef.current = null;
@@ -116,6 +118,8 @@ export default function NativeSocialAdmin({ token, user }: Props) {
     if (!grantRef.current) {
       setStepUpToken(null);
       setExpiresAt(0);
+      setChallengeSent(false);
+      setCode("");
       setItems([]);
       setCursor(null);
       cursorRef.current = null;
@@ -124,15 +128,22 @@ export default function NativeSocialAdmin({ token, user }: Props) {
     return () => {
       generation.current++;
       void clearGrant(false);
+      setChallengeSent(false);
+      setCode("");
     };
   }, [clearGrant]));
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state !== "active" && grantRef.current) {
+      if (state !== "active") {
+        const hadGrant = !!grantRef.current;
         generation.current++;
         void clearGrant(true);
-        setNotice("Güvenlik için yönetici oturumu kapatıldı. Devam etmek için yeniden doğrulayın.");
+        setChallengeSent(false);
+        setCode("");
+        if (hadGrant) {
+          setNotice("Güvenlik için yönetici oturumu kapatıldı. Devam etmek için yeniden doğrulayın.");
+        }
       }
     });
     return () => subscription.remove();
