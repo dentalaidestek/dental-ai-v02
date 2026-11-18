@@ -1,14 +1,13 @@
 name: Android test APK
 on:
-  push:
-    branches:
-      - feature/mobile-web-parity-20261110
-    paths:
-      - 'mobile/**'
-      - '.github/workflows/android-test-apk.yml'
+  # Manual-only until hosted runner allocation is healthy.
+  # The push trigger ran once per mobile commit and failed before step 1.
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: android-test-apk-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   apk:
     runs-on: ubuntu-latest
