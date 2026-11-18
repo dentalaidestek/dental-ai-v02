@@ -22,7 +22,7 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
  useEffect(()=>{if(!recording||chunkStartedAt.current===null)return;const interval=setInterval(()=>{if(mounted.current&&chunkStartedAt.current!==null)setElapsedMs((draft.current.elapsedMs||0)+Date.now()-chunkStartedAt.current)},1000);return()=>clearInterval(interval)},[recording]);
  useEffect(()=>{setLevel(recording?voiceDeviceSignalLevel(status.metering):0)},[recording,status.metering]);
  useEffect(()=>{onSessionState?.({started:view.audioStarted===true||view.ended,finished:view.ended&&view.segments.length===0,sessionId:view.sessionId||''})},[view,onSessionState]);
- useEffect(()=>{onBusyChanged?.(occupied||!ready);return()=>onBusyChanged?.(false)},[occupied,ready,onBusyChanged]);
+ useEffect(()=>{onBusyChanged?.(occupied||!ready||storageBlocked);return()=>onBusyChanged?.(false)},[occupied,ready,storageBlocked,onBusyChanged]);
  usePreventRemove(occupied,()=>Alert.alert('Muayene sürüyor','Önce muayeneyi duraklatın veya bitirin.'));
  async function persist(next:VoiceDraft){const saved={...next,updatedAt:Date.now()};await store.setItemAsync(key,JSON.stringify(saved));draft.current=saved;if(mounted.current)setView(saved);}
  async function removeFile(uri:string){
@@ -56,6 +56,7 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
      for(const segment of saved.segments)if(isPrivateVoiceRecordingUri(segment.uri))await removeFile(segment.uri);
      await store.deleteItemAsync(key);
      if(saved.segments.some(segment=>!isPrivateVoiceRecordingUri(segment.uri))&&mounted.current)setError('Süresi dolmuş taslak temizlendi; doğrulanamayan dosyaya dokunulmadı.');
+     draft.current=newVoiceDraft(userId,patientId,Date.now(),Crypto.randomUUID());await persist(draft.current);
     }else if(saved){
      let restored=saved;if(!restored.sessionId)restored={...restored,sessionId:Crypto.randomUUID()};let untrustedAudio=false,interruptedUnverified=false;
      for(const segment of saved.segments){
@@ -75,7 +76,7 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
      if(restored.segments.some(segment=>!segment.transcribed)&&mounted.current)setError('Bekleyen ses kaydı bulundu. Yazıya çevirmeden önce yarım kalan bölümü kontrol edin.');
      if(interruptedUnverified&&mounted.current)setError('Kesintiye uğrayan ses dosyası 100 bayt–8 MB aralığında doğrulanamadı. Bu bölümü kaldırabilir veya taslağı temizleyebilirsiniz.');
      if(untrustedAudio&&mounted.current){setStorageBlocked(true);setError('Taslakta uygulama önbelleği dışındaki veya güvenli biçimde doğrulanamayan ses yolu var. Dosya yüklenmeyecek ya da silinmeyecek; taslağı temizleyebilirsiniz.');}
-    }
+    }else{await persist(draft.current);}
    }catch(error){if(mounted.current){setStorageBlocked(true);setError(error instanceof Error?error.message:'Muayene taslağı alınamadı.');}}
    finally{if(mounted.current)setReady(true);}
   })();
