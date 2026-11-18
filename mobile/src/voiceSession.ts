@@ -1,5 +1,5 @@
 export type VoiceSegment={id:string;uri:string;ready:boolean;transcribed?:boolean};
-export type VoiceDraft={version:1;userId:number;patientId:number;transcript:string;segments:VoiceSegment[];updatedAt:number;ended:boolean;audioStarted?:boolean;elapsedMs?:number};
+export type VoiceDraft={version:1;userId:number;patientId:number;sessionId?:string;transcript:string;segments:VoiceSegment[];updatedAt:number;ended:boolean;audioStarted?:boolean;elapsedMs?:number};
 export const VOICE_TEXT_LIMIT=72000;
 export const VOICE_TEXT_BYTE_LIMIT=216000;
 export const VOICE_CHUNK_CHAR_LIMIT=12000;
@@ -42,14 +42,16 @@ export function splitVoiceTranscript(text:string):string[]{
 }
 
 export type VoiceExtractionCheckpoint={
- version:1;userId:number;patientId:number;transcriptHash:string;
+ version:1;userId:number;patientId:number;sessionId:string;transcriptHash:string;
  cursor:number;revision:string;review:Record<string,unknown>;updatedAt:number;
 };
-export function parseVoiceExtractionCheckpoint(raw:string|null,userId:number,patientId:number,transcriptHash:string,chunkCount:number,now=Date.now()):VoiceExtractionCheckpoint|null{
+const VOICE_SESSION_ID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export function parseVoiceExtractionCheckpoint(raw:string|null,userId:number,patientId:number,transcriptHash:string,chunkCount:number,sessionId:string,now=Date.now()):VoiceExtractionCheckpoint|null{
  if(!raw)return null;
  try{
   const p=JSON.parse(raw);
   if(!p||p.version!==1||p.userId!==userId||p.patientId!==patientId||
+   typeof sessionId!=='string'||!VOICE_SESSION_ID.test(sessionId)||p.sessionId!==sessionId||
    p.transcriptHash!==transcriptHash||!/^[a-f0-9]{64}$/.test(p.transcriptHash)||
    !Number.isInteger(p.cursor)||p.cursor<1||p.cursor>chunkCount||
    typeof p.revision!=='string'||!/^[a-f0-9]{64}$/.test(p.revision)||
@@ -60,7 +62,7 @@ export function parseVoiceExtractionCheckpoint(raw:string|null,userId:number,pat
 }
 
 export const voiceDraftKey=(userId:number,patientId:number)=>`dai.voice.${userId}.${patientId}`;
-export function newVoiceDraft(userId:number,patientId:number,now=Date.now()):VoiceDraft{if(!Number.isSafeInteger(userId)||userId<=0||!Number.isSafeInteger(patientId)||patientId<=0)throw Error('Muayene için geçerli hesap ve hasta seçin.');return{version:1,userId,patientId,transcript:'',segments:[],updatedAt:now,ended:false,audioStarted:false,elapsedMs:0};}
+export function newVoiceDraft(userId:number,patientId:number,now=Date.now(),sessionId?:string):VoiceDraft{if(!Number.isSafeInteger(userId)||userId<=0||!Number.isSafeInteger(patientId)||patientId<=0)throw Error('Muayene için geçerli hesap ve hasta seçin.');if(sessionId!==undefined&&!VOICE_SESSION_ID.test(sessionId))throw Error('Muayene oturum anahtarı doğrulanamadı.');return{version:1,userId,patientId,...(sessionId?{sessionId}:{}),transcript:'',segments:[],updatedAt:now,ended:false,audioStarted:false,elapsedMs:0};}
 
 export function addVoiceElapsed(draft:VoiceDraft,startedAt:number,endedAt:number):VoiceDraft{
  if(!Number.isFinite(startedAt)||!Number.isFinite(endedAt)||startedAt<0||endedAt<startedAt)throw Error('Muayene süresi doğrulanamadı.');
@@ -84,7 +86,7 @@ export function isSafeVoiceSegmentUri(uri:unknown):uri is string{
 
 export function parseVoiceDraft(raw:string|null,userId:number,patientId:number,now=Date.now()):VoiceDraft|null{
  if(!raw)return null;let p:VoiceDraft;try{p=JSON.parse(raw)}catch{throw Error('Muayene taslağı okunamadı.')}
- if(!p||p.version!==1||p.userId!==userId||p.patientId!==patientId||typeof p.transcript!=='string'||p.transcript.length>VOICE_TEXT_LIMIT||voiceUtf8Bytes(p.transcript)>VOICE_TEXT_BYTE_LIMIT||!Array.isArray(p.segments)||p.segments.length>8||p.segments.some(s=>!s||typeof s.id!=='string'||!isSafeVoiceSegmentUri(s.uri)||typeof s.ready!=='boolean'||s.transcribed!==undefined&&typeof s.transcribed!=='boolean'||s.transcribed===true&&s.ready)||new Set(p.segments.map(s=>s.id)).size!==p.segments.length||!Number.isFinite(p.updatedAt)||typeof p.ended!=='boolean'||p.audioStarted!==undefined&&typeof p.audioStarted!=='boolean'||p.elapsedMs!==undefined&&(!Number.isFinite(p.elapsedMs)||p.elapsedMs<0||p.elapsedMs>24*60*60*1000))throw Error('Muayene taslağının hesabı, hastası veya içeriği doğrulanamadı.');
+ if(!p||p.version!==1||p.userId!==userId||p.patientId!==patientId||p.sessionId!==undefined&&(typeof p.sessionId!=='string'||!VOICE_SESSION_ID.test(p.sessionId))||typeof p.transcript!=='string'||p.transcript.length>VOICE_TEXT_LIMIT||voiceUtf8Bytes(p.transcript)>VOICE_TEXT_BYTE_LIMIT||!Array.isArray(p.segments)||p.segments.length>8||p.segments.some(s=>!s||typeof s.id!=='string'||!isSafeVoiceSegmentUri(s.uri)||typeof s.ready!=='boolean'||s.transcribed!==undefined&&typeof s.transcribed!=='boolean'||s.transcribed===true&&s.ready)||new Set(p.segments.map(s=>s.id)).size!==p.segments.length||!Number.isFinite(p.updatedAt)||typeof p.ended!=='boolean'||p.audioStarted!==undefined&&typeof p.audioStarted!=='boolean'||p.elapsedMs!==undefined&&(!Number.isFinite(p.elapsedMs)||p.elapsedMs<0||p.elapsedMs>24*60*60*1000))throw Error('Muayene taslağının hesabı, hastası veya içeriği doğrulanamadı.');
  return now-p.updatedAt>24*60*60*1000?null:{...p,elapsedMs:p.elapsedMs??0};
 }
 export function appendVoiceSegment(draft:VoiceDraft,id:string,transcript:string):VoiceDraft{
