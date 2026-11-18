@@ -835,6 +835,14 @@ def mobile_update_tooth(
     if payload.surface and payload.surfaces is not None:
         raise HTTPException(status_code=422, detail="Tekil ve çoklu yüzey birlikte gönderilemez.")
     requested_surfaces = payload.surfaces if payload.surfaces is not None else ([payload.surface] if payload.surface else [])
+    if requested_surfaces:
+        if payload.surface_revisions is None or set(payload.surface_revisions) != set(requested_surfaces):
+            raise HTTPException(status_code=422, detail="Seçilen diş yüzeylerinin sürüm bilgisi eksik.")
+        if any(value is not None and not re.fullmatch(r"[0-9a-f]{64}", value)
+               for value in payload.surface_revisions.values()):
+            raise HTTPException(status_code=422, detail="Diş yüzeyi sürümü geçersiz.")
+    elif payload.surface_revisions:
+        raise HTTPException(status_code=422, detail="Seçili olmayan yüzeyler için sürüm gönderilemez.")
     if payload.expected_revision is not None and not re.fullmatch(r"[0-9a-f]{64}", payload.expected_revision):
         raise HTTPException(status_code=422, detail="Diş şeması sürümü geçersiz.")
     with Session(engine, expire_on_commit=False) as session:
@@ -851,6 +859,17 @@ def mobile_update_tooth(
             raise HTTPException(status_code=428, detail="Diş şeması sürümü gerekli. Şemayı yenileyip tekrar deneyin.")
         if payload.expected_revision != (current_revision if current is not None else None):
             raise HTTPException(status_code=409, detail="Diş başka bir oturumda güncellendi. Güncel şemayı yükleyip yeniden uygulayın.")
+        for surface_name in requested_surfaces:
+            current_surface = session.exec(select(ToothSurfaceStatus).where(
+                ToothSurfaceStatus.patient_id == patient_id,
+                ToothSurfaceStatus.tooth_number == tooth_number,
+                ToothSurfaceStatus.surface == surface_name,
+            )).first()
+            surface_revision = observation_revision(current_surface, kind="surface",
+                patient_id=patient_id, tooth_number=tooth_number, surface=surface_name)
+            expected_surface = payload.surface_revisions[surface_name]
+            if expected_surface != (surface_revision if current_surface is not None else None):
+                raise HTTPException(status_code=409, detail="Seçilen diş yüzeylerinden biri başka bir oturumda güncellendi. Güncel şemayı yükleyip yeniden uygulayın.")
         note = payload.note.strip() if payload.note else None
         updated_at = _utcnow_naive()
         upsert_tooth_observation(
