@@ -556,3 +556,20 @@ test('missing or no-longer-owned patient exits the stale profile route safely',a
  await renderer.act(async()=>tree.unmount());
 });
 
+test('pending patient deletion makes nested clinical media and analysis surfaces read-only',async()=>{
+ const storage=new Map([['dai.patient-delete.v1.1.8',JSON.stringify(deleteIntentExports.createPatientDeleteIntent(1,8,'synthetic-patient-delete-0005'))]]);
+ const Profile=component({getPatient:async()=>patient(8)},'NativePatientProfile',storage);let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}));await Promise.resolve();await Promise.resolve()});
+ const children=tree.root.findAllByType('Child');
+ const media=children.find(node=>node.props.patientId===8&&typeof node.props.onAnalysis==='function');
+ const history=children.find(node=>node.props.patientId===8&&typeof node.props.onOpenAnalysis==='function');
+ assert.ok(media);
+ assert.equal(media.props.readOnly,true,'clinical media uploads/deletes and new analysis must be read-only');
+ assert.ok(history);
+ assert.equal(history.props.onNew,undefined,'new analysis entry must be hidden while deletion is unresolved');
+ const voice=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(t=>text(t.children).includes('Sesli Muayene')));
+ assert.ok(voice);
+ assert.equal(voice.props.disabled,true,'voice examination must not start while patient deletion is unresolved');
+ await renderer.act(async()=>tree.unmount());
+});
+
