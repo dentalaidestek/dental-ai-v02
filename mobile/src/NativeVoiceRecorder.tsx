@@ -25,6 +25,13 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
  useEffect(()=>{onSessionState?.({started:view.audioStarted===true||view.ended,finished:view.ended&&view.segments.length===0,sessionId:view.sessionId||''})},[view,onSessionState]);
  useEffect(()=>{onBusyChanged?.(occupied||!ready||storageBlocked);return()=>onBusyChanged?.(false)},[occupied,ready,storageBlocked,onBusyChanged]);
  usePreventRemove(occupied,()=>Alert.alert('Muayene sürüyor','Önce muayeneyi duraklatın veya bitirin.'));
+ // Consent withdrawal is immediate: stop capture and abort any pending ASR upload.
+ // pause(true) preserves the private local segment and deliberately skips transcription.
+ useEffect(()=>{
+  if(consent)return;
+  controller.current?.abort();
+  if(wanted.current||(active.current!==null&&!stopped.current))void pause(true);
+ },[consent]);
  async function persist(next:VoiceDraft){const saved={...next,updatedAt:Date.now()};await store.setItemAsync(key,JSON.stringify(saved));draft.current=saved;if(mounted.current)setView(saved);}
  async function removeFile(uri:string){
   if(!isPrivateVoiceRecordingUri(uri))throw Error('Ses dosyası uygulamanın özel önbelleğinde doğrulanamadı; dış konuma dokunulmadı.');
