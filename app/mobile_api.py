@@ -2811,18 +2811,25 @@ def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Dep
 
 
 @router.get("/patients/{patient_id}/media/{media_id}/file")
-def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mobile_user)):
+async def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mobile_user)):
+    # Authorize and copy only the storage reference while holding a short DB
+    # session. R2 hydration may involve network I/O and must not pin a DB
+    # connection or patient row lock for the duration of the download.
     with Session(engine,expire_on_commit=False) as session:
         patient=session.get(Patient,patient_id); media=session.get(PatientMedia,media_id)
         if not patient or not media or media.patient_id!=patient_id or patient.owner_user_id!=user.id or media.owner_user_id!=user.id:
             raise HTTPException(status_code=404,detail="Görüntü bulunamadı.")
-        try:path=storage_ensure_local(media.file_path)
-        except FileNotFoundError:raise HTTPException(status_code=404,detail="Görüntü dosyası bulunamadı.")
-        from fastapi.responses import FileResponse
-        mime={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp"}.get(path.suffix.lower().lstrip("."),"application/octet-stream")
-        result = FileResponse(path, media_type=mime, filename=media.original_filename)
-        _mobile_private_no_store(result)
-        return result
+        file_path=media.file_path
+        original_filename=media.original_filename
+    try:
+        path=await run_in_threadpool(storage_ensure_local,file_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404,detail="Görüntü dosyası bulunamadı.")
+    from fastapi.responses import FileResponse
+    mime={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp"}.get(path.suffix.lower().lstrip("."),"application/octet-stream")
+    result=FileResponse(path,media_type=mime,filename=original_filename)
+    _mobile_private_no_store(result)
+    return result
 
 async def _invoke_patient_web(handler, request, *args):
     response = await handler(request, *args) if _chat_inspect.iscoroutinefunction(handler) else await _chat_offload(handler, request, *args)
