@@ -255,3 +255,49 @@ def test_mobile_voice_text_receipts_are_owner_and_patient_scoped(chat,monkeypatc
         rows=session.exec(select(WorkJob).where(WorkJob.kind=="VOICE_CLINICAL_RECEIPT")).all()
         assert len(rows)==2
         assert len({row.dedupe_key for row in rows})==2
+
+
+def test_mobile_voice_text_rejects_review_when_patient_changes_during_provider_call(chat,monkeypatch):
+    client,engine=setup(chat,monkeypatch)
+    monkeypatch.setenv("VOICE_ASR_RECEIPT_KEY","11"*32)
+    calls=[]
+    def extract(**kwargs):
+        calls.append(kwargs)
+        with Session(engine) as session:
+            patient=session.get(main.Patient,8)
+            patient.chief_complaint="Changed while the model was running"
+            session.add(patient)
+            session.commit()
+        return {"fields":{"chief_complaint":{"value":"Stale result","quote":"Synthetic quote"}}}
+    monkeypatch.setattr(voice_exam.core,"extract",extract)
+    path="/api/mobile/v1/patients/8/voice-exam/text"
+    payload={"transcript":"Synthetic patient conversation","context":{},"consent":True,
+             "request_key":"session_1234567890_chunk_4"}
+    first=client.post(path,json=payload)
+    assert first.status_code==409
+    assert first.json()["code"]=="VOICE_CLINICAL_PATIENT_CHANGED"
+    second=client.post(path,json=payload)
+    assert second.status_code==409
+    assert second.json()["code"]=="VOICE_CLINICAL_OUTCOME_UNKNOWN"
+    assert len(calls)==1
+
+
+def test_mobile_voice_text_replay_is_invalidated_by_later_patient_revision(chat,monkeypatch):
+    client,engine=setup(chat,monkeypatch)
+    monkeypatch.setenv("VOICE_ASR_RECEIPT_KEY","11"*32)
+    calls=[]
+    monkeypatch.setattr(voice_exam.core,"extract",lambda **kwargs:(calls.append(kwargs) or {"fields":{},"teeth":[]}))
+    path="/api/mobile/v1/patients/8/voice-exam/text"
+    payload={"transcript":"Synthetic patient conversation","context":{},"consent":True,
+             "request_key":"session_1234567890_chunk_5"}
+    first=client.post(path,json=payload)
+    assert first.status_code==200,first.text
+    with Session(engine) as session:
+        patient=session.get(main.Patient,8)
+        patient.chief_complaint="Changed after the first extraction"
+        session.add(patient)
+        session.commit()
+    replay=client.post(path,json=payload)
+    assert replay.status_code==409
+    assert replay.json()["code"]=="VOICE_CLINICAL_PATIENT_CHANGED"
+    assert len(calls)==1
