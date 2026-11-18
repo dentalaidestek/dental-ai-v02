@@ -76,13 +76,14 @@ def test_native_admin_bearer_cannot_access_any_social_moderation_route(env, meth
 
 def test_native_admin_bearer_cannot_reuse_a_verified_browser_cookie(env):
     c, engine = env
+    token_hash = main.hash_session_token("t4")
     with Session(engine) as session:
+        previous = session.get(main.AdminVerifiedSession, token_hash)
+        if previous:
+            session.delete(previous)
         admin = session.get(main.User, 4)
         assert admin is not None
-        session.add(main.AdminVerifiedSession(
-            token_hash=main.hash_session_token("t4"),
-            user_id=admin.id,
-        ))
+        session.add(main.AdminVerifiedSession(token_hash=token_hash, user_id=admin.id))
         session.commit()
     native(c, "t4")
     c.cookies.set(main.SESSION_COOKIE, "t4")
@@ -94,8 +95,11 @@ def test_web_admin_moderation_still_requires_verified_session(env):
     c.headers.pop("Authorization", None)
     c.cookies.clear()
     c.cookies.set(main.SESSION_COOKIE, "t4")
-    assert c.get("/api/expert-social/moderation").status_code == 403
+    token_hash = main.hash_session_token("t4")
     with Session(engine) as session:
+        previous = session.get(main.AdminVerifiedSession, token_hash)
+        if previous:
+            session.delete(previous)
         admin = session.get(main.User, 4)
         assert admin is not None
         admin.role = "ADMIN"
@@ -103,10 +107,11 @@ def test_web_admin_moderation_still_requires_verified_session(env):
         admin.email = main.ADMIN_FIXED_EMAIL
         admin.email_verified_at = main._utcnow_naive()
         session.add(admin)
-        session.add(main.AdminVerifiedSession(
-            token_hash=main.hash_session_token("t4"),
-            user_id=admin.id,
-        ))
+        session.commit()
+    assert c.get("/api/expert-social/moderation").status_code == 403
+    with Session(engine) as session:
+        admin = session.get(main.User, 4)
+        session.add(main.AdminVerifiedSession(token_hash=token_hash, user_id=admin.id))
         session.commit()
     response = c.get("/api/expert-social/moderation")
     assert response.status_code == 200, response.text
