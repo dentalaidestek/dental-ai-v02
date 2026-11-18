@@ -55,10 +55,16 @@ def test_web_and_native_tooth_writes_converge_on_one_owner_scoped_row(chat, monk
               "expected_revision": surface_revision},
     )
     assert surface.status_code == 200, surface.text
+    surface_revisions = {
+        surface: next((item["revision"] for item in snapshot.json()["surfaces"]
+                       if item["tooth_number"] == "36" and item["surface"] == surface), None)
+        for surface in ("MESIAL", "DISTAL")
+    }
     tooth = client.post(
         "/api/mobile/v1/patients/8/teeth/36",
         json={"status": "ROOT_CANAL", "note": "native whole-tooth observation",
-              "surfaces": ["MESIAL", "DISTAL"], "expected_revision": tooth_revision},
+              "surfaces": ["MESIAL", "DISTAL"], "surface_revisions": surface_revisions,
+              "expected_revision": tooth_revision},
     )
     assert tooth.status_code == 200, tooth.text
     with Session(engine) as session:
