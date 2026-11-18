@@ -10,6 +10,9 @@ on:
     paths:
       - 'mobile/**'
       - 'app/mobile_api.py'
+      - 'app/tooth_surface_status.py'
+      - 'app/migrate.py'
+      - 'tests/test_tooth_surface_status.py'
       - 'app/mobile_push.py'
       - 'app/mobile_push_receipts.py'
       - 'tests/test_mobile_push.py'
