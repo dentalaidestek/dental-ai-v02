@@ -116,7 +116,7 @@ def program_range(
     offset: int = Query(0, ge=0),
     cursor: Optional[str] = Query(None, max_length=512),
     user=Depends(_mobile_user),
- ):
+):
     _mobile_private_no_store(response)
     from app import main as web
     today = datetime.now(web.APP_TIMEZONE).date()
