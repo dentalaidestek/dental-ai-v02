@@ -126,17 +126,36 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   if(text.length>72000){setClinicalError("Muayene metni 72.000 karakter sınırını aşıyor. Yerel taslak korunuyor.");return;}
   processingLock.current=true;
   const request=++generation.current,currentScope=scope.current,patientId=selected.id;
-  const activeSessionId=forceFreshExtraction.current?Crypto.randomUUID():(sessionIdOverride||voiceSessionId||Crypto.randomUUID());if(!voiceSessionId||forceFreshExtraction.current)setVoiceSessionId(activeSessionId);
+  let activeSessionId=sessionIdOverride||voiceSessionId||Crypto.randomUUID();
+  const forceFresh=forceFreshExtraction.current;
   processingOwner.current=request;setProcessing(true);setClinicalError("");setExtractionProgress("");
   try{
    const chunks=splitVoiceTranscript(text);
    const transcriptHash=await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,text);
+   if(userId){
+    const activeSessionKey=`dai.voice.extraction.active.${userId}.${patientId}`;
+    const activeRaw=await extractionStore.getItemAsync(activeSessionKey);
+    if(forceFresh){
+     if(activeRaw){try{const previous=JSON.parse(activeRaw);if(previous&&previous.userId===userId&&previous.patientId===patientId&&typeof previous.sessionId==="string")await extractionStore.deleteItemAsync(`dai.voice.extraction.${userId}.${patientId}.${previous.sessionId}`)}catch{}}
+     activeSessionId=Crypto.randomUUID();
+    }else if(activeRaw){
+     try{
+      const previous=JSON.parse(activeRaw);
+      if(previous&&previous.version===1&&previous.userId===userId&&previous.patientId===patientId&&previous.transcriptHash===transcriptHash&&typeof previous.sessionId==="string"&&/^[A-Za-z0-9_-]{16,80}$/.test(previous.sessionId)&&Number.isFinite(previous.updatedAt)&&Date.now()-previous.updatedAt>=0&&Date.now()-previous.updatedAt<=86400000)activeSessionId=previous.sessionId;
+     }catch{}
+    }
+    if(!/^[A-Za-z0-9_-]{16,80}$/.test(activeSessionId))activeSessionId=Crypto.randomUUID();
+    await extractionStore.setItemAsync(activeSessionKey,JSON.stringify({version:1,userId,patientId,sessionId:activeSessionId,transcriptHash,updatedAt:Date.now()}));
+   }else if(forceFresh)activeSessionId=Crypto.randomUUID();
+   forceFreshExtraction.current=false;
+   setVoiceSessionId(activeSessionId);
    const checkpointKey=userId?`dai.voice.extraction.${userId}.${patientId}.${activeSessionId}`:"";
+   const legacyCheckpointKey=userId?`dai.voice.extraction.${userId}.${patientId}`:"";
    const legacyCheckpointKey=userId?`dai.voice.extraction.${userId}.${patientId}`:"";
    let resume: {cursor:number;revision:string;review:VoiceExtraction["review"]}|undefined;
    if(userId){
     if(legacyCheckpointKey)await extractionStore.deleteItemAsync(legacyCheckpointKey);
-    if(forceFreshExtraction.current){await extractionStore.deleteItemAsync(checkpointKey);forceFreshExtraction.current=false;}
+    if(forceFresh){await extractionStore.deleteItemAsync(checkpointKey);}
     else{
      const raw=await extractionStore.getItemAsync(checkpointKey);
      const saved=parseVoiceExtractionCheckpoint(raw,userId,patientId,transcriptHash,chunks.length,activeSessionId);
@@ -146,6 +165,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    }
    const result=await extractVoice(token,patientId,text,{
     sessionId:activeSessionId,
+    transcriptHash,
     resume,
     onProgress:(completed,total)=>{if(request===generation.current&&currentScope===scope.current)setExtractionProgress(`Görüşme bölümleri işleniyor: ${completed}/${total}`);},
     onCheckpoint:async checkpoint=>{
@@ -199,9 +219,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  async function recheckVoice(){
   if(!selected)return;
   forceFreshExtraction.current=true;
-  const nextSessionId=Crypto.randomUUID();
-  setVoiceSessionId(nextSessionId);
-  await processText(transcript,nextSessionId);
+  await processText();
  }
  async function finalize(){if(!selected||!consent||!review||processingLock.current||audioBusy||deviceCheckBusy||audioSession.started&&!audioSession.finished)return;processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const data=review.review;const response=await finalizeVoice(token,selected.id,{context:{fields:data.fields||{},teeth:data.teeth||[],literature_topics:data.literature_topics||[],source_requests:data.source_requests||[],...(data.appointment?{appointment:data.appointment}:{})},insights:data.communication||data.insights||[],uncertain:(data.uncertain||'').slice(0,3000),conversation_text:transcript});if(request===generation.current&&currentScope===scope.current)setFinalResult(response.final as Record<string,unknown>)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Son değerlendirme tamamlanamadı.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
  
@@ -243,7 +261,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    {privacyExpanded&&<Text style={{color:muted,lineHeight:20}}>Kayıt sırasında ses parçaları konuşma metni için işlenir. Klinik çıkarım yalnız muayeneyi bitirdiğinizde veya metni değerlendirdiğinizde yapılır. Metin cihazın güvenli deposunda, bekleyen sesler özel uygulama alanında tutulur. Ham ses ve tam konuşma metni hasta dosyasına otomatik yazılmaz. Gereksiz kimlik bilgilerini konuşmayın. Taslağı bu ekrandan temizleyebilirsiniz.</Text>}
    {!!userId&&<NativeVoiceRecorder key={token+":"+selected?.id} token={token} userId={userId} patientId={selected!.id} consent={consent} value={transcript} disabled={processing||applyBusy||deviceCheckBusy} onBusyChanged={setAudioBusy} onSessionState={state=>{setAudioSession({started:state.started,finished:state.finished});setVoiceSessionId(state.sessionId)}} onTranscript={v=>{generation.current++;setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} onFinished={(v,sessionId)=>{setVoiceSessionId(sessionId);setTranscript(v);void processText(v,sessionId)}}/>}
    <Text style={{fontWeight:"800",color:navy,marginTop:20}}>Muayene metni</Text>
-   <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} editable={!processing&&!audioBusy&&!deviceCheckBusy&&!applyBusy} onChangeText={v=>{generation.current++;setClinicalError("");setVoiceSessionId(Crypto.randomUUID());setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
+   <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} editable={!processing&&!audioBusy&&!deviceCheckBusy&&!applyBusy} onChangeText={v=>{generation.current++;setClinicalError("");setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
    <Text style={{color:muted,fontSize:12,marginTop:8}}>{transcript.length}/72000 karakter · Uzun görüşmeler 12.000 karakterlik güvenli bölümlere ayrılır; tamamlanan bölümler cihazın şifreli taslağında korunur.</Text>
    {!!extractionProgress&&<Text accessibilityLiveRegion="polite" style={{color:muted,marginTop:10}}>{extractionProgress}</Text>}
    {!!clinicalError&&<Text style={{color:"#B42318",marginTop:12}}>{clinicalError}</Text>}
