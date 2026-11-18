@@ -13,6 +13,7 @@ import {chunkedDraftStore} from './socialDraft';
 import {parseTreatmentMutationIntent,treatmentMutationStorageKey,type TreatmentMutationIntent} from './treatmentMutation';
 import {createPatientDeleteIntent,parsePatientDeleteIntent,patientDeleteIntentStorageKey,type PatientDeleteIntent} from './patientDeleteIntent';
 import {patientProfileAgeLabel,patientProfileCanDeletePatient,patientProfileEditError,patientProfileEditMatches,patientProfileInitials,patientProfileName,patientProfileQuickActions} from './patientProfilePresentation';
+import { shouldRefreshOnAppResume } from './appResumeRefresh';
 
 const blankTreatment={treatment_name:'',tooth_number:'',treatment_date:'',material:'',doctor_note:'',result:''};
 const treatmentStore=chunkedDraftStore(SecureStore,Crypto.randomUUID);
@@ -38,7 +39,16 @@ export default function NativePatientProfile({token,userId,patientId,actions}:{t
  useEffect(()=>{mounted.current=true;lock.current=false;treatmentPageRequest.current++;treatmentPageLock.current=false;treatmentPageIds.current.clear();treatmentPageCursors.current.clear();setTreatmentCursor(null);setTreatmentPageLoading(false);setTreatmentPageError('');setBusy(false);setDetail(null);setLoadedScope('');setInfoOpen(false);setTreatmentOpen(false);setEditingTreatment(null);setEditingTreatmentRevision(null);setPendingTreatment(null);setTreatmentIntentReady(false);setTreatmentIntentBlocked(false);setDeleteIntentReady(false);setDeleteIntentBlocked(false);setPendingDelete(null);setAllTreatments(false);setPatientForm(blankPatient);setTreatment(blankTreatment);setProfileUncertain(false);setTreatmentUncertain(false);setRevisionConflict(false);setMutationError('');return()=>{mounted.current=false;request.current++;treatmentPageRequest.current++;treatmentPageLock.current=false}},[load,userId]);
  useEffect(()=>{let active=true;void(async()=>{try{const raw=await treatmentStore.getItemAsync(treatmentKey);if(raw&&active&&current()){const saved=parseTreatmentMutationIntent(raw,userId,patientId);setPendingTreatment(saved);setTreatment(saved.payload);setEditingTreatment(saved.treatmentId);setEditingTreatmentRevision(saved.expectedRevision);setTreatmentOpen(true);setMutationError('Bekleyen tedavi işlemi bulundu. Aynı işlem anahtarıyla sunucuya doğrulatın.')}}catch(e){if(active&&current()){setTreatmentIntentBlocked(true);setMutationError(e instanceof Error?e.message:'Bekleyen tedavi kaydı okunamadı.')}}finally{if(active&&current())setTreatmentIntentReady(true)}})();return()=>{active=false}},[treatmentKey,token,userId,patientId]);
  useEffect(()=>{let active=true;void(async()=>{try{const raw=await patientDeleteStore.getItemAsync(deleteKey);if(raw!==null&&active&&current()){const saved=parsePatientDeleteIntent(raw,userId,patientId);setPendingDelete(saved);setMutationError('Bekleyen hasta silme işlemi bulundu. Aynı işlem anahtarıyla doğrulayın.')}}catch(e){if(active&&current()){setDeleteIntentBlocked(true);setMutationError(e instanceof Error?e.message:'Bekleyen hasta silme kaydı okunamadı. Yeni silme işlemi başlatılamaz.')}}finally{if(active&&current())setDeleteIntentReady(true)}})();return()=>{active=false}},[deleteKey,token,userId,patientId]);
- useEffect(()=>{if(focused)void load();const listener=AppState.addEventListener('change',state=>{if(state==='active'&&focused)void load()});return()=>listener.remove()},[focused,load]);
+ useEffect(()=>{
+  if(focused)void load();
+  let previousState=AppState.currentState;
+  const listener=AppState.addEventListener('change',nextState=>{
+   const shouldRefresh=shouldRefreshOnAppResume(previousState,nextState,focused);
+   previousState=nextState;
+   if(shouldRefresh)void load();
+  });
+  return()=>listener.remove();
+ },[focused,load]);
  useEffect(()=>{if(!lastEvent||Number(lastEvent.payload?.patient_id||lastEvent.entity_id)!==patientId)return;const type=String(lastEvent.event_type||lastEvent.type);if(type==='PATIENT_DELETED')actions.deleted();else if(['PATIENT_UPDATED','TOOTH_UPDATED','PATIENT_MEDIA_CREATED','PATIENT_MEDIA_DELETED','TREATMENT_CREATED','TREATMENT_UPDATED'].includes(type))void load()},[lastEvent,patientId,load]);
  function toggleInfo(){if(!detail||busy)return;if(!infoOpen){const p=detail.patient;setPatientForm({first_name:p.first_name||'',last_name:p.last_name||'',phone:p.phone||'',birth_date:p.birth_date||'',tc_kimlik_no:p.tc_kimlik_no||'',address:p.address||'',chief_complaint:p.chief_complaint||''})}setInfoOpen(v=>!v)}
  async function savePatient(){
