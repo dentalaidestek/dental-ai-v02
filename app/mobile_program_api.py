@@ -5,10 +5,10 @@ import json
 import re
 from datetime import date,datetime,timedelta,timezone
 from typing import Optional
-from fastapi import APIRouter,Depends,HTTPException,Query
+from fastapi import APIRouter,Depends,HTTPException,Query,Response
 from pydantic import BaseModel,Field
 from sqlmodel import Session,select
-from app.mobile_api import _mobile_user,_mobile_access_token,_mobile_request,MobileScheduleCreate,mobile_create_schedule,_program_request_hash
+from app.mobile_api import _mobile_user,_mobile_access_token,_mobile_request,_mobile_private_no_store,MobileScheduleCreate,mobile_create_schedule,_program_request_hash
 from app.mobile_account_api import _invoke
 
 router=APIRouter(tags=['mobile-program'])
@@ -110,12 +110,14 @@ def _program_snapshot_changed(session, web, user_id: int, snapshot_at: datetime)
 
 @router.get('/program')
 def program_range(
+    response: Response,
     view: str = Query('week', pattern='^(today|week|month)$'),
     day: Optional[str] = None,
     offset: int = Query(0, ge=0),
     cursor: Optional[str] = Query(None, max_length=512),
     user=Depends(_mobile_user),
-):
+ ):
+    _mobile_private_no_store(response)
     from app import main as web
     today = datetime.now(web.APP_TIMEZONE).date()
     try:
@@ -244,7 +246,8 @@ def program_range(
 
 
 @router.get('/program/mutations/{request_key}')
-def program_mutation(request_key:str,user=Depends(_mobile_user)):
+def program_mutation(response:Response,request_key:str,user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
     from app import main as web
     try:
         request_hash=_program_request_hash(user.id,request_key)
@@ -261,7 +264,8 @@ def program_mutation(request_key:str,user=Depends(_mobile_user)):
 
 
 @router.get('/program/events/{event_id}')
-def program_event(event_id:int,user=Depends(_mobile_user)):
+def program_event(response:Response,event_id:int,user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
     from app import main as web
     # Recovery reads must be able to distinguish a soft-deleted event from an
     # event that is still active. Keep the same owner boundary; mutation routes
@@ -286,7 +290,8 @@ class ProgramValues(BaseModel):
     request_key:Optional[str]=Field(default=None,max_length=96)
 
 @router.post('/program/conflicts')
-def program_conflicts(payload:ProgramValues,exclude_id:Optional[int]=Query(None,ge=1),user=Depends(_mobile_user)):
+def program_conflicts(response:Response,payload:ProgramValues,exclude_id:Optional[int]=Query(None,ge=1),user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
     from app import main as web
     with Session(web.engine,expire_on_commit=False) as session:
         if exclude_id is not None:_owned(session,web,user,exclude_id)
@@ -299,38 +304,43 @@ def program_conflicts(payload:ProgramValues,exclude_id:Optional[int]=Query(None,
         return {'advisory':True,'total':len(conflicts)}
 
 @router.post('/program/events')
-def create_program_event(payload:ProgramValues,user=Depends(_mobile_user)):
+def create_program_event(response:Response,payload:ProgramValues,user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
     if not payload.request_key:
         raise HTTPException(status_code=422,detail='Program isteği anahtarı zorunludur.')
     try:reminder=None if payload.reminder_minutes=='NONE' else int(payload.reminder_minutes)
     except ValueError:raise HTTPException(status_code=422,detail='Hatırlatma seçimini kontrol edin.')
     result=mobile_create_schedule(MobileScheduleCreate(**{**payload.model_dump(),'reminder_minutes':reminder,'notification_enabled':reminder is not None}),user)
-    return program_event(result['event']['id'],user)
+    return program_event(response,result['event']['id'],user)
 
 @router.put('/program/events/{event_id}')
-async def edit_program_event(event_id:int,payload:ProgramValues,token:str=Depends(_mobile_access_token),user=Depends(_mobile_user)):
+async def edit_program_event(response:Response,event_id:int,payload:ProgramValues,token:str=Depends(_mobile_access_token),user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
     from app import main as web
     with Session(web.engine) as session:_owned(session,web,user,event_id)
     await _invoke(web.program_edit,_mobile_request(token,path=f'/program/{event_id}/edit'),event_id,payload.event_type,payload.title,payload.start_at,payload.end_at,str(payload.patient_id or ''),payload.location,payload.notes,payload.reminder_minutes,'1' if payload.reminder_minutes!='NONE' else None,payload.recurrence_rule,payload.recurrence_until)
-    return program_event(event_id,user)
+    return program_event(response,event_id,user)
 
 class CopyDays(BaseModel):days:list[str]=Field(min_length=1,max_length=7)
 
 @router.post('/program/events/{event_id}/copy')
-async def copy_program_event(event_id:int,payload:CopyDays,token:str=Depends(_mobile_access_token),user=Depends(_mobile_user)):
+async def copy_program_event(response:Response,event_id:int,payload:CopyDays,token:str=Depends(_mobile_access_token),user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
     from app import main as web
     with Session(web.engine) as session:_owned(session,web,user,event_id)
     await _invoke(web.program_copy_to_days,_mobile_request(token),event_id,','.join(payload.days))
     return {'ok':True}
 
 @router.post('/program/events/{event_id}/complete')
-async def complete_program_event(event_id:int,token:str=Depends(_mobile_access_token),user=Depends(_mobile_user)):
+async def complete_program_event(response:Response,event_id:int,token:str=Depends(_mobile_access_token),user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
     from app import main as web
     await _invoke(web.program_complete,_mobile_request(token),event_id)
     return {'ok':True}
 
 @router.delete('/program/events/{event_id}')
-async def delete_program_event(event_id:int,token:str=Depends(_mobile_access_token),user=Depends(_mobile_user)):
+async def delete_program_event(response:Response,event_id:int,token:str=Depends(_mobile_access_token),user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
     from app import main as web
     await _invoke(web.program_delete,_mobile_request(token),event_id)
     return {'ok':True}
