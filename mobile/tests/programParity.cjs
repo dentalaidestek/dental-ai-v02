@@ -336,3 +336,36 @@ test('copy verification follows the snapshot cursor to find a later target-day p
  }finally{global.fetch=original}
 });
 
+
+
+test('transient conflict-check outage requires explicit confirmation before web-parity save',async()=>{
+ let choice=0,alerts=0,writes=0;
+ const Editor=component('NativeProgramEditor',{
+  checkProgramConflicts:async()=>{throw Object.assign(new Error('temporary outage'),{status:503})},
+  onAlert:(_title,_message,buttons)=>{alerts++;buttons[choice].onPress()},
+  saveProgramEvent:async(_token,payload)=>{writes++;return{id:7,...payload,start_local:payload.start_at}}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),initialPatientId:8,onSaved(){},onClose(){}}));await tick()});
+ await renderer.act(async()=>button(tree,'Programa Ekle').props.onPress());
+ assert.equal(alerts,1);assert.equal(writes,0);
+ choice=1;
+ await renderer.act(async()=>button(tree,'Programa Ekle').props.onPress());
+ assert.equal(alerts,2);assert.equal(writes,1);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('authentication and validation failures never bypass the conflict-check gate',async()=>{
+ let alerts=0,writes=0;
+ const Editor=component('NativeProgramEditor',{
+  checkProgramConflicts:async()=>{throw Object.assign(new Error('unauthorized'),{status:401})},
+  onAlert:()=>{alerts++},
+  saveProgramEvent:async(_token,payload)=>{writes++;return{id:7,...payload,start_local:payload.start_at}}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),initialPatientId:8,onSaved(){},onClose(){}}));await tick()});
+ await renderer.act(async()=>button(tree,'Programa Ekle').props.onPress());
+ assert.equal(alerts,0);assert.equal(writes,0);
+ assert.ok(tree.root.findAllByType('Text').some(node=>text(node).includes('unauthorized')));
+ await renderer.act(async()=>tree.unmount());
+});
