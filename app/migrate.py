@@ -1,7 +1,7 @@
 """Explicit, serialized release migration: python -m app.migrate.
 
 The existing idempotent baseline DDL is retained; revision 2 adds durable work, provider reservations and immutable analysis-result pointers;
-revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata; revision 5 adds lazy visual page artifacts; revision 6 adds one-time email verification state; revision 9 adds shared authentication admission counters; revision 10 adds isolated email-change challenges; revision 11 adds consultation chat retention and a committed media-deletion outbox. revision 12 adds private membership-verification records; revision 15 adds native Program idempotency fields; revision 16 adds online owner-scoped Program and reminder queue indexes; revision 17 adds native Academic course-create receipts. Web/workers only
+revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata; revision 5 adds lazy visual page artifacts; revision 6 adds one-time email verification state; revision 9 adds shared authentication admission counters; revision 10 adds isolated email-change challenges; revision 11 adds consultation chat retention and a committed media-deletion outbox. revision 12 adds private membership-verification records; revision 15 adds native Program idempotency fields; revision 16 adds online owner-scoped Program and reminder queue indexes; revision 17 adds native Academic course-create receipts; revision 18 adds unique tooth-observation indexes; revision 19 adds the patient treatment-history keyset index. Web/workers only
 check the revision in production, avoiding repeated boot-time DDL/backfills.
 """
 import logging
@@ -459,8 +459,12 @@ def _upgrade_treatment_history_index(main):
                     {"name": index_name},
                 ).scalar()
                 if revision == TREATMENT_HISTORY_INDEX_REVISION:
-                    if valid is not True:
-                        raise RuntimeError("Treatment history index is missing or invalid at revision 19")
+                    columns = inspect(connection).get_indexes("treatment")
+                    if valid is not True or not any(
+                        item.get("name") == index_name and item.get("column_names") == expected_columns
+                        for item in columns
+                    ):
+                        raise RuntimeError("Treatment history index is missing, invalid or has wrong columns at revision 19")
                     return True
                 if revision != TOOTH_CHART_OBSERVATION_REVISION:
                     return False
@@ -519,6 +523,10 @@ def _upgrade_treatment_history_index(main):
                 "CREATE INDEX IF NOT EXISTS ix_treatment_patient_created_id "
                 "ON treatment (patient_id, created_at, id)"
             ))
+            indexes = inspect(connection).get_indexes("treatment")
+            if not any(item.get("name") == index_name and item.get("column_names") == expected_columns
+                       for item in indexes):
+                raise RuntimeError("Treatment history index columns do not match the query")
             result = connection.execute(text(
                 "UPDATE dental_schema_revision SET version=:version WHERE id=1 AND version=:prior"
             ), {"version": TREATMENT_HISTORY_INDEX_REVISION,
