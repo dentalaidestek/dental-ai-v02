@@ -14,6 +14,10 @@ The native path is `NativePatientMedia → NativeAnalysisUpload → NativeDental
 - `NativeVisionViewer`: selecting a finding scrolls the native viewer back to the image so the corresponding overlay is actually visible, matching the web viewer's image/finding interaction.
 - `visionViewer.cjs`: added regressions for fallback descriptions, unlocalized findings, bounded descriptions, and image focus on selection.
 
+## Commits
+
+Eight focused commits were added: `7618963c`, `8e022cbe`, `7c505841`, `d20e3c6c`, `cc05af48`, `d2258c3f`, `9760d979`, `1468ee9b`. Final HEAD: `1468ee9bf898c90c06700fb127c4d4b2e85612f6`.
+
 ## Verification and limitations
 
 The tests are included in the existing `npm run test:beta` script. They were not executed in this connector-only run because no repository checkout/runtime is available here.
