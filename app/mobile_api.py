@@ -2250,10 +2250,11 @@ def mobile_patient_media_upload_status(
             session, user, patient_id, receipt_key, key=fingerprint_key,
         )
         session.commit()
-        return JSONResponse(
+        result = JSONResponse(
             {"found": existing is not None, "media": existing["media"] if existing else None},
-            headers={"Cache-Control": "private, no-store"},
         )
+        _mobile_private_no_store(result)
+        return result
 
 def _mobile_access_token(credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer)) -> str:
     if not credentials or credentials.scheme.lower() != "bearer":
