@@ -299,7 +299,7 @@ def program_conflicts(response:Response,payload:ProgramValues,exclude_id:Optiona
         if error:raise HTTPException(status_code=422,detail=error)
         start=web._utc_to_local(values['start_at']);end=web._utc_to_local(values['end_at']) if values['end_at'] else start+timedelta(minutes=1)
         if end==start:end=start+timedelta(minutes=1)
-        occurrences=web._user_schedule_occurrences(session,user.id,web._date_to_local_start(start.date()),web._date_to_local_end(end.date()))
+        occurrences=web._user_schedule_occurrences(session,user.id,web._date_to_local_start(start.date()),web._date_to_local_end(end.date()),include_patient_details=False)
         conflicts=[item for item in occurrences if item['status']=='ACTIVE' and item['id']!=exclude_id and item['start_local']<end and (item['end_local'] or item['start_local']+timedelta(minutes=1))>start]
         return {'advisory':True,'total':len(conflicts)}
 
