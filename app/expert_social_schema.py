@@ -7,9 +7,9 @@ from app.expert_social_models import SOCIAL_MODELS
 
 logger = logging.getLogger(__name__)
 
-# Additive tables/indexes preserve the deployed revision-two table contract.
-# Older builds can restart/roll back safely; this build checks its additions.
-SCHEMA_VERSION = 2
+# Additive tables/indexes advance the social extension to revision three.
+# Native step-up records remain separate from browser MFA state.
+SCHEMA_VERSION = 3
 REQUIRED_INDEXES = {
     "socialpost": "ix_socialpost_moderation",
     "socialcomment": "ix_socialcomment_moderation",
@@ -19,6 +19,8 @@ REQUIRED_INDEXES = {
     "socialmoderationevent": "ix_socialmoderationevent_target",
     "consultationrequestreceipt": "uq_consultationrequestreceipt_key",
     "socialcommentlike": "ix_socialcommentlike_user_id",
+    "socialadminstepupchallenge": "ix_socialadminstepupchallenge_user_expiry",
+    "socialadminstepupsession": "ix_socialadminstepupsession_session_expiry",
 }
 # Extra requirements stay additive while retaining the revision-two readiness
 # contract expected by older web/worker builds.
