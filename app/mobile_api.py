@@ -906,9 +906,49 @@ def mobile_edit_patient(patient_id: int, payload: MobilePatientEdit, user: User 
 
 
 @router.delete("/patients/{patient_id}")
-def mobile_delete_patient(patient_id: int, user: User = Depends(_mobile_user)):
-    """Mirror the web patient deletion path with owner checks and realtime invalidation."""
+def mobile_delete_patient(
+    patient_id: int,
+    request_key: Optional[str] = Query(default=None),
+    user: User = Depends(_mobile_user),
+):
+    """Owner-scoped patient deletion with an optional durable native replay receipt."""
+    if request_key is not None and not _PATIENT_MEDIA_REQUEST_KEY.fullmatch(request_key):
+        raise HTTPException(status_code=422, detail="Hasta silme işlem anahtarı geçersiz.")
+
     with Session(engine, expire_on_commit=False) as session:
+        delete_key = None
+        source_hash = None
+        if request_key is not None:
+            # Serialize deletes per account. The unique WorkJob key is the final
+            # cross-process guard; the receipt and patient deletion commit atomically.
+            locked_user = session.exec(
+                select(User).where(User.id == user.id).with_for_update()
+            ).first()
+            if locked_user is None:
+                raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+            delete_key = hashlib.sha256(
+                f"PATIENT_DELETE:{user.id}:{request_key}".encode()
+            ).hexdigest()
+            source_hash = hashlib.sha256(
+                f"{user.id}:{patient_id}".encode()
+            ).hexdigest()
+            receipt = session.exec(
+                select(WorkJob).where(WorkJob.dedupe_key == delete_key).with_for_update()
+            ).first()
+            if receipt is not None:
+                if (
+                    receipt.owner_user_id != user.id
+                    or receipt.kind != "PATIENT_DELETE_RECEIPT"
+                    or receipt.resource_type != "PATIENT"
+                    or receipt.resource_id != patient_id
+                    or receipt.source_hash != source_hash
+                    or receipt.status != "DONE"
+                ):
+                    raise HTTPException(status_code=409, detail="Hasta silme anahtarı başka bir işlem için kullanılmış.")
+                # The receipt is deliberately retained after the Patient row is
+                # removed, so a lost DELETE response can be replayed safely.
+                return {"ok": True, "patient_id": patient_id, "already_deleted": True}
+
         patient = session.get(Patient, patient_id)
         if not patient or patient.owner_user_id != user.id:
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
@@ -918,6 +958,20 @@ def mobile_delete_patient(patient_id: int, user: User = Depends(_mobile_user)):
         for model in dependent_models:
             if session.exec(select(model.id).where(model.patient_id == patient_id).limit(1)).first() is not None:
                 raise HTTPException(status_code=409, detail="Hastanın ilişkili klinik kayıtları var. Güvenli silme işlemi henüz desteklenmiyor.")
+
+        if request_key is not None:
+            session.add(WorkJob(
+                owner_user_id=user.id,
+                resource_id=patient_id,
+                resource_type="PATIENT",
+                kind="PATIENT_DELETE_RECEIPT",
+                source_hash=source_hash,
+                dedupe_key=delete_key,
+                payload_json="{}",
+                status="DONE",
+            ))
+            session.flush()
+
         events = _record_patient_realtime_events(session, patient, "PATIENT_DELETED")
         profile = session.exec(select(PatientProfile).where(PatientProfile.patient_id == patient_id)).first()
         if profile:
@@ -926,7 +980,10 @@ def mobile_delete_patient(patient_id: int, user: User = Depends(_mobile_user)):
         session.commit()
     for event in events:
         on_loop(_publish_realtime_event, event)
-    return {"ok": True, "patient_id": patient_id}
+    result = {"ok": True, "patient_id": patient_id}
+    if request_key is not None:
+        result["already_deleted"] = False
+    return result
 
 
 def _valid_fdi_tooth_number(tooth_number: str) -> bool:
