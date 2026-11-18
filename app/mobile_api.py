@@ -1090,13 +1090,13 @@ def _decode_treatment_history_cursor(cursor: str, user_id: int, patient_id: int)
         payload = json.loads(raw.decode("utf-8"))
         if not isinstance(payload, dict) or set(payload) != {"v", "u", "p", "s", "b", "i"}:
             raise ValueError("invalid cursor fields")
-        if payload["v"] != 1 or type(payload["u"]) is not int or type(payload["p"]) is not int:
+        if type(payload["v"]) is not int or payload["v"] != 1 or type(payload["u"]) is not int or type(payload["p"]) is not int:
             raise ValueError("invalid cursor version or scope")
         if payload["u"] != user_id or payload["p"] != patient_id:
             raise ValueError("cursor scope mismatch")
         if type(payload["s"]) is not int or type(payload["i"]) is not int:
             raise ValueError("invalid cursor ids")
-        if payload["s"] <= 0 or payload["i"] <= 0 or payload["i"] > payload["s"]:
+        if payload["s"] <= 0 or payload["i"] <= 0 or payload["s"] > 2**63 - 1 or payload["i"] > payload["s"]:
             raise ValueError("invalid cursor boundary")
         before_created_at = datetime.fromisoformat(payload["b"])
         if before_created_at.tzinfo is not None:
