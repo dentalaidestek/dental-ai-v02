@@ -128,8 +128,10 @@ export default function NativeSocialAdmin({ token, user }: Props) {
     return () => {
       generation.current++;
       void clearGrant(false);
-      setChallengeSent(false);
-      setCode("");
+      if (mounted.current) {
+        setChallengeSent(false);
+        setCode("");
+      }
     };
   }, [clearGrant]));
 
