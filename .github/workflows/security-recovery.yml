@@ -72,7 +72,7 @@ jobs:
       - name: Install native Academic regression dependencies
         run: npm ci
       - name: Validate Academic workflow, parser and private upload boundary
-        run: node --test tests/academicWorkflow.cjs tests/academicComposer.cjs tests/academicFileSecurity.cjs
+        run: node --test tests/academicWorkflow.cjs tests/academicComposer.cjs tests/academicFileSecurity.cjs tests/academicFileHash.cjs
   native-program-security:
     runs-on: ubuntu-latest
     defaults:
