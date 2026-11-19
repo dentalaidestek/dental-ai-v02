@@ -53,9 +53,9 @@ Added and registered in `npm run test:beta`:
 
 ## Verification boundary
 
-- Ran isolated Node 22 / TypeScript contract fixtures for the two new regression groups: 3/3 and 5/5 passed.
+- Ran isolated Node 22 / TypeScript fixtures: 3/3 image-limit contract tests and 6/6 composer presentation/TSX-syntax tests passed. The TSX parser check used a minimal component fixture, not the actual repository component.
 - Ran strict TypeScript compilation of an isolated shared-limit/import-export fixture: passed.
-- The TSX transpilation guard was added to the committed composer test after the isolated 5/5 fixture run; that new guard has not been executed against the actual repository source here. These isolated fixtures are not the complete repository test suite and are not a substitute for Expo's full `tsc --noEmit`, `npm test`, Android Gradle, Python security or device acceptance.
+- The committed TSX transpilation guard reads the actual native component in CI, but this runtime could not execute that guard against the full repository source. These isolated fixtures are not the complete repository test suite and are not a substitute for Expo's full `tsc --noEmit`, `npm test`, Android Gradle, Python security or device acceptance.
 - The repository could not be cloned into this runtime because GitHub DNS resolution failed. The committed tests have not been run against the full checkout here.
 - At the inspected starting HEAD, the current branch had no workflow runs, no check runs and no commit statuses. Android, Android APK and Security Recovery workflows are `workflow_dispatch`-only. The last retrieved code-bearing hosted jobs from 18 November ended before their first step (empty steps / unavailable `BlobNotFound` logs); they did not execute npm, TypeScript, Gradle or pytest. The exact hosted-runner/account cause remains outside the repository evidence.
 
