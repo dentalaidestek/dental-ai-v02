@@ -1173,6 +1173,58 @@ def _decode_treatment_history_cursor(cursor: str, user_id: int, patient_id: int)
         raise HTTPException(status_code=422, detail="Tedavi geçmişi sayfalama imleci geçersiz. Geçmişi yenileyin.")
 
 
+_TOOTH_TREATMENT_HISTORY_CURSOR_RE = re.compile(r"^[A-Za-z0-9_-]{24,512}$")
+
+
+def _encode_tooth_treatment_history_cursor(
+    user_id: int, patient_id: int, tooth_number: str, snapshot_id: int,
+    before_created_at: datetime, before_id: int,
+) -> str:
+    payload = {
+        "v": 1, "u": user_id, "p": patient_id, "t": tooth_number,
+        "s": snapshot_id, "b": before_created_at.isoformat(), "i": before_id,
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_tooth_treatment_history_cursor(
+    cursor: str, user_id: int, patient_id: int, tooth_number: str,
+) -> dict:
+    try:
+        if not isinstance(cursor, str) or not _TOOTH_TREATMENT_HISTORY_CURSOR_RE.fullmatch(cursor):
+            raise ValueError("invalid cursor shape")
+        raw = base64.b64decode(
+            cursor + "=" * ((4 - len(cursor) % 4) % 4),
+            altchars=b"-_", validate=True,
+        )
+        payload = json.loads(raw.decode("utf-8"))
+        if not isinstance(payload, dict) or set(payload) != {"v", "u", "p", "t", "s", "b", "i"}:
+            raise ValueError("invalid cursor fields")
+        if type(payload["v"]) is not int or payload["v"] != 1:
+            raise ValueError("invalid cursor version")
+        if type(payload["u"]) is not int or type(payload["p"]) is not int:
+            raise ValueError("invalid cursor identity")
+        if payload["u"] != user_id or payload["p"] != patient_id or payload["t"] != tooth_number:
+            raise ValueError("cursor scope mismatch")
+        if not _valid_fdi_tooth_number(payload["t"]):
+            raise ValueError("invalid cursor tooth")
+        if type(payload["s"]) is not int or type(payload["i"]) is not int:
+            raise ValueError("invalid cursor ids")
+        if payload["s"] <= 0 or payload["i"] <= 0 or payload["i"] > payload["s"] or payload["s"] > 2**63 - 1:
+            raise ValueError("invalid cursor boundary")
+        before_created_at = datetime.fromisoformat(payload["b"])
+        if before_created_at.tzinfo is not None:
+            raise ValueError("timezone-aware cursor is not supported")
+        return {
+            "snapshot_id": payload["s"],
+            "before_created_at": before_created_at,
+            "before_id": payload["i"],
+        }
+    except (ValueError, TypeError, KeyError, UnicodeDecodeError, json.JSONDecodeError):
+        raise HTTPException(status_code=422, detail="Diş tedavi geçmişi sayfalama imleci geçersiz. Geçmişi yenileyin.")
+
+
 def _treatment_receipt_key(user_id: int, patient_id: int, operation: str, treatment_id: Optional[int], request_key: str) -> str:
     if not _TREATMENT_REQUEST_KEY.fullmatch(request_key or ""):
         raise HTTPException(status_code=422, detail="Geçersiz tedavi işlem anahtarı.")
@@ -1428,6 +1480,69 @@ def mobile_patient_treatment_history(
         next_cursor = (
             _encode_treatment_history_cursor(
                 user.id, patient_id, boundary["snapshot_id"],
+                items[-1].created_at, items[-1].id,
+            )
+            if len(rows) > _TREATMENT_HISTORY_PAGE_LIMIT else None
+        )
+        return {
+            "items": [_treatment_history_item(item) for item in items],
+            "next_cursor": next_cursor,
+        }
+
+
+@router.get("/patients/{patient_id}/teeth/{tooth_number}/treatments")
+def mobile_patient_tooth_treatment_history(
+    patient_id: int,
+    tooth_number: str,
+    response: Response,
+    cursor: Optional[str] = Query(default=None, min_length=1, max_length=512),
+    user: User = Depends(_mobile_user),
+):
+    """Return bounded, owner-scoped treatment pages for one FDI tooth."""
+    _mobile_private_no_store(response)
+    if not _valid_fdi_tooth_number(tooth_number):
+        raise HTTPException(status_code=422, detail="Geçersiz FDI diş numarası.")
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        if not patient or patient.owner_user_id != user.id:
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+
+        if cursor:
+            boundary = _decode_tooth_treatment_history_cursor(cursor, user.id, patient_id, tooth_number)
+            snapshot_id = boundary["snapshot_id"]
+            query = select(Treatment).where(
+                Treatment.patient_id == patient_id,
+                Treatment.tooth_number == tooth_number,
+                Treatment.id <= snapshot_id,
+                or_(
+                    Treatment.created_at < boundary["before_created_at"],
+                    and_(
+                        Treatment.created_at == boundary["before_created_at"],
+                        Treatment.id < boundary["before_id"],
+                    ),
+                ),
+            )
+        else:
+            snapshot_id = session.exec(
+                select(func.max(Treatment.id)).where(
+                    Treatment.patient_id == patient_id,
+                    Treatment.tooth_number == tooth_number,
+                )
+            ).one() or 0
+            query = select(Treatment).where(
+                Treatment.patient_id == patient_id,
+                Treatment.tooth_number == tooth_number,
+                Treatment.id <= snapshot_id,
+            ) if snapshot_id else None
+
+        rows = session.exec(
+            query.order_by(Treatment.created_at.desc(), Treatment.id.desc())
+            .limit(_TREATMENT_HISTORY_PAGE_LIMIT + 1)
+        ).all() if query is not None else []
+        items = rows[:_TREATMENT_HISTORY_PAGE_LIMIT]
+        next_cursor = (
+            _encode_tooth_treatment_history_cursor(
+                user.id, patient_id, tooth_number, snapshot_id,
                 items[-1].created_at, items[-1].id,
             )
             if len(rows) > _TREATMENT_HISTORY_PAGE_LIMIT else None
