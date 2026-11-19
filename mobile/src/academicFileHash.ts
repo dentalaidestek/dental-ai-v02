@@ -10,7 +10,7 @@ function hasControl(value:string):boolean{
  return false;
 }
 function hasUnsafeUriCharacters(value:string):boolean{
- return value.includes('\\\\')||value.includes('?')||value.includes('#')||hasControl(value);
+ return value.includes('\\')||value.includes('?')||value.includes('#')||hasControl(value);
 }
 
 export function isPrivateAcademicCacheUri(uri:string):boolean{
