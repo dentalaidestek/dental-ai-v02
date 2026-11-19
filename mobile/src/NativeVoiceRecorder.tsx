@@ -99,7 +99,7 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
       try{
        const info=await FileSystem.getInfoAsync(segment.uri);
        if(!isActive())return;
-       const segmentSize=info.exists===true&&info.isDirectory===false?info.size:0;
+       const segmentSize=info.exists===true&&info.isDirectory!==true?info.size:0;
        const next=recoverInterruptedVoiceSegment(restored,segment.id,{exists:info.exists===true,size:segmentSize});
        if(next!==restored)restored=next;
        else if(info.exists)interruptedUnverified=true;
@@ -270,7 +270,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    if(!scopeIsCurrent(key))throw Error('Hasta veya hesap değişti; ses dosyası aktarılmadı.');
    const resolved=resolveVoiceAudioAsset(asset.mimeType,asset.name);
    const sourceInfo=await FileSystem.getInfoAsync(asset.uri);
-   validateVoiceAudioBytes(sourceInfo.exists===true&&sourceInfo.isDirectory===false?sourceInfo.size:0);
+   validateVoiceAudioBytes(sourceInfo.exists===true&&sourceInfo.isDirectory!==true?sourceInfo.size:0);
    const cacheDirectory=FileSystem.cacheDirectory;
    if(typeof cacheDirectory!=='string'||!cacheDirectory.startsWith('file:///')||!cacheDirectory.endsWith('/'))
     throw Error('Uygulamanın özel ses önbelleği kullanılamıyor.');
@@ -280,7 +280,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    if(!isPrivateVoiceRecordingUri(uri,cacheDirectory,resolved.mime))
     throw Error('Seçilen ses dosyası uygulamanın özel önbelleğine güvenli biçimde kopyalanamadı.');
    const copiedInfo=await FileSystem.getInfoAsync(uri);
-   validateVoiceAudioBytes(copiedInfo.exists===true&&copiedInfo.isDirectory===false?copiedInfo.size:0);
+   validateVoiceAudioBytes(copiedInfo.exists===true&&copiedInfo.isDirectory!==true?copiedInfo.size:0);
    if(pickerUri&&pickerUri!==uri&&pickerUri.startsWith(cacheDirectory)){
     await FileSystem.deleteAsync(pickerUri,{idempotent:true});pickerUri=null;
    }
