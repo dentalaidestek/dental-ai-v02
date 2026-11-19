@@ -45,3 +45,14 @@ The connected GitHub environment was used to read and write the branch. It did n
 The web Dental Akış feed has no gift-sending control or gift API in the inspected template/JS/API flow; gift behavior belongs to a different feature and was not invented here.
 
 No PR merge, main update, production deployment, migration or user/clinical data mutation.
+
+## Follow-up backend contract correction — 2026-11-19
+
+A closer comparison of the moderation serializer found two valid server values that the first native normalizer incorrectly rejected:
+
+- `app/expert_social_moderation.py::describe` emits a UUID string for `job_id` when a moderation task exists; it emits `null` for a legacy row without a task.
+- The same legacy path emits `revision: 0`. A positive-only integer check rejected those pre-task rows.
+
+Updated the native `SocialModeration.job_id` type to `string | null`, validate canonical UUID v4 task IDs, and accept non-negative revisions while keeping `content_version` positive. Regression coverage now includes a registered UUID task, a legacy `job_id: null / revision: 0` row, numeric/malformed job IDs and negative revisions.
+
+A local isolated rule check passed 5 assertions. The committed `social.cjs` test was not run as part of the full repository suite; current-head CI still has no check-runs/statuses. No backend schema or moderation record was changed.
