@@ -16,7 +16,10 @@ test('native voice recorder distinguishes normal chunk rotation from an unexpect
 });
 
 test('voice draft is account-patient bound, expires, and appends each segment only once',()=>{
- const api=require('../src/voiceSession.ts'),draft={...api.newVoiceDraft(1,8,1000),segments:[{id:'s1',uri:'file:///cache/audio.m4a',ready:true}]};
+ const api=require('../src/voiceSession.ts'),fresh=api.newVoiceDraft(1,8,1000),draft={...fresh,segments:[{id:'s1',uri:'file:///cache/audio.m4a',ready:true}]};
+ assert.equal(api.canResumeVoiceDraft(fresh),true);
+ assert.equal(api.canResumeVoiceDraft({...fresh,ended:true}),false,'a completed exam cannot be resumed');
+ assert.equal(api.canResumeVoiceDraft({...fresh,segments:[{id:'pending',uri:'file:///cache/pending.m4a',ready:true}]}),false,'pending audio must be resolved before resume');
  assert.throws(()=>api.parseVoiceDraft(JSON.stringify(draft),2,8,2000),/hesabı/);assert.equal(api.parseVoiceDraft(JSON.stringify(draft),1,8,1000+86400001),null);
  const next=api.appendVoiceSegment(draft,'s1','Synthetic transcript');assert.equal(next.transcript,'Synthetic transcript');assert.equal(next.segments.length,0);assert.equal(api.appendVoiceSegment(next,'s1','Duplicate').transcript,'Synthetic transcript');
  const receipt=api.markVoiceSegmentTranscribed(draft,'s1','Synthetic transcript');assert.equal(receipt.transcript,'Synthetic transcript');assert.equal(receipt.segments[0].transcribed,true);assert.equal(receipt.segments[0].ready,false);assert.equal(api.markVoiceSegmentTranscribed(receipt,'s1','Duplicate').transcript,'Synthetic transcript');assert.throws(()=>api.removeVoiceSegment(draft,'s1'),/Yazıya çevrilmemiş/);const cleaned=api.removeVoiceSegment(receipt,'s1');assert.equal(cleaned.segments.length,0);assert.equal(api.removeVoiceSegment(cleaned,'s1').segments.length,0);assert.equal(api.parseVoiceDraft(JSON.stringify(receipt),1,8,2000).segments[0].transcribed,true);assert.throws(()=>api.parseVoiceDraft(JSON.stringify({...receipt,segments:[{...receipt.segments[0],ready:true}]}),1,8,2000),/içeriği/);
@@ -78,6 +81,35 @@ test('native microphone pauses/resumes and only finishes clinical handoff after 
  await renderer.act(async()=>button(tree,'Ⅱ  Duraklat').props.onPress());assert.ok(h.calls.includes('stop'));assert.equal(finished.length,0);assert.equal(transcripts.at(-1),'Synthetic dictated speech');
  await renderer.act(async()=>button(tree,'▶  Devam et').props.onPress());assert.equal(h.calls.filter(x=>x==='record').length,2);await renderer.act(async()=>button(tree,'Muayeneyi bitir').props.onPress());assert.equal(finished.length,1);assert.ok(finished[0].includes('Synthetic dictated speech'));await renderer.act(async()=>tree.unmount());
 });
+test('a completed native voice examination stays closed after transcript edits and blocks duplicate AI handoff',async()=>{
+ const asrCalls=[],finished=[];
+ const h=recorderUI({transcribe:async(...args)=>{asrCalls.push(args);return{transcript:'Final dictated segment',revision:'r'}}});
+ let tree;
+ const props={token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished:value=>finished.push(value)};
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,props)));
+ await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());
+ await renderer.act(async()=>button(tree,'Muayeneyi bitir').props.onPress());
+ assert.equal(asrCalls.length,1);
+ assert.equal(finished.length,1);
+ assert.equal(JSON.parse(h.store.get('draft')).ended,true);
+ const resume=button(tree,'Muayene tamamlandı');
+ const finishButton=button(tree,'Muayeneyi bitir');
+ assert.ok(resume);
+ assert.equal(resume.props.disabled,true);
+ assert.equal(finishButton.props.disabled,true);
+ await renderer.act(async()=>{resume.props.onPress();finishButton.props.onPress();await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(h.calls.filter(value=>value==='record').length,1);
+ assert.equal(asrCalls.length,1);
+ assert.equal(finished.length,1);
+ await renderer.act(async()=>tree.update(React.createElement(h.Component,{...props,value:'Düzenlenmiş görüşme metni'})));
+ await renderer.act(async()=>new Promise(resolve=>setImmediate(resolve)));
+ const saved=JSON.parse(h.store.get('draft'));
+ assert.equal(saved.transcript,'Düzenlenmiş görüşme metni');
+ assert.equal(saved.ended,true,'editing text must not reopen a completed microphone session');
+ assert.equal(button(tree,'Muayene tamamlandı').props.disabled,true);
+ await renderer.act(async()=>tree.unmount());
+});
+
 test('native microphone elapsed time accumulates across recording chunks and pauses',async()=>{
  const h=recorderUI(),finished=[];let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished:v=>finished.push(v)})));
  await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());await renderer.act(async()=>h.advance(4200));await renderer.act(async()=>button(tree,'Ⅱ  Duraklat').props.onPress());assert.equal(JSON.parse(h.store.get('draft')).elapsedMs,4200);assert.ok(text(tree.toJSON()).includes('00:04'));
