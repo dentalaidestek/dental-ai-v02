@@ -254,9 +254,10 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
     copyToCacheDirectory:true,multiple:false
    });
    if(selection.canceled||!selection.assets?.length)return;
-   if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi; dosya gönderilmedi.');
    const asset=selection.assets[0];
    pickerUri=asset.uri;
+   if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi; dosya gönderilmedi.');
+   if(!scopeIsCurrent(key))throw Error('Hasta veya hesap değişti; ses dosyası aktarılmadı.');
    const resolved=resolveVoiceAudioAsset(asset.mimeType,asset.name);
    const sourceInfo=await FileSystem.getInfoAsync(asset.uri);
    validateVoiceAudioBytes(sourceInfo.size);

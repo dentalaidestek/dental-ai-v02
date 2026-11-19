@@ -30,6 +30,7 @@ test('native recorder mirrors web audio-file import through the private idempote
  const source=fs.readFileSync(require.resolve('../src/NativeVoiceRecorder.tsx'),'utf8');
  for(const fragment of [
   'DocumentPicker.getDocumentAsync',
+  'pickerUri=asset.uri',
   'copyToCacheDirectory:true',
   'FileSystem.deleteAsync(pickerUri,{idempotent:true})',
   'pickerUri.startsWith(cacheDirectory)',
@@ -41,6 +42,8 @@ test('native recorder mirrors web audio-file import through the private idempote
   "transcribeNativeRecording(token,patientId,segment.uri,segment.id,requestController.signal,segment.mime||'audio/mp4')",
   'validateVoiceAudioDuration(duration)'
  ])assert.ok(source.includes(fragment),fragment);
+ const importStart=source.indexOf('async function importAudioFile');
+ assert.ok(source.indexOf('pickerUri=asset.uri',importStart)<source.indexOf("if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi",importStart));
 });
 
 test('voice draft is account-patient bound, expires, and appends each segment only once',()=>{
