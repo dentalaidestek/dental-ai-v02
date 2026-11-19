@@ -167,6 +167,11 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
       continue;
      }
      if(!consentRef.current)break;
+     if(segment.mime){
+      const duration=await readPrivateVoiceAudioDuration(segment.uri,segment.mime);
+      validateVoiceAudioDuration(duration);
+      if(!scopeIsCurrent(drainKey)||!mounted.current||!consentRef.current||AppState.currentState!=='active')return;
+     }
      requestController=new AbortController();controller.current=requestController;
      const result=await transcribeNativeRecording(token,patientId,segment.uri,segment.id,requestController.signal,segment.mime||'audio/mp4');
      if(!scopeIsCurrent(drainKey)||!mounted.current)return;
