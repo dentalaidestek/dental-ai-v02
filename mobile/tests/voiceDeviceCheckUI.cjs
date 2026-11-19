@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const component=fs.readFileSync(path.join(__dirname,'../src/NativeVoiceDeviceCheck.tsx'),'utf8');
+const helper=fs.readFileSync(path.join(__dirname,'../src/voiceDeviceCheck.ts'),'utf8');
 const entry=fs.readFileSync(path.join(__dirname,'../src/VoiceExamEntry.tsx'),'utf8');
 
 test('native device check mirrors the six-second local preparation flow',()=>{
@@ -21,17 +22,17 @@ test('microphone test uses only temporary app cache and deletes the file after s
 });
 
 test('microphone test verifies cache-file deletion and keeps a retry path on failure',()=>{
- assert.match(component,/isPrivateVoiceDeviceCheckUri\(path,FileSystem\.cacheDirectory\)/);
- assert.match(component,/if\(!isPrivateVoiceDeviceCheckUri\(path,cache\)\)throw/);
- assert.match(component,/const after=await FileSystem\.getInfoAsync\(path\)/);
- assert.match(component,/return after\.exists!==true/);
+ assert.match(component,/isPrivateVoiceDeviceCheckUri\(path,cache\)/);
+ assert.match(component,/removePrivateVoiceDeviceCheckFile\(path,FileSystem\.cacheDirectory,FileSystem\)/);
+ assert.match(helper,/await fileSystem\.deleteAsync\(uri,\{idempotent:true\}\)/);
+ assert.match(helper,/const after=await fileSystem\.getInfoAsync\(uri\)/);
+ assert.match(helper,/return after\.exists!==true/);
  assert.match(component,/if\(cleanupVerified\)uri\.current=null/);
  assert.match(component,/setCleanupPending\(!cleanupVerified\)/);
  assert.match(component,/async function retryCleanup\(\)/);
  assert.match(component,/Geçici ses dosyasını silmeyi yeniden dene/);
  assert.match(component,/cleanupVerified\}\)/);
 });
-
 test('microphone test never sends audio, patient identity or transcript to an API',()=>{
  assert.doesNotMatch(component,/\bfetch\s*\(|axios|FormData|transcribeNativeRecording|voiceApi|patientId|userId|transcript|token/);
 });
