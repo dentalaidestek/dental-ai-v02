@@ -16,7 +16,8 @@ test('native device check mirrors the six-second local preparation flow',()=>{
 test('microphone test uses only temporary app cache and deletes the file after stop',()=>{
  assert.match(component,/directory:'cache'/);
  assert.match(component,/FileSystem\.cacheDirectory/);
- assert.match(component,/FileSystem\.deleteAsync\(path/);
+ assert.match(component,/removePrivateVoiceDeviceCheckFile\(path,FileSystem\.cacheDirectory,FileSystem\)/);
+ assert.match(helper,/await fileSystem\.deleteAsync\(uri,\{idempotent:true\}\)/);
  assert.match(component,/await recorder\.stop\(\)/);
  assert.doesNotMatch(component,/documentDirectory|SecureStore|AsyncStorage/);
 });
