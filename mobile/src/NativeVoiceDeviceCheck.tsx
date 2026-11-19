@@ -3,7 +3,7 @@ import {ActivityIndicator,AppState,Pressable,Text,View} from 'react-native';
 import {useIsFocused} from '@react-navigation/native';
 import {RecordingPresets,requestRecordingPermissionsAsync,setAudioModeAsync,useAudioRecorder,useAudioRecorderState} from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
-import {evaluateVoiceDeviceCheck,isPrivateVoiceDeviceCheckUri,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS} from './voiceDeviceCheck';
+import {evaluateVoiceDeviceCheck,isPrivateVoiceDeviceCheckUri,removePrivateVoiceDeviceCheckFile,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS} from './voiceDeviceCheck';
 import type {VoiceDeviceCheckOutcome} from './voiceDeviceCheck';
 
 type Phase='idle'|'requesting'|'testing'|'finishing'|'complete';
@@ -28,14 +28,7 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
  async function resetAudioMode(){await setAudioModeAsync({allowsRecording:false}).catch(()=>{});}
  async function removeTemporaryFile(path:string|null):Promise<boolean>{
   if(!path)return true;
-  if(!isPrivateVoiceDeviceCheckUri(path,FileSystem.cacheDirectory))return false;
-  try{
-   const before=await FileSystem.getInfoAsync(path);
-   if(!before.exists)return true;
-   await FileSystem.deleteAsync(path,{idempotent:true});
-   const after=await FileSystem.getInfoAsync(path);
-   return after.exists!==true;
-  }catch{return false;}
+  return removePrivateVoiceDeviceCheckFile(path,FileSystem.cacheDirectory,FileSystem);
  }
  useEffect(()=>{
   if(phase!=='testing'||typeof status.metering!=='number'||!Number.isFinite(status.metering))return;
