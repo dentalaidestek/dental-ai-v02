@@ -1,7 +1,7 @@
 const ts=require('typescript'),fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),{test}=require('node:test');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const patient={id:42,anonymous_id:'synthetic-42',first_name:'Test',last_name:'Patient'};
-const result={analysis:{id:7,patient_id:42,status:'AI_ANALYZED'},patient,assets:[],ai_result:null};
+const result={analysis:{id:7,patient_id:42,status:'AI_ANALYZED'},patient,assets:[]};
 function harness({props={},fetchAnalysis=async()=>result,fetchPatient=async()=>({patient}),saved=null}={}){
  const states=[],refs=[],callbacks=[],previous=[],effects=[];let si=0,ri=0,ci=0,ei=0,event=null;
  let values={token:'current',userId:1,...props};

@@ -1,7 +1,7 @@
 import json
 from sqlmodel import Session,select
 from test_mobile_chat_actions import chat
-from app import main,work_jobs
+from app import main,mobile_analysis_api,work_jobs
 
 
 def setup(chat,monkeypatch):
@@ -63,3 +63,22 @@ def test_mobile_analysis_workspace_returns_only_minimal_patient_context(chat,mon
     assert patient_payload['chief_complaint']=='Synthetic sensitivity complaint'
     for field in ('first_name','last_name','phone','birth_date','tc_kimlik_no','address','created_at'):
         assert field not in patient_payload
+
+
+def test_analysis_detail_does_not_read_or_return_duplicate_raw_result(chat,monkeypatch,tmp_path):
+    c,engine=setup(chat,monkeypatch)
+    result_path=tmp_path/'private-analysis-result.json'
+    result_path.write_text(json.dumps({'ai_result':{'private_marker':'Synthetic private result payload'}}))
+    with Session(engine) as s:
+        analysis=s.get(main.Analysis,1)
+        analysis.result_path=str(result_path)
+        s.add(analysis);s.commit()
+    def forbidden_result_read(_path):
+        raise AssertionError('metadata endpoint must not read the clinical result object')
+    monkeypatch.setattr(mobile_analysis_api,'storage_ensure_local',forbidden_result_read)
+    response=c.get('/api/mobile/v1/analyses/1')
+    assert response.status_code==200,response.text
+    payload=response.json()
+    assert set(payload)=={'analysis','patient','assets','job'}
+    assert 'ai_result' not in payload
+    assert 'Synthetic private result payload' not in response.text

@@ -51,6 +51,12 @@ def test_notes_fdi_and_job_controls_are_owned(chat,monkeypatch,tmp_path):
     assert c.post(base+'/selected-teeth',json={'teeth':['59']}).status_code==422
     r=c.post(base+'/selected-teeth',json={'teeth':['36','46']});assert r.status_code==202,r.text
     job_id=r.json()['job']['id'];assert c.post(base+f'/jobs/{job_id}/cancel').status_code==200
+    with Session(engine) as s:
+        s.add(main.Analysis(id=2,patient_id=1,status='AI_ANALYZED'))
+        foreign_job=work_jobs.WorkJob(owner_user_id=1,resource_id=2,resource_type='ANALYSIS',kind='PRELIMINARY',source_hash='synthetic-foreign',dedupe_key='synthetic-foreign',status='QUEUED')
+        s.add(foreign_job);s.commit();s.refresh(foreign_job);foreign_job_id=foreign_job.id
+    assert c.post(base+f'/jobs/{foreign_job_id}/cancel').status_code==404
+    with Session(engine) as s:assert s.get(work_jobs.WorkJob,foreign_job_id).status=='QUEUED'
     c.headers['Authorization']='Bearer token2';assert c.post(base+f'/jobs/{job_id}/retry').status_code==404
 
 

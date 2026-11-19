@@ -60,6 +60,12 @@ test('AI rejects a result linked to a different patient',async()=>{
  try{await assert.rejects(()=>api.getAnalysis('token',23),/hasta veya iş kimliği uyuşmayan/)}
  finally{global.fetch=original}
 });
+test('analysis detail rejects a duplicate raw clinical result payload',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>new Response(JSON.stringify({analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7,anonymous_id:'SYNTHETIC-7',age:null,chief_complaint:null},assets:[],ai_result:{private_marker:'Synthetic private result'}}),{status:200});
+ try{await assert.rejects(()=>api.getAnalysis('token',23),error=>error.status===502)}
+ finally{global.fetch=original}
+});
 test('AI rejects a result with a mismatched analysis job ID',async()=>{
  const original=global.fetch;
  global.fetch=async()=>new Response(JSON.stringify({analysis:{id:24,patient_id:7,status:'VISION_READY'},patient:{id:7,anonymous_id:'SYNTHETIC-7',age:null,chief_complaint:null},assets:[]}),{status:200});
