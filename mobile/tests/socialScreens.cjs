@@ -378,8 +378,12 @@ test('Dental Flow session scope changes on account or bearer rotation and reject
  const oldSession={userId:7,token:'old-bearer'};
  const newSession={userId:8,token:'new-bearer'};
  const rotated={userId:7,token:'rotated-bearer'};
- assert.notEqual(sessionScopeExports.socialSessionKey(oldSession.userId,oldSession.token),sessionScopeExports.socialSessionKey(rotated.userId,rotated.token));
- assert.notEqual(sessionScopeExports.socialSessionKey(oldSession.userId,oldSession.token),sessionScopeExports.socialSessionKey(newSession.userId,newSession.token));
+ const oldKey=sessionScopeExports.socialSessionKey(oldSession.userId,1);
+ const rotatedKey=sessionScopeExports.socialSessionKey(rotated.userId,2);
+ const otherAccountKey=sessionScopeExports.socialSessionKey(newSession.userId,1);
+ assert.notEqual(oldKey,rotatedKey);
+ assert.notEqual(oldKey,otherAccountKey);
+ assert.equal(oldKey.includes('old-bearer'),false,'bearer token must never enter React keys');
  assert.equal(sessionScopeExports.isSocialSessionCurrent(oldSession,oldSession),true);
  assert.equal(sessionScopeExports.isSocialSessionCurrent(newSession,oldSession),false);
  assert.equal(sessionScopeExports.isSocialSessionCurrent(rotated,oldSession),false);
@@ -388,9 +392,11 @@ test('Dental Flow session scope changes on account or bearer rotation and reject
 test('Dental Flow gates old feed, comments, images and edits while a new session is being painted',()=>{
  const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
  const flow=source.slice(source.indexOf('export function DentalFlow('));
- assert.match(flow,/const sessionKey = socialSessionKey\(user\.id, token\)/);
+ assert.match(flow,/const sessionKey = socialSessionKey\(user\.id, sessionEpoch\)/);
+ assert.match(flow,/const sessionReady = isSocialSessionCurrent\(readySession, \{ userId: user\.id, token \}\)/);
+ assert.match(flow,/setSessionEpoch\(\(value\) => value \+ 1\)/);
  assert.match(flow,/usePagedRecords<api\.SocialPost>\(\s*`\$\{sessionKey\}/);
- assert.match(flow,/const sessionReady = readySessionKey === sessionKey/);
+ assert.match(flow,/const sessionReady = isSocialSessionCurrent\(readySession, \{ userId: user\.id, token \}\)/);
  assert.match(flow,/data=\{sessionReady \? pages\.items : \[\]\}/);
  assert.match(flow,/\{comments && sessionReady && \(/);
  assert.match(flow,/key=\{\`\$\{sessionKey\}:\$\{comments\.id\}\`\}/);
