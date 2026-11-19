@@ -35,6 +35,8 @@ test('native recorder mirrors web audio-file import through the private idempote
   'pickerUri.startsWith(cacheDirectory)',
   'voice-import-',
   'readPrivateVoiceAudioDuration(uri,resolved.mime)',
+  'if(gate.current||draining.current||occupied',
+  'elapsedMs:(draft.current.elapsedMs||0)+duration*1000',
   'segments:[...draft.current.segments,segment]',
   "transcribeNativeRecording(token,patientId,segment.uri,segment.id,requestController.signal,segment.mime||'audio/mp4')",
   'validateVoiceAudioDuration(duration)'

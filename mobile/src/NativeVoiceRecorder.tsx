@@ -244,7 +244,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
   );
  }
  async function importAudioFile(){
-  if(gate.current||occupied||disabled||!ready||!consentRef.current||draft.current.ended)return;
+  if(gate.current||draining.current||occupied||disabled||!ready||!consentRef.current||draft.current.ended)return;
   if(draft.current.segments.length>=5){setError('Bekleyen sesler işleniyor. Önce mevcut bölümü yazıya çevirin.');return;}
   gate.current=true;setWorking(true);setError('');
   let copiedUri:string|null=null,copiedMime:string|undefined,pickerUri:string|null=null;
@@ -278,7 +278,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi; dosya gönderilmedi.');
    if(!scopeIsCurrent(key))throw Error('Hasta veya hesap değişti; ses dosyası aktarılmadı.');
    const segment={id,uri,ready:true,mime:resolved.mime};
-   const saved=await persist({...draft.current,audioStarted:true,ended:false,segments:[...draft.current.segments,segment]});
+   const saved=await persist({...draft.current,audioStarted:true,ended:false,segments:[...draft.current.segments,segment],elapsedMs:(draft.current.elapsedMs||0)+duration*1000});
    if(!saved)throw Error('Ses taslağı güvenli biçimde kaydedilemedi; dosya gönderilmedi.');
    copiedUri=null;
    setError('Ses dosyası güvenli taslağa eklendi. Yazıya çevriliyor…');
