@@ -453,37 +453,37 @@ def mobile_dashboard(user: User = Depends(_mobile_user)):
 
 @router.get("/patients")
 def mobile_patients(
+    response: Response,
     user: User = Depends(_mobile_user),
     q: str = Query(default="", max_length=100),
     limit: int = Query(default=30, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):
+    # Patient names, phone numbers and search results are account-scoped clinical data.
+    _mobile_private_no_store(response)
     search = " ".join(q.strip().split())
-    with Session(engine, expire_on_commit=False) as session:
-        query = (
-            select(Patient)
-            .where(Patient.owner_user_id == user.id)
-            .order_by(Patient.created_at.desc(), Patient.id.desc())
+    filters = [Patient.owner_user_id == user.id]
+    if search:
+        pattern = f"%{search}%"
+        filters.append(
+            (Patient.first_name.ilike(pattern))
+            | (Patient.last_name.ilike(pattern))
+            | (Patient.phone.ilike(pattern))
+            | (Patient.anonymous_id.ilike(pattern))
+            | (Patient.tc_kimlik_no.ilike(pattern))
         )
+
+    with Session(engine, expire_on_commit=False) as session:
+        query = select(Patient).where(*filters)
         if search:
-            pattern = f"%{search}%"
-            query = query.where(
-                (Patient.first_name.ilike(pattern))
-                | (Patient.last_name.ilike(pattern))
-                | (Patient.phone.ilike(pattern))
-                | (Patient.anonymous_id.ilike(pattern))
-            )
+            # Match the web search's surname/name ordering, with an ID tie-breaker
+            # so offset pages remain deterministic when names are identical.
+            query = query.order_by(Patient.last_name, Patient.first_name, Patient.id.desc())
+        else:
+            query = query.order_by(Patient.created_at.desc(), Patient.id.desc())
 
         patients = session.exec(query.offset(offset).limit(limit)).all()
-        total_query = select(Patient).where(Patient.owner_user_id == user.id)
-        if search:
-            total_query = total_query.where(
-                (Patient.first_name.ilike(pattern))
-                | (Patient.last_name.ilike(pattern))
-                | (Patient.phone.ilike(pattern))
-                | (Patient.anonymous_id.ilike(pattern))
-            )
-        total = int(session.exec(select(func.count()).select_from(total_query.subquery())).one())
+        total = int(session.exec(select(func.count(Patient.id)).where(*filters)).one())
 
         return {
             "items": [_patient_payload(p) for p in patients],
