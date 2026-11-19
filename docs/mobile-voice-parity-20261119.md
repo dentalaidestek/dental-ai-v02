@@ -157,9 +157,9 @@ The native flow now:
   idempotent ASR request key.
 
 Regressions added to the existing `voiceWorkflow.cjs` and
-`voiceAudioImport.cjs` suites cover the 54,000-character boundary, the
-180,000-byte Unicode boundary, the disabled native controls, MIME aliases,
-strict AAC rejection, and the ordering of consent/budget checks before
+`voiceAudioImport.cjs` suites cover the 54,000-character boundary, UTF-8 byte counting (with 180 KB as a
+second defensive ceiling), the disabled native controls, MIME aliases, strict
+AAC rejection, and the ordering of consent/budget checks before
 persisting a segment. Both files are already included in `test:beta` and
 the manual `security-recovery` workflow; no new workflow trigger was added.
 
@@ -176,3 +176,17 @@ The Android and security workflows remain `workflow_dispatch` only.
 No CI run was dispatched in this pass. The new tests, full
 `npm test`, Android typecheck, and device-level import/cancel/recovery
 behavior remain unexecuted and must not be treated as passing.
+
+
+## Post-change branch verification
+
+The audio-import parity work was committed in seven fast-forward commits after
+starting HEAD `a236cd3be5af9d8e427595a3a151e9f3757daa80`. The final source
+comparison reports exactly five changed files and no divergence from the PR
+base. The PR head matches the branch head.
+
+The new branch head has zero GitHub check runs and zero commit status entries.
+No Android or security workflow was dispatched. The isolated helper/MIME test
+run passed 5/5 locally, but it is not a substitute for the repository's full
+`npm test`, TypeScript project check, React Native component suite, or Android
+build. Those remain unverified.
