@@ -6,7 +6,11 @@ export const MAX_ACADEMIC_UPLOAD_QUEUE_ITEMS=12;
 
 function validateItems(items:unknown,user:number,course:number):UploadIntent[]{
  if(!Number.isSafeInteger(user)||user<1||!Number.isSafeInteger(course)||course<1||!Array.isArray(items)||items.length<1||items.length>MAX_ACADEMIC_UPLOAD_QUEUE_ITEMS)throw Error('Akademik dosya kuyruğu sınır dışında.');
- const parsed=items.map(item=>parseUploadIntent(JSON.stringify(item),user,course));
+ const parsed=items.map(item=>{
+  const encoded=JSON.stringify(item);
+  if(typeof encoded!=='string')throw Error('Akademik dosya kuyruğu kaydı serileştirilemedi.');
+  return parseUploadIntent(encoded,user,course);
+ });
  const keys=new Set<string>(),uris=new Set<string>(),names=new Set<string>();
  for(const item of parsed){
   if(keys.has(item.request_key)||uris.has(item.uri)||names.has(item.name))throw Error('Akademik dosya kuyruğunda yinelenen aktarım var.');
@@ -53,6 +57,7 @@ export function mergeAcademicUploadIntent(queue:AcademicUploadQueue,item:UploadI
  if(existing.version===3&&item.version===2)return queue;
  if(existing.version===3&&item.version===3&&existing.content_sha256!==item.content_sha256)throw Error('Aynı Akademik aktarım anahtarı farklı içerik özetleri taşıyor.');
  if(existing.version===2&&item.version===3)return replaceAcademicUploadIntent(queue,item);
+ if(existing.version===2&&item.version===2&&existing.size===null&&item.size!==null)return replaceAcademicUploadIntent(queue,item);
  return queue;
 }
 
