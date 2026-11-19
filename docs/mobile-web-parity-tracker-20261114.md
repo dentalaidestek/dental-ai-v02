@@ -929,3 +929,22 @@ New tests: six file-hash boundary tests, a mismatched upload-acknowledgement tes
 Web-first review compared `analysis_viewer.html` / `main.py::analysis_asset` with native `mobile_analysis_api.py` and the already-hardened patient-media download route. Native analysis asset and legacy-radiograph downloads previously hydrated R2 while a SQLAlchemy Session remained open. Both now copy the authorized storage reference, close the session, and offload `storage_ensure_local` through the Starlette threadpool. The shared private/no-store policy now also adds `Pragma: no-cache` and `Vary: Authorization`.
 
 Three integration regressions cover analysis asset hydration, legacy-radiograph hydration and owner rejection before storage access. A security source-contract test protects the offload/cache behavior. Tests are committed but were not executed here; full pytest, Android typecheck, beta suite, Expo/Gradle and device acceptance remain open. Evidence: `docs/mobile-analysis-download-pool-safety-20261119.md`. No schema, dependency, main merge or production deployment.
+
+## 2026-11-20 — Native AI analysis composer web parity and Android symbol fix
+
+Web-first inspection re-read `analysis_new.html`, its `analysis-step-title` / `analysis-field-help` / `analysis-safety-note` CSS, the authenticated web GET/POST handlers, the mobile analysis API, and the native upload/gallery components before changing UI.
+
+New visual gap: native already supported camera/gallery, encrypted upload drafts, receipt-first recovery, same-key retry, saved + new media and byte progress, but flattened the web's three numbered sections into one panel. It omitted the saved-media-specific “Ek görünt” title, the clinical-only helper and the clinical safety note; its 15/48 MiB display copy was hard-coded.
+
+Changes:
+- Added `analysisComposerPresentation.ts` to model the web's three steps and derive saved/new image copy from the canonical `uploadLimits.ts` values.
+- Reworked `NativeAnalysisUpload` into numbered native sections, preserving camera/gallery, previews/removal, encrypted intent, receipt recovery, transfer progress and cancellation.
+- Added the web clinical-only helper, safety note and full-width navy submit action.
+- Found and fixed a real missing-symbol source defect: `analysisApi.ts` used `ANALYSIS_MAX_IMAGES` without importing it, while `NativeAnalysisUpload` and `NativePatientMedia` imported it from `analysisApi` even though it was not exported. The API now imports and re-exports the canonical shared constant.
+- Added `analysisImageLimitContract.cjs` and `analysisComposerPresentation.cjs` to `npm run test:beta`. A non-native `fontWeight: '850'` value introduced during styling was corrected to React Native's supported `800` before the final component update.
+
+Privacy review confirmed that web/mobile owner checks and saved-media ownership checks remain unchanged, the patient summary remains anonymous ID/age/complaint only, and native upload components remain keyed by account/patient scope. No schema, endpoint, provider, migration or patient record changed.
+
+Isolated verification: 3/3 image-limit contract fixture tests, 5/5 composer presentation fixture tests, and a strict TypeScript shared-limit/import-export fixture passed. These fixtures are not the full repository checkout. Full `npm test`, Expo typecheck/export, Android Gradle/device tests and Python security pytest remain unexecuted because this runtime could not clone GitHub and the current workflows are manual-only. The current HEAD has no check runs or commit statuses; previously retrieved 18 November jobs failed before their first step with empty steps and unavailable log blobs, so they did not run the compiler or tests. No green CI is claimed.
+
+No main merge, live deploy, migration, APK/IPA publication or clinical record mutation.
