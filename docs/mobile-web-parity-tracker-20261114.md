@@ -797,3 +797,12 @@ Replaced the boolean with a request-ID lease in `mobile/src/SocialScreens.tsx`. 
 Added an interactive renderer regression to `mobile/tests/socialScreens.cjs` covering initial page → in-flight older page → refresh → new older page → late stale response → next cursor. The test file is already registered in `npm run test:beta` and Security Recovery's `native-social-security` job.
 
 Evidence: `docs/mobile-dental-flow-comment-pagination-20261119.md`. Commits: `7e726d9`, `63b38d3`, `21aa505`, `deca4e3`, `337e374`, `c25944e`, `3a8d935`, `55689a4`, `a3470b9`, `0274dd9`. The test is committed but not executed in this run. PR head before changes `c84238c` had empty combined status and no associated PR workflow runs. The historical Android/Security runner failures still have runner ID 0, empty steps and missing log blobs; no source-level typecheck or pytest failure is established. Full typecheck/beta/Expo/Gradle/Python/PostgreSQL/device/60k-load acceptance remain open. No main merge or live deploy.
+
+
+## 2026-11-19 — Native new-patient phone-field parity
+
+Re-read `app/templates/patient_new.html`, `app/main.py::create_patient`, `app/mobile_api.py::mobile_create_patient` and `mobile/src/NativeNewPatient.tsx` before changing the form. The web create form requires a Turkish mobile number (`05[0-9]{9}`), but native allowed an empty phone and sent it to the API. Added a pure native validator, digits-only 11-character normalization, required-field label, telephone autofill metadata and pre-submit validation. API optionality remains for backward compatibility with older clients. Added pure helper and native renderer regressions and registered both in `npm run test:beta`.
+
+Commits: `1e5004c`, `6a93643`, `de95b2b`, `d92503b`, `774b7ad`, `17b4f9b`, `2c59187`. Documentation: `docs/mobile-patient-create-form-parity-20261119.md`.
+
+The test sources are committed but the full Node/React Native suite and Android typecheck have not been executed in this runtime. No backend schema/API behavior, patient data, main merge or live deployment changed.
