@@ -806,3 +806,14 @@ Re-read `app/templates/patient_new.html`, `app/main.py::create_patient`, `app/mo
 Commits: `1e5004c`, `6a93643`, `de95b2b`, `d92503b`, `774b7ad`, `17b4f9b`, `2c59187`. Documentation: `docs/mobile-patient-create-form-parity-20261119.md`.
 
 The test sources are committed but the full Node/React Native suite and Android typecheck have not been executed in this runtime. No backend schema/API behavior, patient data, main merge or live deployment changed.
+
+
+## 2026-11-19 — Patient directory search and privacy parity
+
+Web-first review compared `patients_all.html`, `patient_search.html`, `main.py::search_patients`, `mobile_api.py::mobile_patients` and native `Patients`/ `PatientRow`. Found that native search omitted TCKN although the web search accepts it; native rows displayed either phone or patient number instead of both; search order differed from web; and the patient-list response lacked the shared private/no-store headers.
+
+Changes: added owner-scoped TCKN matching without returning TCKN in list payloads; applied `private, no-store`, `Pragma: no-cache` and `Vary: Authorization`; reused one filter set for page/count and changed count to `count(Patient.id)`; matched web surname/name ordering with an ID tie-breaker; normalized Turkish search whitespace; displayed both patient number and phone; added 100-character input bound, explicit no-match/clear state and guarded automatic pagination while retaining the manual fallback. Age zero now displays correctly in the tooth-chart patient selector.
+
+Regression sources: `tests/test_mobile_patient_parity.py` covers web/native TCKN parity, partial matching, owner isolation, no-store headers, list-payload minimization and ordering. `mobile/tests/patientDirectoryPresentation.cjs` covers Turkish normalization, row labels, age zero, bearer-only query encoding and native list wiring; registered in `npm run test:beta`. Python and Node suites were not executed in this connector-only run. Full typecheck, beta, Security Recovery, Expo/Gradle, device and 60k-load acceptance remain open.
+
+At starting HEAD `a156fc7`, no current-head workflow run or combined status existed. Workflows remain manual-only; a historical Android job had no steps and its log returned `BlobNotFound 404`, so the compiler/test process did not start. No dispatch was sent. The native list/detail path remains owner-only; ADMIN-wide web directory access was not copied into a list-only mobile change. Evidence: `docs/mobile-patient-directory-search-parity-20261119.md`. No patient data, schema, migration, main merge or production deploy.
