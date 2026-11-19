@@ -15,6 +15,17 @@ test('native voice recorder distinguishes normal chunk rotation from an unexpect
  assert.match(source,/isUnexpectedVoiceRecorderStop\(wasRecording\.current,wanted\.current,Boolean\(active\.current\),gate\.current\)/);
 });
 
+test('voice draft accepts private imported audio only with a matching supported MIME',()=>{
+ const api=require('../src/voiceSession.ts'),fresh=api.newVoiceDraft(1,8,1000);
+ const imported={...fresh,segments:[{id:'import-1',uri:'file:///cache/voice-import-123.mp3',mime:'audio/mpeg',ready:true}]};
+ assert.ok(api.parseVoiceDraft(JSON.stringify(imported),1,8,2000));
+ assert.equal(api.isSafeVoiceSegmentUri('file:///cache/voice-import-123.mp3','audio/mpeg'),true);
+ assert.equal(api.isSafeVoiceSegmentUri('file:///cache/voice-import-123.mp3','audio/wav'),false);
+ assert.equal(api.isSafeVoiceSegmentUri('file:///cache/voice-import-123.wav'),false,'non-recorder files require an explicit MIME');
+ assert.throws(()=>api.parseVoiceDraft(JSON.stringify({...imported,segments:[{...imported.segments[0],mime:'audio/wav'}]}),1,8,2000),/içeriği doğrulanamadı/);
+ assert.throws(()=>api.parseVoiceDraft(JSON.stringify({...imported,segments:[{...imported.segments[0],uri:'file:///cache/../Documents/voice.mp3'}]}),1,8,2000),/içeriği doğrulanamadı/);
+});
+
 test('voice draft is account-patient bound, expires, and appends each segment only once',()=>{
  const api=require('../src/voiceSession.ts'),fresh=api.newVoiceDraft(1,8,1000),draft={...fresh,segments:[{id:'s1',uri:'file:///cache/audio.m4a',ready:true}]};
  assert.equal(api.canResumeVoiceDraft(fresh),true);

@@ -1,4 +1,6 @@
-export type VoiceSegment={id:string;uri:string;ready:boolean;transcribed?:boolean};
+import {isSupportedVoiceAudioMime,isVoiceAudioExtensionForMime} from './voiceAudioImport';
+
+export type VoiceSegment={id:string;uri:string;ready:boolean;transcribed?:boolean;mime?:string};
 export type VoiceDraft={version:1;userId:number;patientId:number;sessionId?:string;transcript:string;segments:VoiceSegment[];updatedAt:number;ended:boolean;audioStarted?:boolean;elapsedMs?:number};
 export const VOICE_TEXT_LIMIT=72000;
 export const VOICE_TEXT_BYTE_LIMIT=216000;
@@ -80,18 +82,21 @@ export function formatVoiceElapsed(milliseconds:number):string{
  const total=Math.floor((Number.isFinite(milliseconds)?Math.max(0,milliseconds):0)/1000);
  return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
 }
-export function isSafeVoiceSegmentUri(uri:unknown):uri is string{
+export function isSafeVoiceSegmentUri(uri:unknown,mime?:unknown):uri is string{
  if(typeof uri!=='string'||!uri.startsWith('file:///')||/[?#%\u0000-\u001f]/.test(uri)||uri.includes('\\'))return false;
  const path=uri.slice('file://'.length);
  if(!path.startsWith('/'))return false;
  const segments=path.split('/').slice(1);
  if(segments.length<2||segments.some(segment=>!segment||segment==='.'||segment==='..'))return false;
- return /^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\.m4a$/i.test(segments[segments.length-1]);
+ const match=/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\\.(m4a|mp3|wav|webm|ogg)$/i.exec(segments[segments.length-1]);
+ if(!match)return false;
+ if(mime===undefined)return match[1].toLowerCase()==='m4a';
+ return isSupportedVoiceAudioMime(mime)&&isVoiceAudioExtensionForMime(match[1],mime);
 }
 
 export function parseVoiceDraft(raw:string|null,userId:number,patientId:number,now=Date.now()):VoiceDraft|null{
  if(!raw)return null;let p:VoiceDraft;try{p=JSON.parse(raw)}catch{throw Error('Muayene taslağı okunamadı.')}
- if(!p||p.version!==1||p.userId!==userId||p.patientId!==patientId||p.sessionId!==undefined&&(typeof p.sessionId!=='string'||!VOICE_SESSION_ID.test(p.sessionId))||typeof p.transcript!=='string'||p.transcript.length>VOICE_TEXT_LIMIT||voiceUtf8Bytes(p.transcript)>VOICE_TEXT_BYTE_LIMIT||!Array.isArray(p.segments)||p.segments.length>8||p.segments.some(s=>!s||typeof s.id!=='string'||!isSafeVoiceSegmentUri(s.uri)||typeof s.ready!=='boolean'||s.transcribed!==undefined&&typeof s.transcribed!=='boolean'||s.transcribed===true&&s.ready)||new Set(p.segments.map(s=>s.id)).size!==p.segments.length||!Number.isFinite(p.updatedAt)||typeof p.ended!=='boolean'||p.audioStarted!==undefined&&typeof p.audioStarted!=='boolean'||p.elapsedMs!==undefined&&(!Number.isFinite(p.elapsedMs)||p.elapsedMs<0||p.elapsedMs>24*60*60*1000))throw Error('Muayene taslağının hesabı, hastası veya içeriği doğrulanamadı.');
+ if(!p||p.version!==1||p.userId!==userId||p.patientId!==patientId||p.sessionId!==undefined&&(typeof p.sessionId!=='string'||!VOICE_SESSION_ID.test(p.sessionId))||typeof p.transcript!=='string'||p.transcript.length>VOICE_TEXT_LIMIT||voiceUtf8Bytes(p.transcript)>VOICE_TEXT_BYTE_LIMIT||!Array.isArray(p.segments)||p.segments.length>8||p.segments.some(s=>!s||typeof s.id!=='string'||!isSafeVoiceSegmentUri(s.uri,s.mime)||typeof s.ready!=='boolean'||s.transcribed!==undefined&&typeof s.transcribed!=='boolean'||s.transcribed===true&&s.ready)||new Set(p.segments.map(s=>s.id)).size!==p.segments.length||!Number.isFinite(p.updatedAt)||typeof p.ended!=='boolean'||p.audioStarted!==undefined&&typeof p.audioStarted!=='boolean'||p.elapsedMs!==undefined&&(!Number.isFinite(p.elapsedMs)||p.elapsedMs<0||p.elapsedMs>24*60*60*1000))throw Error('Muayene taslağının hesabı, hastası veya içeriği doğrulanamadı.');
  return now-p.updatedAt>24*60*60*1000?null:{...p,elapsedMs:p.elapsedMs??0};
 }
 export function appendVoiceSegment(draft:VoiceDraft,id:string,transcript:string):VoiceDraft{
