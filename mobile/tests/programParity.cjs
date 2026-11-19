@@ -8,7 +8,7 @@ function component(file,api){
  const exports={},native={StyleSheet:{create:x=>x},AppState:{addEventListener:()=>({remove(){}})},BackHandler:{addEventListener:()=>({remove(){}})},Alert:{alert:(...args)=>api.onAlert?.(...args)},...Object.fromEntries(['ActivityIndicator','FlatList','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
  native.FlatList=props=>React.createElement('FlatList',props,props.ListHeaderComponent,...(props.data||[]).map((item,index)=>React.createElement(React.Fragment,{key:item.key},props.renderItem?.({item,index}))),props.ListEmptyComponent&&!(props.data||[]).length?props.ListEmptyComponent:null,props.ListFooterComponent);
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/'+file+'.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
- vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true,usePreventRemove:()=>{}}:name==='./programApi'?{checkProgramConflicts:async()=>({advisory:true,total:0,items:[]}),getProgramMutation:async()=>({state:'NOT_FOUND'}),verifyProgramAction:async()=> 'UNKNOWN',...api}:name==='./programIntent'?{loadProgramRequestKey:async()=>null,getOrCreateProgramRequestKey:async()=> 'program-request-key-00000001',clearProgramRequestKey:async()=>{},loadProgramActionIntent:async()=>null,saveProgramActionIntent:async()=>{},clearProgramActionIntent:async()=>{},...api}:name==='./programModel'?require('../src/programModel.ts'):name==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'SYNTHETIC',first_name:'Synthetic'}})}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:{default:name.slice(2)}});
+ vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true,usePreventRemove:()=>{}}:name==='./programApi'?{checkProgramConflicts:async()=>({advisory:true,total:0,items:[]}),getProgramMutation:async()=>({state:'NOT_FOUND'}),verifyProgramAction:async()=> 'UNKNOWN',...api}:name==='./programIntent'?{loadProgramRequestKey:async()=>null,getOrCreateProgramRequestKey:async()=> 'program-request-key-00000001',clearProgramRequestKey:async()=>{},loadProgramActionIntent:async()=>null,saveProgramActionIntent:async()=>{},clearProgramActionIntent:async()=>{},...api}:name==='./programInlineAdd'?require('../src/programInlineAdd.ts'):name==='./programModel'?require('../src/programModel.ts'):name==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'SYNTHETIC',first_name:'Synthetic'}})}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:{default:name.slice(2)}});
  return exports.default;
 }
 const button=(tree,label)=>tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>text(child)===label));
@@ -407,5 +407,52 @@ test('week calendar groups entries under date headings like web',async()=>{
  assert.equal(tree.root.findAllByProps({testID:'program-day-heading-2030-01-07'}).length,1,'same-day events share one heading');
  assert.ok(text(tree.toJSON()).includes('First day afternoon'));
  assert.ok(text(tree.toJSON()).includes('Second day'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+
+test('week inline-add actions appear after each complete day group and carry the chosen date into the editor',async()=>{
+ const data=page('week'),base=data.items[0];
+ data.items=[
+  {...base,key:'1:2030-01-07T10:00',event_id:1,start_local:'2030-01-07T10:00',title:'First day morning'},
+  {...base,key:'2:2030-01-07T11:00',event_id:2,start_local:'2030-01-07T11:00',title:'First day afternoon'},
+  {...base,key:'3:2030-01-08T09:00',event_id:3,start_local:'2030-01-08T09:00',title:'Second day'}
+ ];
+ data.total=3;
+ const Program=component('NativeProgram',{getProgram:async()=>data});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'token',userId:1}));await tick()});
+ const addButtons=tree.root.findAllByType('Pressable').filter(node=>node.findAllByType('Text').some(child=>text(child)==='＋ Ders ekle'));
+ assert.equal(addButtons.length,2,'one inline add follows each completed day group');
+ await renderer.act(async()=>addButtons[1].props.onPress());
+ const editor=tree.root.findByType('NativeProgramEditor');
+ assert.equal(editor.props.initialType,'CLASS');
+ assert.equal(editor.props.initialDate,'2030-01-08');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('week inline add waits for the final cursor page before exposing the last date action',async()=>{
+ const data=page('week');
+ data.next_cursor='program-cursor-token-00000001';
+ data.next_offset=null;
+ data.total=51;
+ const Program=component('NativeProgram',{getProgram:async()=>data});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'token',userId:1}));await tick()});
+ const addButtons=tree.root.findAllByType('Pressable').filter(node=>node.findAllByType('Text').some(child=>text(child)==='＋ Ders ekle'));
+ assert.equal(addButtons.length,0,'the current page tail may continue the same date group');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('native Program editor applies the inline-add date and preserves the suggested time',async()=>{
+ const Editor=component('NativeProgramEditor',{});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),initialType:'CLASS',initialDate:'2030-01-09',onSaved(){},onClose(){}}));await tick()});
+ const startDate=tree.root.findAllByType('NativeDateField').find(node=>node.props.label==='Başlangıç tarihi');
+ const endDate=tree.root.findAllByType('NativeDateField').find(node=>node.props.label==='Bitiş tarihi');
+ const startTime=tree.root.findAllByType('NativeTimeField').find(node=>node.props.label==='Başlangıç saati');
+ assert.equal(startDate.props.value,'2030-01-09');
+ assert.equal(endDate.props.value,'2030-01-09');
+ assert.equal(startTime.props.value,'10:00');
  await renderer.act(async()=>tree.unmount());
 });
