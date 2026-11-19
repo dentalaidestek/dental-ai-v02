@@ -1,22 +1,28 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),React=require('react'),renderer=require('react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
+// Evaluate transpiled CommonJS in THIS realm instead of a fresh vm context:
+// arrays/objects the modules return then share prototypes with the test's
+// assert.deepStrictEqual comparisons (cross-realm values fail strict deep
+// equality), while require stubs and exported bindings still work exactly
+// as before. No assertion or stub shape is changed here.
+const loadModuleRealm=(code,exports,require=()=>{throw Error('unexpected require')})=>{vm.runInThisContext('(function(exports,require,module,__filename,__dirname){'+code+'\n})',{filename:'synthetic-module.js'})(exports,require,{exports},'synthetic-module.js','.')};
 const presentationExports={};
 const presentationCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/patientProfilePresentation.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
-vm.runInNewContext(presentationCode,{exports:presentationExports});
+loadModuleRealm(presentationCode,presentationExports);
 const deleteIntentExports={};
 const deleteIntentCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/patientDeleteIntent.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
-vm.runInNewContext(deleteIntentCode,{exports:deleteIntentExports,Error,JSON,Number,RegExp,Object});
+loadModuleRealm(deleteIntentCode,deleteIntentExports);
 function component(api,file='NativePatientProfile',storage=new Map()){
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/'+file+'.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const intentExports={};
  const intentCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/treatmentMutation.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
- vm.runInNewContext(intentCode,{exports:intentExports,Error,JSON,Date,Number,RegExp});
+ loadModuleRealm(intentCode,intentExports);
  const secure={getItemAsync:async key=>storage.has(key)?storage.get(key):null,setItemAsync:async(key,value)=>storage.set(key,value),deleteItemAsync:async key=>storage.delete(key)};
  let sequence=0;const focusState={current:true};
  const alertCalls=[];
  const native={StyleSheet:{create:s=>s},AppState:{addEventListener:()=>({remove(){}})},Platform:{OS:'android'},Alert:{alert:(title,message,buttons)=>alertCalls.push({title,message,buttons})},...Object.fromEntries(['Modal','ActivityIndicator','KeyboardAvoidingView','Pressable','RefreshControl','ScrollView','Text','TextInput','View'].map(s=>[s,s]))},exports={};
  const endpoints={getPatient:async()=>patient(8),getPatientTreatments:async()=>({items:[],next_cursor:null}),createTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),updateTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),...api};
- vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:name==='./patientDeleteIntent'?deleteIntentExports:name==='./patientProfilePresentation'?presentationExports:{default:'Child'}});
+ loadModuleRealm(code,exports,name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:name==='./patientDeleteIntent'?deleteIntentExports:name==='./patientProfilePresentation'?presentationExports:{default:'Child'});
  const Original=exports.default;
  const Wrapped=props=>React.createElement(Original,{userId:1,...props});
  Wrapped.storage=storage;
