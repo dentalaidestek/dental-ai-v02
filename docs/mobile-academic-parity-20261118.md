@@ -59,3 +59,38 @@ Course creation intent persistence is also covered across an app restart: the in
 - Android run `44197159856`: typecheck job `134441492458` failed before any step. Its explicit retry `134441669316` also completed in seconds with `runner_id=0`, empty runner name, `steps=[]`, and log download `BlobNotFound 404`.
 - Security Recovery run `44197159784`: `native-academic-security` job `134441492816` failed before any step. Retry `134441687400` likewise ended with `runner_id=0`, empty runner name, `steps=[]`, and `BlobNotFound 404`.
 - Thus the new Academic parser, UI and upload-security regressions still have not executed on GitHub Actions. The source-level syntax fixes are committed, but Android typecheck and Node regression acceptance remain unverified until a runner is allocated.
+
+## Native Academic router and response-contract pass — 2026-11-19
+
+### Web-first comparison
+
+Re-read the web course library and Academic AI chat in `app/templates/notes_course.html` and `app/templates/notes_ai.html`, then followed the same owner-scoped course, material, run, quiz, learning and indexed-page contracts through `app/mobile_academic_api.py` and the native `academicApi.ts` / `NativeAcademic.tsx` consumers. The native screen already has 50-item course/material/timeline paging, source-file links, quiz history, learning review, source-page inspection and durable run recovery; this pass preserves those flows and does not change providers, retrieval, indexing, or clinical data.
+
+### Critical defect found and fixed
+
+`app/mobile_academic_api.py` had a second appended copy of all 23 route declarations and a stray module-level closing parenthesis. The first copy was retained because it also contains request-key validation for course creation. The duplicate tail and unmatched parenthesis were removed. `app/mobile_api.py` imports and mounts this router, so the malformed module could prevent the mobile API (and application import path) from loading. The router now has 23 unique method/path declarations.
+
+Added `test_mobile_academic_router_source_parses_and_registers_each_route_once` to the existing Python Academic workflow suite. It parses the source with Python AST and checks both declared and FastAPI-registered method/path uniqueness.
+
+### Native response hardening
+
+The mobile Academic API now rejects malformed or unbounded responses before they reach the UI:
+
+- Timeline entries must have valid roles, timestamps, bounded text, unique ascending IDs and a consistent 50-row cursor.
+- Nested quiz IDs must match their owning message; question numbers/options and answer state are validated.
+- PDF artifact URLs are accepted only when they resolve to the same course's native Academic file route.
+- Course-library and source-workspace pages validate descending IDs, cursors, material metadata and same-course file URLs; upload limits are capped to the web contract (150 MiB per file, 12 files).
+- Learning summaries and review rows are bounded to the server's six-item review window.
+- Indexed source-page responses must match the requested page and contain bounded, uniquely identified chunks.
+- Run partial/error fields are type- and size-checked before rendering.
+
+Added Node regressions in `mobile/tests/academicWorkflow.cjs` for duplicate/out-of-order timeline rows, oversized content, cross-course PDF links, malformed cursors, workspace file paths/limits, quiz state, learning review bounds, source-page mismatch and malformed run partials.
+
+### Verification boundary
+
+- Static source-contract checks: 10/10 passed (router import/mount, 23 unique routes, no dangling parenthesis, regression inclusion and API validator/test coverage).
+- PR #257 head after this pass: `ca92938fe81b0e3a46c687c11c2257d2010832be`.
+- GitHub workflow runs and commit statuses for that exact head: 0 / 0. The Security Recovery workflow remains manual-only; no CI dispatch was made, avoiding another runner-less run and notification noise.
+- `npm run typecheck`, `npm run test:beta`, Python pytest, device testing and the 60,000-user load test were not executed in this environment. The new regressions are committed but not runtime-verified.
+
+No main merge, production deployment, migration execution, APK publication or live clinical-data mutation was performed.
