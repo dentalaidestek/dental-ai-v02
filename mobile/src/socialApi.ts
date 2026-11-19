@@ -24,7 +24,7 @@ export function socialImageSource(path: string, token: string): {
     : { uri };
 }
 export type SocialModeration = {
-  job_id: number | null;
+  job_id: string | null;
   registered: boolean;
   content_version: number;
   revision: number;
@@ -208,6 +208,8 @@ export function normalizeSocialFeedPost(value: unknown): SocialPost {
   const post = value as Record<string, unknown>;
   const validId = (item: unknown) => Number.isSafeInteger(item) && (item as number) > 0;
   const validCount = (item: unknown) => Number.isSafeInteger(item) && (item as number) >= 0;
+  const validRevision = (item: unknown) => Number.isSafeInteger(item) && (item as number) >= 0;
+  const validJobId = (item: unknown) => typeof item === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item);
   if (
     !validId(post.id) ||
     !validId(post.author_id) ||
@@ -263,8 +265,8 @@ export function normalizeSocialFeedPost(value: unknown): SocialPost {
       typeof moderation.retryable !== "boolean" ||
       typeof moderation.registered !== "boolean" ||
       !validId(moderation.content_version) ||
-      !validId(moderation.revision) ||
-      (moderation.job_id !== null && moderation.job_id !== undefined && !validId(moderation.job_id))
+      !validRevision(moderation.revision) ||
+      (moderation.job_id !== null && moderation.job_id !== undefined && !validJobId(moderation.job_id))
     ) {
       throw new ApiError(502, "Dental Akış inceleme bilgisi doğrulanamadı.");
     }
