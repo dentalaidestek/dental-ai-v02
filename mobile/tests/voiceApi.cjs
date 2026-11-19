@@ -3,7 +3,7 @@ const {test}=require('node:test');
 require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
 const api=require('../src/voiceApi.ts');
 const TEST_AUDIO_REQUEST_KEY='voice-import-request-123456';
-const transcribeVoiceAudio=(...args)=>transcribeVoiceAudio(...(args.length===4?[...args,TEST_AUDIO_REQUEST_KEY]:args));
+const transcribeVoiceAudio=(...args)=>api.transcribeVoiceAudio(...(args.length===4?[...args,TEST_AUDIO_REQUEST_KEY]:args));
 const response=(body,status=200)=>({ok:status>=200&&status<300,status,text:async()=>body});
 test('voice extraction sends consent, bearer and patient path',async()=>{
  const original=global.fetch;let call;global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review:{fields:{}}}))};
