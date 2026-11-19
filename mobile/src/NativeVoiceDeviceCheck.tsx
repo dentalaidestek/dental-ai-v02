@@ -3,7 +3,7 @@ import {ActivityIndicator,AppState,Pressable,Text,View} from 'react-native';
 import {useIsFocused} from '@react-navigation/native';
 import {RecordingPresets,requestRecordingPermissionsAsync,setAudioModeAsync,useAudioRecorder,useAudioRecorderState} from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
-import {evaluateVoiceDeviceCheck,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS} from './voiceDeviceCheck';
+import {evaluateVoiceDeviceCheck,isPrivateVoiceDeviceCheckUri,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS} from './voiceDeviceCheck';
 import type {VoiceDeviceCheckOutcome} from './voiceDeviceCheck';
 
 type Phase='idle'|'requesting'|'testing'|'finishing'|'complete';
@@ -14,21 +14,28 @@ const resultText:Record<VoiceDeviceCheckOutcome,string>={
  no_audio_file:'Cihaz ses dosyası oluşturamadı. Mikrofonu kullanan diğer uygulamaları kapatıp tekrar deneyin.',
  metering_unavailable:'Ses seviyesi bu cihazdan okunamadı. Bu sonuç mikrofonun çalışmadığını kanıtlamaz; gerçek muayene öncesi cihazda ayrıca kontrol edin.',
  low_signal:'Kayıt alındı ancak yeterli ses seviyesi algılanmadı. Mikrofon girişini, Bluetooth kulaklığı ve cihaz sesini kontrol edip tekrar deneyin.',
+ cleanup_failed:'Geçici mikrofon ses dosyasının silindiği doğrulanamadı. Test başarılı sayılmıyor; dosyayı silmeyi yeniden deneyin. Dosya yalnızca uygulamanın özel önbelleğinde aranır.',
  passed:'Mikrofon izni, yerel ses yakalama ve ses seviyesi kontrolü başarılı. Bu sonuç konuşma tanıma veya Gemini bağlantısını doğrulamaz.'
 };
 
 export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{disabled?:boolean;onBusyChange?:(busy:boolean)=>void}){
  const options=useMemo(()=>({...RecordingPresets.HIGH_QUALITY,directory:'cache' as const,isMeteringEnabled:true,numberOfChannels:1}),[]);
  const recorder=useAudioRecorder(options),status=useAudioRecorderState(recorder,100),focused=useIsFocused();
- const [phase,setPhase]=useState<Phase>('idle'),[level,setLevel]=useState(0),[result,setResult]=useState('');
+ const [phase,setPhase]=useState<Phase>('idle'),[level,setLevel]=useState(0),[result,setResult]=useState(''),[cleanupPending,setCleanupPending]=useState(false);
  const mounted=useRef(true),running=useRef(false),prepared=useRef(false),uri=useRef<string|null>(null),startedAt=useRef(0),peakDb=useRef<number|null>(null),epoch=useRef(0),timer=useRef<ReturnType<typeof setTimeout>|null>(null),busy=useRef(false),finishing=useRef<Promise<void>|null>(null),cancelRef=useRef<(message?:string)=>Promise<void>>(async()=>{});
  const busyCallback=useRef(onBusyChange);busyCallback.current=onBusyChange;
  function notifyBusy(value:boolean){if(busy.current===value)return;busy.current=value;busyCallback.current?.(value);}
  async function resetAudioMode(){await setAudioModeAsync({allowsRecording:false}).catch(()=>{});}
- async function removeTemporaryFile(path:string|null){
-  const cache=FileSystem.cacheDirectory;
-  if(!path||!cache||!path.startsWith(cache))return;
-  await FileSystem.deleteAsync(path,{idempotent:true}).catch(()=>{});
+ async function removeTemporaryFile(path:string|null):Promise<boolean>{
+  if(!path)return true;
+  if(!isPrivateVoiceDeviceCheckUri(path,FileSystem.cacheDirectory))return false;
+  try{
+   const before=await FileSystem.getInfoAsync(path);
+   if(!before.exists)return true;
+   await FileSystem.deleteAsync(path,{idempotent:true});
+   const after=await FileSystem.getInfoAsync(path);
+   return after.exists!==true;
+  }catch{return false;}
  }
  useEffect(()=>{
   if(phase!=='testing'||typeof status.metering!=='number'||!Number.isFinite(status.metering))return;
@@ -38,6 +45,7 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
  async function finish(run:number){
   if(run!==epoch.current||!running.current)return;
   if(finishing.current)return finishing.current;
+  let cleanupVerified=true;
   const work=(async()=>{
    running.current=false;
    if(timer.current){clearTimeout(timer.current);timer.current=null;}
@@ -48,19 +56,21 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
     if(prepared.current){await recorder.stop();prepared.current=false;}
     const finalStatus=recorder.getStatus();
     if(Number.isFinite(finalStatus.durationMillis))durationMs=Math.max(durationMs,finalStatus.durationMillis);
-    if(path&&FileSystem.cacheDirectory&&path.startsWith(FileSystem.cacheDirectory)){
+    if(path&&isPrivateVoiceDeviceCheckUri(path,FileSystem.cacheDirectory)){
      const info=await FileSystem.getInfoAsync(path);
      if(info.exists&&typeof info.size==='number')fileBytes=info.size;
     }
    }catch{fileBytes=0;}
    finally{
-    prepared.current=false;uri.current=null;
-    await removeTemporaryFile(path);
+    prepared.current=false;
+    cleanupVerified=await removeTemporaryFile(path);
+    if(cleanupVerified)uri.current=null;
+    if(mounted.current)setCleanupPending(!cleanupVerified);
     await resetAudioMode();
     notifyBusy(false);
    }
    if(run!==epoch.current||!mounted.current)return;
-   const outcome=evaluateVoiceDeviceCheck({permissionGranted:true,durationMs,fileBytes,peakMeteringDb:peakDb.current});
+   const outcome=evaluateVoiceDeviceCheck({permissionGranted:true,durationMs,fileBytes,peakMeteringDb:peakDb.current,cleanupVerified});
    setPhase('complete');setResult(resultText[outcome]);
   })();
   finishing.current=work;
@@ -70,22 +80,31 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
   epoch.current++;
   if(timer.current){clearTimeout(timer.current);timer.current=null;}
   running.current=false;
-  if(finishing.current){await finishing.current.catch(()=>{});}
+  if(finishing.current)await finishing.current.catch(()=>{});
   else{
-   const path=uri.current;uri.current=null;
    try{if(prepared.current)await recorder.stop();}catch{}
    prepared.current=false;
-   await removeTemporaryFile(path);
-   await resetAudioMode();
-   notifyBusy(false);
   }
-  if(mounted.current){setPhase('complete');setLevel(0);setResult(message);}
+  const cleanupVerified=await removeTemporaryFile(uri.current);
+  if(cleanupVerified)uri.current=null;
+  await resetAudioMode();
+  notifyBusy(false);
+  if(mounted.current){
+   setPhase('complete');setLevel(0);setCleanupPending(!cleanupVerified);
+   setResult(cleanupVerified?message:resultText.cleanup_failed);
+  }
  }
  cancelRef.current=cancel;
+ async function retryCleanup(){
+  const path=uri.current;
+  const cleaned=await removeTemporaryFile(path);
+  if(cleaned){uri.current=null;setCleanupPending(false);setResult('Geçici ses dosyasının silindiği doğrulandı. Mikrofon testi yeniden başlatılabilir.');}
+  else{setCleanupPending(true);setResult(resultText.cleanup_failed);}
+ }
  async function start(){
-  if(disabled||running.current||phase==='requesting'||phase==='testing'||phase==='finishing')return;
+  if(disabled||cleanupPending||uri.current!==null||running.current||phase==='requesting'||phase==='testing'||phase==='finishing')return;
   const run=++epoch.current;
-  running.current=true;peakDb.current=null;startedAt.current=0;setLevel(0);setResult('');setPhase('requesting');notifyBusy(true);
+  running.current=true;peakDb.current=null;startedAt.current=0;setLevel(0);setResult('');setCleanupPending(false);setPhase('requesting');notifyBusy(true);
   try{
    const permission=await requestRecordingPermissionsAsync();
    if(run!==epoch.current)return;
@@ -108,11 +127,13 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
   }catch(error){
    if(run!==epoch.current)return;
    running.current=false;
-   const path=uri.current;uri.current=null;
+   const path=uri.current;
    try{if(prepared.current)await recorder.stop();}catch{}
    prepared.current=false;
-   await removeTemporaryFile(path);await resetAudioMode();notifyBusy(false);
-   if(mounted.current){setPhase('complete');setResult(error instanceof Error?error.message:'Mikrofon testi başlatılamadı.');}
+   const cleanupVerified=await removeTemporaryFile(path);
+   if(cleanupVerified)uri.current=null;
+   await resetAudioMode();notifyBusy(false);
+   if(mounted.current){setPhase('complete');setCleanupPending(!cleanupVerified);setResult(cleanupVerified?(error instanceof Error?error.message:'Mikrofon testi başlatılamadı.'):resultText.cleanup_failed);}
   }
  }
  useEffect(()=>{
@@ -135,12 +156,15 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
    </View>
   </View>
   <View style={{flexDirection:'row',gap:9,marginTop:14}}>
-   <Pressable accessibilityRole="button" disabled={disabled||busyPhase} onPress={()=>void start()} style={{flex:1,backgroundColor:disabled||busyPhase?'#9BA7B7':blue,borderRadius:11,padding:13,alignItems:'center'}}>
+   <Pressable accessibilityRole="button" disabled={disabled||busyPhase||cleanupPending} onPress={()=>void start()} style={{flex:1,backgroundColor:disabled||busyPhase||cleanupPending?'#9BA7B7':blue,borderRadius:11,padding:13,alignItems:'center'}}>
     <Text style={{color:'#FFFFFF',fontWeight:'800',textAlign:'center'}}>{buttonLabel}</Text>
    </Pressable>
    {phase==='testing'&&<Pressable accessibilityRole="button" onPress={()=>void cancel()} style={{backgroundColor:'#FEE4E2',borderRadius:11,padding:13,justifyContent:'center'}}><Text style={{color:'#B42318',fontWeight:'800'}}>Durdur</Text></Pressable>}
   </View>
   {busyPhase&&<View style={{flexDirection:'row',alignItems:'center',gap:9,marginTop:10}}><ActivityIndicator color={blue}/><Text accessibilityLiveRegion="polite" style={{color:muted}}>{phase==='testing'?'Birkaç kelime söyleyin. Test altı saniye sonra otomatik kapanır.':'Mikrofon hazırlanıyor…'}</Text></View>}
-  {!!result&&<Text accessibilityLiveRegion="polite" style={{color:phase==='complete'&&result===resultText.passed?'#067647':muted,lineHeight:20,marginTop:12}}>{result}</Text>}
+  {!!result&&<Text accessibilityLiveRegion="polite" accessibilityRole={cleanupPending?'alert':undefined} style={{color:phase==='complete'&&result===resultText.passed?'#067647':cleanupPending?'#B42318':muted,lineHeight:20,marginTop:12}}>{result}</Text>}
+  {cleanupPending&&<Pressable accessibilityRole="button" disabled={disabled||busyPhase} onPress={()=>void retryCleanup()} style={{marginTop:10,borderWidth:1,borderColor:'#B42318',borderRadius:11,padding:12,alignItems:'center'}}>
+   <Text style={{color:'#B42318',fontWeight:'800',textAlign:'center'}}>Geçici ses dosyasını silmeyi yeniden dene</Text>
+  </Pressable>}
  </View>;
 }
