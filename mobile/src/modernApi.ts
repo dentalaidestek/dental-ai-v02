@@ -127,7 +127,7 @@ export const deleteMedia=async(t:string,patientId:number,mediaId:number):Promise
 export const getMedia=async(t:string,p:number,before?:number)=>{
  if(!Number.isSafeInteger(p)||p<=0||(before!==undefined&&(!Number.isSafeInteger(before)||before<=0)))
   throw Error("Geçersiz hasta veya sayfa kimliği.");
- const r=await req<{items:any[];next_before?:number|null}>(`/patients/${p}/media`+(before!==undefined?`?before=${encodeURIComponent(before)}`:""),t);
+ const r=await req<{items:any[];next_before?:number|null}>(`/patients/${p}/media?limit=40`+(before!==undefined?`&before=${encodeURIComponent(before)}`:""),t);
  const cursor=r?.next_before??null;
  if(!Array.isArray(r?.items)||r.items.length>40||
    new Set(r.items.map(m=>m?.id)).size!==r.items.length||
@@ -138,7 +138,7 @@ export const getMedia=async(t:string,p:number,before?:number)=>{
    (r.items.length===0&&cursor!==null)||
    (before!==undefined&&(r.items.some(m=>m.id>=before)||(cursor!==null&&cursor>=before))))
   throw Error("Klinik medya sunucusundan geçersiz liste alındı.");
- return {items:r.items.map(m=>({...m,filename:m.filename||m.original_filename||"",url:`${API_BASE}/patients/${p}/media/${m.id}/file`})),next_before:cursor};
+ return {items:r.items.map(m=>({...m,filename:m.filename||m.original_filename||"",url:`${API_BASE}/patients/${p}/media/${m.id}/file`,thumbnail_url:`${API_BASE}/patients/${p}/media/${m.id}/thumbnail`})),next_before:cursor};
 };
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
 export type ConsultationRequestPayload={expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string;request_key?:string};
