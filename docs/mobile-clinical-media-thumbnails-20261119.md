@@ -14,7 +14,7 @@ The mobile media list also returned the original URL only. The original-file han
 
 ## Implementation
 
-- Added `app/clinical_media_thumbnail.py`: deterministic sibling key (`.thumb.jpg`), EXIF orientation correction, bounded 480px longest edge, JPEG quality 78, and a process-local bounded single-flight lock cache.
+- Added `app/clinical_media_thumbnail.py`: deterministic sibling key (`.thumb.jpg`), EXIF orientation correction, bounded 480px longest edge, JPEG quality 78, and a process-local reference-counted single-flight lock registry that releases idle keys.
 - Added authenticated `GET /api/mobile/v1/patients/{patient_id}/media/{media_id}/thumbnail`. It checks patient ownership and media ownership before storage access, closes the DB session before R2 I/O, and returns `private, no-store`, `Pragma: no-cache`, `Vary: Authorization`, `nosniff`, and inline JPEG.
 - Original-file route now copies the authorized storage reference and closes the DB session before R2 materialization.
 - Native media list responses include a thumbnail URL. Native profile strip, FlatList cards and compose strip use it; the full-screen preview continues to use the original URL.
@@ -35,3 +35,10 @@ These tests were committed but **not executed** in this GitHub-only environment.
 - Verify native image requests include the bearer header on Android and iOS.
 - Verify existing R2 objects, local-development storage, deleted originals, malformed images, and concurrent delete-vs-thumbnail requests in a deployed test environment.
 - No production deploy, migration, main merge, or clinical record mutation was performed.
+
+
+## Final review
+
+The thumbnail endpoint rechecks the owner-scoped media row after generation. If a delete committed while R2 generation was in flight, the newly generated derivative is deleted and the endpoint returns 404 rather than serving an orphan. The single-flight registry counts both active and waiting callers and removes the key after the final caller, avoiding the unbounded-key and concurrent-cache-miss issues of a plain memoized lock factory.
+
+Final GitHub head: `fa3451631126caaa2783433157c46c05e289f365`. GitHub reports no workflow runs and no combined status checks for this head. The regression file contains eight tests, but no execution result is available from the connected GitHub-only environment.
