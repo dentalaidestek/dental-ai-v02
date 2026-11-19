@@ -427,3 +427,31 @@ test('Dental Flow custom cover is sent only when it belongs to the post media',a
   assert.equal(calls.length,1,'invalid cover must be rejected before network access');
  }finally{global.fetch=original;}
 });
+
+test('Dental Flow feed rejects malformed identity, counters and non-first-party media before rendering',()=>{
+ const valid={id:42,author_id:7,author_name:'Uzman',text:'Paylaşım',status:'PUBLISHED',version:1,owned:false,pinned:false,comments_closed:false,liked:false,like_count:3,comment_count:2,media:[{id:9,url:'/api/expert-social/media/9'}],created_at:'2026-11-19T10:00:00Z',author_followed:true};
+ assert.equal(api.normalizeSocialFeedPost(valid).id,42);
+ for(const bad of [
+  {...valid,id:0},
+  {...valid,author_id:'7'},
+  {...valid,like_count:-1},
+  {...valid,comment_count:1.5},
+  {...valid,media:[{id:9,url:'https://evil.example/private.jpg'}]},
+  {...valid,status:'PENDING',owned:false},
+  {...valid,created_at:'not-a-date'},
+  {...valid,media:Array.from({length:5},(_,i)=>({id:i+1,url:'/api/expert-social/media/'+(i+1)}))}
+ ]) assert.throws(()=>api.normalizeSocialFeedPost(bad),error=>error.status===502);
+});
+test('Dental Flow feed rejects malformed page cursors and duplicate post IDs',async()=>{
+ const original=global.fetch;
+ try{
+  const row={id:42,author_id:7,author_name:'Uzman',text:'Paylaşım',status:'PUBLISHED',version:1,owned:false,pinned:false,comments_closed:false,liked:false,like_count:0,comment_count:0,media:[],created_at:'2026-11-19T10:00:00Z'};
+  global.fetch=async()=>new Response(JSON.stringify({items:[row,row],next_cursor:null}),{status:200});
+  await assert.rejects(()=>api.getFeed('token','discover'),error=>error.status===502);
+  global.fetch=async()=>new Response(JSON.stringify({items:[row],next_cursor:-1}),{status:200});
+  await assert.rejects(()=>api.getFeed('token','discover'),error=>error.status===502);
+  global.fetch=async()=>new Response(JSON.stringify({items:[row],next_cursor:null}),{status:200});
+  const page=await api.getFeed('token','discover');
+  assert.equal(page.items.length,1);assert.equal(page.items[0].id,42);
+ }finally{global.fetch=original}
+});
