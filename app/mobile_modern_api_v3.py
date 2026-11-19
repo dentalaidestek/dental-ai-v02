@@ -123,7 +123,7 @@ def mobile_media_thumbnail(patient_id:int,media_id:int,user=Depends(_mobile_user
         raise HTTPException(status_code=415,detail="Klinik görüntü önizlemesi oluşturulamadı.") from exc
     except Exception as exc:
         raise HTTPException(status_code=503,detail="Önizleme deposuna şu anda erişilemiyor.",headers={"Retry-After":"2"}) from exc
-    return FileResponse(path,media_type="image/jpeg",filename=f"clinical-{media_id}-thumbnail.jpg",headers={"Cache-Control":"private, no-store","Pragma":"no-cache","Vary":"Authorization","X-Content-Type-Options":"nosniff","Content-Security-Policy":"default-src 'none'; sandbox"})
+    return FileResponse(path,media_type="image/jpeg",filename=f"clinical-{media_id}-thumbnail.jpg",content_disposition_type="inline",headers={"Cache-Control":"private, no-store","Pragma":"no-cache","Vary":"Authorization","X-Content-Type-Options":"nosniff","Content-Security-Policy":"default-src 'none'; sandbox"})
 
 @router.get("/patients/{patient_id}/media/{media_id}")
 def mobile_media_meta(patient_id:int,media_id:int,user=Depends(_mobile_user)):
