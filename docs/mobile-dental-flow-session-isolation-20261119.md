@@ -27,6 +27,7 @@ This was a client-side state-isolation defect, not an API authorization bypass. 
 - Clear account-owned modal state and reset the moderation resume cooldown after the new session's page scope is established.
 - Guard follow, moderation, edit, profile navigation, composer completion, comments, media and support actions against stale session completions.
 - Scope in-flight locks by session generation so a previous account's request cannot hold or release the new account's lock.
+- Skip resume-driven moderation requests while the previous feed is hidden and the new session generation has not finished resetting.
 - Keep encrypted drafts scoped by user ID; switching accounts does not delete another account's locally saved draft.
 
 No API contract, clinical record, social database, patient media, moderation decision or provider workflow was changed.
