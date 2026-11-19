@@ -23,6 +23,21 @@ export default function NativeAnalysisUpload({token,userId,patientId,patient,onC
      hadSaved=true;
      let saved=parseUploadIntent(raw,userId,patientId);
      setBlockedIntent(saved);
+     // A server receipt is authoritative even when the app crashed after
+     // deleting its encrypted local files but before deleting this intent.
+     // Reconcile it before touching local image storage.
+     const recoveredReceipt=await analysisUploadReceipt(token,saved);
+     if(recoveredReceipt){
+      await clearAnalysisImages(saved.images);
+      await store.deleteItemAsync(key);
+      cleanupCompleted=true;
+      if(!alive.current)return;
+      setBlockedIntent(null);setCreatedId(recoveredReceipt.analysis_id);setIntent(null);setFiles([]);
+      setReady(true);
+      await onCreated(recoveredReceipt.analysis_id);
+      if(alive.current)setNotice('Önceki yükleme sunucuda bulundu; mevcut analiz açıldı.');
+      return;
+     }
      saved={...saved,images:await ensureEncryptedAnalysisImages(saved.images,userId,patientId)};
      // Persist encrypted references before removing any legacy plaintext source.
      if(!alive.current)return;
@@ -35,18 +50,9 @@ export default function NativeAnalysisUpload({token,userId,patientId,patient,onC
      }
      if(!alive.current)return;
      setBlockedIntent(saved);setIntent(saved);setFiles(saved.images);setSavedIds(saved.existingMediaIds||[]);onExistingMediaIdsLoaded?.(saved.existingMediaIds||[]);setTooth(saved.toothNumber);setNotes(saved.clinicalNotes);
-     const receipt=await analysisUploadReceipt(token,saved);
-     if(receipt&&alive.current){
-      await clearAnalysisImages(saved.images);
-      await store.deleteItemAsync(key);
-      cleanupCompleted=true;
-      if(!alive.current)return;
-      setBlockedIntent(null);setCreatedId(receipt.analysis_id);setIntent(null);setFiles([]);
-      await onCreated(receipt.analysis_id);
-      if(alive.current)setNotice('Önceki yükleme sunucuda bulundu; mevcut analiz açıldı.');
-     }else{
-      setBlockedIntent(null);
-     }
+     // No server receipt exists yet; the encrypted local intent remains
+     // available for an explicit same-key retry.
+     setBlockedIntent(null);
     }
     if(alive.current)setReady(true);
    }catch(e){if(alive.current){if(hadSaved&&!cleanupCompleted)setBlocked(true);setReady(true);setError(e instanceof Error?e.message:'Bekleyen yükleme doğrulanamadı.');}}
