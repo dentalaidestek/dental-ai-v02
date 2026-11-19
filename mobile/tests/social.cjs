@@ -455,3 +455,16 @@ test('Dental Flow feed rejects malformed page cursors and duplicate post IDs',as
   assert.equal(page.items.length,1);assert.equal(page.items[0].id,42);
  }finally{global.fetch=original}
 });
+
+test('Dental Flow feed moderation metadata is bounded before it reaches native text and status UI',()=>{
+ const base={id:51,author_id:8,author_name:'Uzman',text:'İnceleme bekliyor',status:'PENDING',version:2,owned:true,pinned:false,comments_closed:false,liked:false,like_count:0,comment_count:0,media:[],created_at:'2026-11-19T10:00:00Z'};
+ const moderation={job_id:9,registered:true,content_version:2,revision:1,state:'WAITING_HUMAN',wait_type:'HUMAN_REVIEW',reasons:['IMAGE_REVIEW'],reason:'Görsel inceleme bekliyor.',retryable:false};
+ assert.equal(api.normalizeSocialFeedPost({...base,moderation}).moderation.reason,moderation.reason);
+ for(const bad of [
+  {...moderation,reason:{raw:'private'}},
+  {...moderation,reasons:Array(13).fill('X')},
+  {...moderation,state:'UNKNOWN'},
+  {...moderation,content_version:0},
+  {...moderation,retryable:'false'}
+ ]) assert.throws(()=>api.normalizeSocialFeedPost({...base,moderation:bad}),error=>error.status===502);
+});
