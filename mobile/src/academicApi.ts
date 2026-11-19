@@ -24,6 +24,7 @@ export function parseUploadIntent(raw:string,user:number,course:number):UploadIn
  return value as UploadIntent;
 }
 export type Workspace={course:Course;materials:Material[];max_file_bytes:number;max_upload_count:number;next_before:number|null};
+export type AcademicVote='like'|'dislike'|'none';
 export type Run={id:number;status:'QUEUED'|'RUNNING'|'DONE'|'FAILED'|'INTERRUPTED'|'CANCELLED';stage:string;question:string;partial?:string|null;error?:string|null};
 export type Question={number:number;stem:string;options:string[];result:null|{selected:string;correct:boolean;correct_choice:string};rationale?:string;source?:string};
 export type Quiz={message_id:number;questions:Question[]};
@@ -135,7 +136,7 @@ export const activeRun=async(t:string,c:number)=>validateRun(await request<{run:
 export const runStatus=async(t:string,c:number,r:number)=>validateRun(await request<{run:Run}>(coursePath(c)+'/runs/'+id(r),t));
 export const cancelRun=async(t:string,c:number,r:number)=>validateRun(await write<{run:Run}>(t,coursePath(c)+'/runs/'+id(r)+'/cancel','POST'));
 export const answer=async(t:string,c:number,m:number,number:number,choice:string)=>{const v=await write<{quiz:unknown}>(t,coursePath(c)+`/quizzes/${id(m)}/answers`,'POST',{number,choice});return {...v,quiz:validateAcademicQuiz(v?.quiz)}};
-export const feedback=(t:string,c:number,m:number,vote:string)=>write(t,coursePath(c)+`/messages/${id(m)}/feedback`,'POST',{vote});
+export const feedback=async(t:string,c:number,m:number,vote:AcademicVote)=>{const result=await write<{ok:boolean;vote:AcademicVote}>(t,coursePath(c)+`/messages/${id(m)}/feedback`,'POST',{vote});if(!result||result.ok!==true||!['like','dislike','none'].includes(result.vote))throw Error('Yanıt değerlendirmesi doğrulanamadı.');return result;};
 export function academicFilePath(course:number,path:string){const base=coursePath(course),native='/api/mobile/v1'+base;if(new RegExp('^'+native+'/(?:materials/[1-9][0-9]*/file|messages/[1-9][0-9]*/pdf(?:\\?part=[0-9]+)?)$').test(path))return path;const match=new RegExp('^/notes/courses/'+id(course)+'/ai/messages/([1-9][0-9]*)/pdf(\\?part=[0-9]+)?$').exec(path);if(match)return native+'/messages/'+match[1]+'/pdf'+(match[2]||'');throw Error('Bu dosya dersin yetkili dosya yolu değil.');}
 
 export type Learning={practiced_facts:number;due_count:number;correct:number;wrong:number;weak_count:number;review:Array<{fact:string;source:string;due:boolean;needs_practice:boolean}>};
