@@ -14,6 +14,25 @@ export function isPrivateVoiceDeviceCheckUri(
  return PRIVATE_DEVICE_CHECK_FILE.test(uri.slice(cacheDirectory.length));
 }
 
+export type VoiceDeviceCheckFileSystem={
+ getInfoAsync(uri:string):Promise<{exists:boolean}>;
+ deleteAsync(uri:string,options:{idempotent:true}):Promise<unknown>;
+};
+
+/** Delete only a validated cache file and confirm that it is absent afterward. */
+export async function removePrivateVoiceDeviceCheckFile(
+ uri:unknown,cacheDirectory:string|null|undefined,fileSystem:VoiceDeviceCheckFileSystem
+):Promise<boolean>{
+ if(!isPrivateVoiceDeviceCheckUri(uri,cacheDirectory))return false;
+ try{
+  const before=await fileSystem.getInfoAsync(uri);
+  if(!before.exists)return true;
+  await fileSystem.deleteAsync(uri,{idempotent:true});
+  const after=await fileSystem.getInfoAsync(uri);
+  return after.exists!==true;
+ }catch{return false;}
+}
+
 export type VoiceDeviceCheckOutcome=
  | 'permission_denied'
  | 'capture_incomplete'
