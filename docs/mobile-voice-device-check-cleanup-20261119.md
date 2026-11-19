@@ -28,6 +28,6 @@ The web preflight processes six seconds of PCM16 frames in the AudioWorklet and 
 - UI source contract checks post-delete existence verification, URI retention, retry UI and strict recorder-path validation.
 - Existing privacy checks continue to prohibit API/network and persistent-storage use in the preflight component.
 
-Tests are committed and already registered in npm run test:beta. The helper test and renderer/source test were not executed in this connector-only run. Full typecheck, beta suite, Android/iOS build and physical-device deletion-failure simulation remain open.
+Tests are committed and already registered in npm run test:beta. The 10-test pure helper suite passed in an isolated Node 22.16 run with experimental TypeScript stripping, using the exact fetched branch helper and test contents. The native UI/source-contract test, full typecheck, complete beta suite, Android/iOS build and physical-device deletion-failure simulation remain unexecuted.
 
 No patient data, production configuration, schema or provider behavior changed. No workflow was dispatched, no main merge and no live deploy.
