@@ -114,9 +114,20 @@ def mobile_media_thumbnail(patient_id:int,media_id:int,user=Depends(_mobile_user
         if not row or row.patient_id!=patient_id or row.owner_user_id!=user.id:
             raise HTTPException(status_code=404,detail="Medya bulunamadı.")
         file_path=row.file_path
-    from app.clinical_media_thumbnail import ensure_thumbnail
+    from app.clinical_media_thumbnail import ensure_thumbnail, delete_thumbnail
     try:
         path=ensure_thumbnail(file_path)
+        # A delete may commit while R2 generation is in flight. Recheck the
+        # owner-scoped row before serving and remove any just-created orphan.
+        with Session(engine,expire_on_commit=False) as verify:
+            current=_user_owned_patient(verify,user,patient_id)
+            media=verify.get(PatientMedia,media_id)
+            still_owned=bool(media and media.patient_id==patient_id and media.owner_user_id==user.id and current.id==patient_id)
+        if not still_owned:
+            delete_thumbnail(file_path)
+            raise HTTPException(status_code=404,detail="Medya bulunamadı.")
+    except HTTPException:
+        raise
     except FileNotFoundError:
         raise HTTPException(status_code=404,detail="Klinik görüntü bulunamadı.")
     except ValueError as exc:
