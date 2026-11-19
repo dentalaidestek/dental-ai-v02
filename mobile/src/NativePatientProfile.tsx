@@ -112,14 +112,19 @@ export default function NativePatientProfile({token,userId,patientId,actions}:{t
    const latest=await getPatient(token,patientId);
    if(!current())return;
    if(latest.patient.id!==patientId)throw Error('Sunucu farklı bir hasta kaydı döndürdü.');
-   setDetail(latest);setLoadedScope(scope);
-   const saved=patientProfileEditMatches(patientForm,latest.patient);
+   const p=latest.patient;
+   const latestForm={first_name:p.first_name||'',last_name:p.last_name||'',phone:p.phone||'',birth_date:p.birth_date||'',tc_kimlik_no:p.tc_kimlik_no||'',address:p.address||'',chief_complaint:p.chief_complaint||''};
+   const merged=patientProfileMergeEditConflict(patientFormBase,patientForm,latestForm);
+   setDetail(latest);setLoadedScope(scope);setPatientFormBase(latestForm);setPatientForm(merged.values);setProfileConflicts(merged.conflicts);
    setProfileUncertain(false);setRevisionConflict(false);
+   const saved=merged.conflicts.length===0&&patientProfileEditMatches(merged.values,latestForm);
    if(saved){
     setInfoOpen(false);
     setMutationError('Hasta bilgileri sunucuda doğrulandı; profil kaydı tamamlanmış.');
+   }else if(merged.conflicts.length){
+    setMutationError('Taslağınız korundu. Aynı alanlarda iki oturumun değişiklikleri var; kaydetmeden önce seçim yapın.');
    }else{
-    setMutationError('Önceki değişiklikler sunucuda bulunamadı. Taslağınız korundu; güncel kayıt sürümüyle yeniden kaydedebilirsiniz.');
+    setMutationError('Taslağınız korundu ve güncel sunucu alanlarıyla birleştirildi. Güncel kayıt sürümüyle kaydedebilirsiniz.');
    }
   }catch(e){
    if(current())setMutationError((e instanceof Error?e.message:'Hasta kaydı doğrulanamadı.')+' Belirsizlik korunuyor; tekrar göndermeden önce yeniden kontrol edin.');
