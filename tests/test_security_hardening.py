@@ -138,7 +138,31 @@ def test_password_reset_requests_are_throttled():
 
 def test_native_analysis_assets_are_not_browser_cached():
     source = (ROOT / "app/mobile_analysis_api.py").read_text(encoding="utf-8")
-    assert 'Cache-Control": "private, no-store"' in source
+    assert "from app.mobile_api import _mobile_private_no_store, _mobile_user" in source
+    legacy = source.split('@router.get("/analyses/{analysis_id}/legacy-radiograph")', 1)[1].split(
+        '@router.get("/analyses/{analysis_id}/assets/{asset_id}")', 1
+    )[0]
+    asset = source.split('@router.get("/analyses/{analysis_id}/assets/{asset_id}")', 1)[1].split(
+        '@router.get("/analyses")', 1
+    )[0]
+    assert "_mobile_private_no_store(response)" in legacy
+    assert "_mobile_private_no_store(response)" in asset
+
+
+def test_native_analysis_r2_hydration_is_offloaded_after_authorization_session():
+    source = (ROOT / "app/mobile_analysis_api.py").read_text(encoding="utf-8")
+    legacy = source.split('@router.get("/analyses/{analysis_id}/legacy-radiograph")', 1)[1].split(
+        '@router.get("/analyses/{analysis_id}/assets/{asset_id}")', 1
+    )[0]
+    asset = source.split('@router.get("/analyses/{analysis_id}/assets/{asset_id}")', 1)[1].split(
+        '@router.get("/analyses")', 1
+    )[0]
+    for block in (legacy, asset):
+        assert "async def mobile_" in block
+        assert "await run_in_threadpool(storage_ensure_local, file_path)" in block
+        assert block.index("with Session(") < block.index("await run_in_threadpool")
+    assert "storage_ensure_local(analysis.radiograph_path)" not in legacy
+    assert "storage_ensure_local(asset.file_path)" not in asset
 
 
 def test_clinical_ai_router_redacts_direct_patient_identifiers():
