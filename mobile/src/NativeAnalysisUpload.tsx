@@ -6,6 +6,7 @@ import * as Crypto from 'expo-crypto';
 import {chunkedDraftStore} from './socialDraft';
 import {analysisUploadReceipt,canStartAnalysis,parseUploadIntent,UploadImage,UploadIntent,uploadAnalysis,validateUploadFields} from './analysisUpload';
 import {ANALYSIS_MAX_IMAGES} from './analysisApi';
+import {ANALYSIS_COMPOSER_SAFETY_NOTE,analysisComposerImageCountLabel,analysisComposerSteps} from './analysisComposerPresentation';
 import type {Patient} from './api';
 import {cacheAnalysisImages,clearAnalysisImages,clearLegacyAnalysisSources,cleanupStaleClinicalMediaTemps,ensureEncryptedAnalysisImages,prepareAnalysisUploadImages,validateCachedAnalysisImages} from './nativeAnalysisFiles';
 const store=chunkedDraftStore(SecureStore,Crypto.randomUUID);
@@ -131,8 +132,82 @@ export default function NativeAnalysisUpload({token,userId,patientId,patient,onC
   setNotice('Analiz #'+receipt.analysis_id+(hasMedia?' kaydedildi. Görüntü işleme sunucuda sürer.':' kaydedildi. Klinik ön değerlendirme sunucuda sürer.'));
   setPhase('');await onCreated(receipt.analysis_id)
  })}
- const button=(label:string,action:()=>void,disabled=false)=><Pressable accessibilityRole="button" disabled={busy||!ready||blocked||disabled} onPress={action} style={[s.button,(busy||!ready||blocked||disabled)&&{opacity:.4}]}><Text style={s.action}>{label}</Text></Pressable>;
- return <View style={s.panel}><Text style={s.title}>Dental AI Analizi</Text>{patient&&<View style={s.patientContext}><Text style={s.patientIdentity}>{patient.anonymous_id||`Hasta #${patientId}`} · {patient.age===null||patient.age===undefined?'Hasta kaydı':`${patient.age} yaş`}</Text><Text style={s.meta}>Ana şikâyet: {patient.chief_complaint?.trim()||'Belirtilmemiş'}</Text></View>}<Text style={s.title}>Görüntüler ve Klinik Bilgi</Text><Text style={s.meta}>Görüntü olmadan da diş numarası veya klinik bilgiyle ön değerlendirme başlatabilirsiniz.</Text><Text style={s.meta}>{savedIds.length?`${savedIds.length} kayıtlı klinik görüntü seçildi · `:''}Kayıtlı ve yeni görüntüler birlikte en fazla {ANALYSIS_MAX_IMAGES} JPG/PNG/WebP olabilir. Yeni dosyaların her biri en fazla 15 MiB; yeni dosyaların toplamı en fazla 48 MiB. Kayıtlı görüntüler dört görüntülük seçim sınırına dahildir ancak yeniden yüklenmez.</Text><View style={s.row}>{button('Galeriden Ekle',()=>void pick(false),!!intent||savedIds.length+files.length>=ANALYSIS_MAX_IMAGES)}{button('Kameradan Ekle',()=>void pick(true),!!intent||savedIds.length+files.length>=ANALYSIS_MAX_IMAGES)}</View>{(savedIds.length>0||files.length>0)&&<Text style={s.meta}>Toplam: {savedIds.length+files.length} / {ANALYSIS_MAX_IMAGES} görüntü</Text>}{files.length>0&&<ScrollView horizontal>{files.map((f,i)=><View key={f.uri} style={{width:130,marginRight:10}}>{f.previewUri||!f.encryptedUri?<Image source={{uri:f.previewUri||f.uri}} resizeMode="contain" style={{width:125,height:100}}/>:<View style={s.encryptedPreview}><Text style={{fontSize:24}}>🔒</Text><Text style={s.meta}>Cihazda şifreli</Text></View>}<Text style={s.meta}>{i+1}. {f.name}</Text>{button('Kaldır '+(i+1),()=>void perform(async()=>{await clearAnalysisImages([f]);if(alive.current)setFiles(old=>old.filter(x=>x.uri!==f.uri))}),!!intent)}</View>)}</ScrollView>}<TextInput accessibilityLabel="Analiz FDI diş numaraları" editable={!busy&&!intent} value={tooth} onChangeText={setTooth} maxLength={95} placeholder="Diş numarası: 36 veya 36,46 (isteğe bağlı)" style={s.input}/><TextInput accessibilityLabel="Analiz klinik bilgileri" editable={!busy&&!intent} value={notes} onChangeText={setNotes} maxLength={4000} multiline placeholder="Şikâyet, anamnez ve klinik bulgular (isteğe bağlı)" style={[s.input,{minHeight:85}]}/>{(!ready||busy)&&<ActivityIndicator/>}{!!phase&&<Text style={s.meta}>{phase}</Text>}{progress!==null&&<Text style={s.meta}>Aktarım: %{progress} · {formatBytes(transferBytes.loaded)} / {formatBytes(transferBytes.total)}. %100 aktarım, sunucu kaydının onaylandığı anlamına gelmez.</Text>}{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!notice&&<Text accessibilityRole="alert" style={s.meta}>{notice}</Text>}{blocked&&<><Text style={s.error}>Bekleyen eski yükleme dosyası doğrulanamadı. Yeni analiz başlatmadan önce sunucu fişini kontrol edin.</Text><Pressable accessibilityRole="button" disabled={busy||!ready} onPress={()=>void recoverBlockedIntent()} style={[s.button,(busy||!ready)&&{opacity:.4}]}><Text style={s.action}>Eski Taslağı Kontrol Et / Temizle</Text></Pressable></>}{createdId&&button('Analiz #'+createdId+' Kaydını Aç',()=>void perform(async()=>{await onCreated(createdId)}))}{intent?<><Text style={s.meta}>Bekleyen yükleme aynı hasta, dosyalar ve anahtarla korunuyor. Yeni analiz oluşturmadan önce sunucudaki kayıt kontrol edilir.</Text>{button('Yükleme Fişini Kontrol Et',()=>void send(true))}{button('Aynı Yüklemeyi Sürdür',()=>void send(false))}</>:button('Analizi Başlat',()=>void send(),!canStartAnalysis(tooth,notes,savedIds,files))}{busy&&progress!==null&&<Pressable accessibilityRole="button" onPress={()=>abort.current?.abort()} style={s.button}><Text style={s.action}>Aktarımı Durdur</Text></Pressable>}</View>
+ const button=(label:string,action:()=>void,disabled=false,primary=false)=><Pressable accessibilityRole="button" disabled={busy||!ready||blocked||disabled} onPress={action} style={[s.button,primary&&s.primaryButton,(busy||!ready||blocked||disabled)&&{opacity:.4}]}><Text style={[s.action,primary&&s.primaryAction]}>{label}</Text></Pressable>;
+ const steps=analysisComposerSteps(savedIds.length),toothStep=steps[0]!,clinicalStep=steps[1]!,imageStep=steps[2]!;
+ const imageCountLabel=analysisComposerImageCountLabel(savedIds.length,files.length);
+ return (
+  <View style={s.panel}>
+   <Text style={s.title}>Dental AI Analizi</Text>
+   {patient&&<View style={s.patientContext}>
+    <Text style={s.patientIdentity}>{patient.anonymous_id||`Hasta #${patientId}`} · {patient.age===null||patient.age===undefined?'Hasta kaydı':`${patient.age} yaş`}</Text>
+    <Text style={s.meta}>Ana şikâyet: {patient.chief_complaint?.trim()||'Belirtilmemiş'}</Text>
+   </View>}
+   <View style={s.intro}>
+    <Text style={s.sectionTitle}>Klinik değerlendirme</Text>
+    <Text style={s.meta}>Diş, hekim notu ve görüntüleri aynı analizde birleştirebilirsiniz.</Text>
+   </View>
+   <View style={s.stepBlock}>
+    <View style={s.stepHeading}>
+     <View style={s.stepNumber}><Text style={s.stepNumberText}>{toothStep.number}</Text></View>
+     <Text style={s.stepTitle}>{toothStep.title}</Text>
+    </View>
+    <Text style={s.fieldLabel}>{toothStep.label}</Text>
+    <TextInput accessibilityLabel={toothStep.accessibilityLabel} editable={!busy&&!intent} value={tooth} onChangeText={setTooth} maxLength={95} placeholder={toothStep.placeholder} style={s.input}/>
+   </View>
+   <View style={s.stepBlock}>
+    <View style={s.stepHeading}>
+     <View style={s.stepNumber}><Text style={s.stepNumberText}>{clinicalStep.number}</Text></View>
+     <Text style={s.stepTitle}>{clinicalStep.title}</Text>
+    </View>
+    <Text style={s.fieldLabel}>{clinicalStep.label}</Text>
+    <TextInput accessibilityLabel={clinicalStep.accessibilityLabel} editable={!busy&&!intent} value={notes} onChangeText={setNotes} maxLength={4000} multiline placeholder={clinicalStep.placeholder} style={[s.input,{minHeight:85,textAlignVertical:'top'}]}/>
+    {!!clinicalStep.helper&&<Text style={s.fieldHelp}>{clinicalStep.helper}</Text>}
+   </View>
+   <View style={[s.stepBlock,s.lastStepBlock]}>
+    <View style={s.stepHeading}>
+     <View style={s.stepNumber}><Text style={s.stepNumberText}>{imageStep.number}</Text></View>
+     <Text style={s.stepTitle}>{imageStep.title}</Text>
+    </View>
+    <Text style={s.fieldLabel}>{imageStep.label}</Text>
+    {!!imageStep.helper&&<Text style={s.fieldHelp}>{imageStep.helper}</Text>}
+    <Text style={s.imageCount}>{imageCountLabel}</Text>
+    <View style={s.row}>
+     {button('Galeriden Ekle',()=>void pick(false),!!intent||savedIds.length+files.length>=ANALYSIS_MAX_IMAGES)}
+     {button('Kameradan Ekle',()=>void pick(true),!!intent||savedIds.length+files.length>=ANALYSIS_MAX_IMAGES)}
+    </View>
+    {files.length>0&&<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.previewRow}>
+     {files.map((f,i)=><View key={f.uri} style={s.previewItem}>
+      {f.previewUri||!f.encryptedUri
+       ?<Image source={{uri:f.previewUri||f.uri}} resizeMode="contain" style={s.previewImage}/>
+       :<View style={s.encryptedPreview}><Text style={{fontSize:24}}>🔒</Text><Text style={s.meta}>Cihazda şifreli</Text></View>}
+      <Text numberOfLines={2} style={s.meta}>{i+1}. {f.name}</Text>
+      {button('Kaldır '+(i+1),()=>void perform(async()=>{await clearAnalysisImages([f]);if(alive.current)setFiles(old=>old.filter(x=>x.uri!==f.uri))}),!!intent)}
+     </View>)}
+    </ScrollView>}
+   </View>
+   <View style={s.safetyNote}><Text style={s.safetyText}>{ANALYSIS_COMPOSER_SAFETY_NOTE}</Text></View>
+   {(!ready||busy)&&<ActivityIndicator/>}
+   {!!phase&&<Text style={s.meta}>{phase}</Text>}
+   {progress!==null&&<Text style={s.meta}>Aktarım: %{progress} · {formatBytes(transferBytes.loaded)} / {formatBytes(transferBytes.total)}. %100 aktarım, sunucu kaydının onaylandığı anlamına gelmez.</Text>}
+   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
+   {!!notice&&<Text accessibilityRole="alert" style={s.meta}>{notice}</Text>}
+   {blocked&&<>
+    <Text style={s.error}>Bekleyen eski yükleme dosyası doğrulanamadı. Yeni analiz başlatmadan önce sunucu fişini kontrol edin.</Text>
+    <Pressable accessibilityRole="button" disabled={busy||!ready} onPress={()=>void recoverBlockedIntent()} style={[s.button,(busy||!ready)&&{opacity:.4}]}>
+     <Text style={s.action}>Eski Taslağı Kontrol Et / Temizle</Text>
+    </Pressable>
+   </>}
+   {createdId&&button('Analiz #'+createdId+' Kaydını Aç',()=>void perform(async()=>{await onCreated(createdId)}))}
+   {intent
+    ?<>
+      <Text style={s.meta}>Bekleyen yükleme aynı hasta, dosyalar ve anahtarla korunuyor. Yeni analiz oluşturmadan önce sunucudaki kayıt kontrol edilir.</Text>
+      {button('Yükleme Fişini Kontrol Et',()=>void send(true))}
+      {button('Aynı Yüklemeyi Sürdür',()=>void send(false))}
+     </>
+    :button('Analizi Başlat',()=>void send(),!canStartAnalysis(tooth,notes,savedIds,files),true)}
+   {busy&&progress!==null&&<Pressable accessibilityRole="button" onPress={()=>abort.current?.abort()} style={s.button}><Text style={s.action}>Aktarımı Durdur</Text></Pressable>}
+  </View>
+ );
 }
 function formatBytes(value:number){if(!Number.isFinite(value)||value<=0)return '0 B';if(value<1024)return `${Math.round(value)} B`;if(value<1024*1024)return `${(value/1024).toFixed(1)} KiB`;return `${(value/(1024*1024)).toFixed(1)} MiB`}
-const s=StyleSheet.create({panel:{padding:14,gap:12,marginVertical:14,borderWidth:1,borderColor:'#DCE3EB',borderRadius:12,backgroundColor:'white'},patientContext:{padding:12,gap:5,borderRadius:10,backgroundColor:'#EEF3FA',borderWidth:1,borderColor:'#DCE6F2'},patientIdentity:{fontSize:14,fontWeight:'800',color:'#071B35'},title:{fontSize:17,fontWeight:'800',color:'#102033'},meta:{fontSize:13,lineHeight:21,color:'#53657B'},row:{flexDirection:'row',gap:8,flexWrap:'wrap'},button:{padding:12,minHeight:44,borderRadius:9,backgroundColor:'#E8F0FF'},action:{fontWeight:'700',color:'#1769AA'},input:{padding:12,minHeight:46,borderWidth:1,borderColor:'#DCE3EB',borderRadius:9,color:'#102033'},error:{color:'#B42318',lineHeight:21},encryptedPreview:{width:125,height:100,borderRadius:10,backgroundColor:'#EEF3FA',alignItems:'center',justifyContent:'center',gap:6}});
+const s=StyleSheet.create({panel:{padding:14,gap:12,marginVertical:14,borderWidth:1,borderColor:'#DCE3EB',borderRadius:12,backgroundColor:'white'},patientContext:{padding:12,gap:5,borderRadius:10,backgroundColor:'#EEF3FA',borderWidth:1,borderColor:'#DCE6F2'},patientIdentity:{fontSize:14,fontWeight:'800',color:'#071B35'},title:{fontSize:20,fontWeight:'850',color:'#102033'},intro:{paddingTop:2,paddingBottom:3},sectionTitle:{fontSize:16,fontWeight:'800',color:'#172033'},stepBlock:{paddingVertical:11,borderBottomWidth:1,borderBottomColor:'rgba(15,23,42,.08)'},lastStepBlock:{borderBottomWidth:0,paddingBottom:3},stepHeading:{flexDirection:'row',alignItems:'center',gap:8,marginBottom:8},stepNumber:{width:25,height:25,borderRadius:8,backgroundColor:'#EFF6FF',alignItems:'center',justifyContent:'center'},stepNumberText:{fontSize:12,fontWeight:'850',color:'#1D4ED8'},stepTitle:{fontSize:18,fontWeight:'800',color:'#172033'},fieldLabel:{fontSize:13,fontWeight:'700',color:'#172033',marginBottom:6},fieldHelp:{fontSize:12,lineHeight:18,color:'#64748B',marginTop:6},imageCount:{fontSize:12,fontWeight:'700',color:'#53657B',marginTop:8,marginBottom:5},meta:{fontSize:13,lineHeight:21,color:'#53657B'},row:{flexDirection:'row',gap:8,flexWrap:'wrap'},button:{padding:12,minHeight:44,borderRadius:9,backgroundColor:'#E8F0FF'},primaryButton:{width:'100%',minHeight:50,borderRadius:12,backgroundColor:'#071B35',justifyContent:'center',alignItems:'center'},action:{fontWeight:'700',color:'#1769AA'},primaryAction:{fontWeight:'800',color:'#FFFFFF'},input:{padding:12,minHeight:46,borderWidth:1,borderColor:'#DCE3EB',borderRadius:9,color:'#102033',backgroundColor:'#FFFFFF'},previewRow:{paddingVertical:6},previewItem:{width:130,marginRight:10},previewImage:{width:125,height:100,borderRadius:10},safetyNote:{marginTop:2,padding:10,borderRadius:11,borderWidth:1,borderColor:'rgba(15,23,42,.08)',backgroundColor:'#FBFCFE'},safetyText:{fontSize:12,lineHeight:18,color:'#64748B'},error:{color:'#B42318',lineHeight:21},encryptedPreview:{width:125,height:100,borderRadius:10,backgroundColor:'#EEF3FA',alignItems:'center',justifyContent:'center',gap:6}});
