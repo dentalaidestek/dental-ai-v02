@@ -49,6 +49,12 @@ test('native recorder mirrors web audio-file import through the private idempote
  ])assert.ok(source.includes(fragment),fragment);
  const importStart=source.indexOf('async function importAudioFile');
  assert.ok(source.indexOf('pickerUri=asset.uri',importStart)<source.indexOf("if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi",importStart));
+ const durationCheck=source.indexOf('validateVoiceAudioDuration(duration)',importStart);
+ const budgetRecheck=source.indexOf('if(!audioInputAllowed())throw Error(audioLimitMessage)',importStart);
+ const persist=source.indexOf('const saved=await persist(',importStart);
+ assert.ok(durationCheck>=0&&durationCheck<budgetRecheck&&budgetRecheck<persist,'the latest transcript budget is checked after async duration parsing and before the private draft is persisted');
+ const consentChecks=[...source.slice(importStart,source.indexOf('async function startChunk',importStart)).matchAll(/if\(!consentRef\.current\)/g)];
+ assert.ok(consentChecks.length>=3,'consent is rechecked after picker, copy, and duration awaits');
 });
 
 test('native voice audio input follows the web 54k-character and 180KB pre-ASR budget',()=>{
