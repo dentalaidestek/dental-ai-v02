@@ -1,17 +1,18 @@
 import NativeAnalysisUpload from './NativeAnalysisUpload';
 import NativeClinicalReview from './NativeClinicalReview';
 import React,{useCallback,useEffect,useRef,useState}from"react";
-import{ActivityIndicator,Pressable,ScrollView,Text,TextInput,View}from"react-native";
+import{ActivityIndicator,AppState,Pressable,ScrollView,Text,TextInput,View}from"react-native";
 import * as SecureStore from "expo-secure-store";
 import{getPatient,getPatients,Patient}from"./api";
 import{getAnalysis,startAnalysisAI,MobileAnalysis,analysisPatientLabel}from"./analysisApi";
+import{analysisNeedsPolling,analysisPollDelay,MAX_ANALYSIS_POLL_ATTEMPTS,analysisRefreshCanRetry}from"./analysisRefresh";
 import type {ClinicalWorkspace} from "./clinicalApi";
 import{useRealtime}from"./realtime";
 
 export default function NativeDentalAI({token,userId,initialAnalysisId,initialPatientId}:{token:string;userId?:number;initialAnalysisId?:number;initialPatientId?:number}){
  const{lastEvent}=useRealtime();
  const[patients,setPatients]=useState<Patient[]>([]),[patientSearch,setPatientSearch]=useState(""),[patientQuery,setPatientQuery]=useState(""),[patientTotal,setPatientTotal]=useState(0),[patientBusy,setPatientBusy]=useState(false),[patientError,setPatientError]=useState(""),[patientId,setPatientId]=useState<number|null>(null),[analysis,setAnalysis]=useState<MobileAnalysis|null>(null),[busy,setBusy]=useState(false),[err,setErr]=useState("");
- const[clinicalRefreshKey,setClinicalRefreshKey]=useState(0);
+ const[clinicalRefreshKey,setClinicalRefreshKey]=useState(0),[pollRevision,setPollRevision]=useState(0);
  const selectedRecord=useRef<Patient|null>(null);const patientsRef=useRef(patients);patientsRef.current=patients;
  const activeId=useRef<number|undefined>(initialAnalysisId), refreshGeneration=useRef(0),patientGeneration=useRef(0),patientPageLock=useRef(false);const actionLock=useRef(false);const actionGeneration=useRef(0);const selectionGeneration=useRef(0);const sessionScope=useRef(`${token}:${userId||0}`);sessionScope.current=`${token}:${userId||0}`;const renderedScope=sessionScope.current;const syncClinicalWorkspace=useCallback((workspace:Pick<ClinicalWorkspace,"analysis_id"|"patient_id"|"status"|"job"|"assets">)=>{if(renderedScope!==sessionScope.current)return;setAnalysis(previous=>{if(!previous||previous.analysis.id!==workspace.analysis_id||previous.analysis.patient_id!==workspace.patient_id)return previous;const assets=previous.assets.map(asset=>{const current=workspace.assets.find(item=>item.id===asset.id);return current?{...asset,has_vision:current.has_vision}:asset});return {...previous,analysis:{...previous.analysis,status:workspace.status},job:workspace.job,assets}})},[renderedScope]);useEffect(()=>{selectionGeneration.current++;actionGeneration.current++;actionLock.current=false;patientGeneration.current++;patientPageLock.current=false;setPatientSearch("");setPatientQuery("");setPatientTotal(0);setPatientBusy(false);setPatientError("");setBusy(false);setPatients([]);selectedRecord.current=null;setPatientId(null);setAnalysis(null);setErr("");activeId.current=initialAnalysisId},[token,userId,initialAnalysisId,initialPatientId]);
  useEffect(()=>{
@@ -44,6 +45,40 @@ export default function NativeDentalAI({token,userId,initialAnalysisId,initialPa
  const choices=selectedRecord.current&&selectedRecord.current.id===patientId&&!patients.some(p=>p.id===patientId)?[selectedRecord.current,...patients]:patients;
  useEffect(()=>()=>{refreshGeneration.current++},[token,analysis?.analysis.id]);
  useEffect(()=>{if(!analysis||!lastEvent)return;const e:any=lastEvent;const id=Number(e.entity_id||e.analysis_id||e.payload?.analysis_id||0);if((e.entity_type==="analysis"||["ANALYSIS_CREATED","ANALYSIS_UPDATED","ANALYSIS_COMPLETED","VISION_READY"].includes(String(e.event_type||e.type)))&&id===analysis.analysis.id)setClinicalRefreshKey(value=>value+1)},[lastEvent,analysis?.analysis.id]);
+ // Bounded job polling restored (4c5a2af9): parent polls only while the job is
+ // non-terminal, with exponential backoff, jitter and a finite attempt cap.
+ // Realtime events never fetch here; the clinical workspace refresh is keyed.
+ useEffect(()=>{
+  if(!analysis||!analysisNeedsPolling(analysis)||patientId===null)return;
+  let disposed=false,attempts=0;
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  const scope=sessionScope.current,analysisId=analysis.analysis.id,selectedPatient=patientId;
+  const schedule=(attempt:number)=>{if(!disposed)timer=setTimeout(()=>void poll(),analysisPollDelay(attempt));};
+  const poll=async()=>{
+   if(disposed||scope!==sessionScope.current||AppState.currentState!=="active")return;
+   if(attempts>=MAX_ANALYSIS_POLL_ATTEMPTS){
+    if(!disposed&&scope===sessionScope.current)setErr("Analiz sunucuda sürüyor. Otomatik kontrol sınırına ulaşıldı; Sonucu Yenile ile devam edin.");
+    return;
+   }
+   const attempt=attempts++,request=++refreshGeneration.current;
+   try{
+    const result=await getAnalysis(token,analysisId);
+    if(disposed||scope!==sessionScope.current||request!==refreshGeneration.current||activeId.current!==analysisId||
+       patientId!==selectedPatient||result.analysis.id!==analysisId||result.analysis.patient_id!==selectedPatient)return;
+    setAnalysis(result);
+    if(analysisNeedsPolling(result)){
+     if(attempts<MAX_ANALYSIS_POLL_ATTEMPTS)schedule(attempts);
+     else setErr("Analiz sunucuda sürüyor. Otomatik kontrol sınırına ulaşıldı; Sonucu Yenile ile devam edin.");
+    }
+   }catch{
+    if(disposed||scope!==sessionScope.current)return;
+    if(attempts<MAX_ANALYSIS_POLL_ATTEMPTS)schedule(attempts);
+    else setErr("Analiz durumu otomatik doğrulanamadı. Yeniden denemek için Sonucu Yenile.");
+   }
+  };
+  schedule(0);
+  return()=>{disposed=true;if(timer)clearTimeout(timer)};
+ },[token,analysis?.analysis.id,analysis?.analysis.status,analysis?.job?.id,analysis?.job?.status,userId,patientId,pollRevision]);
   async function openUploaded(id:number){
   const scope=sessionScope.current,selectedPatient=patientId,selection=selectionGeneration.current;
   if(!selectedPatient||!Number.isSafeInteger(id)||id<=0)return;
@@ -67,6 +102,7 @@ export default function NativeDentalAI({token,userId,initialAnalysisId,initialPa
     }catch{ /* Secure-store failure must not invalidate an authorized on-screen result. */ }
   }
  }
+ async function refresh(){if(!analysis||actionLock.current)return;actionLock.current=true;const generation=++actionGeneration.current,scope=sessionScope.current,analysisId=analysis.analysis.id,selectedPatient=patientId;setBusy(true);try{const result=await getAnalysis(token,analysisId);if(generation===actionGeneration.current&&scope===sessionScope.current&&selectedPatient!==null&&patientId===selectedPatient&&result.analysis.id===analysisId&&result.analysis.patient_id===selectedPatient){setAnalysis(result);setPollRevision(value=>value+1);setErr("")}}catch(e:any){if(generation===actionGeneration.current&&scope===sessionScope.current&&analysisRefreshCanRetry(e))setErr(e?.message||"Durum alınamadı.")}finally{if(generation===actionGeneration.current&&scope===sessionScope.current){actionLock.current=false;setBusy(false)}}}
  async function start(){if(!analysis||actionLock.current)return;actionLock.current=true;const generation=++actionGeneration.current,scope=sessionScope.current,analysisId=analysis.analysis.id,selectedPatient=patientId;setBusy(true);setErr("");try{if(selectedPatient===null||analysis.analysis.patient_id!==selectedPatient)throw Error("Analiz kimliği seçili hastayla eşleşmiyor.");await startAnalysisAI(token,analysisId);if(generation===actionGeneration.current&&scope===sessionScope.current)setClinicalRefreshKey(value=>value+1)}catch(e:any){if(generation===actionGeneration.current&&scope===sessionScope.current)setErr(e?.message||"Analiz başlatılamadı.")}finally{if(generation===actionGeneration.current&&scope===sessionScope.current){actionLock.current=false;setBusy(false)}}}
  return <View style={{paddingBottom:30}}>
   <Text style={{fontSize:13,fontWeight:"800",color:"#718096",marginBottom:8}}>Hasta seç</Text>
@@ -77,6 +113,6 @@ export default function NativeDentalAI({token,userId,initialAnalysisId,initialPa
   {patients.length<patientTotal&&<Pressable accessibilityRole="button" disabled={patientBusy} onPress={()=>void load(patients.length)} style={{padding:12,marginTop:8,alignSelf:"center"}}><Text style={{fontWeight:"800",color:"#071B35"}}>Daha fazla hasta ({patients.length}/{patientTotal})</Text></Pressable>}
   {patientId&&userId?<NativeAnalysisUpload key={token+':'+userId+':'+patientId} token={token} userId={userId} patientId={patientId} patient={selectedPatient} onCreated={openUploaded}/>:<Text style={{padding:12,color:'#53657B'}}>Devam etmek için gerçek bir hasta kaydı seçin.</Text>}
   {!!err&&<Text style={{color:"#B42318",marginTop:8}}>{err}</Text>}
-  {analysis&&<View style={{backgroundColor:"#FFF",borderRadius:18,padding:16,borderWidth:1,borderColor:"#E5EAF0",marginTop:16}}><Text style={{fontSize:16,fontWeight:"900",color:"#102033"}}>Analiz #{analysis.analysis.id}</Text><Text style={{fontSize:13,color:"#718096",marginTop:4}}>Durum: {analysis.analysis.status}</Text><View style={{padding:12,marginTop:10,borderRadius:10,backgroundColor:"#EEF3FA",gap:4}}><Text style={{fontWeight:"800",color:"#071B35"}}>{analysis.patient.anonymous_id||`Hasta #${analysis.patient.id}`} · {analysis.patient.age===null||analysis.patient.age===undefined?"Hasta kaydı":`${analysis.patient.age} yaş`}</Text><Text style={{fontSize:13,lineHeight:20,color:"#53657B"}}>Ana şikâyet: {analysis.patient.chief_complaint?.trim()||"Belirtilmemiş"}</Text></View>{analysis.assets.map(a=><Text key={a.id} style={{fontSize:13,color:"#718096",marginTop:4}}>{a.original_filename} · {a.has_vision?"Görüntü hazır":"Görüntü işleniyor"}</Text>)}{analysis.analysis.status==="VISION_READY"&&<Pressable onPress={start} disabled={busy} style={{height:50,borderRadius:14,backgroundColor:"#071B35",alignItems:"center",justifyContent:"center",marginTop:12}}><Text style={{color:"#FFF",fontWeight:"800"}}>Klinik AI'yi Başlat</Text></Pressable>}<NativeClinicalReview key={token+':'+analysis.analysis.id} token={token} userId={userId} analysisId={analysis.analysis.id} refreshKey={clinicalRefreshKey} onWorkspaceChange={syncClinicalWorkspace}/></View>}
+  {analysis&&<View style={{backgroundColor:"#FFF",borderRadius:18,padding:16,borderWidth:1,borderColor:"#E5EAF0",marginTop:16}}><Text style={{fontSize:16,fontWeight:"900",color:"#102033"}}>Analiz #{analysis.analysis.id}</Text><Text style={{fontSize:13,color:"#718096",marginTop:4}}>Durum: {analysis.analysis.status}</Text><View style={{padding:12,marginTop:10,borderRadius:10,backgroundColor:"#EEF3FA",gap:4}}><Text style={{fontWeight:"800",color:"#071B35"}}>{analysis.patient.anonymous_id||`Hasta #${analysis.patient.id}`} · {analysis.patient.age===null||analysis.patient.age===undefined?"Hasta kaydı":`${analysis.patient.age} yaş`}</Text><Text style={{fontSize:13,lineHeight:20,color:"#53657B"}}>Ana şikâyet: {analysis.patient.chief_complaint?.trim()||"Belirtilmemiş"}</Text></View>{analysis.assets.map(a=><Text key={a.id} style={{fontSize:13,color:"#718096",marginTop:4}}>{a.original_filename} · {a.has_vision?"Görüntü hazır":"Görüntü işleniyor"}</Text>)}{analysis.analysis.status==="VISION_READY"&&<Pressable onPress={start} disabled={busy} style={{height:50,borderRadius:14,backgroundColor:"#071B35",alignItems:"center",justifyContent:"center",marginTop:12}}><Text style={{color:"#FFF",fontWeight:"800"}}>Klinik AI'yi Başlat</Text></Pressable>}{analysis.analysis.status!=="AI_ANALYZED"&&<Pressable onPress={()=>void refresh()} disabled={busy} style={{height:50,borderRadius:14,backgroundColor:"#FFF",borderWidth:1,borderColor:"#E5EAF0",alignItems:"center",justifyContent:"center",marginTop:12}}><Text style={{color:"#071B35",fontWeight:"800"}}>Sonucu Yenile</Text></Pressable>}<NativeClinicalReview key={token+':'+analysis.analysis.id} token={token} userId={userId} analysisId={analysis.analysis.id} refreshKey={clinicalRefreshKey} onWorkspaceChange={syncClinicalWorkspace}/></View>}
  </View>
 }
