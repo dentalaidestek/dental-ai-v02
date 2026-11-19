@@ -27,7 +27,7 @@ test('AI rejects invalid analysis IDs before a network request',async()=>{
  try{
   await assert.rejects(()=>api.getAnalysis('token',0),/Geçersiz analiz/);
   await assert.rejects(()=>api.getAnalysis('token',NaN),/Geçersiz analiz/);
-  assert.throws(()=>api.startAnalysisAI('token',-3),/Geçersiz analiz/);
+  await assert.rejects(()=>api.startAnalysisAI('token',-3),/Geçersiz analiz/);
  }finally{global.fetch=original}
 });
 test('AI status and start use authorized mobile API routes',async()=>{

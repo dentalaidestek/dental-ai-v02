@@ -120,8 +120,14 @@ export async function getAnalysis(token:string,id:number){
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");
  const result=await call<MobileAnalysis>("/analyses/"+id,token);
  const topFields=new Set(['analysis','patient','assets','job']);
- if(!result||typeof result!=='object'||Array.isArray(result)||Object.keys(result).some(key=>!topFields.has(key))||
-    !validAnalysisEnvelope(result.analysis,id)||!validAnalysisPatient(result.patient,result.analysis.patient_id)||
+ if(!result||typeof result!=='object'||Array.isArray(result)||Object.keys(result).some(key=>!topFields.has(key)))
+  throw new ApiError(502,"Analiz yanıtı hasta kapsamı veya veri minimizasyonu sözleşmesini karşılamıyor.");
+ const analysis=result.analysis as MobileAnalysis['analysis']|undefined;
+ if(!analysis||typeof analysis!=='object'||analysis.id!==id||!Number.isSafeInteger(analysis.id)||
+    !Number.isSafeInteger(analysis.patient_id)||analysis.patient_id<=0||
+    !result.patient||typeof result.patient!=='object'||result.patient.id!==analysis.patient_id)
+  throw new ApiError(502,"Analiz yanıtı hasta veya iş kimliği uyuşmayan bir kayıt içeriyor.");
+ if(!validAnalysisEnvelope(result.analysis,id)||!validAnalysisPatient(result.patient,result.analysis.patient_id)||
     !Array.isArray(result.assets)||result.assets.length>ANALYSIS_MAX_IMAGES||result.assets.some(asset=>!validAnalysisAsset(asset))||
     new Set(result.assets.map(asset=>asset.id)).size!==result.assets.length||!validAnalysisJob(result.job))
   throw new ApiError(502,"Analiz yanıtı hasta kapsamı veya veri minimizasyonu sözleşmesini karşılamıyor.");
