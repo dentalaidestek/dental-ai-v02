@@ -64,6 +64,11 @@ export function parseVoiceExtractionCheckpoint(raw:string|null,userId:number,pat
 export const voiceDraftKey=(userId:number,patientId:number)=>`dai.voice.${userId}.${patientId}`;
 export function newVoiceDraft(userId:number,patientId:number,now=Date.now(),sessionId?:string):VoiceDraft{if(!Number.isSafeInteger(userId)||userId<=0||!Number.isSafeInteger(patientId)||patientId<=0)throw Error('Muayene için geçerli hesap ve hasta seçin.');if(sessionId!==undefined&&!VOICE_SESSION_ID.test(sessionId))throw Error('Muayene oturum anahtarı doğrulanamadı.');return{version:1,userId,patientId,...(sessionId?{sessionId}:{}),transcript:'',segments:[],updatedAt:now,ended:false,audioStarted:false,elapsedMs:0};}
 
+/** A finished examination is terminal until the clinician explicitly clears its draft. */
+export function canResumeVoiceDraft(draft:Pick<VoiceDraft,'ended'|'segments'>):boolean{
+ return draft.ended!==true&&Array.isArray(draft.segments)&&draft.segments.length===0;
+}
+
 export function addVoiceElapsed(draft:VoiceDraft,startedAt:number,endedAt:number):VoiceDraft{
  if(!Number.isFinite(startedAt)||!Number.isFinite(endedAt)||startedAt<0||endedAt<startedAt)throw Error('Muayene süresi doğrulanamadı.');
  const elapsedMs=(draft.elapsedMs??0)+(endedAt-startedAt);
