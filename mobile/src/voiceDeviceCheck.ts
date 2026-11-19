@@ -2,12 +2,25 @@ export const VOICE_DEVICE_CHECK_DURATION_MS=6000;
 export const VOICE_DEVICE_CHECK_MIN_DURATION_MS=5500;
 export const VOICE_DEVICE_CHECK_MIN_SIGNAL_DB=-40;
 
+const PRIVATE_DEVICE_CHECK_FILE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\\.m4a$/i;
+
+/** Accept only a direct .m4a child of Expo's app-private cache directory. */
+export function isPrivateVoiceDeviceCheckUri(
+ uri:unknown,cacheDirectory:string|null|undefined
+):uri is string{
+ if(typeof uri!=='string'||typeof cacheDirectory!=='string'||
+    !cacheDirectory.startsWith('file:///')||!cacheDirectory.endsWith('/'))return false;
+ if(!uri.startsWith(cacheDirectory))return false;
+ return PRIVATE_DEVICE_CHECK_FILE.test(uri.slice(cacheDirectory.length));
+}
+
 export type VoiceDeviceCheckOutcome=
  | 'permission_denied'
  | 'capture_incomplete'
  | 'no_audio_file'
  | 'metering_unavailable'
  | 'low_signal'
+ | 'cleanup_failed'
  | 'passed';
 
 export type VoiceDeviceCheckInput={
@@ -15,10 +28,12 @@ export type VoiceDeviceCheckInput={
  durationMs:number;
  fileBytes:number;
  peakMeteringDb:number|null;
+ cleanupVerified?:boolean;
 };
 
 /** Classifies only local capture metadata. It never accepts or returns audio or transcript data. */
 export function evaluateVoiceDeviceCheck(input:VoiceDeviceCheckInput):VoiceDeviceCheckOutcome{
+ if(input.cleanupVerified===false)return 'cleanup_failed';
  if(!input.permissionGranted)return 'permission_denied';
  if(!Number.isFinite(input.durationMs)||input.durationMs<VOICE_DEVICE_CHECK_MIN_DURATION_MS)return 'capture_incomplete';
  if(!Number.isFinite(input.fileBytes)||input.fileBytes<=0)return 'no_audio_file';
