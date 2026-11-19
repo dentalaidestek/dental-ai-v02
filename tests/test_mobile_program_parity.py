@@ -1,3 +1,4 @@
+import base64
 from test_mobile_chat_actions import chat
 from app import main,mobile_api
 from sqlmodel import Session,select
@@ -435,3 +436,36 @@ def test_program_conflict_advice_skips_patient_detail_hydration(program):
     assert response.status_code == 200, response.text
     assert response.json()["total"] == 1
     assert patient_selects == []
+
+
+
+def test_program_cursor_endpoint_is_private_and_rejects_tampering(program):
+    client, engine = program
+    with Session(engine) as session:
+        for ident in range(1600, 1651):
+            session.add(main.ScheduleEvent(
+                id=ident,
+                owner_user_id=1,
+                event_type="TASK",
+                title="Synthetic cursor privacy item",
+                start_at=datetime(2030, 1, 7, 7, 0),
+                created_at=datetime(2020, 1, 1),
+                updated_at=datetime(2020, 1, 1),
+            ))
+        session.commit()
+
+    first = client.get("/api/mobile/v1/program?view=today&day=2030-01-07")
+    assert first.status_code == 200, first.text
+    assert first.headers.get("cache-control") == "private, no-store"
+    assert "authorization" in first.headers.get("vary", "").lower()
+    cursor = first.json()["next_cursor"]
+    assert isinstance(cursor, str) and cursor
+
+    packed = bytearray(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+    packed[-1] ^= 1
+    tampered = base64.urlsafe_b64encode(bytes(packed)).decode("ascii").rstrip("=")
+    rejected = client.get(
+        "/api/mobile/v1/program",
+        params={"view": "today", "day": "2030-01-07", "cursor": tampered},
+    )
+    assert rejected.status_code == 422
