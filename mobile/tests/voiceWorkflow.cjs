@@ -41,7 +41,8 @@ test('native recorder mirrors web audio-file import through the private idempote
   'segments:[...draft.current.segments,segment]',
   "transcribeNativeRecording(token,patientId,segment.uri,segment.id,requestController.signal,segment.mime||'audio/mp4')",
   'validateVoiceAudioDuration(duration)',
-  "if(segment.mime){\\n      const duration=await readPrivateVoiceAudioDuration(segment.uri,segment.mime)"
+  'if(segment.mime){',
+  'const duration=await readPrivateVoiceAudioDuration(segment.uri,segment.mime)'
  ])assert.ok(source.includes(fragment),fragment);
  const importStart=source.indexOf('async function importAudioFile');
  assert.ok(source.indexOf('pickerUri=asset.uri',importStart)<source.indexOf("if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi",importStart));
