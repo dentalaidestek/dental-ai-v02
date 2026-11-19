@@ -1,4 +1,5 @@
-const assert=require('node:assert/strict');
+const ts=require('typescript'),fs=require('node:fs'),assert=require('node:assert/strict');
+require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
 const {test}=require('node:test');
 const api=require('../src/voiceAudioImport.ts');
 
