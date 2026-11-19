@@ -3,11 +3,13 @@ import {ActivityIndicator,Alert,AppState,Pressable,StyleSheet,Text,View} from 'r
 import {useIsFocused,usePreventRemove} from '@react-navigation/native';
 import {RecordingPresets,requestRecordingPermissionsAsync,setAudioModeAsync,useAudioRecorder,useAudioRecorderState} from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as DocumentPicker from 'expo-document-picker';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import {chunkedDraftStore} from './socialDraft';
 import {addVoiceElapsed,discardInterruptedVoiceSegment,formatVoiceElapsed,markVoiceSegmentReady,markVoiceSegmentTranscribed,newVoiceDraft,canResumeVoiceDraft,parseVoiceDraft,recoverInterruptedVoiceSegment,removeVoiceSegment,VoiceDraft,voiceDraftKey} from './voiceSession';
-import {isPrivateVoiceRecordingUri,transcribeNativeRecording,VoiceAsrError} from './nativeVoiceAudio';
+import {isPrivateVoiceRecordingUri,readPrivateVoiceAudioDuration,transcribeNativeRecording,VoiceAsrError} from './nativeVoiceAudio';
+import {resolveVoiceAudioAsset,validateVoiceAudioBytes,validateVoiceAudioDuration} from './voiceAudioImport';
 import {voiceDeviceSignalLevel} from './voiceDeviceCheck';
 import {isUnexpectedVoiceRecorderStop} from './voiceRecorderLifecycle';
 import {isVoiceDraftScopeCurrent} from './voiceDraftScope';
@@ -37,8 +39,8 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
   if(wanted.current||(active.current!==null&&!stopped.current))void pause(true);
  },[consent]);
  async function persist(next:VoiceDraft,expectedKey=key){if(!scopeIsCurrent(expectedKey))return false;const saved={...next,updatedAt:Date.now()};await store.setItemAsync(expectedKey,JSON.stringify(saved));if(!scopeIsCurrent(expectedKey))return false;draft.current=saved;if(mounted.current)setView(saved);return true;}
- async function removeFile(uri:string){
-  if(!isPrivateVoiceRecordingUri(uri))throw Error('Ses dosyası uygulamanın özel önbelleğinde doğrulanamadı; dış konuma dokunulmadı.');
+ async function removeFile(uri:string,mime?:string){
+  if(!isPrivateVoiceRecordingUri(uri,FileSystem.cacheDirectory,mime))throw Error('Ses dosyası uygulamanın özel önbelleğinde doğrulanamadı; dış konuma dokunulmadı.');
   await FileSystem.deleteAsync(uri,{idempotent:true});
   const remaining=await FileSystem.getInfoAsync(uri);
   if(remaining.exists)throw Error('Geçici ses dosyasının silindiği doğrulanamadı. Aynı ses yeniden gönderilmeyecek.');
@@ -54,11 +56,11 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
   const completed=draft.current.segments.filter(segment=>segment.transcribed===true);
   for(const segment of completed){
    if(!scopeIsCurrent(expectedKey))return;
-   await removeFile(segment.uri);
+   await removeFile(segment.uri,segment.mime);
    if(!scopeIsCurrent(expectedKey))return;
    await persist(removeVoiceSegment(draft.current,segment.id),expectedKey);
   }
-  const hasUntrusted=draft.current.segments.some(segment=>!isPrivateVoiceRecordingUri(segment.uri));
+  const hasUntrusted=draft.current.segments.some(segment=>!isPrivateVoiceRecordingUri(segment.uri,FileSystem.cacheDirectory,segment.mime));
   if(scopeIsCurrent(expectedKey)&&mounted.current&&!hasUntrusted&&!draft.current.segments.some(segment=>segment.transcribed))setStorageBlocked(false);
  }
  useEffect(()=>{
@@ -77,12 +79,12 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
     if(saved&&Date.now()-saved.updatedAt>86400000){
      for(const segment of saved.segments){
       if(!isActive())return;
-      if(isPrivateVoiceRecordingUri(segment.uri))await removeFile(segment.uri);
+      if(isPrivateVoiceRecordingUri(segment.uri,FileSystem.cacheDirectory,segment.mime))await removeFile(segment.uri,segment.mime);
       if(!isActive())return;
      }
      await store.deleteItemAsync(effectKey);
      if(!isActive())return;
-     if(saved.segments.some(segment=>!isPrivateVoiceRecordingUri(segment.uri)))setError('Süresi dolmuş taslak temizlendi; doğrulanamayan dosyaya dokunulmadı.');
+     if(saved.segments.some(segment=>!isPrivateVoiceRecordingUri(segment.uri,FileSystem.cacheDirectory,segment.mime)))setError('Süresi dolmuş taslak temizlendi; doğrulanamayan dosyaya dokunulmadı.');
      const fresh=newVoiceDraft(userId,patientId,Date.now(),Crypto.randomUUID());
      draft.current=fresh;await persist(fresh,effectKey);
     }else if(saved){
@@ -90,7 +92,7 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
      for(const segment of saved.segments){
       if(!isActive())return;
       if(segment.ready||segment.transcribed)continue;
-      if(!isPrivateVoiceRecordingUri(segment.uri)){untrustedAudio=true;continue;}
+      if(!isPrivateVoiceRecordingUri(segment.uri,FileSystem.cacheDirectory,segment.mime)){untrustedAudio=true;continue;}
       try{
        const info=await FileSystem.getInfoAsync(segment.uri);
        if(!isActive())return;
@@ -128,8 +130,8 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
     if(!segment){if(active.current===id){active.current=null;chunkStartedAt.current=null;}return;}
     let next=base;
     if(startedAt===null){
-     if(!isPrivateVoiceRecordingUri(segment.uri))return;
-     const info=await FileSystem.getInfoAsync(segment.uri);if(info.exists)await removeFile(segment.uri);
+     if(!isPrivateVoiceRecordingUri(segment.uri,FileSystem.cacheDirectory,segment.mime))return;
+     const info=await FileSystem.getInfoAsync(segment.uri);if(info.exists)await removeFile(segment.uri,segment.mime);
      next=discardInterruptedVoiceSegment(base,id);
     }else{
      const info=await FileSystem.getInfoAsync(segment.uri);
@@ -158,7 +160,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
      const segment=draft.current.segments.find(s=>s.transcribed)??draft.current.segments.find(s=>s.ready)!;
      failedSegmentId=segment.id;
      if(segment.transcribed){
-      await removeFile(segment.uri);
+      await removeFile(segment.uri,segment.mime);
       if(!scopeIsCurrent(drainKey))return;
       await persist(removeVoiceSegment(draft.current,segment.id),drainKey);
       failedSegmentId=null;
@@ -166,7 +168,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
      }
      if(!consentRef.current)break;
      requestController=new AbortController();controller.current=requestController;
-     const result=await transcribeNativeRecording(token,patientId,segment.uri,segment.id,requestController.signal);
+     const result=await transcribeNativeRecording(token,patientId,segment.uri,segment.id,requestController.signal,segment.mime||'audio/mp4');
      if(!scopeIsCurrent(drainKey)||!mounted.current)return;
      const next=markVoiceSegmentTranscribed(draft.current,segment.id,result.transcript);
      await persist(next,drainKey);
@@ -174,7 +176,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
      setIndeterminateSegmentId(null);
      transcriptCallback.current(draft.current.transcript);
      failedSegmentId=null;
-     await removeFile(segment.uri);
+     await removeFile(segment.uri,segment.mime);
      if(!scopeIsCurrent(drainKey))return;
      await persist(removeVoiceSegment(draft.current,segment.id),drainKey);
     }
@@ -205,14 +207,14 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
  function discardInterruptedSegment(id:string){
   const segment=draft.current.segments.find(item=>item.id===id);
   if(!segment||segment.ready||segment.transcribed||occupied||disabled||!ready)return;
-  if(!isPrivateVoiceRecordingUri(segment.uri)){setStorageBlocked(true);setError('Ses yolu doğrulanamadı; dış konuma dokunulmadı.');return;}
+  if(!isPrivateVoiceRecordingUri(segment.uri,FileSystem.cacheDirectory,segment.mime)){setStorageBlocked(true);setError('Ses yolu doğrulanamadı; dış konuma dokunulmadı.');return;}
   Alert.alert('Yarım kalan ses bölümü kaldırılsın mı?','Yalnızca bu kesintiye uğramış ses dosyası kaldırılır; önceki konuşma metni korunur.',[
    {text:'Vazgeç',style:'cancel'},
    {text:'Ses bölümünü kaldır',style:'destructive',onPress:()=>void(async()=>{
     const info=await FileSystem.getInfoAsync(segment.uri);
-    if(info.exists)await removeFile(segment.uri);
+    if(info.exists)await removeFile(segment.uri,segment.mime);
     await persist(discardInterruptedVoiceSegment(draft.current,id));
-    const hasUntrusted=draft.current.segments.some(item=>!isPrivateVoiceRecordingUri(item.uri));
+    const hasUntrusted=draft.current.segments.some(item=>!isPrivateVoiceRecordingUri(item.uri,FileSystem.cacheDirectory,item.mime));
     const hasCleanupPending=draft.current.segments.some(item=>item.transcribed);
     if(!hasUntrusted&&!hasCleanupPending)setStorageBlocked(false);
     setError('');
@@ -240,6 +242,49 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
     })().catch(()=>setError('Yeni deneme anahtarı güvenli biçimde kaydedilemedi. Yerel ses korunuyor.'))}
    ]
   );
+ }
+ async function importAudioFile(){
+  if(gate.current||occupied||disabled||!ready||!consentRef.current||draft.current.ended)return;
+  if(draft.current.segments.length>=5){setError('Bekleyen sesler işleniyor. Önce mevcut bölümü yazıya çevirin.');return;}
+  gate.current=true;setWorking(true);setError('');
+  let copiedUri:string|null=null,copiedMime:string|undefined;
+  try{
+   const selection=await DocumentPicker.getDocumentAsync({
+    type:['audio/mpeg','audio/wav','audio/webm','audio/ogg','audio/mp4'],
+    copyToCacheDirectory:true,multiple:false
+   });
+   if(selection.canceled||!selection.assets?.length)return;
+   if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi; dosya gönderilmedi.');
+   const asset=selection.assets[0],resolved=resolveVoiceAudioAsset(asset.mimeType,asset.name);
+   const sourceInfo=await FileSystem.getInfoAsync(asset.uri);
+   validateVoiceAudioBytes(sourceInfo.size);
+   const cacheDirectory=FileSystem.cacheDirectory;
+   if(typeof cacheDirectory!=='string'||!cacheDirectory.startsWith('file:///')||!cacheDirectory.endsWith('/'))
+    throw Error('Uygulamanın özel ses önbelleği kullanılamıyor.');
+   const id=Crypto.randomUUID(),uri=cacheDirectory+'voice-import-'+id+'.'+resolved.extension;
+   await FileSystem.copyAsync({from:asset.uri,to:uri});
+   copiedUri=uri;copiedMime=resolved.mime;
+   if(!isPrivateVoiceRecordingUri(uri,cacheDirectory,resolved.mime))
+    throw Error('Seçilen ses dosyası uygulamanın özel önbelleğine güvenli biçimde kopyalanamadı.');
+   const copiedInfo=await FileSystem.getInfoAsync(uri);
+   validateVoiceAudioBytes(copiedInfo.size);
+   const duration=await readPrivateVoiceAudioDuration(uri,resolved.mime);
+   validateVoiceAudioDuration(duration);
+   if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi; dosya gönderilmedi.');
+   if(!scopeIsCurrent(key))throw Error('Hasta veya hesap değişti; ses dosyası aktarılmadı.');
+   const segment={id,uri,ready:true,mime:resolved.mime};
+   const saved=await persist({...draft.current,audioStarted:true,ended:false,segments:[...draft.current.segments,segment]});
+   if(!saved)throw Error('Ses taslağı güvenli biçimde kaydedilemedi; dosya gönderilmedi.');
+   copiedUri=null;
+   setError('Ses dosyası güvenli taslağa eklendi. Yazıya çevriliyor…');
+   await drain();
+  }catch(error){
+   if(copiedUri)await removeFile(copiedUri,copiedMime).catch(()=>{});
+   if(mounted.current)setError(error instanceof Error?error.message:'Ses dosyası işlenemedi. Yerel kopya korunuyor.');
+  }finally{
+   gate.current=false;
+   if(mounted.current)setWorking(false);
+  }
  }
  async function startChunk(){
   if(!wanted.current||!mounted.current||!focus.current)return;
@@ -290,7 +335,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
   if(unexpectedStop){wanted.current=false;void pause(true);setError('Mikrofon kaydı kesildi. Ses dosyasını ve mikrofon bağlantısını kontrol edin.');}
   if(status.mediaServicesDidReset&&wanted.current){wanted.current=false;void pause(true);}
  },[status.isRecording,status.mediaServicesDidReset]);
- async function clear(){if(occupied||disabled)return;try{const untrustedAudio=draft.current.segments.some(segment=>!isPrivateVoiceRecordingUri(segment.uri));for(const segment of draft.current.segments)if(isPrivateVoiceRecordingUri(segment.uri))await removeFile(segment.uri);await store.deleteItemAsync(key);draft.current=newVoiceDraft(userId,patientId,Date.now(),Crypto.randomUUID());setView(draft.current);setElapsedMs(0);setStorageBlocked(false);setIndeterminateSegmentId(null);transcriptCallback.current('');setError(untrustedAudio?'Taslak temizlendi. Uygulama önbelleği dışında kalan doğrulanamayan dosyaya dokunulmadı.':'')}catch{setError('Taslak tamamen temizlenemedi. Yeniden deneyin.')}}
+ async function clear(){if(occupied||disabled)return;try{const untrustedAudio=draft.current.segments.some(segment=>!isPrivateVoiceRecordingUri(segment.uri,FileSystem.cacheDirectory,segment.mime));for(const segment of draft.current.segments)if(isPrivateVoiceRecordingUri(segment.uri,FileSystem.cacheDirectory,segment.mime))await removeFile(segment.uri,segment.mime);await store.deleteItemAsync(key);draft.current=newVoiceDraft(userId,patientId,Date.now(),Crypto.randomUUID());setView(draft.current);setElapsedMs(0);setStorageBlocked(false);setIndeterminateSegmentId(null);transcriptCallback.current('');setError(untrustedAudio?'Taslak temizlendi. Uygulama önbelleği dışında kalan doğrulanamayan dosyaya dokunulmadı.':'')}catch{setError('Taslak tamamen temizlenemedi. Yeniden deneyin.')}}
  const button=(label:string,action:()=>void,blocked=false,primary=false)=><Pressable accessibilityRole="button" disabled={blocked||storageBlocked||disabled||!consent||!ready} onPress={action} style={[s.button,primary&&s.primaryButton,(blocked||storageBlocked||disabled||!consent||!ready)&&s.disabledButton]}><Text style={[s.action,primary&&s.primaryAction]}>{label}</Text></Pressable>;
  const phaseLabel=recording?'Dinleniyor':transcribing?'Konuşma yazıya çevriliyor':working?'İşlem sürüyor':view.ended?'Muayene tamamlandı':view.audioStarted?'Duraklatıldı':'Başlamaya hazır';
  const transcriptPreview=value.trim()?value.trim().split('\n').slice(-3).join('\n').slice(-600):'';
@@ -314,8 +359,10 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    {active.current&&stopped.current&&!recording&&button('Ses bölümünü güvenle tamamla',()=>void(async()=>{await cut();await drain()})().catch(error=>setError(error instanceof Error?error.message:'Ses bölümü tamamlanamadı; yerel kayıt korundu.')),occupied)}
    {button('Muayeneyi bitir',()=>void finish(),working||view.ended||!recording&&!view.transcript&&!view.segments.length,true)}
   </View>
+  {button('Ses dosyası seç',()=>void importAudioFile(),occupied||view.ended||view.segments.length>0)}
+  <Text style={s.helper}>Web ile aynı sınırlar: MP3, WAV, WebM, OGG veya M4A · en fazla 90 saniye ve 8 MB. Ses yalnızca yazıya çevrilir; klinik değerlendirme “Muayeneyi bitir” işleminde başlar.</Text>
   {view.segments.some(segment=>segment.ready)&&!recording&&button('Bekleyen sesleri yazıya çevir',()=>{setError('');void(async()=>{await persist({...draft.current,segments:draft.current.segments.map(s=>s.transcribed?s:{...s,ready:true})});await drain()})().catch(()=>setError('Ses taslağı güncellenemedi.'))},occupied)}
-  {view.segments.filter(segment=>!segment.ready&&!segment.transcribed&&isPrivateVoiceRecordingUri(segment.uri)).map(segment=><Pressable key={segment.id} accessibilityRole="button" disabled={occupied||disabled||!ready} onPress={()=>discardInterruptedSegment(segment.id)} style={[s.cleanupButton,(occupied||disabled||!ready)&&s.disabledButton]}><Text style={s.cleanupText}>Yarım kalan ses bölümünü kaldır</Text></Pressable>)}
+  {view.segments.filter(segment=>!segment.ready&&!segment.transcribed&&isPrivateVoiceRecordingUri(segment.uri,FileSystem.cacheDirectory,segment.mime)).map(segment=><Pressable key={segment.id} accessibilityRole="button" disabled={occupied||disabled||!ready} onPress={()=>discardInterruptedSegment(segment.id)} style={[s.cleanupButton,(occupied||disabled||!ready)&&s.disabledButton]}><Text style={s.cleanupText}>Yarım kalan ses bölümünü kaldır</Text></Pressable>)}
   {view.segments.some(segment=>segment.transcribed)&&<Pressable accessibilityRole="button" disabled={occupied||disabled||!ready} onPress={()=>void cleanupTranscribedSegments().then(()=>setError('')).catch(()=>{setStorageBlocked(true);setError('Geçici ses dosyası hâlâ silinemedi. Metin korundu; temizliği yeniden deneyin.')})} style={[s.cleanupButton,(occupied||disabled||!ready)&&s.disabledButton]}><Text style={s.cleanupText}>Geçici ses dosyasını temizlemeyi yeniden dene</Text></Pressable>}
   {indeterminateSegmentId&&<View style={s.retryNotice}><Text style={s.retryText}>Önceki isteğin sonucu kesinleşmedi. Aynı anahtarla ikinci AI çağrısı yapılmaz. Yeni deneme ayrı bir Gemini çağrısı oluşturabilir.</Text>{button('Yeni anahtarla yeniden dene',retryWithNewKey,occupied)}</View>}
   <Pressable accessibilityRole="button" disabled={occupied||disabled||!ready} onPress={()=>Alert.alert('Muayene taslağı silinsin mi?','Bu cihazdaki metin ve bekleyen sesler temizlenir. Hasta dosyasına kaydedilen onaylı bilgiler bu işlemle silinmez.',[{text:'Vazgeç',style:'cancel'},{text:'Sil',style:'destructive',onPress:()=>void clear()}])} style={s.clearButton}><Text style={s.clearText}>Taslağı ve yerel sesleri sil</Text></Pressable>
