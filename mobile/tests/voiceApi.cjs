@@ -459,7 +459,7 @@ test('native voice history rejects foreign field names, missing provenance and i
 
 test('approved voice history uses the authenticated patient-scoped read endpoint',async()=>{
  const original=global.fetch;let call;
- const body={ok:true,revision:'a'.repeat(64),notice:'Önceki hekim onaylı beyanlar',fields:{allergies:{value:'Alerjim yok',quote:'Alerjim yok',analysis_id:21}}};
+ const body={ok:true,revision:'a'.repeat(64),notice:'Önceki hekim onaylı beyanlar',fields:{allergies:{value:'Alerjim yok',quote:'',analysis_id:21}}};
  global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify(body))};
  try{
   const result=await api.getVoiceHistory('secret-token',12);
