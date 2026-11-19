@@ -394,6 +394,8 @@ test('Dental Flow gates old feed, comments, images and edits while a new session
  const flow=source.slice(source.indexOf('export function DentalFlow('));
  assert.match(flow,/const sessionKey = socialSessionKey\(user\.id, sessionEpoch\)/);
  assert.match(flow,/const sessionReady = isSocialSessionCurrent\(readySession, \{ userId: user\.id, token \}\)/);
+ assert.match(flow,/const observedSession = useRef\(\{ userId: user\.id, token \}\)/);
+ assert.match(flow,/if \(isSocialSessionCurrent\(observedSession\.current, nextSession\)\) return/);
  assert.match(flow,/setSessionEpoch\(\(value\) => value \+ 1\)/);
  assert.match(flow,/usePagedRecords<api\.SocialPost>\(\s*`\$\{sessionKey\}/);
  assert.match(flow,/const sessionReady = isSocialSessionCurrent\(readySession, \{ userId: user\.id, token \}\)/);
