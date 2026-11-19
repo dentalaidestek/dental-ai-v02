@@ -4,11 +4,11 @@ export type SocialSessionIdentity = {
 };
 
 /**
- * Opaque in-memory partition for session-owned feed state.
- * The bearer value is never persisted, rendered, logged or sent through this key.
+ * A non-secret in-memory generation key for account-owned UI and page state.
+ * The bearer token is compared separately and is never embedded in React keys.
  */
-export function socialSessionKey(userId: number, token: string): string {
-  return `${userId}:${token.length}:${token}`;
+export function socialSessionKey(userId: number, generation: number): string {
+  return `${userId}:${generation}`;
 }
 
 export function isSocialSessionCurrent(
