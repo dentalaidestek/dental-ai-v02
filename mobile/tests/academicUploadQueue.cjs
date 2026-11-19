@@ -119,3 +119,11 @@ test('fresh Academic batches avoid a redundant receipt read while recovery alway
  assert.ok(process.includes('reconcileFirst=true'));
  assert.ok(process.includes('if(reconcileFirst&&await reconcileUpload(pending))'));
 });
+
+
+test('queue rejects entries that cannot be serialized and preserves a more precise legacy size',()=>{
+ assert.throws(()=>createAcademicUploadQueue(1,3,[undefined]),/serileştirilemedi/);
+ const unknownSize={...intent(1),size:null},knownSize=intent(1),queue=createAcademicUploadQueue(1,3,[unknownSize]);
+ const merged=mergeAcademicUploadIntent(queue,knownSize);
+ assert.equal(merged.items[0].size,100);
+});
