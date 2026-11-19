@@ -51,6 +51,7 @@ Additional regressions cover:
 - A late approved-history response from a previous account when the patient
   numeric ID is unchanged.
 - Refresh only for the matching patient's `PATIENT_UPDATED` event.
+- Retry a failed source-backed final review without repeating completed extraction chunks.
 - Rejection of a history response that attempts to include transcript text.
 
 ## CI findings and limits
