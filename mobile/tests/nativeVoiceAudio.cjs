@@ -6,6 +6,7 @@ require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f
 }).outputText,f);
 
 let responseBody={ok:true,revision:'b'.repeat(64),transcript:'Soğukla kısa süreli ağrı.',replayed:false};
+let audioStatus={isLoaded:true,duration:45,error:null},playerRemovals=0;
 let captured=null,uploads=0,fileReads=0,info={exists:true,size:1024};
 const fakeFileSystem={
  cacheDirectory:'file:///cache/',
@@ -19,6 +20,7 @@ const fakeFileSystem={
 const originalLoad=Module._load;
 Module._load=function(request,parent,isMain){
  if(request==='expo-file-system/legacy')return fakeFileSystem;
+ if(request==='expo-audio')return {createAudioPlayer:()=>({isLoaded:audioStatus.isLoaded,duration:audioStatus.duration,currentStatus:audioStatus,addListener:(event,callback)=>{queueMicrotask(()=>callback(audioStatus));return {remove:()=>{}}},remove:()=>{playerRemovals++}})};
  if(request==='./api'&&parent?.filename.endsWith('nativeVoiceAudio.ts')){
   return {ApiError:class ApiError extends Error{constructor(status,message){super(message);this.status=status;this.name='ApiError'}}};
  }
@@ -27,6 +29,28 @@ Module._load=function(request,parent,isMain){
 };
 const api=require('../src/nativeVoiceAudio.ts');
 const REQUEST='9d1b45a0-3d25-4d2e-aaf2-74f19c81d89e';
+
+test('native audio import duration inspection is metadata-only and always releases its player',async()=>{
+ audioStatus={isLoaded:true,duration:45,error:null};playerRemovals=0;
+ const duration=await api.readPrivateVoiceAudioDuration('file:///cache/voice-import-123.mp3','audio/mpeg');
+ assert.equal(duration,45);assert.equal(playerRemovals,1);
+ audioStatus={isLoaded:true,duration:91,error:null};playerRemovals=0;
+ await assert.rejects(()=>api.readPrivateVoiceAudioDuration('file:///cache/voice-import-123.mp3','audio/mpeg'),/90 saniye/);
+ assert.equal(playerRemovals,1);
+});
+
+test('native ASR upload preserves imported MIME and requires a matching private-cache extension',async()=>{
+ responseBody={ok:true,revision:'b'.repeat(64),transcript:'Hasta konuşması.',replayed:false};
+ captured=null;
+ const result=await api.transcribeNativeRecording('token',42,'file:///cache/voice-import-123.mp3',REQUEST,undefined,'audio/mpeg');
+ assert.equal(result.transcript,'Hasta konuşması.');
+ assert.equal(captured.options.headers['Content-Type'],'audio/mpeg');
+ assert.equal(api.isPrivateVoiceRecordingUri('file:///cache/voice-import-123.mp3','file:///cache/','audio/mpeg'),true);
+ assert.equal(api.isPrivateVoiceRecordingUri('file:///cache/voice-import-123.mp3','file:///cache/','audio/wav'),false);
+ const before=uploads;
+ await assert.rejects(()=>api.transcribeNativeRecording('token',42,'file:///cache/voice-import-123.mp3',REQUEST,undefined,'audio/wav'),/özel önbelleğinde/);
+ assert.equal(uploads,before);
+});
 
 test('native ASR upload binds the persisted segment key to the patient-scoped binary request',async()=>{
  responseBody={ok:true,revision:'b'.repeat(64),transcript:'Soğukla kısa süreli ağrı.',replayed:true};
