@@ -25,7 +25,7 @@ Continues PR #257 / issue #258 on `feature/mobile-web-parity-20261110`, based on
 | Copy | The web's selected-day rolling week choices, up to seven target dates; existing copy handler preserves duration and skips duplicate title/start records |
 | Patient → appointment | Reuses the same full editor through `NativePatientAppointment` instead of maintaining a reduced separate form |
 
-The new range endpoint returns only the current user's records/patients, distinct occurrence keys, calendar counts and a selected-day page. Stable `(start, event id)` ordering prevents nondeterministic ties within offset pages. It does not create a database snapshot across concurrent requests.
+The new range endpoint returns only the current user's records/patients, distinct occurrence keys, calendar counts and a selected-day page. Stable `(start, event id)` ordering is paired with a 15-minute, authenticated-session HMAC cursor; legacy offset pagination remains a compatibility fallback. The cursor watermark rejects owner schedule mutations between pages, but it is not a long-lived MVCC snapshot across transactions.
 
 The shared editor validates real dates, end ordering, recurrence end and patient identifiers. Ref locks prevent repeated taps. A network/receipt failure after submission freezes resubmission and directs the user to inspect the calendar. Loading errors cannot save a blank replacement event, and cancelling an initial read invalidates late responses. Account/range changes hide previous data before effects complete. Native navigation removal and Android back are guarded while a write is pending.
 
@@ -46,6 +46,16 @@ This is advisory: the check and write are separate requests, and the web creator
 
 ## Remaining acceptance
 
-No authenticated production/device, actual reminder delivery, PostgreSQL concurrency/load, OS keyboard/back/background interruption, pixel-equality or store acceptance. Range expansion still uses the existing web query/occurrence engine; response pagination does not prove large-history query performance or 60,000-user capacity. Offset pages and mutation receipts are not durable snapshot/idempotency contracts.
+No authenticated production/device, actual reminder delivery, PostgreSQL concurrency/load, OS keyboard/back/background interruption, pixel-equality or store acceptance. Range expansion still uses the existing web query/occurrence engine; response pagination does not prove large-history query performance or 60,000-user capacity. Native create requests use the durable owner/request and payload fingerprints stored on ScheduleEvent: same-payload replay returns the original event, changed-payload reuse returns 409, and a previously deleted receipt returns 410. Cursor pages are short-lived and session-bound; legacy offset pages remain non-snapshot compatibility reads.
 
 Real Android/iOS testing and CI remain release gates. New backend endpoints are not deployed; the installed APK is unchanged. The original P0–P3 scope remains in `mobile-web-parity-tracker-20261114.md`; no whole-module completion is asserted before those acceptance criteria are met.
+
+
+
+## 2026-11-19 — Authenticated calendar cursor integrity
+
+A source review of app/mobile_program_api.py found that the prior base64 JSON cursor contained an account tag but no MAC. Queries remained owner-scoped, so this was not a cross-account read path; however, a client could rewrite its own snapshot, after or final event ID and cause skipped/duplicated pages.
+
+The cursor is now version 2 and carries a 32-byte HMAC-SHA256 over the canonical JSON payload. The MAC key is domain-separated from the authenticated opaque bearer session token. The range endpoint obtains that same token through _mobile_access_token; it is not copied into the cursor or persisted. A cursor is rejected with 422 after payload tampering, session-token rotation, account/date/view mismatch or invalid structure. The existing 15-minute expiry remains 410, and owner schedule changes during pagination remain 409. The response continues to set private, no-store and Vary: Authorization.
+
+Added backend regressions for token-key derivation, session binding, signature tampering, future/expired snapshots, and the authenticated range endpoint's cache headers and tamper rejection. These tests are committed but were not run in the connector-only session. No schema migration, dependency, patient-data or reminder behavior changed.

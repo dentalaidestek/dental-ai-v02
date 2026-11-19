@@ -892,3 +892,12 @@ Changed `NativeAnalysisUpload` to reconcile the authenticated owner/patient-scop
 Added regressions to `mobile/tests/analysisUpload.cjs` for already-deleted encrypted local files with a valid server receipt and for transient receipt lookup failure without local cleanup. The tests are part of the existing beta suite but were not executed in this connector-only session. Full typecheck, renderer suite, Expo exports, Gradle, Python security tests and physical-device acceptance remain open.
 
 Commits in this follow-up: `074bd54` (crash-window regression), `454570f` (receipt-first recovery), `1ab9bbb` (offline receipt lookup regression), `900947d` (technical evidence), plus this tracker update. No main merge, production deploy, migration, or patient record mutation.
+
+
+## 2026-11-19 — Program cursor integrity hardening
+
+Re-read the web Program page/form and the native range, create/edit, recurrence, reminder and copy adapters. Found that the 50-row cursor was base64 JSON with only a deterministic account tag; although all SQL remained owner-scoped, the client could rewrite its own watermark and last-item tuple to skip or repeat pages.
+
+Advanced the cursor to v2 with HMAC-SHA256 over canonical JSON, keyed by a domain-separated derivation of the authenticated bearer session token. The /program range route now obtains the same token used by _mobile_user, verifies the MAC before parsing the payload, and retains the 15-minute expiry, 409 mutation invalidation, owner/view/day checks and private no-store headers. Session rotation intentionally invalidates old cursors; the native screen can recover through its first-page refresh.
+
+Added backend tests for key derivation, token binding, tampering, expiry/future timestamps and authenticated endpoint cache/tamper behavior. The tests are committed but not executed in this connector-only run. Full pytest, Android typecheck, component suite, APK/device and 60k-user load acceptance remain open. No schema or dependency change, main merge, deploy or patient record mutation.
