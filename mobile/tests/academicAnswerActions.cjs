@@ -7,6 +7,11 @@ function loadHelper(){
  assert.deepEqual(errors,[],file);
  const exports={};vm.runInNewContext(result.outputText,{exports});return exports;
 }
+function loadAcademicApi(request){
+ const file='../src/academicApi.ts',result=compile(file),errors=(result.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error);
+ assert.deepEqual(errors,[],file);
+ const exports={};vm.runInNewContext(result.outputText,{exports,require:name=>name==='./api'?{request}:{}});return exports;
+}
 function loadComponent(feedback,share){
  const file='../src/NativeAcademicAnswerActions.tsx',result=compile(file),errors=(result.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error);
  assert.deepEqual(errors,[],file);
@@ -91,6 +96,17 @@ test('disabled Academic answer actions cannot send feedback or open sharing',asy
  assert.equal(press(tree,'Yanıtı paylaş').props.disabled,true);
  await renderer.act(async()=>tree.unmount());
  assert.equal(calls,0);assert.equal(shares,0);
+});
+
+test('Academic feedback API checks the private route and rejects malformed acknowledgements',async()=>{
+ const calls=[],a=loadAcademicApi(async(...args)=>{calls.push(args);return{ok:true,vote:'like'}});
+ const result=await a.feedback('private-token',3,12,'like');
+ assert.deepEqual(result,{ok:true,vote:'like'});
+ assert.equal(calls[0][0],'/academic/courses/3/messages/12/feedback');
+ assert.equal(calls[0][1],'private-token');
+ assert.deepEqual(calls[0][2],{method:'POST',body:'{"vote":"like"}'});
+ await assert.rejects(loadAcademicApi(async()=>({ok:false,vote:'like'})).feedback('token',3,12,'like'));
+ await assert.rejects(loadAcademicApi(async()=>({ok:true,vote:'unknown'})).feedback('token',3,12,'like'));
 });
 
 test('Academic answer action files have no TypeScript parser diagnostics',()=>{
