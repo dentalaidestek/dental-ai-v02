@@ -27,6 +27,11 @@ Added `mobile/tests/programSwipe.cjs` for direction, exact threshold, diagonal r
 
 ## Validation limits
 
-The source and package-script changes are committed. The test was not executed in this environment because no working checkout/dependency installation or GitHub Actions runner is available. The latest branch head previously had no commit statuses or workflow runs; existing hosted jobs failed before steps and their logs returned `BlobNotFound 404`. Do not treat this as a passing Android typecheck or CI run.
+The helper and regression test were materialized in an isolated Node harness from the committed source:
+- `node --test mobile/tests/programSwipe.cjs`: 2 passed, 0 failed.
+- `tsc --noEmit --strict --target ES2020 mobile/src/programSwipe.ts`: passed.
+- `mobile/package.json` parsed successfully and the new test is present in `test:beta`.
+
+This validates the pure gesture rule only. The complete mobile `npm test` / project `tsc --noEmit`, Android Gradle/APK/device validation and backend security pytest were not executed. The latest branch head has no commit statuses or associated workflow runs; previous hosted jobs failed before usable steps/logs and their log downloads returned `BlobNotFound 404`. Do not treat the isolated helper check as a passing Android typecheck or CI run.
 
 No main merge, production deploy, patient-data mutation or workflow dispatch was performed.
