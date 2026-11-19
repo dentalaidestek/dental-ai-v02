@@ -1,4 +1,4 @@
-import {ANALYSIS_MAX_BATCH_BYTES,ANALYSIS_MAX_FILE_BYTES,ANALYSIS_MAX_IMAGES,MIB} from './uploadLimits';
+import {ANALYSIS_MAX_BATCH_BYTES,ANALYSIS_MAX_IMAGE_BYTES,ANALYSIS_MAX_IMAGES,MIB} from './uploadLimits';
 
 export type AnalysisComposerStepKey='tooth'|'clinical'|'images';
 export type AnalysisComposerStep={
@@ -15,7 +15,7 @@ const nonNegativeCount=(value:number)=>Number.isSafeInteger(value)&&value>0?valu
 const mibLabel=(bytes:number)=>`${Math.round(bytes/MIB)} MiB`;
 
 export function analysisComposerImageHelp(hasSavedMedia:boolean):string{
- const perFile=mibLabel(ANALYSIS_MAX_FILE_BYTES);
+ const perFile=mibLabel(ANALYSIS_MAX_IMAGE_BYTES);
  const batch=mibLabel(ANALYSIS_MAX_BATCH_BYTES);
  return hasSavedMedia
   ?`Kayıtlı görüntüler dahil toplam en fazla ${ANALYSIS_MAX_IMAGES} görüntü kullanılabilir. Yeni dosya başına ${perFile}, yeni dosyaların toplamı ${batch} sınırı vardır.`
