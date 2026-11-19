@@ -415,14 +415,6 @@ def mobile_analysis(analysis_id: int, user: User = Depends(_mobile_user)):
             .order_by(ImageAsset.id)
         ).all()
 
-        result = None
-        if analysis.result_path:
-            try:
-                result_file = storage_ensure_local(analysis.result_path)
-                result = json.loads(result_file.read_text(encoding="utf-8")).get("ai_result")
-            except (OSError, ValueError, TypeError):
-                result = None
-
         job = _latest_work(session, "ANALYSIS", analysis.id)
         return {
             "analysis": {
@@ -454,7 +446,6 @@ def mobile_analysis(analysis_id: int, user: User = Depends(_mobile_user)):
                 }
                 if job else None
             ),
-            "ai_result": result,
         }
 
 

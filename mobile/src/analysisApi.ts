@@ -25,7 +25,6 @@ export type MobileAnalysis={
   patient:AnalysisPatientSummary;
   assets:Array<{id:number;original_filename:string;image_type:string;has_vision:boolean}>;
   job?:MobileAnalysisJob|null;
-  ai_result?:any|null;
 };
 export function analysisPatientLabel(patient:Pick<Patient,'id'|'anonymous_id'|'first_name'|'last_name'>):string{
  const name=[patient.first_name,patient.last_name].map(value=>typeof value==='string'?value.trim():'').filter(Boolean).join(' ');
@@ -116,7 +115,7 @@ export async function createAnalysis(token:string,payload:{patientId:number;toot
 export async function getAnalysis(token:string,id:number){
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");
  const result=await call<MobileAnalysis>("/analyses/"+id,token);
- const topFields=new Set(['analysis','patient','assets','job','ai_result']);
+ const topFields=new Set(['analysis','patient','assets','job']);
  if(!result||typeof result!=='object'||Array.isArray(result)||Object.keys(result).some(key=>!topFields.has(key))||
     !validAnalysisEnvelope(result.analysis,id)||!validAnalysisPatient(result.patient,result.analysis.patient_id)||
     !Array.isArray(result.assets)||result.assets.length>ANALYSIS_MAX_IMAGES||result.assets.some(asset=>!validAnalysisAsset(asset))||
