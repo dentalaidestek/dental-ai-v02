@@ -53,6 +53,20 @@ test('image count distinguishes saved archive references from new files', () => 
   assert.equal(presentation.analysisComposerImageCountLabel(-2, 0), '0 / 4 görüntü seçildi');
 });
 
+test('native analysis composer TSX transpiles without syntax diagnostics', () => {
+  const output = ts.transpileModule(component, {
+    fileName: 'NativeAnalysisUpload.tsx',
+    reportDiagnostics: true,
+    compilerOptions: {
+      jsx: ts.JsxEmit.React,
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+    },
+  });
+  const errors = (output.diagnostics || []).filter(item => item.category === ts.DiagnosticCategory.Error);
+  assert.deepEqual(errors.map(item => ts.flattenDiagnosticMessageText(item.messageText, '\\n')), []);
+});
+
 test('native composer renders numbered steps, web safety guidance and primary action', () => {
   assert.match(component, /analysisComposerSteps\(savedIds\.length\)/);
   assert.match(component, /ANALYSIS_COMPOSER_SAFETY_NOTE/);
