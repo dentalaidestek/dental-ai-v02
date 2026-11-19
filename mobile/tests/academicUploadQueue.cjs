@@ -108,3 +108,14 @@ test('Academic upload queue helper and native screen have no TypeScript parser d
   assert.deepEqual(errors,[],file+': '+errors.join('; '));
  }
 });
+
+
+test('fresh Academic batches avoid a redundant receipt read while recovery always reconciles first',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../src/NativeAcademic.tsx'),'utf8');
+ const pick=source.slice(source.indexOf('async function pick()'),source.indexOf('const disabled='));
+ const process=source.slice(source.indexOf('async function processUploadQueue('),source.indexOf('async function retryUpload('));
+ assert.ok(pick.includes('isPrivateAcademicCacheUri(asset.uri)'));
+ assert.ok(pick.includes('await processUploadQueue(queue.items,false)'));
+ assert.ok(process.includes('reconcileFirst=true'));
+ assert.ok(process.includes('if(reconcileFirst&&await reconcileUpload(pending))'));
+});
