@@ -185,15 +185,16 @@ export async function finalizeVoice(token:string,patientId:number,payload:{conte
 
 const AUDIO_MIMES=new Set(["audio/webm","audio/ogg","audio/mp4","audio/mpeg","audio/wav"]);
 const MAX_AUDIO_BYTES=8*1024*1024;
-export async function transcribeVoiceAudio(token:string,patientId:number,audio:Blob,mime:string):Promise<{ok:true;revision:string;transcript:string}>{
+export async function transcribeVoiceAudio(token:string,patientId:number,audio:Blob,mime:string,requestKey:string):Promise<{ok:true;revision:string;transcript:string}>{
  if(typeof mime!=="string")throw Error("Ses biçimi desteklenmiyor. Geçerli bir ses dosyası seçin.");
  const contentType=mime.split(";")[0].trim().toLowerCase();
  if(!AUDIO_MIMES.has(contentType))throw Error("Ses biçimi desteklenmiyor. WebM, OGG, MP4, MP3 veya WAV kaydı kullanın.");
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Ses kaydı için geçerli bir hasta seçin.");
+ if(typeof requestKey!=="string"||!/^[A-Za-z0-9_-]{16,96}$/.test(requestKey))throw Error("Ses bölümü işlem anahtarı geçersiz; yerel kaydı koruyun.");
  if(!audio||!Number.isFinite(audio.size)||audio.size<100||audio.size>MAX_AUDIO_BYTES)throw Error("Ses kaydı 100 bayttan büyük ve en fazla 8 MB olmalıdır.");
  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),150000);
  try{
-  const response=await fetch(BASE+`/patients/${patientId}/voice-exam/audio`,{method:"POST",headers:{"Content-Type":contentType,"X-Voice-Consent":"yes",Authorization:"Bearer "+token},body:audio,signal:controller.signal});
+  const response=await fetch(BASE+`/patients/${patientId}/voice-exam/audio`,{method:"POST",headers:{"Content-Type":contentType,"X-Voice-Consent":"yes","X-Voice-Request-Key":requestKey,"Cache-Control":"no-store",Authorization:"Bearer "+token},body:audio,signal:controller.signal});
   if(response.status===401)await revalidateSession(token);
   if(response.status===429||response.status>=500)throw Error("Ses yazıya çevrilemedi; sunucu meşgul. Yerel kaydı silmeden tekrar deneyin.");
   const raw=await response.text();let body:Record<string,unknown>;
