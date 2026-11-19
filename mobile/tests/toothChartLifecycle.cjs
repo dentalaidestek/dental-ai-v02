@@ -447,3 +447,66 @@ test('native tooth and surface writes carry the exact loaded observation revisio
  assert.ok(api.includes('payload.expected_revision!==null&&!/^[a-f0-9]{64}$/.test'));
  assert.ok(api.includes('surface_revisions?:Record<string,string|null>'));
 });
+
+test('tooth chart loads the complete treatment history in bounded pages',async()=>{
+ focused=true;lastEvent=null;appListeners=[];const calls=[];
+ const detail=patient(8);detail.teeth.push({id:2,tooth_number:'36',status:'CARIES',note:''});
+ const item=(id,name)=>({id,tooth_number:'36',treatment_name:name,treatment_date:'2026-11-18',material:'',doctor_note:'',result:'',edit_revision:'a'.repeat(64),created_at:'2026-11-18T10:00:00'});
+ const cursor='A'.repeat(32);
+ const Chart=chartComponent({
+  getPatient:async()=>detail,
+  getToothChartFocus:async()=>null,
+  getToothTreatments:async(_token,patientId,tooth,c)=>{calls.push({patientId,tooth,cursor:c});return c
+   ?{items:[item(2,'Older crown treatment')],next_cursor:null}
+   :{items:[item(1,'Recent filling treatment')],next_cursor:cursor};}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush();await flush()});
+ const tooth=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş 36, Çürük');
+ assert.ok(tooth);
+ await renderer.act(async()=>tooth.props.onPress());
+ const tab=()=>tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children)==='Tedavi Geçmişi'));
+ assert.ok(tab());
+ await renderer.act(async()=>tab().props.onPress());
+ await renderer.act(async()=>{await flush();await flush()});
+ assert.deepEqual(calls,[{patientId:8,tooth:'36',cursor:undefined}]);
+ assert.match(flat(tree.toJSON()),/Recent filling treatment/);
+ assert.doesNotMatch(flat(tree.toJSON()),/Older crown treatment/);
+ const more=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children)==='Daha eski tedavileri göster'));
+ assert.ok(more);
+ await renderer.act(async()=>more.props.onPress());
+ await renderer.act(async()=>{await flush();await flush()});
+ assert.deepEqual(calls[1],{patientId:8,tooth:'36',cursor});
+ assert.match(flat(tree.toJSON()),/Recent filling treatment/);
+ assert.match(flat(tree.toJSON()),/Older crown treatment/);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('a late tooth-history response cannot appear after switching to another FDI tooth',async()=>{
+ focused=true;lastEvent=null;appListeners=[];const old=deferred(),calls=[];
+ const detail=patient(8);detail.teeth.push(
+  {id:2,tooth_number:'36',status:'CARIES',note:''},
+  {id:3,tooth_number:'37',status:'HEALTHY',note:''}
+ );
+ const item=(id,tooth,name)=>({id,tooth_number:tooth,treatment_name:name,edit_revision:'b'.repeat(64),created_at:'2026-11-18T10:00:00'});
+ const Chart=chartComponent({
+  getPatient:async()=>detail,
+  getToothChartFocus:async()=>null,
+  getToothTreatments:async(_token,_patientId,tooth)=>{calls.push(tooth);return tooth==='36'?old.promise:{items:[item(2,'37','Only tooth 37 treatment')],next_cursor:null};}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush();await flush()});
+ const select=number=>tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş '+number+', '+(number==='36'?'Çürük':'Sağlıklı'));
+ await renderer.act(async()=>select('36').props.onPress());
+ const tab=()=>tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children)==='Tedavi Geçmişi'));
+ await renderer.act(async()=>tab().props.onPress());
+ await renderer.act(async()=>select('37').props.onPress());
+ await renderer.act(async()=>tab().props.onPress());
+ await renderer.act(async()=>{await flush();await flush()});
+ assert.deepEqual(calls,['36','37']);
+ await renderer.act(async()=>{old.resolve({items:[item(1,'36','Private tooth 36 treatment')],next_cursor:null});await flush();await flush()});
+ assert.match(flat(tree.toJSON()),/Only tooth 37 treatment/);
+ assert.doesNotMatch(flat(tree.toJSON()),/Private tooth 36 treatment/);
+ await renderer.act(async()=>tree.unmount());
+});
+
