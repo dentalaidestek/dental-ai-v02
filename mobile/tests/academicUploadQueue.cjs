@@ -98,3 +98,13 @@ test('native Academic recovery migrates the old single-file intent before deleti
  assert.ok(process.includes('await persistUploadQueue(remaining)'));
  assert.ok(process.includes('bound.content_sha256!'));
 });
+
+
+test('Academic upload queue helper and native screen have no TypeScript parser diagnostics',()=>{
+ for(const file of ['../src/academicUploadQueue.ts','../src/NativeAcademic.tsx']){
+  const source=fs.readFileSync(path.join(__dirname,file),'utf8');
+  const result=ts.transpileModule(source,{fileName:file,reportDiagnostics:true,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.React}});
+  const errors=(result.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error).map(d=>ts.flattenDiagnosticMessageText(d.messageText,' '));
+  assert.deepEqual(errors,[],file+': '+errors.join('; '));
+ }
+});
