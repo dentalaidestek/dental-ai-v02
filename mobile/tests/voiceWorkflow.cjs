@@ -31,6 +31,8 @@ test('native recorder mirrors web audio-file import through the private idempote
  for(const fragment of [
   'DocumentPicker.getDocumentAsync',
   'copyToCacheDirectory:true',
+  'FileSystem.deleteAsync(pickerUri,{idempotent:true})',
+  'pickerUri.startsWith(cacheDirectory)',
   'voice-import-',
   'readPrivateVoiceAudioDuration(uri,resolved.mime)',
   'segments:[...draft.current.segments,segment]',

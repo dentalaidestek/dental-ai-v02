@@ -247,7 +247,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
   if(gate.current||occupied||disabled||!ready||!consentRef.current||draft.current.ended)return;
   if(draft.current.segments.length>=5){setError('Bekleyen sesler işleniyor. Önce mevcut bölümü yazıya çevirin.');return;}
   gate.current=true;setWorking(true);setError('');
-  let copiedUri:string|null=null,copiedMime:string|undefined;
+  let copiedUri:string|null=null,copiedMime:string|undefined,pickerUri:string|null=null;
   try{
    const selection=await DocumentPicker.getDocumentAsync({
     type:['audio/mpeg','audio/wav','audio/webm','audio/ogg','audio/mp4'],
@@ -256,6 +256,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    if(selection.canceled||!selection.assets?.length)return;
    if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi; dosya gönderilmedi.');
    const asset=selection.assets[0],resolved=resolveVoiceAudioAsset(asset.mimeType,asset.name);
+   pickerUri=asset.uri;
    const sourceInfo=await FileSystem.getInfoAsync(asset.uri);
    validateVoiceAudioBytes(sourceInfo.size);
    const cacheDirectory=FileSystem.cacheDirectory;
@@ -268,6 +269,9 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
     throw Error('Seçilen ses dosyası uygulamanın özel önbelleğine güvenli biçimde kopyalanamadı.');
    const copiedInfo=await FileSystem.getInfoAsync(uri);
    validateVoiceAudioBytes(copiedInfo.size);
+   if(pickerUri&&pickerUri!==uri&&pickerUri.startsWith(cacheDirectory)){
+    await FileSystem.deleteAsync(pickerUri,{idempotent:true});pickerUri=null;
+   }
    const duration=await readPrivateVoiceAudioDuration(uri,resolved.mime);
    validateVoiceAudioDuration(duration);
    if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi; dosya gönderilmedi.');
@@ -282,6 +286,9 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    if(copiedUri)await removeFile(copiedUri,copiedMime).catch(()=>{});
    if(mounted.current)setError(error instanceof Error?error.message:'Ses dosyası işlenemedi. Yerel kopya korunuyor.');
   }finally{
+   const cacheDirectory=FileSystem.cacheDirectory;
+   if(pickerUri&&typeof cacheDirectory==='string'&&pickerUri.startsWith(cacheDirectory))
+    await FileSystem.deleteAsync(pickerUri,{idempotent:true}).catch(()=>{});
    gate.current=false;
    if(mounted.current)setWorking(false);
   }
