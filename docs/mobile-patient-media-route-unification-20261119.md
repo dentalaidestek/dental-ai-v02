@@ -31,7 +31,7 @@ This meant the same patient-media feature had two different implementations depe
 
 - `mobile/package.json` was parsed successfully after registering the test.
 - Source-level GitHub checks are performed on the final head; this is not a substitute for executing the Node/TypeScript suite.
-- No Actions run is associated with the current head at the time of this review. The most recent branch run inspected (run 44273348890, old code head 5b692f7) failed before any job step: `runner_id=0`, blank runner name, `steps=[]`. It did not execute npm, TypeScript or Gradle. This is an Actions runner-allocation failure signature, not evidence that source tests passed or failed.
+- No Actions run is associated with the current head at the time of this review. The most recent branch run inspected (run 44273348890, old code head 5b692f7) failed before any job step: `runner_id=0`, blank runner name, `steps=[]`. It did not execute npm, TypeScript or Gradle. This is an Actions runner-allocation failure signature, not evidence that source tests passed or failed. Current Android and security workflow definitions are `workflow_dispatch`-only (manual-only), so no automatic push run is expected; no workflow was dispatched in this pass.
 - Full `npm test`, Android export/build, physical-device checks and the broader 60,000-user load test remain unverified.
 
 No main merge, production deploy, migration, APK/IPA publication, or patient-record mutation was performed.
