@@ -577,7 +577,7 @@ def test_mobile_analysis_image_hydrates_r2_after_authorization_session_closes(tm
         tmp_path, monkeypatch, 'mobile-analysis-asset-download.db'
     )
     target = tmp_path / 'hydrated-analysis.jpg'
-    target.write_bytes(b'\\xff\\xd8\\xffsynthetic')
+    target.write_bytes(bytes([255, 216, 255]) + b'synthetic')
     loop_thread = threading.get_ident()
     storage_threads = []
 
@@ -608,7 +608,7 @@ def test_mobile_legacy_radiograph_hydrates_r2_after_authorization_session_closes
         tmp_path, monkeypatch, 'mobile-analysis-legacy-download.db'
     )
     target = tmp_path / 'hydrated-legacy-radiograph.jpg'
-    target.write_bytes(b'\\xff\\xd8\\xffsynthetic')
+    target.write_bytes(bytes([255, 216, 255]) + b'synthetic')
     loop_thread = threading.get_ident()
     storage_threads = []
 
