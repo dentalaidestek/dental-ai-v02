@@ -44,6 +44,12 @@ test('AI status and start use authorized mobile API routes',async()=>{
  }finally{global.fetch=original}
 });
 
+test('AI start accepts an already completed analysis without creating another job',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>new Response(JSON.stringify({ok:true,status:'AI_ANALYZED'}),{status:200});
+ try{const result=await api.startAnalysisAI('token',23);assert.equal(result.status,'AI_ANALYZED');assert.equal(result.job_id,undefined)}
+ finally{global.fetch=original}
+});
 test('AI start rejects a response without a durable job receipt',async()=>{
  const original=global.fetch;
  global.fetch=async()=>new Response(JSON.stringify({ok:true,status:'VISION_READY'}),{status:200});
