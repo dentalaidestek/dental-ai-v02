@@ -11,6 +11,8 @@ test('web-supported voice formats resolve to canonical MIME and private-cache ex
   ['audio/webm','exam.webm','audio/webm','webm'],
   ['audio/ogg','exam.ogg','audio/ogg','ogg'],
   ['audio/mp4','exam.m4a','audio/mp4','m4a'],
+  ['audio/x-m4a','exam.m4a','audio/mp4','m4a'],
+  ['audio/m4a','exam.m4a','audio/mp4','m4a'],
   ['application/octet-stream','exam.m4a','audio/mp4','m4a'],
   [null,'exam.mp4','audio/mp4','m4a']
  ];
@@ -23,6 +25,7 @@ test('voice import rejects MIME and extension mismatches and unsupported formats
  assert.throws(()=>api.resolveVoiceAudioAsset('audio/mpeg','exam.wav'),/eşleşmiyor/);
  assert.throws(()=>api.resolveVoiceAudioAsset('video/mp4','exam.m4a'),/MP3, WAV/);
  assert.throws(()=>api.resolveVoiceAudioAsset(null,'exam.aac'),/biçimi doğrulanamadı/);
+ assert.throws(()=>api.resolveVoiceAudioAsset('audio/aac','exam.aac'),/MP3, WAV/,'audio/* picker discovery must still reject unsupported AAC');
  assert.equal(api.isVoiceAudioExtensionForMime('mp3','audio/mpeg'),true);
  assert.equal(api.isVoiceAudioExtensionForMime('wav','audio/mpeg'),false);
 });
