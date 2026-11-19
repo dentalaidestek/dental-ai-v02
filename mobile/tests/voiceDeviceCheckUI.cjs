@@ -20,6 +20,17 @@ test('microphone test uses only temporary app cache and deletes the file after s
  assert.doesNotMatch(component,/documentDirectory|SecureStore|AsyncStorage/);
 });
 
+test('microphone test verifies cache-file deletion and keeps a retry path on failure',()=>{
+ assert.match(component,/isPrivateVoiceDeviceCheckUri\(path,FileSystem\.cacheDirectory\)/);
+ assert.match(component,/const after=await FileSystem\.getInfoAsync\(path\)/);
+ assert.match(component,/return after\.exists!==true/);
+ assert.match(component,/if\(cleanupVerified\)uri\.current=null/);
+ assert.match(component,/setCleanupPending\(!cleanupVerified\)/);
+ assert.match(component,/async function retryCleanup\(\)/);
+ assert.match(component,/Geçici ses dosyasını silmeyi yeniden dene/);
+ assert.match(component,/cleanupVerified\}\)/);
+});
+
 test('microphone test never sends audio, patient identity or transcript to an API',()=>{
  assert.doesNotMatch(component,/\bfetch\s*\(|axios|FormData|transcribeNativeRecording|voiceApi|patientId|userId|transcript|token/);
 });
