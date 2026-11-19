@@ -1313,3 +1313,73 @@ def test_mobile_patient_media_responses_are_private_and_owner_scoped(chat, monke
     assert client.get("/api/mobile/v1/patients/801/media").status_code == 404
     assert client.get(f"/api/mobile/v1/patients/801/media/uploads/{request_key}").status_code == 404
     assert client.get(f"/api/mobile/v1/patients/801/media/{media_id}/file").status_code == 404
+
+
+def test_mobile_patient_directory_search_matches_web_tckn_owner_scope_and_no_store(chat):
+    client, engine = chat
+    base = datetime(2026, 11, 19, 1, 0, 0)
+    with Session(engine) as session:
+        session.add_all([
+            main.Patient(
+                id=901, anonymous_id="PAT-SYNTH-TCKN-901", tc_kimlik_no="11111111111",
+                first_name="TCKN", last_name="Search", phone="05551111111",
+                owner_user_id=1, created_at=base,
+            ),
+            main.Patient(
+                id=902, anonymous_id="PAT-SYNTH-TCKN-902", tc_kimlik_no="22222222222",
+                first_name="TCKN", last_name="Other", phone="05552222222",
+                owner_user_id=2, created_at=base,
+            ),
+            main.Patient(
+                id=903, anonymous_id="PAT-SYNTH-DIR-903", first_name="Directory",
+                last_name="Yılmaz", phone="05553333333", owner_user_id=1,
+                created_at=base,
+            ),
+            main.Patient(
+                id=904, anonymous_id="PAT-SYNTH-DIR-904", first_name="Directory",
+                last_name="Aydın", phone="05554444444", owner_user_id=1,
+                created_at=base - timedelta(minutes=1),
+            ),
+        ])
+        session.commit()
+
+    # The web search accepts TCKN and keeps the result within the signed-in owner.
+    client.cookies.set(main.SESSION_COOKIE, "token1")
+    web = client.get("/patients/search?q=11111111111")
+    assert web.status_code == 200, web.text
+    assert 'data-patient-id="901"' in web.text
+    assert 'data-patient-id="902"' not in web.text
+
+    mobile = client.get("/api/mobile/v1/patients?q=11111111111")
+    assert mobile.status_code == 200, mobile.text
+    assert mobile.headers.get("cache-control") == "private, no-store"
+    assert mobile.headers.get("pragma") == "no-cache"
+    assert "authorization" in {
+        value.strip().lower() for value in mobile.headers.get("vary", "").split(",")
+    }
+    payload = mobile.json()
+    assert payload["total"] == 1
+    assert [item["id"] for item in payload["items"]] == [901]
+    # TCKN is a search-only field in the directory response, not a list payload field.
+    assert "tc_kimlik_no" not in payload["items"][0]
+
+    # Partial TCKN search remains compatible with the web's substring behavior.
+    partial = client.get("/api/mobile/v1/patients?q=111111")
+    assert [item["id"] for item in partial.json()["items"]] == [901]
+
+    # Another account's TCKN must not be discoverable from this account.
+    hidden = client.get("/api/mobile/v1/patients?q=22222222222")
+    assert hidden.status_code == 200
+    assert hidden.json()["total"] == 0
+    assert client.get("/api/mobile/v1/patients/902").status_code == 404
+
+    client.headers["Authorization"] = "Bearer token2"
+    owned_by_second = client.get("/api/mobile/v1/patients?q=22222222222")
+    assert owned_by_second.status_code == 200
+    assert [item["id"] for item in owned_by_second.json()["items"]] == [902]
+
+    # Search pages follow the web's surname/name order, not insertion recency.
+    client.headers["Authorization"] = "Bearer token1"
+    ordered = client.get("/api/mobile/v1/patients?q=Directory")
+    assert ordered.status_code == 200
+    assert [item["id"] for item in ordered.json()["items"]] == [904, 903]
