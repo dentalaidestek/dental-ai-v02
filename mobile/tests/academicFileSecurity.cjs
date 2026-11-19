@@ -60,7 +60,7 @@ test('a confirmed Academic upload deletes only its private temporary copy',async
  const deleted=[],calls=[];
  const api=load(filesystem({
   deleteAsync:async(uri,options)=>deleted.push([uri,options]),
-  createUploadTask:(url,uri,options,onProgress)=>{calls.push({url,uri,options});onProgress({totalBytesSent:512,totalBytesExpectedToSend:1024});const course=3,unusedCourseMatch=url.match(/courses\\/(\\d+)\\/materials/)[1]),receipt={course_id:course,request_key:options.parameters.request_key,material_id:9,name:options.parameters.original_filename,mime:options.mimeType,size:1024,content_sha256:'a'.repeat(64),payload_hash:'b'.repeat(64),created_at:'2026-11-19T10:00:00Z'};return{uploadAsync:async()=>({status:200,body:JSON.stringify({ok:true,receipt})}),cancelAsync:async()=>{}}}
+  createUploadTask:(url,uri,options,onProgress)=>{calls.push({url,uri,options});onProgress({totalBytesSent:512,totalBytesExpectedToSend:1024});const course=3,receipt={course_id:course,request_key:options.parameters.request_key,material_id:9,name:options.parameters.original_filename,mime:options.mimeType,size:1024,content_sha256:'a'.repeat(64),payload_hash:'b'.repeat(64),created_at:'2026-11-19T10:00:00Z'};return{uploadAsync:async()=>({status:200,body:JSON.stringify({ok:true,receipt})}),cancelAsync:async()=>{}}}
  }));
  const progress=[];
  await api.uploadAcademic('token',3,valid,'synthetic-upload-key-0001',10000,value=>progress.push(value));
