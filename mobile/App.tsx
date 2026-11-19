@@ -22,7 +22,7 @@ import {SafeAreaProvider,SafeAreaView} from "react-native-safe-area-context";
 import {DentalFlow} from "./src/SocialScreens";
 import NativeSocialAdmin from "./src/NativeSocialAdmin";
 import {usePagedRecords} from "./src/usePagedRecords";
-import {normalizePatientDirectorySearch,patientDirectoryDetails,patientDirectoryAgeLabel} from "./src/patientDirectoryPresentation";
+import {normalizePatientDirectorySearch,patientDirectoryDetails,patientDirectoryAgeLabel,PATIENT_DIRECTORY_SEARCH_DEBOUNCE_MS} from "./src/patientDirectoryPresentation";
 import {subscribeSessionExpiry} from "./src/sessionExpiry";
 import {useSessionHealth} from "./src/useSessionHealth";
 import{restoreStoredSession}from"./src/session";
@@ -110,6 +110,14 @@ function Patients({token,route,chartMode=false}:{token:string;route?:any;chartMo
   setQ(normalized);
   setSearch(normalized);
  },[q]);
+ // Match the web directory's live filtering while debouncing network-backed
+ // pagination so a long patient register does not trigger a request per key.
+ useEffect(()=>{
+  const normalized=normalizePatientDirectorySearch(q);
+  if(normalized===search)return;
+  const timer=setTimeout(()=>setSearch(normalized),PATIENT_DIRECTORY_SEARCH_DEBOUNCE_MS);
+  return()=>clearTimeout(timer);
+ },[q,search]);
  useEffect(()=>{
   const next=route?.params?.search;
   if(typeof next==="string"){
