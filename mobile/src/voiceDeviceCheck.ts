@@ -2,7 +2,7 @@ export const VOICE_DEVICE_CHECK_DURATION_MS=6000;
 export const VOICE_DEVICE_CHECK_MIN_DURATION_MS=5500;
 export const VOICE_DEVICE_CHECK_MIN_SIGNAL_DB=-40;
 
-const PRIVATE_DEVICE_CHECK_FILE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\\.m4a$/i;
+const PRIVATE_DEVICE_CHECK_FILE=/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\.m4a$/i;
 
 /** Accept only a direct .m4a child of Expo's app-private cache directory. */
 export function isPrivateVoiceDeviceCheckUri(
