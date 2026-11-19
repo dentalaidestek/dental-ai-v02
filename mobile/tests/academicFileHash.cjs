@@ -16,10 +16,10 @@ function load(data,options={}){
   }
   close(){this.closed=true}
  }
- class File{constructor(uri){this.uri=uri}open(mode){opens++;assert.equal(mode,'read-only');return new FileHandle()}}
+ class File{constructor(uri){this.uri=uri}open(){opens++;return new FileHandle()}}
  const sha256={create(){const digest=createHash('sha256');return{update(bytes){digest.update(Buffer.from(bytes));return this},digest(){return Uint8Array.from(digest.digest())}}}};
  const exports={};
- vm.runInNewContext(compiled,{exports,Uint8Array,Number,decodeURIComponent,require:name=>name==='expo-file-system'?{File,FileMode:{ReadOnly:'read-only'}}:name==='expo-file-system/legacy'?filesystem:name==='@noble/hashes/sha2.js'?{sha256}:{}});
+ vm.runInNewContext(compiled,{exports,Uint8Array,Number,decodeURIComponent,require:name=>name==='expo-file-system'?{File}:name==='expo-file-system/legacy'?filesystem:name==='@noble/hashes/sha2.js'?{sha256}:{}});
  return{api:exports,stats:()=>({infoReads,opens,handle})};
 }
 

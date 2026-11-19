@@ -1,4 +1,4 @@
-import {File,FileMode} from 'expo-file-system';
+import {File} from 'expo-file-system';
 import * as LegacyFS from 'expo-file-system/legacy';
 import {sha256} from '@noble/hashes/sha2.js';
 
@@ -41,7 +41,7 @@ export async function hashAcademicCacheFile(uri:string,maxBytes=MAX_ACADEMIC_FIL
  if(!info.exists)return null;
  const expectedSize=info.size;
  if(typeof expectedSize!=='number'||!Number.isSafeInteger(expectedSize)||expectedSize<1||expectedSize>maxBytes)throw Error('Dosya okunamadı veya dersin dosya boyutu sınırı aşıldı.');
- const handle=new File(uri).open(FileMode.ReadOnly);
+ const handle=new File(uri).open();
  try{
   const openedSize=handle.size;
   if(typeof openedSize!=='number'||!Number.isSafeInteger(openedSize)||openedSize!==expectedSize)throw Error('Akademik dosya aktarım öncesinde değişti.');
