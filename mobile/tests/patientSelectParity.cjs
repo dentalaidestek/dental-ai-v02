@@ -42,6 +42,6 @@ test('appointment patient selector advertises bounded web-compatible search and 
  assert.match(source,/keyboardShouldPersistTaps="handled"/);
  assert.match(source,/patientSelectRowDetails\(item\)/);
  assert.match(source,/Daha fazla hasta/);
- assert.match(source,/Eşleşen hasta bulunamadı/);
+ assert.match(source,/patientSelectEmptyState\(query,pages\.busy,pages\.error\|\|queryError\)/);
  assert.doesNotMatch(source,/item\.tc_kimlik_no/);
 });
