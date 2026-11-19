@@ -269,6 +269,16 @@ export const getFeed = async (
   const page = await socialRequest<
     SocialPage<SocialPost> & { specialties?: unknown }
   >(t, `/feed/${mode}?${params.join("&")}`);
+  if (
+    !page ||
+    !Array.isArray(page.items) ||
+    page.items.length > 15 ||
+    (page.next_cursor !== null &&
+      (!Number.isSafeInteger(page.next_cursor) || page.next_cursor < 1)) ||
+    new Set(page.items.map((item) => (item as any)?.id)).size !== page.items.length
+  ) {
+    throw new ApiError(502, "Dental Akış sayfası doğrulanamadı.");
+  }
   const specialties = normalizeSocialSpecialties(page.specialties);
   if (
     specialty &&
@@ -280,7 +290,7 @@ export const getFeed = async (
       "Seçilen branş artık mevcut değil. Tümü filtresini seçin.",
     );
   }
-  return { ...page, specialties };
+  return { ...page, items: page.items.map(normalizeSocialFeedPost), specialties };
 };
 export async function getLinkPreview(
   token: string,
