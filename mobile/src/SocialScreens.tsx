@@ -842,7 +842,7 @@ function CommentThread({
           )}
         </View>
       )}
-      {editing && (
+      {editing && sessionReady && (
         <Sheet
           title="Yorumu düzenle"
           onClose={() => {
@@ -1507,6 +1507,8 @@ export function DentalFlow({
   canCompose?: boolean;
 }) {
   const sessionKey = socialSessionKey(user.id, token);
+  const [readySessionKey, setReadySessionKey] = useState(sessionKey);
+  const sessionReady = readySessionKey === sessionKey;
   const followLock = useRef(false);
   const feedFollowLocks = useRef(new Set<number>());
   const editLock = useRef(false);
@@ -1653,8 +1655,18 @@ export function DentalFlow({
     }
   };
   useEffect(() => {
+    // Hide and discard account-owned overlays before the new session can paint.
+    setReadySessionKey(sessionKey);
+    setCompose(false);
+    setComments(null);
     setImage(null);
-  }, [token, user.id]);
+    setEditing(null);
+    setEditText("");
+    setSaving(false);
+    setError("");
+    setStats(null);
+    setSpecialties([]);
+  }, [sessionKey]);
   useEffect(() => {
     const request = ++profileGeneration.current;
     setStats(null);
@@ -1802,15 +1814,16 @@ export function DentalFlow({
   return (
     <View style={s.page}>
       <FlatList
-        data={pages.items}
+        key={sessionKey}
+        data={sessionReady ? pages.items : []}
         keyExtractor={(p) => String(p.id)}
         contentContainerStyle={s.pad}
         initialNumToRender={5}
         maxToRenderPerBatch={5}
         windowSize={7}
-        refreshing={pages.busy}
-        onRefresh={pages.refresh}
-        ListHeaderComponent={header}
+        refreshing={sessionReady && pages.busy}
+        onRefresh={sessionReady ? pages.refresh : undefined}
+        ListHeaderComponent={sessionReady ? header : null}
         renderItem={({ item }) => (
           <PostCard
             token={token}
@@ -1838,12 +1851,14 @@ export function DentalFlow({
           />
         )}
         ListEmptyComponent={
-          <Text style={s.meta}>
-            {pages.busy ? "Yükleniyor…" : "Henüz gönderi yok."}
-          </Text>
+          !sessionReady ? <ActivityIndicator color={C.navy} /> : (
+            <Text style={s.meta}>
+              {pages.busy ? "Yükleniyor…" : "Henüz gönderi yok."}
+            </Text>
+          )
         }
         ListFooterComponent={
-          pages.hasMore ? (
+          sessionReady && pages.hasMore ? (
             <Button
               title="Daha fazla gönderi"
               disabled={pages.busy}
@@ -1852,7 +1867,7 @@ export function DentalFlow({
           ) : null
         }
       />
-      {compose && (
+      {compose && sessionReady && (
         <Composer
           key={`${user.id}:${token}`}
           token={token}
@@ -1864,9 +1879,9 @@ export function DentalFlow({
           }}
         />
       )}
-      {comments && (
+      {comments && sessionReady && (
         <Comments
-          key={comments.id}
+          key={`${sessionKey}:${comments.id}`}
           token={token}
           userId={user.id}
           post={comments}
@@ -1877,9 +1892,9 @@ export function DentalFlow({
           onProfile={profile}
         />
       )}
-      {image && (
+      {image && sessionReady && (
         <NativeSocialMediaViewer
-          key={`${user.id}:${token}:${image.media.map((item) => item.id).join(",")}`}
+          key={`${sessionKey}:media:${image.media.map((item) => item.id).join(",")}`}
           visible={!!image}
           token={token}
           media={image.media}
