@@ -37,7 +37,7 @@ export async function readPrivateVoiceAudioDuration(uri:string,mime:string,timeo
   const finish=(error?:Error,duration?:number)=>{
    if(settled)return;settled=true;
    if(timer)clearTimeout(timer);
-   subscription?.remove();
+   try{subscription?.remove()}catch{}
    try{player.remove()}catch{}
    if(error)reject(error);else resolve(duration as number);
   };

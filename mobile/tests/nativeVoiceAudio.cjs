@@ -107,12 +107,12 @@ test('persisted voice drafts reject traversal, encoded paths and malformed segme
  assert.throws(()=>session.parseVoiceDraft(JSON.stringify({...base,segments:[null]}),1,42,2000),/içeriği doğrulanamadı/);
 });
 
-test('recorder deletion and draft reset use the same private-cache guard',()=>{
+test('recorder deletion and draft reset use the same MIME-bound private-cache guard',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../src/NativeVoiceRecorder.tsx'),'utf8');
- assert.match(source,/if\(!isPrivateVoiceRecordingUri\(uri\)\)throw Error/);
- assert.match(source,/if\(!uri\|\|!isPrivateVoiceRecordingUri\(uri\)\)throw Error/);
- assert.match(source,/for\(const segment of draft\.current\.segments\)if\(isPrivateVoiceRecordingUri\(segment\.uri\)\)await removeFile\(segment\.uri\)/);
- assert.match(source,/Taslak temizlendi\. Uygulama önbelleği dışında kalan doğrulanamayan dosyaya dokunulmadı\./);
+ assert.match(source,/if\\(!isPrivateVoiceRecordingUri\\(uri,FileSystem\\.cacheDirectory,mime\\)\\)throw Error/);
+ assert.match(source,/if\\(!uri\\|\\|!isPrivateVoiceRecordingUri\\(uri\\)\\)throw Error/);
+ assert.match(source,/for\\(const segment of draft\\.current\\.segments\\)if\\(isPrivateVoiceRecordingUri\\(segment\\.uri,FileSystem\\.cacheDirectory,segment\\.mime\\)\\)await removeFile\\(segment\\.uri,segment\\.mime\\)/);
+ assert.match(source,/Taslak temizlendi\\. Uygulama önbelleği dışında kalan doğrulanamayan dosyaya dokunulmadı\\./);
 });
 
 test('invalid segment key or local audio never starts an upload',async()=>{
