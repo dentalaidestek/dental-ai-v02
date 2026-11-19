@@ -86,7 +86,7 @@ function Search({token,onSelect,onClose}:{token:string;onSelect:(patient:Patient
    ListFooterComponent={<View style={{paddingVertical:12,alignItems:'center'}}>
     {pages.busy&&pages.items.length>0&&<ActivityIndicator color="#1769AA"/>}
     {!!pages.error&&<Pressable accessibilityRole="button" onPress={()=>void pages.loadMore()} style={{padding:12}}><Text style={{color:'#B42318'}}>Sonraki sayfa alınamadı · Yeniden dene</Text></Pressable>}
-    {pages.hasMore&&!pages.busy&&<Pressable accessibilityRole="button" onPress={()=>void pages.loadMore()} style={{padding:12}}><Text style={{color:'#1769AA',fontWeight:'800'}}>Daha fazla hasta</Text></Pressable>}
+    {pages.hasMore&&!pages.busy&&!pages.error&&<Pressable accessibilityRole="button" onPress={()=>void pages.loadMore()} style={{padding:12}}><Text style={{color:'#1769AA',fontWeight:'800'}}>Daha fazla hasta</Text></Pressable>}
    </View>}
   />
  </View>;
