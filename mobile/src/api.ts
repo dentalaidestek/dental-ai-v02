@@ -98,6 +98,28 @@ export async function getPatientTreatments(token:string,id:number,cursor:string)
  return result;
 }
 
+export async function getToothTreatments(
+ token:string,id:number,toothNumber:string,cursor?:string,
+):Promise<PatientTreatmentPage>{
+ if(!Number.isSafeInteger(id)||id<=0)throw new Error("Geçersiz hasta kimliği.");
+ if(!validFdiTooth(toothNumber))throw new Error("Geçersiz FDI diş numarası.");
+ if(cursor!==undefined&&!validTreatmentHistoryCursor(cursor))throw new Error("Diş tedavi geçmişi sayfalama imleci geçersiz.");
+ const query=cursor!==undefined?"?cursor="+encodeURIComponent(cursor):"";
+ const result=await request<PatientTreatmentPage>(`/patients/${id}/teeth/${toothNumber}/treatments${query}`,token);
+ if(!Array.isArray(result?.items)||result.items.length>20||
+    result.items.some(item=>!item||!Number.isSafeInteger(item.id)||item.id<=0||
+      item.tooth_number!==toothNumber||typeof item.treatment_name!=="string"||
+      typeof item.edit_revision!=="string"||!/^[a-f0-9]{64}$/.test(item.edit_revision)||
+      typeof item.created_at!=="string"||
+      (item.analysis_id!=null&&(!Number.isSafeInteger(item.analysis_id)||item.analysis_id<=0)))||
+    new Set(result.items.map(item=>item.id)).size!==result.items.length||
+    !(result.next_cursor===null||validTreatmentHistoryCursor(result.next_cursor))||
+    (result.next_cursor!==null&&(result.next_cursor===cursor||result.items.length!==20))||
+    (result.items.length===0&&result.next_cursor!==null))
+  throw new ApiError(502,"Diş tedavi geçmişi sayfası doğrulanamadı. Geçmişi yenileyin.");
+ return result;
+}
+
 export type TreatmentPayload={treatment_name:string;tooth_number?:string;treatment_date?:string;material?:string;doctor_note?:string;result?:string};
 export type TreatmentMutationResult={ok:boolean;treatment_id:number;edit_revision:string;replayed:boolean};
 function validateTreatmentTarget(patientId:number,payload:TreatmentPayload,treatmentId:number|undefined,requestKey:string,expectedRevision?:string){
