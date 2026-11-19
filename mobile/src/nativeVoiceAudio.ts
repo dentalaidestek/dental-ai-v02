@@ -74,8 +74,8 @@ export async function transcribeNativeRecording(
   throw Error('Ses kaydı uygulamanın özel önbelleğinde doğrulanamadı veya hasta kimliği geçersiz.');
  if(typeof requestKey!=='string'||!REQUEST_KEY.test(requestKey))
   throw Error('Ses bölümü işlem anahtarı geçersiz; yerel kayıt korundu.');
- const info=await FileSystem.getInfoAsync(uri);
- if(!info.exists||!Number.isFinite(info.size)||info.size<100||info.size>8*1024*1024)
+ const info=await FileSystem.getInfoAsync(uri),size=info.size;
+ if(!info.exists||typeof size!=='number'||!Number.isFinite(size)||size<100||size>8*1024*1024)
   throw Error('Ses kaydı okunamadı veya 8 MB sınırını aşıyor. Yerel kaydı kontrol edin.');
  const task=FileSystem.createUploadTask(
   BASE+'/patients/'+patientId+'/voice-exam/audio',
