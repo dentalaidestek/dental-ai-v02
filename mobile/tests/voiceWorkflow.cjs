@@ -61,8 +61,10 @@ test('native voice audio input follows the web 54k-character and 180KB pre-ASR b
  const api=require('../src/voiceSession.ts');
  assert.equal(api.canAcceptVoiceAudioInput('x'.repeat(53999)),true);
  assert.equal(api.canAcceptVoiceAudioInput('x'.repeat(54000)),false);
- assert.equal(api.canAcceptVoiceAudioInput('🙂'.repeat(44999)),true);
- assert.equal(api.canAcceptVoiceAudioInput('🙂'.repeat(45000)),false);
+ assert.equal(api.canAcceptVoiceAudioInput('🙂'.repeat(26999)),true);
+ assert.equal(api.canAcceptVoiceAudioInput('🙂'.repeat(27000)),false);
+ assert.equal(api.voiceUtf8Bytes('🙂'.repeat(10)),40);
+ assert.equal(api.VOICE_AUDIO_INPUT_BYTE_LIMIT,180000);
  assert.equal(api.canAcceptVoiceAudioInput(null),false);
 });
 
