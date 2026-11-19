@@ -1,10 +1,24 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {evaluateVoiceDeviceCheck,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS,VOICE_DEVICE_CHECK_MIN_DURATION_MS,VOICE_DEVICE_CHECK_MIN_SIGNAL_DB}=require('../src/voiceDeviceCheck');
+const {evaluateVoiceDeviceCheck,isPrivateVoiceDeviceCheckUri,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS,VOICE_DEVICE_CHECK_MIN_DURATION_MS,VOICE_DEVICE_CHECK_MIN_SIGNAL_DB}=require('../src/voiceDeviceCheck');
 
 test('native microphone check uses the same six-second preparation window as web',()=>{
  assert.equal(VOICE_DEVICE_CHECK_DURATION_MS,6000);
  assert.equal(VOICE_DEVICE_CHECK_MIN_DURATION_MS,5500);
+});
+
+test('temporary microphone file must be a direct M4A child of the app cache',()=>{
+ const cache='file:///data/user/0/example/cache/';
+ assert.equal(isPrivateVoiceDeviceCheckUri(cache+'Audio-123456.m4a',cache),true);
+ assert.equal(isPrivateVoiceDeviceCheckUri(cache+'../files/Audio-123456.m4a',cache),false);
+ assert.equal(isPrivateVoiceDeviceCheckUri('file:///data/user/0/example/cache-evil/Audio.m4a',cache),false);
+ assert.equal(isPrivateVoiceDeviceCheckUri(cache+'nested/Audio.m4a',cache),false);
+ assert.equal(isPrivateVoiceDeviceCheckUri('/tmp/Audio.m4a',cache),false);
+});
+
+test('unverified temporary-file cleanup never reports a passed microphone check',()=>{
+ assert.equal(evaluateVoiceDeviceCheck({permissionGranted:true,durationMs:6000,fileBytes:1024,peakMeteringDb:-5,cleanupVerified:false}),'cleanup_failed');
+ assert.equal(evaluateVoiceDeviceCheck({permissionGranted:true,durationMs:6000,fileBytes:1024,peakMeteringDb:-5,cleanupVerified:true}),'passed');
 });
 
 test('permission denial never reports a successful microphone check',()=>{
