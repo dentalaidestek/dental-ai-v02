@@ -881,3 +881,14 @@ Found a native-only inconsistency: the tooth preview pin already mapped FDI unit
 Added `mobile/tests/toothSurfaceOptions.cjs` to `npm run test:beta`. Isolated Node 22.16 helper tests passed 4/4 and standalone strict TypeScript compilation passed. GitHub source-contract checks verified both picker bindings, both label lookups, FDI guard and beta registration. The committed component-wiring test is not claimed as locally executed; full React Native typecheck, complete beta suite, Python security tests, Expo exports, Gradle APK and device acceptance remain open.
 
 Commits: `bf7ede7` (FDI helper), `ca66763` (native integration), `dcbd349` (regressions), `20cd470` (beta registration), `a9a2533` (technical note), tracker evidence update. No schema change, main merge, production deploy or clinical record mutation.
+
+
+## 2026-11-19 — AI analysis receipt-first crash recovery
+
+Re-read the web analysis composer/viewer and backend upload receipt route before changing native code. Found a process-death window: after a successful upload receipt, native cleanup deletes encrypted local image files before deleting the SecureStore intent. On restart the old restore path validated/migrated local files before querying the server receipt, so a missing encrypted file could block recovery of an analysis already persisted on the server.
+
+Changed `NativeAnalysisUpload` to reconcile the authenticated owner/patient-scoped server receipt immediately after parsing the durable intent, before local image validation or migration. A found receipt triggers idempotent local cleanup, intent deletion, and opening the existing analysis; a transient receipt lookup failure leaves the intent and files untouched; a missing receipt proceeds through the existing encrypted-draft and same-request-key retry path. No API, database, HMAC receipt, provider, or clinical behavior changed.
+
+Added regressions to `mobile/tests/analysisUpload.cjs` for already-deleted encrypted local files with a valid server receipt and for transient receipt lookup failure without local cleanup. The tests are part of the existing beta suite but were not executed in this connector-only session. Full typecheck, renderer suite, Expo exports, Gradle, Python security tests and physical-device acceptance remain open.
+
+Commits in this follow-up: `074bd54` (crash-window regression), `454570f` (receipt-first recovery), `1ab9bbb` (offline receipt lookup regression), `900947d` (technical evidence), plus this tracker update. No main merge, production deploy, migration, or patient record mutation.
