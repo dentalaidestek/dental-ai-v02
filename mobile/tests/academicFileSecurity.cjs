@@ -42,8 +42,8 @@ test('Academic uploads accept only normalized files inside the Expo private cach
 test('outside-cache and traversal URIs are rejected before file metadata or upload access',async()=>{
  let reads=0,uploads=0;
  const api=load(filesystem({getInfoAsync:async()=>{reads++;return{exists:true,size:10}},createUploadTask:()=>{uploads++;throw Error('must not upload')}}));
- await assert.rejects(api.uploadAcademic('token',3,{...valid,uri:'file:///cache-backup/private.pdf'},'synthetic-upload-key-0001',10000,()=>{}),/özel önbellek/);
- await assert.rejects(api.uploadAcademic('token',3,{...valid,uri:'file:///cache/%2e%2e/private.pdf'},'synthetic-upload-key-0001',10000,()=>{}),/özel önbellek/);
+ await assert.rejects(api.uploadAcademic('token',3,{...valid,uri:'file:///cache-backup/private.pdf'},'synthetic-upload-key-0001','a'.repeat(64),10000,()=>{}),/özel önbellek/);
+ await assert.rejects(api.uploadAcademic('token',3,{...valid,uri:'file:///cache/%2e%2e/private.pdf'},'synthetic-upload-key-0001','a'.repeat(64),10000,()=>{}),/özel önbellek/);
  assert.equal(reads,0);
  assert.equal(uploads,0);
 });
@@ -51,8 +51,8 @@ test('outside-cache and traversal URIs are rejected before file metadata or uplo
 test('path-like filenames and extension/MIME mismatches are rejected before reading',async()=>{
  let reads=0;
  const api=load(filesystem({getInfoAsync:async()=>{reads++;return{exists:true,size:10}}}));
- await assert.rejects(api.uploadAcademic('token',3,{...valid,name:'../lecture.pdf'},'synthetic-upload-key-0001',10000,()=>{}),/dosya adı/);
- await assert.rejects(api.uploadAcademic('token',3,{...valid,mimeType:'image/png'},'synthetic-upload-key-0001',10000,()=>{}),/eşleşmiyor/);
+ await assert.rejects(api.uploadAcademic('token',3,{...valid,name:'../lecture.pdf'},'synthetic-upload-key-0001','a'.repeat(64),10000,()=>{}),/dosya adı/);
+ await assert.rejects(api.uploadAcademic('token',3,{...valid,mimeType:'image/png'},'synthetic-upload-key-0001','a'.repeat(64),10000,()=>{}),/eşleşmiyor/);
  assert.equal(reads,0);
 });
 
@@ -63,7 +63,7 @@ test('a confirmed Academic upload deletes only its private temporary copy',async
   createUploadTask:(url,uri,options,onProgress)=>{calls.push({url,uri,options});onProgress({totalBytesSent:512,totalBytesExpectedToSend:1024});const course=3,receipt={course_id:course,request_key:options.parameters.request_key,material_id:9,name:options.parameters.original_filename,mime:options.mimeType,size:1024,content_sha256:'a'.repeat(64),payload_hash:'b'.repeat(64),created_at:'2026-11-19T10:00:00Z'};return{uploadAsync:async()=>({status:200,body:JSON.stringify({ok:true,receipt})}),cancelAsync:async()=>{}}}
  }));
  const progress=[];
- await api.uploadAcademic('token',3,valid,'synthetic-upload-key-0001',10000,value=>progress.push(value));
+ await api.uploadAcademic('token',3,valid,'synthetic-upload-key-0001','a'.repeat(64),10000,value=>progress.push(value));
  assert.equal(calls.length,1);
  assert.equal(calls[0].options.mimeType,'application/pdf');
  assert.equal(calls[0].options.headers.Cookie,'');
@@ -78,7 +78,7 @@ test('an ambiguous timeout preserves the local file for receipt reconciliation',
   deleteAsync:async()=>{deleted++},
   createUploadTask:()=>({uploadAsync:()=>new Promise(()=>{}),cancelAsync:async()=>{cancelled++}})
  }),{setTimeout:fn=>{expire=fn;return 1},clearTimeout:()=>{}});
- const pending=api.uploadAcademic('token',3,valid,'synthetic-upload-key-0001',10000,()=>{});
+ const pending=api.uploadAcademic('token',3,valid,'synthetic-upload-key-0001','a'.repeat(64),10000,()=>{});
  await new Promise(resolve=>setImmediate(resolve));
  expire();
  await assert.rejects(pending,/sonucu belirsiz/);
@@ -86,6 +86,17 @@ test('an ambiguous timeout preserves the local file for receipt reconciliation',
  assert.equal(deleted,0);
 });
 
+
+
+test('same filename and size with a different server content hash is never acknowledged or deleted',async()=>{
+ let deleted=0;
+ const api=load(filesystem({
+  deleteAsync:async()=>{deleted++},
+  createUploadTask:()=>({uploadAsync:async()=>({status:200,body:JSON.stringify({ok:true,receipt:{course_id:3,request_key:'synthetic-upload-key-0001',material_id:9,name:'lecture.pdf',mime:'application/pdf',size:1024,content_sha256:'b'.repeat(64),payload_hash:'c'.repeat(64),created_at:'2026-11-19T10:00:00Z'}})}),cancelAsync:async()=>{}})
+ }));
+ await assert.rejects(api.uploadAcademic('token',3,valid,'synthetic-upload-key-0001','a'.repeat(64),10000,()=>{}),/içerik özeti/);
+ assert.equal(deleted,0);
+});
 
 test('recovery cleanup refuses to delete a URI outside the private cache',async()=>{
  const deleted=[],api=load(filesystem({deleteAsync:async(uri)=>deleted.push(uri)}));
@@ -99,6 +110,6 @@ test('recovery cleanup refuses to delete a URI outside the private cache',async(
 test('a malformed server receipt never deletes the private source file',async()=>{
  let deleted=0;
  const api=load(filesystem({deleteAsync:async()=>{deleted++},createUploadTask:()=>({uploadAsync:async()=>({status:200,body:JSON.stringify({ok:true,receipt:{course_id:99,request_key:'synthetic-upload-key-0001',material_id:9,name:'lecture.pdf',mime:'application/pdf',size:1024,content_sha256:'a'.repeat(64),payload_hash:'b'.repeat(64),created_at:'2026-11-19T10:00:00Z'}})}),cancelAsync:async()=>{}})}));
- await assert.rejects(api.uploadAcademic('token',3,valid,'synthetic-upload-key-0001',10000,()=>{}),/receipt mismatch/);
+ await assert.rejects(api.uploadAcademic('token',3,valid,'synthetic-upload-key-0001','a'.repeat(64),10000,()=>{}),/receipt mismatch/);
  assert.equal(deleted,0);
 });
