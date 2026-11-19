@@ -119,6 +119,7 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
    const cache=FileSystem.cacheDirectory;
    if(!path||!cache||!path.startsWith(cache))throw Error('Geçici test kaydı uygulamanın özel önbelleğine oluşturulamadı.');
    uri.current=path;
+   if(!isPrivateVoiceDeviceCheckUri(path,cache))throw Error('Geçici test kaydı özel önbellekte beklenen dosya biçiminde değil; güvenli temizleme doğrulanmadan test tamamlanmayacak.');
    if(run!==epoch.current){await cancelRef.current();return;}
    startedAt.current=Date.now();
    recorder.record();
