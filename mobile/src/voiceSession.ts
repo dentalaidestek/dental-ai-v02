@@ -88,7 +88,7 @@ export function isSafeVoiceSegmentUri(uri:unknown,mime?:unknown):uri is string{
  if(!path.startsWith('/'))return false;
  const segments=path.split('/').slice(1);
  if(segments.length<2||segments.some(segment=>!segment||segment==='.'||segment==='..'))return false;
- const match=/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\\.(m4a|mp3|wav|webm|ogg)$/i.exec(segments[segments.length-1]);
+ const match=/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\.(m4a|mp3|wav|webm|ogg)$/i.exec(segments[segments.length-1]);
  if(!match)return false;
  if(mime===undefined)return match[1].toLowerCase()==='m4a';
  return isSupportedVoiceAudioMime(mime)&&isVoiceAudioExtensionForMime(match[1],mime);

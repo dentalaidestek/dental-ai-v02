@@ -43,12 +43,12 @@ export function isVoiceAudioExtensionForMime(extension:unknown,mime:unknown):boo
  if(typeof extension!=="string")return false;
  const normalized=normalizeVoiceAudioMime(mime);
  if(!normalized)return false;
- return EXTENSION_MIMES[extension.replace(/^\\./,"").toLowerCase()]===normalized;
+ return EXTENSION_MIMES[extension.replace(/^\./,"").toLowerCase()]===normalized;
 }
 
 export function resolveVoiceAudioAsset(mimeType:unknown,filename:unknown):{mime:VoiceAudioMime;extension:string}{
  const name=typeof filename==="string"?filename.trim():"";
- const match=/\\.([A-Za-z0-9]{1,8})$/.exec(name);
+ const match=/\.([A-Za-z0-9]{1,8})$/.exec(name);
  const extensionMime=match?EXTENSION_MIMES[match[1].toLowerCase()]:undefined;
  const supplied=normalizeVoiceAudioMime(mimeType);
  const raw=typeof mimeType==="string"?mimeType.split(";")[0].trim().toLowerCase():"";
