@@ -81,7 +81,7 @@ test('voice draft is account-patient bound, expires, and appends each segment on
 });
 test('native audio transport sends binary recording with consent and validates receipt',async()=>{
  const exports={},calls=[];const source=ts.transpileModule(fs.readFileSync(require.resolve('../src/nativeVoiceAudio.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
- const filesystem={cacheDirectory:'file:///cache/',getInfoAsync:async()=>({exists:true,size:1024}),FileSystemUploadType:{BINARY_CONTENT:0},createUploadTask:(...args)=>{calls.push(args);return{uploadAsync:async()=>({status:200,body:JSON.stringify({ok:true,revision:'revision',transcript:'Synthetic speech'})}),cancelAsync:async()=>{}}}};
+ const filesystem={cacheDirectory:'file:///cache/',getInfoAsync:async()=>({exists:true,size:1024}),FileSystemUploadType:{BINARY_CONTENT:0},createUploadTask:(...args)=>{calls.push(args);return{uploadAsync:async()=>({status:200,body:JSON.stringify({ok:true,revision:'a'.repeat(64),transcript:'Synthetic speech'})}),cancelAsync:async()=>{}}}};
  vm.runInNewContext(source,{exports,setTimeout,clearTimeout,require:n=>n==='expo-file-system/legacy'?filesystem:n==='./api'?{ApiError:class extends Error{constructor(status,message){super(message);this.status=status}}}:{revalidateSession:async()=>{}}});
  const result=await exports.transcribeNativeRecording('token',8,'file:///cache/audio.m4a','voice-workflow-audio-00000001');assert.equal(result.transcript,'Synthetic speech');assert.equal(calls[0][2].headers['X-Voice-Consent'],'yes');assert.equal(calls[0][2].headers['Content-Type'],'audio/mp4');assert.equal(calls[0][2].headers.Cookie,'');assert.equal(calls[0][2].uploadType,0);
 });
