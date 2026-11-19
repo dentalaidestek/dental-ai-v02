@@ -247,6 +247,28 @@ export function normalizeSocialFeedPost(value: unknown): SocialPost {
   if (post.status !== "PUBLISHED" && post.owned !== true) {
     throw new ApiError(502, "Yayınlanmamış gönderinin sahibi doğrulanamadı.");
   }
+  if (post.moderation !== undefined && post.moderation !== null) {
+    const moderation = post.moderation as Record<string, unknown>;
+    const states = ["WAITING_HUMAN", "WAITING_OWNER", "FAILED", "RUNNING", "AUTO_DONE", "HUMAN_DONE"];
+    if (
+      typeof moderation !== "object" ||
+      Array.isArray(moderation) ||
+      typeof moderation.reason !== "string" ||
+      moderation.reason.length > 500 ||
+      !Array.isArray(moderation.reasons) ||
+      moderation.reasons.length > 12 ||
+      moderation.reasons.some((reason) => typeof reason !== "string" || reason.length > 80) ||
+      !states.includes(String(moderation.state)) ||
+      typeof moderation.wait_type !== "string" ||
+      typeof moderation.retryable !== "boolean" ||
+      typeof moderation.registered !== "boolean" ||
+      !validId(moderation.content_version) ||
+      !validId(moderation.revision) ||
+      (moderation.job_id !== null && moderation.job_id !== undefined && !validId(moderation.job_id))
+    ) {
+      throw new ApiError(502, "Dental Akış inceleme bilgisi doğrulanamadı.");
+    }
+  }
   return value as SocialPost;
 }
 
