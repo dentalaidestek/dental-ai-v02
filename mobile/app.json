@@ -42,6 +42,11 @@
       "config": {
         "usesNonExemptEncryption": true
       }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f19bc199-7b6a-46e5-affd-13154392ae8b"
+      }
     }
   }
 }
