@@ -9,6 +9,30 @@ const running={id:12,status:'RUNNING',stage:'Synthetic generation',question:'Syn
 
 test('academic cancellation uses the selected course and validates the run id',async()=>{const calls=[],a=api(async(...args)=>{calls.push(args);return{run:{...running,status:'CANCELLED',stage:'Kullanıcı tarafından iptal edildi',partial:'',error:'Bu çalışma iptal edildi.'}}});const result=await a.cancelRun('token',3,12);assert.equal(result.status,'CANCELLED');assert.equal(calls[0][0],'/academic/courses/3/runs/12/cancel');assert.equal(calls[0][1],'token');assert.equal(calls[0][2].method,'POST');await assert.rejects(a.cancelRun('token',3,0));});
 test('academic file access rejects external and cross-course bearer destinations',()=>{const a=api();assert.equal(a.academicFilePath(1,'/notes/courses/1/ai/messages/2/pdf?part=1'),'/api/mobile/v1/academic/courses/1/messages/2/pdf?part=1');for(const p of ['https://evil.test','/api/mobile/v1/academic/courses/2/materials/1/file','/api/mobile/v1/academic/courses/1/materials/../file','/notes/courses/1/ai/messages/2/pdf?other=1'])assert.throws(()=>a.academicFilePath(1,p));});
+
+const timelineItem=(id,overrides={})=>({id,role:'ASSISTANT',content:'Synthetic answer',created_at:'2026-11-19T10:00:00.000Z',quiz:null,quiz_stale:false,artifact:null,sources:[],vote:null,...overrides});
+test('academic timeline validates bounded ordered pages and accepts nullable citation metadata',async()=>{
+ const items=Array.from({length:50},(_,index)=>timelineItem(index+1));
+ items[0]={...items[0],sources:[{title:null,page:null,url:null}]};
+ const first=api(async path=>{assert.equal(path,'/academic/courses/3/timeline');return{items,next_before:1}});
+ const page=await first.timeline('token',3);
+ assert.equal(page.items.length,50);assert.equal(page.next_before,1);assert.equal(page.items[0].sources[0].title,null);
+ const next=api(async path=>{assert.equal(path,'/academic/courses/3/timeline?before=60');return{items:Array.from({length:50},(_,index)=>timelineItem(index+10)),next_before:10}});
+ assert.equal((await next.timeline('token',3,60)).next_before,10);
+});
+test('academic timeline rejects duplicate, unordered, oversized and cross-course records',async()=>{
+ const valid=Array.from({length:50},(_,index)=>timelineItem(index+1));
+ const cases=[
+  {...valid.map(x=>({...x})),0:timelineItem(1),1:timelineItem(1)},
+  [...valid].reverse(),
+  valid.map((x,index)=>index===0?{...x,content:'x'.repeat(500001)}:x),
+  valid.map((x,index)=>index===0?{...x,created_at:'not-a-date'}:x),
+  valid.map((x,index)=>index===0?{...x,artifact:{name:'private.pdf',url:'/api/mobile/v1/academic/courses/99/messages/12/pdf'}}:x),
+  valid.map((x,index)=>index===0?{...x,quiz:{message_id:999,questions:[{number:1,stem:'Synthetic',options:['A','B','C','D','E'],result:null}]}}:x)
+ ];
+ for(const items of cases)await assert.rejects(api(async()=>({items,next_before:items[0]?.id??null})).timeline('token',3));
+ await assert.rejects(api(async()=>({items:valid,next_before:0})).timeline('token',3));
+});
 test('academic persisted intent is user and course bound and rejects malformed work',()=>{const a=api(),v={user:1,course:3,request_key:'synthetic-key-0001',message:'Synthetic question'};assert.equal(a.parseIntent(JSON.stringify(v),1,3).message,v.message);assert.throws(()=>a.parseIntent(JSON.stringify(v),2,3));assert.throws(()=>a.parseIntent(JSON.stringify(v),1,4));assert.throws(()=>a.parseIntent(JSON.stringify({...v,message:''}),1,3));assert.throws(()=>a.validateRun({run:{...running,status:'mystery'}}));});
 function ui(overrides={},saved=null,timerApi={}){const exports={},calls=[],courseCalls=[],storage=new Map(),a=api();if(saved)storage.set('dai.academic.run.1.3',JSON.stringify(saved));const native={StyleSheet:{create:x=>x},Platform:{OS:'android'},Alert:{alert(){}},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','KeyboardAvoidingView','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};native.FlatList=props=>React.createElement('FlatList',props,props.ListHeaderComponent,...props.data.map((item,index)=>React.createElement(React.Fragment,{key:index},props.renderItem({item,index}))),props.ListFooterComponent,props.data.length?null:props.ListEmptyComponent);
  const endpoint={...a,library:async()=>({items:[{id:3,title:'Synthetic course'}],next_before:null}),courseCreateReceipt:async()=>null,createCourse:async(_t,title,description,request_key)=>{courseCalls.push({title,description,request_key});return{course:{id:4,title,description},materials:[],max_file_bytes:157286400,max_upload_count:12,next_before:null}},workspace:async()=>({course:{id:3,title:'Synthetic course'},materials:[],max_file_bytes:157286400,max_upload_count:12,next_before:null}),timeline:async()=>({items:[],next_before:null}),quizzes:async()=>({quizzes:[]}),indexStatus:async()=>({ready:true,state:'ready',total:1,completed:1,files:[]}),learning:async()=>({learning:{practiced_facts:0,due_count:0,correct:0,wrong:0,weak_count:0,review:[]}}),activeRun:async()=>null,receipt:async()=>null,createRun:async(_t,_c,intent)=>{calls.push(intent);return running},...overrides};
