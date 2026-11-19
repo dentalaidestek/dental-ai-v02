@@ -23,7 +23,7 @@ test('academic timeline validates bounded ordered pages and accepts nullable cit
 test('academic timeline rejects duplicate, unordered, oversized and cross-course records',async()=>{
  const valid=Array.from({length:50},(_,index)=>timelineItem(index+1));
  const cases=[
-  {...valid.map(x=>({...x})),0:timelineItem(1),1:timelineItem(1)},
+  valid.map((x,index)=>index===1?timelineItem(1):x),
   [...valid].reverse(),
   valid.map((x,index)=>index===0?{...x,content:'x'.repeat(500001)}:x),
   valid.map((x,index)=>index===0?{...x,created_at:'not-a-date'}:x),
