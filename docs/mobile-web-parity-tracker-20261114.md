@@ -833,3 +833,6 @@ At starting HEAD `817a879`, combined status and PR-associated workflow runs were
 
 
 Follow-up review found that the network-uncertain profile-write reconciliation path had the same stale-revision overwrite risk after a successful read. It now applies the same three-way merge before clearing the uncertain-write lock; same-field conflicts remain blocked pending explicit clinician choice. Added `uncertain patient edit reconciliation merges remote-only fields before retry` to `mobile/tests/patientProfileUI.cjs`. Commits: `54eb7d2` and `4026540`; documentation follow-up: `c5fe57a`. The full renderer suite remains unexecuted because the connector runtime has no repository checkout and the current-head GitHub Actions workflow has not started.
+
+
+A final privacy pass scoped the native in-memory patient edit snapshot to the composite account/token/patient identity. A component reused during an account switch now invalidates the old snapshot before the new profile request can resolve; an account-switch renderer regression with a delayed response is included in `mobile/tests/patientProfileUI.cjs`. Commits: `2b5fdde` and `47822d4`; documentation: `d643c2a`. No cross-account profile data is intentionally retained; full renderer/device execution remains pending.
