@@ -5,7 +5,7 @@ can enqueue cleanup without adding a database column or changing clinical rows.
 """
 from __future__ import annotations
 
-from functools import lru_cache
+from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from threading import Lock
@@ -30,11 +30,30 @@ def thumbnail_reference(original_reference: str | Path) -> str:
     return "r2://" + result if remote else result
 
 
-@lru_cache(maxsize=1024)
-def _generation_lock(reference: str) -> Lock:
-    # Bounded process-local single-flight; deterministic writes remain safe
-    # across workers even if two processes race to generate the same derivative.
-    return Lock()
+_locks_guard = Lock()
+_locks: dict[str, tuple[Lock, int]] = {}
+
+
+@contextmanager
+def _generation_guard(reference: str):
+    # Count holders and waiters so lock entries disappear after the final
+    # caller. This avoids both duplicate cache-miss locks and unbounded growth.
+    with _locks_guard:
+        entry = _locks.get(reference)
+        if entry is None:
+            entry = (Lock(), 0)
+        _locks[reference] = (entry[0], entry[1] + 1)
+    try:
+        with entry[0]:
+            yield
+    finally:
+        with _locks_guard:
+            current = _locks.get(reference)
+            if current is not None and current[0] is entry[0]:
+                if current[1] <= 1:
+                    _locks.pop(reference, None)
+                else:
+                    _locks[reference] = (current[0], current[1] - 1)
 
 
 def ensure_thumbnail(original_reference: str | Path) -> Path:
@@ -45,7 +64,7 @@ def ensure_thumbnail(original_reference: str | Path) -> Path:
     except FileNotFoundError:
         pass
 
-    with _generation_lock(str(thumb_ref)):
+    with _generation_guard(str(thumb_ref)):
         try:
             return object_storage.ensure_local(thumb_ref)
         except FileNotFoundError:
