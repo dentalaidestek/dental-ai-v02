@@ -386,6 +386,34 @@ test('ambiguous patient edit stays locked until a successful server read reconci
  await renderer.act(async()=>tree.unmount());
 });
 
+test('uncertain patient edit reconciliation merges remote-only fields before retry',async()=>{
+ let reads=0;const writes=[];
+ const initial=patient(8);initial.patient.phone='05551112222';initial.patient.address='Ankara';
+ const latest={...patient(8),edit_revision:'b'.repeat(64),patient:{...initial.patient,phone:'05559998877',address:'İzmir'}};
+ const saved={...latest,edit_revision:'c'.repeat(64),patient:{...latest.patient,first_name:'Local draft'}};
+ const Profile=component({
+  getPatient:async()=>{reads++;return reads===1?initial:reads===2?latest:saved},
+  editPatient:async(_token,_id,payload)=>{writes.push(payload);if(writes.length===1)throw Object.assign(new Error('Sunucu yanıtı belirsiz'),{status:503});return {ok:true,patient:saved.patient,edit_revision:saved.edit_revision}}
+ });let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ await press('Hasta Bilgileri');
+ const name=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad');
+ await renderer.act(async()=>name.props.onChangeText('Local draft'));
+ await press('Değişiklikleri Kaydet');
+ await press('Sunucudaki profil kaydını karşılaştır');
+ assert.equal(tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad').props.value,'Local draft');
+ assert.equal(tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Telefon').props.value,'05559998877');
+ assert.equal(tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Adres').props.value,'İzmir');
+ assert.ok(text(tree.toJSON()).includes('güncel sunucu alanlarıyla birleştirildi'));
+ await press('Değişiklikleri Kaydet');
+ assert.equal(writes[1].expected_revision,'b'.repeat(64));
+ assert.equal(writes[1].first_name,'Local draft');
+ assert.equal(writes[1].phone,'05559998877');
+ assert.equal(writes[1].address,'İzmir');
+ await renderer.act(async()=>tree.unmount());
+});
+
 test('failed patient edit reconciliation preserves uncertainty and keeps deletion disabled',async()=>{
  let reads=0;
  const Profile=component({
