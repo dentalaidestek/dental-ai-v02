@@ -39,6 +39,7 @@ test('appointment patient selector advertises bounded web-compatible search and 
  assert.match(source,/Hasta ara: ad, soyad, hasta numarası, telefon veya TC/);
  assert.match(source,/maxLength=\{PATIENT_SELECT_QUERY_MAX_LENGTH\}/);
  assert.match(source,/onEndReachedThreshold=\{0\.4\}/);
+ assert.match(source,/pages\.hasMore&&!pages\.busy&&!pages\.error/);
  assert.match(source,/keyboardShouldPersistTaps="handled"/);
  assert.match(source,/patientSelectRowDetails\(item\)/);
  assert.match(source,/Daha fazla hasta/);
