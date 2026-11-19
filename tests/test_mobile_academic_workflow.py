@@ -2,7 +2,7 @@ import pytest
 from test_mobile_chat_actions import chat
 from app import main
 from sqlmodel import Session,select
-import io,json
+import io,json,hashlib
 from PIL import Image
 
 
@@ -232,5 +232,64 @@ def test_native_academic_course_receipt_requires_valid_key_and_unique_schema(cha
         getattr(item,'name',None)=='uq_studycoursecreatereceipt_owner_key'
         and {column.name for column in item.columns}=={'owner_user_id','request_key'}
         for item in main.StudyCourseCreateReceipt.__table__.constraints
+    )
+
+
+def _synthetic_png(seed=0):
+    image=Image.new('RGB',(12,12),(0,0,0))
+    if seed:
+        image.putpixel((0,0),(255,255,255))
+    raw=io.BytesIO()
+    image.save(raw,format='PNG',compress_level=0)
+    return raw.getvalue()
+
+
+def test_native_academic_upload_receipt_is_content_bound_idempotent_and_owner_scoped(chat,monkeypatch):
+    client,engine=chat;course(engine)
+    monkeypatch.setattr(main,'_wake_academic_modal_indexer',lambda:True)
+    monkeypatch.setattr(main,'storage_persist_file',lambda *a,**kw:None)
+    path='/api/mobile/v1/academic/courses/1/materials'
+    receipt_path=path+'/receipt'
+    request_key='synthetic-academic-upload-key-0001'
+    original=_synthetic_png(0);different=_synthetic_png(1)
+    assert len(original)==len(different) and original!=different
+
+    payload={'original_filename':'Synthetic.png','request_key':request_key}
+    first=client.post(path,data=payload,files={'files':('cache-random.png',original,'image/png')})
+    assert first.status_code==200,first.text
+    first_receipt=first.json()['receipt']
+    material_id=first_receipt['material_id']
+    assert first_receipt['course_id']==1 and first_receipt['request_key']==request_key
+    assert first_receipt['content_sha256']==hashlib.sha256(original).hexdigest()
+    assert len(first_receipt['payload_hash'])==64
+
+    replay=client.post(path,data=payload,files={'files':('another-cache-name.png',original,'image/png')})
+    assert replay.status_code==200,replay.text
+    assert replay.json()['receipt']==first_receipt
+    workspace=client.get('/api/mobile/v1/academic/courses/1/workspace').json()
+    assert [item['id'] for item in workspace['materials']]==[material_id]
+
+    changed=client.post(path,data=payload,files={'files':('cache-random.png',different,'image/png')})
+    assert changed.status_code==409,changed.text
+    assert client.get('/api/mobile/v1/academic/courses/1/workspace').json()['materials'][0]['id']==material_id
+
+    lookup=client.get(receipt_path,params={'request_key':request_key})
+    assert lookup.status_code==200 and lookup.json()['receipt']==first_receipt
+    client.headers['Authorization']='Bearer token2'
+    assert client.get(receipt_path,params={'request_key':request_key}).status_code==404
+    client.headers['Authorization']='Bearer token1'
+    assert client.delete(path+f'/{material_id}').status_code==200
+    assert client.get(receipt_path,params={'request_key':request_key}).status_code==410
+
+
+def test_native_academic_upload_receipt_validates_keys_and_has_unique_owner_course_schema(chat):
+    client,engine=chat;course(engine)
+    path='/api/mobile/v1/academic/courses/1/materials'
+    assert client.post(path,data={'request_key':'short'},files={'files':('x.png',_synthetic_png(),'image/png')}).status_code==422
+    assert client.get(path+'/receipt',params={'request_key':'short'}).status_code==422
+    assert any(
+        getattr(item,'name',None)=='uq_studymaterialuploadreceipt_owner_course_key'
+        and {column.name for column in item.columns}=={'owner_user_id','course_id','request_key'}
+        for item in main.StudyMaterialUploadReceipt.__table__.constraints
     )
 
