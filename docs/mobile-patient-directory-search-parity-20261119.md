@@ -18,7 +18,7 @@ Read the current branch's:
 - Reused one filter set for page and count queries and changed the count to `count(Patient.id)`, avoiding the previous full-row subquery.
 - Search results now use the web's surname/name ordering with an ID tie-breaker for deterministic offset pages; an unfiltered directory remains newest-first.
 - Added a small native presentation helper for web-aligned whitespace normalization, separate patient-number/phone labels, and an age label that correctly renders age zero.
-- Native search is capped at the server's 100-character contract, supports the web search fields in its placeholder, shows an explicit no-match state, and automatically requests the next bounded page near the end of the list. The accessible “Daha fazla hasta” control remains as a fallback.
+- Both the dashboard quick-search entry and the patient directory input are capped at the server's 100-character contract and advertise the same name/patient-number/phone/TCKN fields. Directory search shows an explicit no-match state and automatically requests the next bounded page near the end of the list; the accessible “Daha fazla hasta” control remains as a fallback.
 - The API client normalizes whitespace before URL encoding and continues to omit ambient cookies, sending only the explicit bearer token.
 
 ## Regression coverage added
