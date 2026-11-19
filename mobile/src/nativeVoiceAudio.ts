@@ -47,7 +47,7 @@ export async function readPrivateVoiceAudioDuration(uri:string,mime:string,timeo
     finish(Error('Ses dosyası okunamadı. MP3, WAV, WebM, OGG veya M4A biçimini kontrol edin.'));return;
    }
    if(current?.isLoaded!==true&&player.isLoaded!==true)return;
-   const duration=typeof current?.duration==='number'?current.duration:player.duration;
+   const duration=typeof current?.duration==='number'&&current.duration>0?current.duration:player.duration;
    if(!Number.isFinite(duration)||duration<=0){
     finish(Error('Ses dosyasının süresi okunamadı. Daha kısa bir MP3 veya WAV dosyası seçin.'));return;
    }
