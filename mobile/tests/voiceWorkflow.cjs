@@ -41,11 +41,23 @@ test('native recorder mirrors web audio-file import through the private idempote
   'segments:[...draft.current.segments,segment]',
   "transcribeNativeRecording(token,patientId,segment.uri,segment.id,requestController.signal,segment.mime||'audio/mp4')",
   'validateVoiceAudioDuration(duration)',
+  "type:'audio/*'",
+  'canAcceptVoiceAudioInput',
+  'if(!audioInputAllowed())throw Error(audioLimitMessage)',
   'if(segment.mime){',
   'const duration=await readPrivateVoiceAudioDuration(segment.uri,segment.mime)'
  ])assert.ok(source.includes(fragment),fragment);
  const importStart=source.indexOf('async function importAudioFile');
  assert.ok(source.indexOf('pickerUri=asset.uri',importStart)<source.indexOf("if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi",importStart));
+});
+
+test('native voice audio input follows the web 54k-character and 180KB pre-ASR budget',()=>{
+ const api=require('../src/voiceSession.ts');
+ assert.equal(api.canAcceptVoiceAudioInput('x'.repeat(53999)),true);
+ assert.equal(api.canAcceptVoiceAudioInput('x'.repeat(54000)),false);
+ assert.equal(api.canAcceptVoiceAudioInput('🙂'.repeat(44999)),true);
+ assert.equal(api.canAcceptVoiceAudioInput('🙂'.repeat(45000)),false);
+ assert.equal(api.canAcceptVoiceAudioInput(null),false);
 });
 
 test('voice draft is account-patient bound, expires, and appends each segment only once',()=>{
@@ -108,6 +120,20 @@ function recorderUI({saved=null,loadDraft=null,transcribe=async()=>({transcript:
  vm.runInNewContext(code,{exports,Date:{now:()=>clockNow},setInterval:fn=>{const id=++nextInterval;intervals.set(id,fn);return id},clearInterval:id=>intervals.delete(id),setTimeout:(fn,ms)=>ms===15000?(timers.push(fn),timers.length):setTimeout(fn,ms),clearTimeout:id=>{if(typeof id!=='number')clearTimeout(id)},AbortController,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='expo-audio'?{useAudioRecorder:()=>audio,useAudioRecorderState:()=>state,RecordingPresets:{HIGH_QUALITY:{extension:'.m4a',android:{outputFormat:'mpeg4',audioEncoder:'aac'},ios:{}}},requestRecordingPermissionsAsync:async()=>{if(permissionGate)await permissionGate();return{granted:true}},setAudioModeAsync:async()=>{}}:n==='expo-file-system/legacy'?{cacheDirectory:'file:///cache/',deleteAsync:async uri=>files.set(uri,{exists:false,size:0}),getInfoAsync:async uri=>files.get(uri)||{exists:false,size:0}}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=>String(calls.length)+'-synthetic'}:n==='@react-navigation/native'?{useIsFocused:()=>focused,usePreventRemove(){}}:n==='./socialDraft'?{chunkedDraftStore:()=>({getItemAsync:async key=>loadDraft?loadDraft(key):saved,setItemAsync:async(k,v)=>{store.set('draft',v);store.set(k,v)},deleteItemAsync:async k=>store.delete(k)})}:n==='./voiceDraftScope'?require('../src/voiceDraftScope.ts'):n==='./voiceSession'?require('../src/voiceSession.ts'):{transcribeNativeRecording:transcribe}});
  return{Component:exports.default,calls,store,timers,files,focus:value=>{focused=value},background:()=>{appState.currentState='background';appStateListener?.('background')},foreground:()=>{appState.currentState='active';appStateListener?.('active')},advance:ms=>{clockNow+=ms;for(const fn of intervals.values())fn()}};
 }
+test('native recorder disables new microphone and file input at the web transcript budget',async()=>{
+ const h=recorderUI();let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{
+  token:'A',userId:1,patientId:8,consent:true,value:'x'.repeat(54000),onTranscript(){},onFinished(){}
+ })));
+ await renderer.act(async()=>new Promise(resolve=>setImmediate(resolve)));
+ const microphone=button(tree,'Mikrofonu başlat');
+ const audioFile=button(tree,'Ses dosyası seç');
+ assert.ok(microphone);assert.equal(microphone.props.disabled,true);
+ assert.ok(audioFile);assert.equal(audioFile.props.disabled,true);
+ assert.ok(text(tree.toJSON()).includes('54.000 karakter / 180 KB'));
+ await renderer.act(async()=>tree.unmount());
+});
+
 test('native microphone pauses/resumes and only finishes clinical handoff after ASR',async()=>{
  const h=recorderUI(),transcripts=[],finished=[];let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript:v=>transcripts.push(v),onFinished:v=>finished.push(v)})));
  await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());assert.ok(h.calls.includes('record'));assert.equal(finished.length,0);
