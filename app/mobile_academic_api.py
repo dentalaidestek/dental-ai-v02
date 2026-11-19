@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 from app.mobile_api import _mobile_access_token,_mobile_request
 from app.mobile_account_api import _account_user,PlainLegal
 
-HEADERS={'Cache-Control':'private, no-store','Vary':'Authorization'}
+HEADERS={'Cache-Control':'private, no-store','Pragma':'no-cache','Vary':'Authorization'}
 def _private(response:Response):response.headers.update(HEADERS)
 router=APIRouter(tags=['mobile-academic'],dependencies=[Depends(_private)])
 
@@ -158,14 +158,48 @@ async def delete_course(course_id:int,token:str=Depends(_mobile_access_token),us
     await _call(web.delete_study_course,token,course_id);return {'ok':True}
 
 @router.post('/academic/courses/{course_id}/materials')
-async def upload_materials(course_id:int,background_tasks:BackgroundTasks,files:list[UploadFile]=File(...),original_filename:str=Form('',max_length=240),token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+async def upload_materials(course_id:int,background_tasks:BackgroundTasks,files:list[UploadFile]=File(...),original_filename:str=Form('',max_length=240),request_key:str=Form('',max_length=80),token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
     from app import main as web
+    if request_key and not re.fullmatch(r'[A-Za-z0-9_-]{16,80}',request_key):
+        raise HTTPException(422,'Geçersiz Akademik AI dosya istek anahtarı.')
+    if request_key and len(files)!=1:
+        raise HTTPException(422,'İdempotent Akademik AI aktarımı tek dosya olmalıdır.')
     if original_filename:
         from pathlib import Path
         if len(files)!=1 or Path(original_filename).name!=original_filename or '\\' in original_filename:
             raise HTTPException(400,'Geçersiz dosya adı.')
         files[0].filename=original_filename
-    await _call(web.upload_study_materials,token,course_id,background_tasks,files,False);return {'ok':True}
+    _,data=await _call(web.upload_study_materials,token,course_id,background_tasks,files,False,request_key or None)
+    if not request_key:
+        return {'ok':True}
+    if not isinstance(data,dict) or data.get('ok') is not True or not isinstance(data.get('receipt'),dict):
+        raise HTTPException(502,'Akademik AI dosya fişi doğrulanamadı.')
+    return data
+
+
+@router.get('/academic/courses/{course_id}/materials/receipt')
+def material_upload_receipt(course_id:int,request_key:str=Query(...,min_length=16,max_length=80),user=Depends(_account_user)):
+    from app import main as web
+    from app.academic_material_upload_receipts import StudyMaterialUploadReceipt,public_material_upload_receipt
+    if not re.fullmatch(r'[A-Za-z0-9_-]{16,80}',request_key):
+        raise HTTPException(422,'Geçersiz Akademik AI dosya istek anahtarı.')
+    with Session(web.engine) as session:
+        _owned(session,user,course_id)
+        receipt=session.exec(select(StudyMaterialUploadReceipt).where(
+            StudyMaterialUploadReceipt.owner_user_id==user.id,
+            StudyMaterialUploadReceipt.course_id==course_id,
+            StudyMaterialUploadReceipt.request_key==request_key,
+        )).first()
+        if receipt is None:
+            return {'receipt':None}
+        material=session.exec(select(web.StudyMaterial).where(
+            web.StudyMaterial.id==receipt.material_id,
+            web.StudyMaterial.owner_user_id==user.id,
+            web.StudyMaterial.course_id==course_id,
+        )).first()
+        if material is None:
+            raise HTTPException(410,'Bu istekle yüklenen kaynak daha sonra silinmiş.')
+        return {'receipt':public_material_upload_receipt(receipt,material)}
 
 @router.delete('/academic/courses/{course_id}/materials/{material_id}')
 async def delete_material(course_id:int,material_id:int,token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
