@@ -274,6 +274,8 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    if(pickerUri&&pickerUri!==uri&&pickerUri.startsWith(cacheDirectory)){
     await FileSystem.deleteAsync(pickerUri,{idempotent:true});pickerUri=null;
    }
+   if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi; dosya gönderilmedi.');
+   if(!scopeIsCurrent(key))throw Error('Hasta veya hesap değişti; ses dosyası aktarılmadı.');
    const duration=await readPrivateVoiceAudioDuration(uri,resolved.mime);
    validateVoiceAudioDuration(duration);
    if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi; dosya gönderilmedi.');
