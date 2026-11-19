@@ -1,7 +1,7 @@
 const ts=require('typescript'),fs=require('node:fs'),assert=require('node:assert/strict');
 const {test}=require('node:test');
 require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,filename);
-const {getPatients,getPatient,getPatientTreatments}=require('../src/api.ts');
+const {getPatients,getPatient,getPatientTreatments,getToothTreatments}=require('../src/api.ts');
 const reply=body=>({ok:true,status:200,text:async()=>JSON.stringify(body)});
 test('duplicate patient conflicts preserve only a valid existing record id',async()=>{
  const {createPatient,ApiError}=require('../src/api.ts');const original=global.fetch;
@@ -343,3 +343,33 @@ test('malformed, duplicate, cyclic and truncated treatment pages are rejected',a
   }
  }finally{global.fetch=original}
 });
+test('tooth treatment history uses an FDI-scoped endpoint and validates bounded pages',async()=>{
+ const original=global.fetch,cursor='F'.repeat(32),next='G'.repeat(32),calls=[];
+ const item=(id,tooth='36')=>({id,tooth_number:tooth,treatment_name:'Synthetic treatment',edit_revision:'a'.repeat(64),analysis_id:null,created_at:'2026-11-18T10:00:00'});
+ global.fetch=async(url,init)=>{calls.push({url,init});return reply({items:[item(1)],next_cursor:null})};
+ try{
+  const page=await getToothTreatments('secret',8,'36');
+  assert.equal(page.items[0].tooth_number,'36');
+  assert.match(calls[0].url,/\/patients\/8\/teeth\/36\/treatments$/);
+  assert.equal(calls[0].init.credentials,'omit');
+  assert.equal(calls[0].init.headers.Authorization,'Bearer secret');
+  global.fetch=async(url)=>{calls.push({url});return reply({items:Array.from({length:20},(_,i)=>item(i+2)),next_cursor:next})};
+  assert.equal((await getToothTreatments('token',8,'36',cursor)).next_cursor,next);
+  assert.match(calls[1].url,new RegExp('cursor='+cursor));
+ }finally{global.fetch=original}
+});
+
+test('tooth treatment history rejects invalid ids, FDI values and cross-tooth records before display',async()=>{
+ const {ApiError}=require('../src/api.ts'),original=global.fetch;let calls=0;
+ global.fetch=async()=>{calls++;return reply({items:[{id:1,tooth_number:'37',treatment_name:'Wrong tooth',edit_revision:'a'.repeat(64),created_at:'2026-11-18T10:00:00'}],next_cursor:null})};
+ try{
+  await assert.rejects(()=>getToothTreatments('token',0,'36'),/Geçersiz hasta/);
+  await assert.rejects(()=>getToothTreatments('token',8,'19'),/Geçersiz FDI/);
+  global.fetch=()=>{calls++;throw Error('unexpected network call')};
+  await assert.rejects(()=>getToothTreatments('token',8,'36','bad'),/imleci geçersiz/);
+  assert.equal(calls,0);
+  global.fetch=async()=>reply({items:[{id:1,tooth_number:'37',treatment_name:'Wrong tooth',edit_revision:'a'.repeat(64),created_at:'2026-11-18T10:00:00'}],next_cursor:null});
+  await assert.rejects(()=>getToothTreatments('token',8,'36'),error=>error instanceof ApiError&&error.status===502);
+ }finally{global.fetch=original}
+});
+
