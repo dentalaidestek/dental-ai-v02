@@ -50,14 +50,16 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
   await persist(discardInterruptedVoiceSegment(draft.current,id));
   if(active.current===id){active.current=null;chunkStartedAt.current=null;stopped.current=true;}
  }
- async function cleanupTranscribedSegments(){
+ async function cleanupTranscribedSegments(expectedKey=key){
   const completed=draft.current.segments.filter(segment=>segment.transcribed===true);
   for(const segment of completed){
+   if(!scopeIsCurrent(expectedKey))return;
    await removeFile(segment.uri);
-   await persist(removeVoiceSegment(draft.current,segment.id));
+   if(!scopeIsCurrent(expectedKey))return;
+   await persist(removeVoiceSegment(draft.current,segment.id),expectedKey);
   }
   const hasUntrusted=draft.current.segments.some(segment=>!isPrivateVoiceRecordingUri(segment.uri));
-  if(mounted.current&&!hasUntrusted&&!draft.current.segments.some(segment=>segment.transcribed))setStorageBlocked(false);
+  if(scopeIsCurrent(expectedKey)&&mounted.current&&!hasUntrusted&&!draft.current.segments.some(segment=>segment.transcribed))setStorageBlocked(false);
  }
  useEffect(()=>{
   const effectKey=key;let effectActive=true;
@@ -102,7 +104,7 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
      setView(restored);setElapsedMs(restored.elapsedMs||0);transcriptCallback.current(restored.transcript);
      if(restored!==saved)await persist(restored,effectKey);
      if(!isActive())return;
-     if(restored.segments.some(segment=>segment.transcribed))await cleanupTranscribedSegments();
+     if(restored.segments.some(segment=>segment.transcribed))await cleanupTranscribedSegments(effectKey);
      if(!isActive())return;
      if(restored.segments.some(segment=>!segment.transcribed))setError('Bekleyen ses kaydı bulundu. Yazıya çevirmeden önce yarım kalan bölümü kontrol edin.');
      if(interruptedUnverified)setError('Kesintiye uğrayan ses dosyası 100 bayt–8 MB aralığında doğrulanamadı. Bu bölümü kaldırabilir veya taslağı temizleyebilirsiniz.');
