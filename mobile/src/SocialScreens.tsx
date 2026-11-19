@@ -1662,6 +1662,7 @@ export function DentalFlow({
   };
   useEffect(() => {
     // Hide and discard account-owned overlays before the new session can paint.
+    moderationResumeGate.current = createModerationResumeGate();
     setReadySessionKey(sessionKey);
     setCompose(false);
     setComments(null);
