@@ -112,7 +112,8 @@ test('patient media upload sends a stable receipt key and reports real multipart
   assert.equal(fields[1][1],'stable-media-request-key-0001');
   assert.equal(fields[2][1],'stable-media-batch-id-0001');
   assert.deepEqual(fields[3][1],{uri:'file:///synthetic.png',name:'scan.png',type:'image/png'} );
-  assert.equal(fields[4][1],'36');\n  assert.equal(fields[5][1],'Periapikal kontrol');
+  assert.equal(fields[4][1],'36');
+  assert.equal(fields[5][1],'Periapikal kontrol');
   assert.deepEqual(progress,[{loaded:50,total:100,lengthComputable:true}]);
  }finally{global.XMLHttpRequest=originalXHR;global.FormData=originalForm;}
 });
