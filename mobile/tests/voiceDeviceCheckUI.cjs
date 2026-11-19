@@ -22,6 +22,7 @@ test('microphone test uses only temporary app cache and deletes the file after s
 
 test('microphone test verifies cache-file deletion and keeps a retry path on failure',()=>{
  assert.match(component,/isPrivateVoiceDeviceCheckUri\(path,FileSystem\.cacheDirectory\)/);
+ assert.match(component,/if\(!isPrivateVoiceDeviceCheckUri\(path,cache\)\)throw/);
  assert.match(component,/const after=await FileSystem\.getInfoAsync\(path\)/);
  assert.match(component,/return after\.exists!==true/);
  assert.match(component,/if\(cleanupVerified\)uri\.current=null/);
