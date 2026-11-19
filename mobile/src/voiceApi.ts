@@ -31,7 +31,7 @@ export async function createAnonymousVoicePatient(token:string,requestKey:string
 }
 
 
-export type VoiceHistoryField={value:string;quote:string;analysis_id:number};
+export type VoiceHistoryField={value:string;quote:"";analysis_id:number};
 export type VoiceHistory={ok:true;revision:string;fields:Record<string,VoiceHistoryField>;notice:string};
 const VOICE_HISTORY_FIELDS=new Set(["family_history","materials","dental_history","oral_habits","medical_history","medications","allergies"]);
 export async function getVoiceHistory(token:string,patientId:number):Promise<VoiceHistory>{
@@ -39,7 +39,7 @@ export async function getVoiceHistory(token:string,patientId:number):Promise<Voi
  const result=await send<VoiceHistory>(token,"/patients/"+patientId+"/voice-exam/history",undefined,"GET");
  if(!result||result.ok!==true||typeof result.revision!=="string"||!/^[a-f0-9]{64}$/.test(result.revision)||
     !result.fields||typeof result.fields!=="object"||Array.isArray(result.fields)||
-    Object.entries(result.fields).some(([name,item])=>!VOICE_HISTORY_FIELDS.has(name)||!item||typeof item.value!=="string"||!item.value.trim()||item.value.length>3000||typeof item.quote!=="string"||item.quote.length>3000||!Number.isSafeInteger(item.analysis_id)||item.analysis_id<=0)||
+    Object.entries(result.fields).some(([name,item])=>!VOICE_HISTORY_FIELDS.has(name)||!item||typeof item.value!=="string"||!item.value.trim()||item.value.length>3000||typeof item.quote!=="string"||item.quote!==""||!Number.isSafeInteger(item.analysis_id)||item.analysis_id<=0)||
     typeof result.notice!=="string"||result.notice.length>1000)
   throw Error("Önceki hekim onaylı muayene geçmişi doğrulanamadı.");
  return result;
