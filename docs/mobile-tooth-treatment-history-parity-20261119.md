@@ -31,6 +31,13 @@ The native API rejects malformed pages, duplicate IDs, cross-tooth records, inva
 
 These tests are registered in the existing `test:beta` and security-recovery workflows through their current test files; no new workflow or CI trigger was added.
 
+## Static validation performed in this run
+
+- 11/11 source-contract assertions passed against the committed branch files (route, ownership/no-store, cursor tooth scope, client validation, native paged rendering, removal of first-three-only rendering, test registration, and regression presence).
+- The newly added JavaScript regression blocks passed isolated `node --check`.
+- The new Python route/helper and backend regression function snippets passed Python AST parsing.
+- These are static/syntax checks only. They do not replace executing `npm test` or the pytest backend regression.
+
 ## Verification boundary
 
 At the starting head, the latest Android run inspected was `44273348890` (2026-11-18). Its `apk` job had `runner_id=0`, empty `runner_name`, and `steps=[]`; its log endpoint returned `BlobNotFound 404`. The current branch workflows `mobile-android.yml` and `security-recovery.yml` are manual-only while hosted runners are investigated. No workflow was dispatched in this change, so no full TypeScript, Android build, Python security suite, or device test is claimed.
