@@ -127,7 +127,8 @@ export async function startAnalysisAI(token:string,id:number){
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");
  const result=await call<{ok:boolean;status:string;job_id?:number}>("/analyses/"+id+"/ai",token,{method:"POST"});
  const hasDurableJob=Number.isSafeInteger(result?.job_id)&&Number(result.job_id)>0;
- const alreadyComplete=result?.status==="AI_ANALYZED"&&!hasDurableJob;
+ const hasNoJobReceipt=result?.job_id===undefined||result?.job_id===null;
+ const alreadyComplete=result?.status==="AI_ANALYZED"&&hasNoJobReceipt;
  if(result?.ok!==true||typeof result.status!=="string"||!result.status.trim()||result.status.length>40||(!hasDurableJob&&!alreadyComplete))
   throw new ApiError(502,"Klinik AI iş kaydı doğrulanamadı.");
  return result;
