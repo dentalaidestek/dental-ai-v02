@@ -18,7 +18,7 @@ function chartComponent(api,storage=new Map()){
   if(name==='react')return{...React,default:React};
   if(name==='react-native')return native;
   if(name==='@react-navigation/native')return{useNavigation:()=>({getParent:()=>({getParent:()=>({navigate(){}})})}),useIsFocused:()=>focused};
-  if(name==='./api')return{getToothChartFocus:async()=>null,...api};
+  if(name==='./api')return{getToothChartFocus:async()=>null,getToothTreatments:async()=>({items:[],next_cursor:null}),...api};
   if(name==='expo-secure-store')return secure;
   if(name==='expo-crypto')return crypto;
   if(name==='./socialDraft')return{chunkedDraftStore:raw=>raw};
