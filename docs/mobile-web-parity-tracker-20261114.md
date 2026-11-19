@@ -838,3 +838,14 @@ Follow-up review found that the network-uncertain profile-write reconciliation p
 A final privacy pass scoped the native in-memory patient edit snapshot to the composite account/token/patient identity. A component reused during an account switch now invalidates the old snapshot before the new profile request can resolve; an account-switch renderer regression with a delayed response is included in `mobile/tests/patientProfileUI.cjs`. Commits: `2b5fdde` and `47822d4`; documentation: `d643c2a`. No cross-account profile data is intentionally retained; full renderer/device execution remains pending.
 
 The snapshot scope declaration was moved after the composite `scope` value is initialized, so account-scope invalidation is evaluated against the current identity without a temporal-dead-zone reference. Follow-up commit: `a60145b`.
+
+
+## 2026-11-19 — Native microphone preflight cleanup verification
+
+Web-first review compared voice_exam_device_check.html and voice-device-check.js (in-memory PCM16 AudioWorklet, no audio file) with NativeVoiceDeviceCheck. Found that native cache-file deletion errors were swallowed, file absence was not verified, and the URI was cleared regardless; the UI could present a normal microphone result without confirmed cleanup.
+
+Added an exact app-private cache URI validator (direct M4A child only; rejects prefix siblings, traversal, nested and non-file paths). Native deletion now checks existence before and after delete, retains the URI until absence is confirmed, reports cleanup_failed instead of passed, and exposes a retry action while blocking a new check. Start failure, stop, background, blur and unmount use the same verified cleanup helper. No upload, SecureStore persistence, patient/account identifiers or API calls were added.
+
+Regression sources updated: mobile/tests/voiceDeviceCheck.cjs and mobile/tests/voiceDeviceCheckUI.cjs. Both are already registered in npm run test:beta. Tests are committed but not executed in this connector-only run. Full typecheck, beta suite, Expo export, Gradle, physical Android/iOS and simulated filesystem deletion-failure acceptance remain open.
+
+Commits: 6a336d0, d895fc7, 1468a1e, dc4b23a, 0d954eb, a76deac, 495aa0b, plus the documentation commits. Evidence: docs/mobile-voice-device-check-cleanup-20261119.md. No patient data, migration, main merge or live deploy.
