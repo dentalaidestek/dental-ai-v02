@@ -2,7 +2,7 @@ import {request} from './api';
 export type Course={id:number;title:string;description?:string;material_count?:number};
 export type Material={id:number;name:string;mime:string;size:number;index_status:string;url:string};
 export type CourseCreateIntent={version:1|2;user:number;title:string;description:string;known_ids:number[];request_key?:string};
-export type UploadIntent={version:2;user:number;course:number;name:string;mime:string;uri:string;size:number|null;request_key:string};
+export type UploadIntent={version:2|3;user:number;course:number;name:string;mime:string;uri:string;size:number|null;request_key:string;content_sha256?:string};
 export type AcademicUploadReceipt={course_id:number;request_key:string;material_id:number;name:string;mime:string;size:number;content_sha256:string;payload_hash:string;created_at:string};
 export function academicMimeFromName(name:string):string|null{const extension=name.split('.').pop()?.toLowerCase();return extension==='pdf'?'application/pdf':extension==='jpg'||extension==='jpeg'?'image/jpeg':extension==='png'?'image/png':extension==='webp'?'image/webp':null;}
 export function parseCourseCreateIntent(raw:string,user:number):CourseCreateIntent{
@@ -18,7 +18,8 @@ export function findCreatedCourse(items:Course[],intent:CourseCreateIntent):Cour
 export function parseUploadIntent(raw:string,user:number,course:number):UploadIntent{
  const value=JSON.parse(raw);
  const mime=typeof value?.name==='string'?academicMimeFromName(value.name):null;
- if(value?.version!==2||value.user!==user||value.course!==course||typeof value.name!=='string'||!value.name||value.name.length>240||value.name.trim()!==value.name||value.name.includes('/')||value.name.includes(String.fromCharCode(92))||typeof value.uri!=='string'||!value.uri.startsWith('file://')||!mime||value.mime!==mime||typeof value.request_key!=='string'||!/^[-_a-zA-Z0-9]{16,80}$/.test(value.request_key)||(value.size!==null&&(!Number.isSafeInteger(value.size)||value.size<1||value.size>150*1024*1024)))throw Error('Bekleyen dosya aktarımı doğrulanamadı. Sunucudaki kaynak fişi kontrol edilmelidir.');
+ const validDigest=typeof value?.content_sha256==='string'&&/^[a-f0-9]{64}$/.test(value.content_sha256);
+ if((value?.version!==2&&value?.version!==3)||value.user!==user||value.course!==course||typeof value.name!=='string'||!value.name||value.name.length>240||value.name.trim()!==value.name||value.name.includes('/')||value.name.includes(String.fromCharCode(92))||typeof value.uri!=='string'||!value.uri.startsWith('file://')||!mime||value.mime!==mime||typeof value.request_key!=='string'||!/^[-_a-zA-Z0-9]{16,80}$/.test(value.request_key)||(value.size!==null&&(!Number.isSafeInteger(value.size)||value.size<1||value.size>150*1024*1024))||(value.version===2&&value.content_sha256!==undefined)||(value.version===3&&(!validDigest||!Number.isSafeInteger(value.size)||value.size<1)))throw Error('Bekleyen dosya aktarımı doğrulanamadı. Sunucudaki kaynak fişi kontrol edilmelidir.');
  return value as UploadIntent;
 }
 export type Workspace={course:Course;materials:Material[];max_file_bytes:number;max_upload_count:number;next_before:number|null};
