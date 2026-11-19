@@ -216,7 +216,7 @@ test('Dental Flow composer previews HTTPS links and sends the owner-scoped previ
  assert.deepEqual(h.previews,['https://example.org/article']);
  assert.ok(text(tree).includes('Example title'));
  const publish=nodes(tree).find(n=>text(n)==='Paylaş');assert.ok(publish);
- await publish.props.onPress();await tick();
+ await publish.props.onPress();await tick();await tick();
  assert.equal(h.posts.length,1);
  assert.equal(h.posts[0].preview_id,77);
  assert.equal(h.posts[0].link_url,'https://example.org/article');
@@ -283,7 +283,7 @@ test('Dental Flow composer selects, restores and submits a custom link cover',as
  tree=h.render('Composer',props);
  assert.ok(nodes(tree).some(n=>n.props?.accessibilityLabel==='Bağlantı kapağı seçildi 2'));
  const publish=nodes(tree).find(n=>n.type==='Pressable'&&text(n)==='Paylaş');
- assert.ok(publish);await publish.props.onPress();
+ assert.ok(publish);await publish.props.onPress();await tick();
  assert.equal(h.posts.length,1);assert.equal(h.posts[0].cover_media_id,12);
 });
 test('Dental Flow defaults the first of four uploaded images as the link cover and clears a removed cover',async()=>{
@@ -301,7 +301,7 @@ test('Dental Flow defaults the first of four uploaded images as the link cover a
  const remove=nodes(tree).find(n=>n.props?.accessibilityLabel==='Fotoğrafı kaldır 2');
  assert.ok(remove);remove.props.onPress();await tick();await tick();tree=h2.render('Composer',props);
  const publish2=nodes(tree).find(n=>n.type==='Pressable'&&text(n)==='Paylaş');
- await publish2.props.onPress();
+ await publish2.props.onPress();await tick();
  assert.equal(h2.posts[0].cover_media_id,undefined);
 });
 

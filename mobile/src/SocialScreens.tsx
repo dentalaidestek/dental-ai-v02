@@ -292,7 +292,13 @@ function Composer({
   }
 
   async function post() {
-    if (lock.current || previewBusy || d.draft.attempted) return;
+    if (lock.current || previewBusy) return;
+    if (d.draft.attempted) {
+      // Retry path ('Tekrar dene'): the stored intent stays durable and the
+      // SAME frozen idempotency key is reused; only the attempted flag is
+      // cleared so the queue may resend it.
+      d.update({ attempted: false });
+    }
     lock.current = true;
     setBusy(true);
     setError("");
