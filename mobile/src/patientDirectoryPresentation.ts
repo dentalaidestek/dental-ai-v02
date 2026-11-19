@@ -3,6 +3,10 @@ export type PatientDirectoryFields = {
  phone?:string|null;
 };
 
+// The web directory filters on every input event. Native keeps the same
+// behavior without sending one request per keystroke.
+export const PATIENT_DIRECTORY_SEARCH_DEBOUNCE_MS=300;
+
 export function normalizePatientDirectorySearch(value:string):string{
  return value.trim().replace(/\s+/g," ");
 }
