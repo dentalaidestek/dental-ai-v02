@@ -60,7 +60,7 @@ test('interrupted recovery enforces the native audio byte range and preserves tr
  assert.throws(()=>api.discardInterruptedVoiceSegment(valid,'bounded'),/Tamamlanmış/);
 });
 
-function recorderUI({saved=null,transcribe=async()=>({transcript:'Synthetic dictated speech',revision:'r'}),stopFailures=0,stopFailureStopsRecorder=false,stopGate=null,permissionGate=null,restoredFileInfo={exists:true,size:1024}}={}){
+function recorderUI({saved=null,loadDraft=null,transcribe=async()=>({transcript:'Synthetic dictated speech',revision:'r'}),stopFailures=0,stopFailureStopsRecorder=false,stopGate=null,permissionGate=null,restoredFileInfo={exists:true,size:1024}}={}){
  const exports={},store=new Map(),calls=[],timers=[],files=new Map(),state={isRecording:false,durationMillis:0,mediaServicesDidReset:false};
  if(saved){try{for(const segment of JSON.parse(saved).segments||[])files.set(segment.uri,{...restoredFileInfo})}catch{}}
  let audioUri='file:///cache/record-0.m4a',stopFailuresRemaining=stopFailures;
@@ -69,7 +69,7 @@ function recorderUI({saved=null,transcribe=async()=>({transcript:'Synthetic dict
  const secure={getItemAsync:async key=>store.get(key)||null,setItemAsync:async(k,v)=>store.set(k,v),deleteItemAsync:async k=>store.delete(k)};
  const native={StyleSheet:{create:x=>x},Alert:{alert(){}},AppState:appState,...Object.fromEntries(['ActivityIndicator','Pressable','Text','TextInput','View'].map(x=>[x,x]))};
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeVoiceRecorder.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
- vm.runInNewContext(code,{exports,Date:{now:()=>clockNow},setInterval:fn=>{const id=++nextInterval;intervals.set(id,fn);return id},clearInterval:id=>intervals.delete(id),setTimeout:(fn,ms)=>ms===15000?(timers.push(fn),timers.length):setTimeout(fn,ms),clearTimeout:id=>{if(typeof id!=='number')clearTimeout(id)},AbortController,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='expo-audio'?{useAudioRecorder:()=>audio,useAudioRecorderState:()=>state,RecordingPresets:{HIGH_QUALITY:{extension:'.m4a',android:{outputFormat:'mpeg4',audioEncoder:'aac'},ios:{}}},requestRecordingPermissionsAsync:async()=>{if(permissionGate)await permissionGate();return{granted:true}},setAudioModeAsync:async()=>{}}:n==='expo-file-system/legacy'?{cacheDirectory:'file:///cache/',deleteAsync:async uri=>files.set(uri,{exists:false,size:0}),getInfoAsync:async uri=>files.get(uri)||{exists:false,size:0}}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=>String(calls.length)+'-synthetic'}:n==='@react-navigation/native'?{useIsFocused:()=>focused,usePreventRemove(){}}:n==='./socialDraft'?{chunkedDraftStore:()=>({getItemAsync:async()=>saved,setItemAsync:async(_k,v)=>{store.set('draft',v)},deleteItemAsync:async()=>{}})}:n==='./voiceSession'?require('../src/voiceSession.ts'):{transcribeNativeRecording:transcribe}});
+ vm.runInNewContext(code,{exports,Date:{now:()=>clockNow},setInterval:fn=>{const id=++nextInterval;intervals.set(id,fn);return id},clearInterval:id=>intervals.delete(id),setTimeout:(fn,ms)=>ms===15000?(timers.push(fn),timers.length):setTimeout(fn,ms),clearTimeout:id=>{if(typeof id!=='number')clearTimeout(id)},AbortController,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='expo-audio'?{useAudioRecorder:()=>audio,useAudioRecorderState:()=>state,RecordingPresets:{HIGH_QUALITY:{extension:'.m4a',android:{outputFormat:'mpeg4',audioEncoder:'aac'},ios:{}}},requestRecordingPermissionsAsync:async()=>{if(permissionGate)await permissionGate();return{granted:true}},setAudioModeAsync:async()=>{}}:n==='expo-file-system/legacy'?{cacheDirectory:'file:///cache/',deleteAsync:async uri=>files.set(uri,{exists:false,size:0}),getInfoAsync:async uri=>files.get(uri)||{exists:false,size:0}}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=>String(calls.length)+'-synthetic'}:n==='@react-navigation/native'?{useIsFocused:()=>focused,usePreventRemove(){}}:n==='./socialDraft'?{chunkedDraftStore:()=>({getItemAsync:async key=>loadDraft?loadDraft(key):saved,setItemAsync:async(k,v)=>{store.set('draft',v);store.set(k,v)},deleteItemAsync:async k=>store.delete(k)})}:n==='./voiceDraftScope'?require('../src/voiceDraftScope.ts'):n==='./voiceSession'?require('../src/voiceSession.ts'):{transcribeNativeRecording:transcribe}});
  return{Component:exports.default,calls,store,timers,files,focus:value=>{focused=value},background:()=>{appState.currentState='background';appStateListener?.('background')},foreground:()=>{appState.currentState='active';appStateListener?.('active')},advance:ms=>{clockNow+=ms;for(const fn of intervals.values())fn()}};
 }
 test('native microphone pauses/resumes and only finishes clinical handoff after ASR',async()=>{
@@ -404,4 +404,22 @@ test('native voice recorder exposes the web session microphone, timer, meter and
  assert.match(source,/micCircle:\{width:76,height:76/,'the native microphone stays compact');
  assert.match(source,/controls:\{flexDirection:'column'/,'primary voice actions remain full-width and vertically ordered');
  assert.match(source,/button:\{width:'100%',minHeight:48/);
+});
+
+function deferred(){let resolve;const promise=new Promise(r=>{resolve=r});return{promise,resolve}}
+test('late voice draft restore from a previous patient cannot overwrite the active owner-patient scope',async()=>{
+ const oldRead=deferred(),now=Date.now();
+ const oldDraft=JSON.stringify({version:1,userId:1,patientId:8,transcript:'OLD ACCOUNT TRANSCRIPT',segments:[],updatedAt:now,ended:false,audioStarted:true,elapsedMs:1000});
+ const newDraft=JSON.stringify({version:1,userId:2,patientId:8,transcript:'NEW ACCOUNT TRANSCRIPT',segments:[],updatedAt:now,ended:false,audioStarted:true,elapsedMs:2000});
+ const h=recorderUI({loadDraft:key=>key==='dai.voice.1.8'?oldRead.promise:Promise.resolve(newDraft)}),oldCalls=[],newCalls=[];
+ let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript:v=>oldCalls.push(v),onFinished(){}})));
+ await renderer.act(async()=>tree.update(React.createElement(h.Component,{token:'B',userId:2,patientId:8,consent:true,value:'',onTranscript:v=>newCalls.push(v),onFinished(){}})));
+ await renderer.act(async()=>new Promise(resolve=>setImmediate(resolve)));
+ assert.deepEqual(newCalls,['NEW ACCOUNT TRANSCRIPT']);
+ await renderer.act(async()=>{oldRead.resolve(oldDraft);await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve))});
+ assert.deepEqual(newCalls,['NEW ACCOUNT TRANSCRIPT']);
+ assert.equal(oldCalls.length,0);
+ assert.equal(JSON.parse(h.store.get('dai.voice.2.8')).transcript,'NEW ACCOUNT TRANSCRIPT');
+ await renderer.act(async()=>tree.unmount());
 });
