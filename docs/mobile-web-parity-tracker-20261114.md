@@ -870,3 +870,14 @@ Added `patientSelectPresentation.ts` for normalized Turkish whitespace, a strict
 Regression: `mobile/tests/patientSelectParity.cjs` checks Turkish whitespace, the 100-character boundary, row privacy, empty/loading/error copy and component search/pagination wiring; registered in `npm run test:beta`. Local isolated Node 22.16 run passed 4/4 tests. Standalone strict TypeScript compilation of the two pure presentation helpers passed; the TSX file transpiled without syntax diagnostics; CJS syntax and package JSON were checked. The complete React Native project typecheck, full beta suite, Android/iOS export, Gradle and physical-device acceptance remain open.
 
 Commits: `020444e` (presentation helper), `64e5531` (native picker), `0e59994` (regressions), `281f26b` (beta registration), `b875238` (feature evidence), `2684ab2` (correct the source-wiring assertion), `ffe4b3f` (retry-only pagination state), `ecebb85` (pagination regression), `8dafaba` (follow-up evidence). No main merge or live deploy.
+
+
+## 2026-11-19 — Tooth-surface applicability follow-up
+
+Re-read `app/templates/tooth_chart.html`, its `selectTooth` / `setSurface` flow, the owner-scoped tooth/surface routes in `app/main.py`, and the FDI observation helper before changing native code.
+
+Found a native-only inconsistency: the tooth preview pin already mapped FDI units 1–3 to `INCISAL`, but the two native surface-choice lists exposed both `INCISAL` and `OCCLUSAL` for every tooth. Added `mobile/src/toothSurfaceOptions.ts` so permanent and primary FDI teeth expose only the applicable incisal or occlusal option, plus the four shared axial surfaces. Invalid FDI values expose no writable choices. The main surface picker, independent surface editor and preview-pin labels now share the same selected-tooth options and web terminology.
+
+Added `mobile/tests/toothSurfaceOptions.cjs` to `npm run test:beta`. Isolated Node 22.16 helper tests passed 4/4 and standalone strict TypeScript compilation passed. GitHub source-contract checks verified both picker bindings, both label lookups, FDI guard and beta registration. The committed component-wiring test is not claimed as locally executed; full React Native typecheck, complete beta suite, Python security tests, Expo exports, Gradle APK and device acceptance remain open.
+
+Commits: `bf7ede7` (FDI helper), `ca66763` (native integration), `dcbd349` (regressions), `20cd470` (beta registration), `a9a2533` (technical note), `<TRACKER_COMMIT>` (tracker evidence). No schema change, main merge, production deploy or clinical record mutation.
