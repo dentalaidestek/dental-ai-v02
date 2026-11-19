@@ -94,3 +94,9 @@ Added Node regressions in `mobile/tests/academicWorkflow.cjs` for duplicate/out-
 - `npm run typecheck`, `npm run test:beta`, Python pytest, device testing and the 60,000-user load test were not executed in this environment. The new regressions are committed but not runtime-verified.
 
 No main merge, production deployment, migration execution, APK publication or live clinical-data mutation was performed.
+
+### Follow-up type boundary check
+
+The canonical run serializer always includes `partial` and `error`, and either may be `null` before a provider result exists. The native type and validator now preserve that nullable contract instead of rejecting a valid queued/running run. A regression assertion covers `partial: null` and `error: null`.
+
+The new validator logic was also copied into an isolated strict TypeScript check: compilation passed and six runtime assertions passed, including nullable run fields, a valid workspace, learning review, nullable source title, and malformed cursor rejection. The added Node and Python regression snippets passed syntax checks. These are focused checks only—not a substitute for the full mobile project typecheck or the repository pytest/Node suites.
