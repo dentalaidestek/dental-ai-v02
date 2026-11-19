@@ -21,6 +21,16 @@ export function voiceUtf8Bytes(value:string):number{
  return bytes;
 }
 
+export const VOICE_AUDIO_INPUT_CHAR_LIMIT=54000;
+export const VOICE_AUDIO_INPUT_BYTE_LIMIT=180000;
+
+/** Match the web voice panel's stop-new-audio threshold before another paid ASR call. */
+export function canAcceptVoiceAudioInput(transcript:unknown):boolean{
+ return typeof transcript==="string"&&
+  transcript.length<VOICE_AUDIO_INPUT_CHAR_LIMIT&&
+  voiceUtf8Bytes(transcript)<VOICE_AUDIO_INPUT_BYTE_LIMIT;
+}
+
 // Mirrors the web FinishDraft boundaries: bounded requests, Unicode-safe and
 // preferentially split at sentence/word boundaries without dropping a character.
 export function splitVoiceTranscript(text:string):string[]{
