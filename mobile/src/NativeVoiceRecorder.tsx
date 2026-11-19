@@ -255,8 +255,9 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    });
    if(selection.canceled||!selection.assets?.length)return;
    if(!consentRef.current)throw Error('Ses aktarımı onayı geri çekildi; dosya gönderilmedi.');
-   const asset=selection.assets[0],resolved=resolveVoiceAudioAsset(asset.mimeType,asset.name);
+   const asset=selection.assets[0];
    pickerUri=asset.uri;
+   const resolved=resolveVoiceAudioAsset(asset.mimeType,asset.name);
    const sourceInfo=await FileSystem.getInfoAsync(asset.uri);
    validateVoiceAudioBytes(sourceInfo.size);
    const cacheDirectory=FileSystem.cacheDirectory;
