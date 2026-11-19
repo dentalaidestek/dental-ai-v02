@@ -59,3 +59,12 @@ The source and test changes were committed to `feature/mobile-web-parity-2026111
 At the starting HEAD `817a879`, combined status and PR-associated workflow runs were empty. The PR description contains current-head Actions evidence from 2026-11-16: Android typecheck/APK and Python security jobs failed before any step, with runner ID 0 and `BlobNotFound 404` log downloads. This does not establish a source-level TypeScript or pytest failure; the exact hosted-runner/account/billing sub-cause remains unavailable.
 
 No main merge, live deploy, production migration, APK/IPA publication or clinical data mutation.
+
+
+## Follow-up — ambiguous write reconciliation
+
+A second pass found the same stale-revision risk in the network-uncertain path: after a timeout/5xx, a successful read could update the detail revision while preserving the local draft. The previous code compared the full draft with the latest record but did not merge unrelated remote-only field changes.
+
+The reconciliation path now uses the same three-way merge before clearing the uncertainty lock. If the server contains the exact submitted draft, the write is confirmed. If the write did not land, the local-only fields are preserved and unrelated current server fields are adopted. Same-field conflicts remain explicit and keep saving blocked. Added a renderer regression that simulates a 503 followed by a current server read, then verifies the retry carries the latest revision and preserves the other session's phone/address updates.
+
+This follow-up is also committed test source, not an executed React Native suite.
