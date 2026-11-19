@@ -2,6 +2,8 @@ const ts=require('typescript'),fs=require('node:fs'),assert=require('node:assert
 const {test}=require('node:test');
 require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
 const api=require('../src/voiceApi.ts');
+const TEST_AUDIO_REQUEST_KEY='voice-import-request-123456';
+const transcribeVoiceAudio=(...args)=>transcribeVoiceAudio(...(args.length===4?[...args,TEST_AUDIO_REQUEST_KEY]:args));
 const response=(body,status=200)=>({ok:status>=200&&status<300,status,text:async()=>body});
 test('voice extraction sends consent, bearer and patient path',async()=>{
  const original=global.fetch;let call;global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review:{fields:{}}}))};
@@ -107,7 +109,7 @@ test('native voice audio uses raw bounded bytes, consent and patient scoped rout
  global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',transcript:'Dişim ağrıyor.'}))};
  try{
   const blob=new Blob([new Uint8Array(128)],{type:'audio/mp4'});
-  const result=await api.transcribeVoiceAudio('secret',23,blob,'audio/mp4','voice-import-request-123456');
+  const result=await transcribeVoiceAudio('secret',23,blob,'audio/mp4','voice-import-request-123456');
   assert.equal(result.transcript,'Dişim ağrıyor.');
   assert.match(call.url,/\/patients\/23\/voice-exam\/audio$/);
   assert.equal(call.init.headers.Authorization,'Bearer secret');
@@ -122,17 +124,17 @@ test('native voice audio rejects unsupported formats and oversized files without
  const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw Error('should not fetch')};
  try{
   const valid=new Blob([new Uint8Array(128)]);
-  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,valid,'application/octet-stream','voice-import-request-123456'),/desteklenmiyor/);
-  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(8)]),'audio/mp4','voice-import-request-123456'),/8 MB/);
-  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,{size:8*1024*1024+1},'audio/mp4','voice-import-request-123456'),/8 MB/);
-  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,valid,'audio/mp4',''),/işlem anahtarı/);
+  await assert.rejects(()=>transcribeVoiceAudio('token',1,valid,'application/octet-stream','voice-import-request-123456'),/desteklenmiyor/);
+  await assert.rejects(()=>transcribeVoiceAudio('token',1,new Blob([new Uint8Array(8)]),'audio/mp4','voice-import-request-123456'),/8 MB/);
+  await assert.rejects(()=>transcribeVoiceAudio('token',1,{size:8*1024*1024+1},'audio/mp4','voice-import-request-123456'),/8 MB/);
+  await assert.rejects(()=>transcribeVoiceAudio('token',1,valid,'audio/mp4',''),/işlem anahtarı/);
   assert.equal(calls,0);
  }finally{global.fetch=original}
 });
 test('native voice audio rejects missing transcription and retains actionable error',async()=>{
  const original=global.fetch;
  global.fetch=async()=>response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}));
- try{await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4','voice-import-request-123456'),/yanıtı eksik/)}finally{global.fetch=original}
+ try{await assert.rejects(()=>transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4','voice-import-request-123456'),/yanıtı eksik/)}finally{global.fetch=original}
 });
 
 test('clinical communication coaching from extraction is accepted in final payload',async()=>{
@@ -154,8 +156,8 @@ test('native voice audio refuses invalid patient IDs and non-finite sizes before
  const original=global.fetch;let calls=0;global.fetch=async()=>{calls++;throw Error('unexpected upload')};
  try{
   const blob=new Blob([new Uint8Array(128)],{type:'audio/mp4'});
-  for(const id of [0,-1,1.5,Number.NaN])await assert.rejects(()=>api.transcribeVoiceAudio('token',id,blob,'audio/mp4'),/geçerli bir hasta/);
-  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,{size:Number.NaN},'audio/mp4'),/8 MB/);
+  for(const id of [0,-1,1.5,Number.NaN])await assert.rejects(()=>transcribeVoiceAudio('token',id,blob,'audio/mp4'),/geçerli bir hasta/);
+  await assert.rejects(()=>transcribeVoiceAudio('token',1,{size:Number.NaN},'audio/mp4'),/8 MB/);
   assert.equal(calls,0);
  }finally{global.fetch=original}
 });
@@ -182,7 +184,7 @@ test('native voice audio rejects null, list and primitive server responses safel
  try{
   for(const body of ['null','[]','true','42','"unexpected"']){
    global.fetch=async()=>response(body);
-   await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/geçersiz yanıt/);
+   await assert.rejects(()=>transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/geçersiz yanıt/);
   }
  }finally{global.fetch=original}
 });
@@ -203,7 +205,7 @@ test('native voice transcription rejects oversized text before it reaches UI',as
  const original=global.fetch;
  global.fetch=async()=>response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',transcript:'a'.repeat(72001)}));
  try{
-  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/sınır dışında/);
+  await assert.rejects(()=>transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/sınır dışında/);
  }finally{global.fetch=original}
 });
 
@@ -212,10 +214,10 @@ test('ASR refuses oversized and empty transcription while preserving local audio
  try{
   for(const transcript of ['', '   ', 'x'.repeat(18001)]){
    global.fetch=async()=>response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',transcript}));
-   await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/sınır dışında/);
+   await assert.rejects(()=>transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/sınır dışında/);
   }
   global.fetch=async()=>response(JSON.stringify({ok:true,revision:' ',transcript:'Diş ağrısı'}));
-  await assert.rejects(()=>api.transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/sınır dışında/);
+  await assert.rejects(()=>transcribeVoiceAudio('token',1,new Blob([new Uint8Array(128)]),'audio/mp4'),/sınır dışında/);
  }finally{global.fetch=original}
 });
 
@@ -224,7 +226,7 @@ test('native voice upload rejects missing MIME without throwing a TypeError',asy
  try{
   const audio=new Blob([new Uint8Array(128)]);
   for(const mime of [undefined,null,42]){
-   await assert.rejects(()=>api.transcribeVoiceAudio('token',1,audio,mime),/Ses biçimi desteklenmiyor/);
+   await assert.rejects(()=>transcribeVoiceAudio('token',1,audio,mime),/Ses biçimi desteklenmiyor/);
   }
   assert.equal(calls,0);
  }finally{global.fetch=original}
