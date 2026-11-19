@@ -13,7 +13,7 @@ test('academic file access rejects external and cross-course bearer destinations
 const timelineItem=(id,overrides={})=>({id,role:'ASSISTANT',content:'Synthetic answer',created_at:'2026-11-19T10:00:00.000Z',quiz:null,quiz_stale:false,artifact:null,sources:[],vote:null,...overrides});
 test('academic timeline validates bounded ordered pages and accepts nullable citation metadata',async()=>{
  const items=Array.from({length:50},(_,index)=>timelineItem(index+1));
- items[0]={...items[0],sources:[{title:null,page:null,url:null}]};
+ items[0]={...items[0],sources:[{title:null,page:null,page_start:null,page_end:null,url:null}]};
  const first=api(async path=>{assert.equal(path,'/academic/courses/3/timeline');return{items,next_before:1}});
  const page=await first.timeline('token',3);
  assert.equal(page.items.length,50);assert.equal(page.next_before,1);assert.equal(page.items[0].sources[0].title,null);
