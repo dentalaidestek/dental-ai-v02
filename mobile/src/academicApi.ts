@@ -33,7 +33,7 @@ export type IndexStatus={ready:boolean;complete:boolean;state:string;completed:n
 const isRecord=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const safeId=(value:unknown):value is number=>typeof value==='number'&&Number.isSafeInteger(value)&&value>0;
 const boundedText=(value:unknown,max:number,allowEmpty=true):value is string=>typeof value==='string'&&value.length<=max&&(allowEmpty||value.trim().length>0);
-const validCursor=(value:unknown):boolean=>value===null||safeId(value);
+const validCursor=(value:unknown):value is number|null=>value===null||safeId(value);
 
 function validateAcademicQuiz(value:unknown):Quiz{
  if(!isRecord(value)||!safeId(value.message_id)||!Array.isArray(value.questions)||value.questions.length<1||value.questions.length>20)throw Error('Akademik soru seti doğrulanamadı.');
@@ -95,14 +95,15 @@ function validateLearning(value:unknown):{learning:Learning}{
  for(const key of ['next_due_at','last_practiced_at'] as const)if(learning[key]!==undefined&&learning[key]!==null&&(!boundedText(learning[key],80,false)||!Number.isFinite(Date.parse(String(learning[key])))))throw Error('Çalışma zamanı doğrulanamadı.');
  return value as unknown as {learning:Learning};
 }
-function validateSourcePage(value:unknown,requestedPage:number):Awaited<ReturnType<typeof sourcePage>>{
+export type SourcePage={filename:string;page:number;status:string;ocr_text:string;chunks:Array<{id:number;title:string|null;text:string}>};
+function validateSourcePage(value:unknown,requestedPage:number):SourcePage{
  if(!isRecord(value)||!boundedText(value.filename,240,false)||value.page!==requestedPage||!boundedText(value.status,40,false)||!boundedText(value.ocr_text,1000000)||!Array.isArray(value.chunks)||value.chunks.length>200)throw Error('İndekslenen kaynak sayfası doğrulanamadı.');
  const ids=new Set<number>();
  for(const chunk of value.chunks){
-  if(!isRecord(chunk)||!safeId(chunk.id)||ids.has(chunk.id)||!boundedText(chunk.title,500)||!boundedText(chunk.text,200000))throw Error('Kaynak metin parçası doğrulanamadı.');
+  if(!isRecord(chunk)||!safeId(chunk.id)||ids.has(chunk.id)||(chunk.title!==null&&!boundedText(chunk.title,500))||!boundedText(chunk.text,200000))throw Error('Kaynak metin parçası doğrulanamadı.');
   ids.add(chunk.id);
  }
- return value as unknown as Awaited<ReturnType<typeof sourcePage>>;
+ return value as unknown as SourcePage;
 }
 const id=(n:number)=>{if(!Number.isSafeInteger(n)||n<1)throw Error('Geçersiz ders veya kayıt kimliği.');return n};
 export const coursePath=(course:number)=>`/academic/courses/${id(course)}`;
@@ -140,4 +141,4 @@ export function academicFilePath(course:number,path:string){const base=coursePat
 export type Learning={practiced_facts:number;due_count:number;correct:number;wrong:number;weak_count:number;review:Array<{fact:string;source:string;due:boolean;needs_practice:boolean}>};
 export const learning=async(t:string,c:number)=>validateLearning(await request<unknown>(coursePath(c)+'/learning',t));
 export const clearHistory=(t:string,c:number)=>write<{ok:boolean}>(t,coursePath(c)+'/timeline','DELETE');
-export const sourcePage=async(t:string,c:number,m:number,page:number)=>{const requested=id(page);return validateSourcePage(await request<unknown>(coursePath(c)+`/materials/${id(m)}/pages/${requested}/text`,t),requested)};
+export const sourcePage=async(t:string,c:number,m:number,page:number):Promise<SourcePage>=>{const requested=id(page);return validateSourcePage(await request<unknown>(coursePath(c)+`/materials/${id(m)}/pages/${requested}/text`,t),requested)};
