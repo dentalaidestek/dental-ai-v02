@@ -1,5 +1,9 @@
 const ts=require('typescript'),fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),{test}=require('node:test');
 const tick=()=>new Promise(r=>setImmediate(r));
+const sessionScopeSource=fs.readFileSync(require.resolve('../src/socialSessionScope.ts'),'utf8');
+const sessionScopeCode=ts.transpileModule(sessionScopeSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+const sessionScopeExports={};
+vm.runInNewContext(sessionScopeCode,{exports:sessionScopeExports});
 function harness(){
  const state=[],alerts=[],refs=[],previous=[],effects=[],callbacks=[],requests=[],uploads=[],previews=[],posts=[],shared=[],opened=[],getPostCalls=[],getModerationCalls=[],storeValues=new Map();let cursor=0,ri=0,ei=0,ci=0,getPostResponse=null,moderationResponse=null;
  let getCommentsHandler=async()=>({items:[{id:20,text:'reply',author_name:'R',parent_id:10}],next_cursor:null});
@@ -11,8 +15,8 @@ function harness(){
  const native={Alert:{alert:(...args)=>alerts.push(args)},Share:{share:async options=>{shared.push(options);return {action:'sharedAction'}}},Linking:{openURL:async url=>opened.push(url)},Platform:{OS:'ios'},StyleSheet:{create:s=>s},Pressable:'Pressable',Text:'Text',View:'View',Image:'Image',ScrollView:'ScrollView',KeyboardAvoidingView:'KeyboardAvoidingView',Modal:'Modal',SafeAreaView:'SafeAreaView',ActivityIndicator:'ActivityIndicator',FlatList:'FlatList'};
  const api={getPost:async(_t,id)=>{getPostCalls.push([_t,id]);return getPostResponse||{id,author_id:1,author_name:'Expert',text:'Refreshed',status:'PUBLISHED',version:2,owned:true,pinned:false,comments_closed:false,liked:false,like_count:0,comment_count:0,media:[],created_at:'2026-11-17T13:20:00Z'}},getPostModerationStatus:async(_t,id)=>{getModerationCalls.push([_t,id]);return moderationResponse||{target_type:'POST',target_id:id,status:'PUBLISHED',version:2,moderation:{registered:true,content_version:2,revision:2,state:'HUMAN_DONE',wait_type:'NONE',reasons:[],reason:'Otomatik kontrol tamamlandı.',retryable:false}}},getComments:async(...args)=>{requests.push(args);return getCommentsHandler(...args)},setFollow:async(_t,_id,followed)=>({following_by_viewer:followed}),socialPostUrl:(authorId,postId)=>'https://dentalai.tr/expert-support/expert/'+authorId+'?post='+postId,socialImageSource:(url,token)=>({uri:url,headers:{Authorization:'Bearer '+token}}),uploadSocialImage:async(_token,file)=>{uploads.push(file);return {id:uploads.length,url:'/api/expert-social/media/'+uploads.length}},getLinkPreview:async(_token,url)=>{previews.push(url);return {available:true,id:77,url,domain:'example.org',site_name:'Example',title:'Example title',description:'Safe preview',cover:{id:81,url:'/api/expert-social/media/81'}}},createPost:async(_token,payload)=>{posts.push(payload);return {id:90,author_id:1,author_name:'Expert',text:payload.text,status:'PUBLISHED',version:1,owned:true,pinned:false,comments_closed:false,liked:false,like_count:0,comment_count:0,media:[],created_at:'2026-11-17'}}};
  const draftModule={chunkedDraftStore:()=>store,draftKey:(userId,scope)=>userId+':'+scope,readDraft:async(s,key)=>{const value=await s.getItemAsync(key);return value?JSON.parse(value):null},submitDraft:async(s,key,draft,send)=>{const intent={...draft,attempted:true};await s.setItemAsync(key,JSON.stringify(intent));const result=await send(intent);await s.deleteItemAsync(key);return result}};
- vm.runInNewContext(code,{exports,require:n=>n==='react'?react:n==='react-native'?native:n==='react-native-safe-area-context'?{SafeAreaView:'SafeAreaView'}:n==='./socialApi'?api:n==='./socialDraft'?draftModule:n==='expo-secure-store'?store:n==='expo-image-picker'?picker:n==='expo-crypto'?{randomUUID:()=> 'synthetic-id'}:{}});
- return {alerts,refs,requests,shared,opened,uploads,previews,posts,picker,storeValues,getPostCalls,getModerationCalls,api,setGetPostResponse:value=>getPostResponse=value,setModerationResponse:value=>moderationResponse=value,setGetCommentsHandler:fn=>{getCommentsHandler=fn},render:(name,props)=>{cursor=ri=ei=ci=0;const tree=exports.__test[name](props);while(effects.length)effects.shift()();return tree}};
+ vm.runInNewContext(code,{exports,require:n=>n==='react'?react:n==='react-native'?native:n==='react-native-safe-area-context'?{SafeAreaView:'SafeAreaView'}:n==='./socialApi'?api:n==='./socialDraft'?draftModule:n==='expo-secure-store'?store:n==='expo-image-picker'?picker:n==='expo-crypto'?{randomUUID:()=> 'synthetic-id'}:n==='./socialSessionScope'?sessionScopeExports:{}});
+ return {alerts,refs,requests,shared,opened,uploads,previews,posts,picker,storeValues,getPostCalls,getModerationCalls,sessionScope:sessionScopeExports,api,setGetPostResponse:value=>getPostResponse=value,setModerationResponse:value=>moderationResponse=value,setGetCommentsHandler:fn=>{getCommentsHandler=fn},render:(name,props)=>{cursor=ri=ei=ci=0;const tree=exports.__test[name](props);while(effects.length)effects.shift()();return tree}};
 }
 function nodes(tree){if(!tree||typeof tree!=='object')return [];return [tree,...(tree.props?.children||[]).flat(Infinity).flatMap(nodes)];}
 const text=n=>typeof n==='string'?n:!n||typeof n!=='object'?'':(n.props?.children||[]).flat(Infinity).map(text).join('');
@@ -367,4 +371,39 @@ test('Dental Flow comment pagination lock is owned by a request and refresh inva
  assert.match(comments,/else commentPageRequest\.current = null/);
  assert.match(comments,/if \(commentPageRequest\.current === request\)/);
  assert.doesNotMatch(comments,/commentPageLock/);
+});
+
+
+test('Dental Flow session scope changes on account or bearer rotation and rejects stale async completions',()=>{
+ const oldSession={userId:7,token:'old-bearer'};
+ const newSession={userId:8,token:'new-bearer'};
+ const rotated={userId:7,token:'rotated-bearer'};
+ assert.notEqual(sessionScopeExports.socialSessionKey(oldSession.userId,oldSession.token),sessionScopeExports.socialSessionKey(rotated.userId,rotated.token));
+ assert.notEqual(sessionScopeExports.socialSessionKey(oldSession.userId,oldSession.token),sessionScopeExports.socialSessionKey(newSession.userId,newSession.token));
+ assert.equal(sessionScopeExports.isSocialSessionCurrent(oldSession,oldSession),true);
+ assert.equal(sessionScopeExports.isSocialSessionCurrent(newSession,oldSession),false);
+ assert.equal(sessionScopeExports.isSocialSessionCurrent(rotated,oldSession),false);
+});
+
+test('Dental Flow gates old feed, comments, images and edits while a new session is being painted',()=>{
+ const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
+ const flow=source.slice(source.indexOf('export function DentalFlow('));
+ assert.match(flow,/const sessionKey = socialSessionKey\(user\.id, token\)/);
+ assert.match(flow,/usePagedRecords<api\.SocialPost>\(\s*`\$\{sessionKey\}/);
+ assert.match(flow,/const sessionReady = readySessionKey === sessionKey/);
+ assert.match(flow,/data=\{sessionReady \? pages\.items : \[\]\}/);
+ assert.match(flow,/\{comments && sessionReady && \(/);
+ assert.match(flow,/key=\{\`\$\{sessionKey\}:\$\{comments\.id\}\`\}/);
+ assert.match(flow,/\{image && sessionReady && \(/);
+ assert.match(flow,/\{editing && sessionReady && \(/);
+ assert.match(flow,/moderationResumeGate\.current = createModerationResumeGate\(\)/);
+});
+
+test('Dental Flow ignores delayed follow, edit and compose results from a previous session',()=>{
+ const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
+ const flow=source.slice(source.indexOf('export function DentalFlow('));
+ assert.match(flow,/if \(!isSocialSessionCurrent\(sessionScope\.current, requestSession\)\) return false/);
+ assert.match(flow,/update\(p, p\.id, requestSession\)/);
+ assert.match(flow,/if \(!isSocialSessionCurrent\(sessionScope\.current, \{ userId: user\.id, token \}\)\) return;/);
+ assert.match(flow,/onPosted=\{\(p\) => \{\s*if \(!isSocialSessionCurrent/);
 });
