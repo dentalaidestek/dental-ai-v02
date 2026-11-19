@@ -941,7 +941,7 @@ Changes:
 - Reworked `NativeAnalysisUpload` into numbered native sections, preserving camera/gallery, previews/removal, encrypted intent, receipt recovery, transfer progress and cancellation.
 - Added the web clinical-only helper, safety note and full-width navy submit action.
 - Found and fixed a real missing-symbol source defect: `analysisApi.ts` used `ANALYSIS_MAX_IMAGES` without importing it, while `NativeAnalysisUpload` and `NativePatientMedia` imported it from `analysisApi` even though it was not exported. The API now imports and re-exports the canonical shared constant.
-- Added `analysisImageLimitContract.cjs` and `analysisComposerPresentation.cjs` to `npm run test:beta`. A non-native `fontWeight: '850'` value introduced during styling was corrected to React Native's supported `800` before the final component update.
+- Added `analysisImageLimitContract.cjs` and `analysisComposerPresentation.cjs` to `npm run test:beta`; the composer suite also transpiles the actual TSX source and fails on syntax diagnostics. A non-native `fontWeight: '850'` value introduced during styling was corrected to React Native's supported `800` before the final component update.
 
 Privacy review confirmed that web/mobile owner checks and saved-media ownership checks remain unchanged, the patient summary remains anonymous ID/age/complaint only, and native upload components remain keyed by account/patient scope. No schema, endpoint, provider, migration or patient record changed.
 
