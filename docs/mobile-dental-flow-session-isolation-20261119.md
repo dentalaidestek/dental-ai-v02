@@ -20,7 +20,7 @@ This was a client-side state-isolation defect, not an API authorization bypass. 
 ## Changes
 
 - Added `socialSessionScope.ts` with exact session identity comparison and a non-secret generation key.
-- Advance the generation whenever either user ID or Bearer token changes. The token itself is not embedded in React keys, persisted or logged.
+- Advance a non-secret generation only when either user ID or Bearer token actually changes. The initial mount does not advance it, avoiding a duplicate first-page request. The token itself is not embedded in React keys, persisted or logged.
 - Include the generation in `usePagedRecords` scope and the feed list key, so the prior cursor chain is invalidated.
 - Hide the old feed, comments, media viewer and edit sheet immediately when the incoming identity differs from the last painted session.
 - Remount comments by session generation and post ID.
