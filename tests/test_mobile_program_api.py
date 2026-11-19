@@ -24,7 +24,7 @@ def test_program_cursor_round_trip_uses_istanbul_wall_time(local_start):
     item = {"id": 41, "start_local": local_start}
 
     cursor = _encode_program_cursor(
-        "today", focus, 7, snapshot_at, item, ISTANBUL
+        "today", focus, 7, snapshot_at, item, ISTANBUL, "A" * 43
     )
     decoded_snapshot, after_utc, after_id = _decode_program_cursor(
         cursor, "today", focus, 7, ISTANBUL, now_utc
@@ -57,6 +57,7 @@ def test_program_cursor_rejects_a_cursor_from_another_account():
             8,
             ISTANBUL,
             datetime(2026, 11, 17, 19, 51, tzinfo=timezone.utc),
+            "A" * 43,
         )
     assert error.value.status_code == 422
 

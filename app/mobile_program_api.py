@@ -54,9 +54,9 @@ def _program_local_start_utc(value: datetime, app_timezone) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def _encode_program_cursor(view: str, focus: date, user_id: int, snapshot_at: datetime, item: dict, app_timezone) -> str:
+def _encode_program_cursor(view: str, focus: date, user_id: int, snapshot_at: datetime, item: dict, app_timezone, session_token: str) -> str:
     payload = {
-        "v": 1,
+        "v": 2,
         "view": view,
         "day": focus.isoformat(),
         "owner": _program_cursor_owner(user_id),
@@ -65,19 +65,26 @@ def _encode_program_cursor(view: str, focus: date, user_id: int, snapshot_at: da
         "id": int(item["id"]),
     }
     raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    signature = hmac.new(_program_cursor_key(session_token), raw, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(raw + signature).decode("ascii").rstrip("=")
 
 
-def _decode_program_cursor(cursor: str, view: str, focus: date, user_id: int, app_timezone, now_utc: datetime):
+def _decode_program_cursor(cursor: str, view: str, focus: date, user_id: int, app_timezone, now_utc: datetime, session_token: str):
     invalid = HTTPException(status_code=422, detail="Takvim sayfası anahtarı geçersiz. Yenileyin.")
     if not isinstance(cursor, str) or not _PROGRAM_CURSOR_PATTERN.fullmatch(cursor):
         raise invalid
     try:
-        raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
+        packed = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
+        if len(packed) <= 32:
+            raise ValueError("cursor signature")
+        raw, signature = packed[:-32], packed[-32:]
+        expected = hmac.new(_program_cursor_key(session_token), raw, hashlib.sha256).digest()
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError("cursor signature")
         payload = json.loads(raw.decode("utf-8"))
         if type(payload) is not dict or set(payload) != {"v", "view", "day", "owner", "snapshot", "after", "id"}:
             raise ValueError("cursor shape")
-        if type(payload["v"]) is not int or payload["v"] != 1:
+        if type(payload["v"]) is not int or payload["v"] != 2:
             raise ValueError("cursor version")
         if payload["view"] != view or payload["day"] != focus.isoformat():
             raise ValueError("cursor calendar scope")
@@ -127,6 +134,7 @@ def program_range(
     day: Optional[str] = None,
     offset: int = Query(0, ge=0),
     cursor: Optional[str] = Query(None, max_length=512),
+    token: str = Depends(_mobile_access_token),
     user=Depends(_mobile_user),
 ):
     _mobile_private_no_store(response)
@@ -151,7 +159,7 @@ def program_range(
     after_id = None
     if cursor is not None:
         snapshot_at, after_utc, after_id = _decode_program_cursor(
-            cursor, view, focus, user.id, web.APP_TIMEZONE, now_utc
+            cursor, view, focus, user.id, web.APP_TIMEZONE, now_utc, token
         )
     else:
         # First-page watermark is naive UTC, matching ScheduleEvent timestamps.
@@ -222,7 +230,7 @@ def program_range(
         has_more = offset + len(page) < total
 
     next_cursor = (
-        _encode_program_cursor(view, focus, user.id, snapshot_at, page[-1], web.APP_TIMEZONE)
+        _encode_program_cursor(view, focus, user.id, snapshot_at, page[-1], web.APP_TIMEZONE, token)
         if snapshot_at is not None and has_more and page else None
     )
     next_offset = offset + len(page) if cursor is None and has_more else None
