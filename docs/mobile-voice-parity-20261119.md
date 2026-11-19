@@ -186,7 +186,8 @@ comparison reports exactly five changed files and no divergence from the PR
 base. The PR head matches the branch head.
 
 The new branch head has zero GitHub check runs and zero commit status entries.
-No Android or security workflow was dispatched. The isolated helper/MIME test
-run passed 5/5 locally, but it is not a substitute for the repository's full
+No Android or security workflow was dispatched. A temporary isolated
+helper/MIME harness, populated from the changed source logic, passed 5/5 locally;
+this was not a run of the repository checkout and is not a substitute for the full
 `npm test`, TypeScript project check, React Native component suite, or Android
 build. Those remain unverified.
