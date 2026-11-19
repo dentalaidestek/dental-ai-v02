@@ -24,7 +24,7 @@ jobs:
       - name: Install native voice regression dependencies
         run: npm ci
       - name: Validate native voice recovery and private audio path containment
-        run: node --test tests/nativeVoiceAudio.cjs tests/voiceDraftScope.cjs tests/voiceWorkflow.cjs tests/voiceDeviceCheck.cjs tests/voiceDeviceCheckUI.cjs
+        run: node --test tests/nativeVoiceAudio.cjs tests/voiceAudioImport.cjs tests/voiceDraftScope.cjs tests/voiceWorkflow.cjs tests/voiceDeviceCheck.cjs tests/voiceDeviceCheckUI.cjs
   native-clinical-security:
     runs-on: ubuntu-latest
     defaults:
