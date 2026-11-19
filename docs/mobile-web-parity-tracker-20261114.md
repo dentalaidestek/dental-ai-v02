@@ -922,3 +922,10 @@ Web-first review of `app/main.py::upload_study_materials` and `app/mobile_academ
 Native now hashes the private cache with Expo FileHandle in bounded 1 MiB reads, stores the digest in a v3 SecureStore intent before upload, verifies the server acknowledgement and compares local bytes to the durable receipt before cleanup. Legacy v2 intents remain readable and are upgraded before retry. Missing local data is cleared only after a matching receipt; mismatches preserve the file and intent. Leaving the screen during hashing cannot start a later upload.
 
 New tests: six file-hash boundary tests, a mismatched upload-acknowledgement test, a same-name/same-size recovery mismatch test and a screen-exit-during-hash test. Registered in `test:beta` and the manual Academic Security Recovery job. Tests, full typecheck, Expo export, APK and device performance are not run because workflows remain manual-only and hosted runner allocation is unresolved. Details: `docs/mobile-academic-upload-content-binding-20261119.md`. No dependency, schema migration, main merge or deployment.
+
+
+## 2026-11-19 — Analysis image download pool isolation
+
+Web-first review compared `analysis_viewer.html` / `main.py::analysis_asset` with native `mobile_analysis_api.py` and the already-hardened patient-media download route. Native analysis asset and legacy-radiograph downloads previously hydrated R2 while a SQLAlchemy Session remained open. Both now copy the authorized storage reference, close the session, and offload `storage_ensure_local` through the Starlette threadpool. The shared private/no-store policy now also adds `Pragma: no-cache` and `Vary: Authorization`.
+
+Three integration regressions cover analysis asset hydration, legacy-radiograph hydration and owner rejection before storage access. A security source-contract test protects the offload/cache behavior. Tests are committed but were not executed here; full pytest, Android typecheck, beta suite, Expo/Gradle and device acceptance remain open. Evidence: `docs/mobile-analysis-download-pool-safety-20261119.md`. No schema, dependency, main merge or production deployment.
