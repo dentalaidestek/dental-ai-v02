@@ -125,3 +125,69 @@ export function patientProfileEditMatches(
   ];
   return fields.every((field) => normalized(draft[field]) === normalized(current[field]));
 }
+
+
+export type PatientProfileEditField = keyof PatientProfileEditValues;
+
+export type PatientProfileEditConflict = Readonly<{
+  field: PatientProfileEditField;
+  label: string;
+  baseValue: string;
+  draftValue: string;
+  currentValue: string;
+}>;
+
+export type PatientProfileEditMerge = Readonly<{
+  values: Readonly<Record<PatientProfileEditField, string>>;
+  conflicts: readonly PatientProfileEditConflict[];
+}>;
+
+/**
+ * Three-way merge after an optimistic-revision conflict.
+ * Unchanged local fields take the latest server value; locally changed fields
+ * stay in the draft. A field changed differently by both sessions is returned
+ * as an explicit conflict and must be resolved by the clinician before saving.
+ */
+export function patientProfileMergeEditConflict(
+  base: PatientProfileEditValues,
+  draft: PatientProfileEditValues,
+  current: PatientProfileEditValues,
+): PatientProfileEditMerge {
+  const fields: readonly Readonly<{ key: PatientProfileEditField; label: string }>[] = [
+    { key: 'first_name', label: 'Ad' },
+    { key: 'last_name', label: 'Soyad' },
+    { key: 'phone', label: 'Telefon' },
+    { key: 'birth_date', label: 'Doğum tarihi' },
+    { key: 'tc_kimlik_no', label: 'TC kimlik numarası' },
+    { key: 'address', label: 'Adres' },
+    { key: 'chief_complaint', label: 'Başvuru şikâyeti' },
+  ];
+  const normalize = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+  const asFormValue = (value: unknown): string => typeof value === 'string' ? value : '';
+  const values = {} as Record<PatientProfileEditField, string>;
+  const conflicts: PatientProfileEditConflict[] = [];
+
+  for (const item of fields) {
+    const baseValue = normalize(base[item.key]);
+    const draftValue = normalize(draft[item.key]);
+    const currentValue = normalize(current[item.key]);
+    const draftChanged = draftValue !== baseValue;
+    const currentChanged = currentValue !== baseValue;
+
+    values[item.key] = draftChanged
+      ? asFormValue(draft[item.key])
+      : asFormValue(current[item.key]);
+
+    if (draftChanged && currentChanged && draftValue !== currentValue) {
+      conflicts.push({
+        field: item.key,
+        label: item.label,
+        baseValue,
+        draftValue: asFormValue(draft[item.key]),
+        currentValue: asFormValue(current[item.key]),
+      });
+    }
+  }
+
+  return { values, conflicts };
+}
