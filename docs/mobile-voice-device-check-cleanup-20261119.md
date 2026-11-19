@@ -14,6 +14,8 @@ The web preflight processes six seconds of PCM16 frames in the AudioWorklet and 
 ## Changes
 
 - Added an exact app-cache URI validator: only one safe M4A filename directly beneath the configured file:// cache root is accepted. Prefix siblings, nested paths, traversal and non-file paths are rejected.
+- Extracted deletion into a dependency-injected helper so tests can prove success only after a post-delete existence check. Delete exceptions, a still-present file and invalid paths fail closed; already-absent files are idempotently clean.
+- The CJS helper test now registers the repository TypeScript transpiler explicitly before requiring the .ts module, matching the existing Node 20-compatible test pattern used by voiceWorkflow and programParity.
 - Native cleanup now checks file existence before deletion, calls idempotent deletion, and checks existence again. It returns success only when the file is absent.
 - The URI is retained until deletion is verified. A failed or untrusted cleanup cannot be classified as a successful microphone check.
 - Added a visible retry action for a cleanup-pending file. A new microphone test is blocked until cleanup succeeds, so a later test cannot overwrite the only reference to the previous file.
@@ -28,6 +30,6 @@ The web preflight processes six seconds of PCM16 frames in the AudioWorklet and 
 - UI source contract checks post-delete existence verification, URI retention, retry UI and strict recorder-path validation.
 - Existing privacy checks continue to prohibit API/network and persistent-storage use in the preflight component.
 
-Tests are committed and already registered in npm run test:beta. The 10-test pure helper suite passed in an isolated Node 22.16 run with experimental TypeScript stripping, using the exact fetched branch helper and test contents. The native UI/source-contract test, full typecheck, complete beta suite, Android/iOS build and physical-device deletion-failure simulation remain unexecuted.
+Tests are committed and already registered in npm run test:beta. The 13-test pure helper suite passed in an isolated Node 22.16 run using the branch helper/test contents and the same TypeScript transpile registration pattern used by existing CJS tests. Strict standalone TypeScript compilation of the pure helper passed. Seventeen GitHub source-contract assertions passed, and the UI CJS file passed node --check; the actual renderer/source-contract test, full app typecheck, complete beta suite, Android/iOS build and physical-device deletion-failure simulation remain unexecuted.
 
 No patient data, production configuration, schema or provider behavior changed. No workflow was dispatched, no main merge and no live deploy.
