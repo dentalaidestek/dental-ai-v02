@@ -29,6 +29,45 @@ export type Question={number:number;stem:string;options:string[];result:null|{se
 export type Quiz={message_id:number;questions:Question[]};
 export type Message={id:number;role:string;content:string;created_at:string;quiz?:Quiz|null;artifact?:{name:string;url:string;files?:Array<{name:string;url:string}>}|null;sources:Array<{title?:string;display_name?:string;filename?:string;page?:number;quote?:string}>;vote?:string|null};
 export type IndexStatus={ready:boolean;complete:boolean;state:string;completed:number;total:number;files:Array<{id:number;filename:string;state:'preparing'|'updating'|'ready'|'update_failed'|'failed';usable?:boolean;stage?:string;error_code?:string;message?:string}>};
+
+const isRecord=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
+const safeId=(value:unknown):value is number=>typeof value==='number'&&Number.isSafeInteger(value)&&value>0;
+const boundedText=(value:unknown,max:number,allowEmpty=true):value is string=>typeof value==='string'&&value.length<=max&&(allowEmpty||value.trim().length>0);
+const validCursor=(value:unknown):value is number=>value===null||safeId(value);
+
+function validateAcademicQuiz(value:unknown):Quiz{
+ if(!isRecord(value)||!safeId(value.message_id)||!Array.isArray(value.questions)||value.questions.length<1||value.questions.length>20)throw Error('Akademik soru seti doğrulanamadı.');
+ const numbers=new Set<number>();
+ for(const q of value.questions){
+  if(!isRecord(q)||!safeId(q.number)||numbers.has(q.number)||!boundedText(q.stem,8000,false)||!Array.isArray(q.options)||q.options.length<2||q.options.length>5||q.options.some(option=>!boundedText(option,2000,false)))throw Error('Akademik soru içeriği doğrulanamadı.');
+  numbers.add(q.number);
+  if(q.result!==null&&q.result!==undefined&&(!isRecord(q.result)||!['A','B','C','D','E'].includes(String(q.result.selected))||typeof q.result.correct!=='boolean'||!['A','B','C','D','E'].includes(String(q.result.correct_choice))))throw Error('Akademik cevap kaydı doğrulanamadı.');
+  if(q.rationale!==undefined&&!boundedText(q.rationale,12000))throw Error('Akademik açıklama sınır dışında.');
+  if(q.source!==undefined&&!boundedText(q.source,2000))throw Error('Akademik kaynak bilgisi sınır dışında.');
+ }
+ return value as unknown as Quiz;
+}
+
+function validateAcademicMessage(value:unknown,course:number):Message{
+ if(!isRecord(value)||!safeId(value.id)||!['USER','ASSISTANT'].includes(String(value.role))||!boundedText(value.content,500000)||!boundedText(value.created_at,80,false)||!Number.isFinite(Date.parse(value.created_at))||!Array.isArray(value.sources)||value.sources.length>100)throw Error('Akademik sohbet kaydı doğrulanamadı.');
+ if(value.quiz!==null&&value.quiz!==undefined){const quiz=validateAcademicQuiz(value.quiz);if(quiz.message_id!==value.id)throw Error('Soru seti başka bir sohbet kaydına bağlı.');}
+ if(value.quiz_stale!==undefined&&typeof value.quiz_stale!=='boolean')throw Error('Soru kaynağı durumu doğrulanamadı.');
+ if(value.vote!==undefined&&value.vote!==null&&!['like','dislike','none'].includes(String(value.vote)))throw Error('Yanıt geri bildirimi doğrulanamadı.');
+ for(const source of value.sources){
+  if(!isRecord(source))throw Error('Akademik kaynak kaydı doğrulanamadı.');
+  for(const key of ['title','display_name','filename','quote','label','url'] as const)if(source[key]!==undefined&&!boundedText(source[key],12000))throw Error('Akademik kaynak metni sınır dışında.');
+  for(const key of ['material_id','page','page_start','page_end'] as const)if(source[key]!==undefined&&!safeId(source[key]))throw Error('Akademik kaynak sayfa kimliği doğrulanamadı.');
+  if(source.page_start!==undefined&&source.page_end!==undefined&&Number(source.page_end)<Number(source.page_start))throw Error('Akademik kaynak sayfa aralığı geçersiz.');
+ }
+ if(value.artifact!==null&&value.artifact!==undefined){
+  const artifact=value.artifact;
+  if(!isRecord(artifact)||!boundedText(artifact.name,240,false)||!boundedText(artifact.url,600,false))throw Error('Akademik PDF kaydı doğrulanamadı.');
+  academicFilePath(course,artifact.url);
+  if(artifact.files!==undefined&&(!Array.isArray(artifact.files)||artifact.files.length>20||artifact.files.some(file=>!isRecord(file)||!boundedText(file.name,240,false)||!boundedText(file.url,600,false)||!safeAcademicFilePath(course,file.url))))throw Error('Akademik PDF parça listesi doğrulanamadı.');
+ }
+ return value as unknown as Message;
+}
+function safeAcademicFilePath(course:number,path:unknown):boolean{if(typeof path!=='string')return false;try{academicFilePath(course,path);return true}catch{return false}}
 const id=(n:number)=>{if(!Number.isSafeInteger(n)||n<1)throw Error('Geçersiz ders veya kayıt kimliği.');return n};
 export const coursePath=(course:number)=>`/academic/courses/${id(course)}`;
 export async function library(token:string,q='',before?:number){const v=await request<{items:Course[];next_before:number|null}>('/academic/library?q='+encodeURIComponent(q)+(before?'&before='+id(before):''),token);if(!Array.isArray(v.items)||v.items.some(c=>!c||!Number.isSafeInteger(c.id)||c.id<1||typeof c.title!=='string'))throw Error('Ders listesi doğrulanamadı.');return v}
@@ -47,7 +86,7 @@ export const deleteMaterial=(t:string,c:number,m:number)=>write<{ok:boolean}>(t,
 export function validateIndexStatus(v:IndexStatus):IndexStatus{if(!v||typeof v.ready!=='boolean'||typeof v.complete!=='boolean'||!['ready','partial','preparing','failed'].includes(v.state)||!Number.isSafeInteger(v.completed)||v.completed<0||!Number.isSafeInteger(v.total)||v.total<0||!Array.isArray(v.files)||v.files.length!==v.total||v.files.some(f=>!f||!Number.isSafeInteger(f.id)||f.id<1||typeof f.filename!=='string'||!['preparing','updating','ready','update_failed','failed'].includes(f.state)))throw Error('Akademik indeks durumu doğrulanamadı.');return v}
 export const indexNeedsPolling=(v:IndexStatus|null)=>!!v&&!v.complete&&v.files.some(f=>f.state==='preparing'||f.state==='updating');
 export const indexStatus=async(t:string,c:number)=>validateIndexStatus(await request<IndexStatus>(coursePath(c)+'/index-status',t));
-export async function timeline(t:string,c:number,before?:number){const v=await request<{items:Message[];next_before:number|null}>(coursePath(c)+'/timeline'+(before?'?before='+id(before):''),t);if(!Array.isArray(v.items))throw Error('Çalışma geçmişi doğrulanamadı.');return v}
+export async function timeline(t:string,c:number,before?:number){const cursor=before===undefined?undefined:id(before);const v=await request<{items:Message[];next_before:number|null}>(coursePath(c)+'/timeline'+(cursor?'?before='+cursor:''),t);if(!v||!Array.isArray(v.items)||v.items.length>50||!validCursor(v.next_before))throw Error('Çalışma geçmişi doğrulanamadı.');const items=v.items.map(item=>validateAcademicMessage(item,c));if(new Set(items.map(item=>item.id)).size!==items.length||items.some((item,index)=>index>0&&item.id<=items[index-1].id)||(cursor!==undefined&&items.some(item=>item.id>=cursor))||(v.next_before!==null&&(items.length!==50||items.length===0||v.next_before!==items[0].id||(cursor!==undefined&&v.next_before>=cursor)))||(items.length===0&&v.next_before!==null))throw Error('Akademik sohbet sayfalaması doğrulanamadı.');return {...v,items}}
 export const quizzes=(t:string,c:number)=>request<{quizzes:Quiz[]}>(coursePath(c)+'/quizzes',t);
 export function validateRun(v:{run:Run|null},nullable=false){if(v.run===null&&nullable)return null;const r=v.run;if(!r||!Number.isSafeInteger(r.id)||r.id<1||!['QUEUED','RUNNING','DONE','FAILED','INTERRUPTED','CANCELLED'].includes(r.status)||typeof r.question!=='string'||typeof r.stage!=='string')throw Error('Çalışma durumu doğrulanamadı.');return r}
 export const busyRun=(r:Run|null)=>!!r&&['QUEUED','RUNNING'].includes(r.status);
