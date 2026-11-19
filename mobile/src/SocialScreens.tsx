@@ -1545,8 +1545,12 @@ export function DentalFlow({
   const moderationResumeGate = useRef(createModerationResumeGate());
   const sessionScope = useRef({ userId: user.id, token });
   sessionScope.current = { userId: user.id, token };
+  const observedSession = useRef({ userId: user.id, token });
   useEffect(() => {
-    // Advance a non-secret generation when either account or bearer session changes.
+    // Advance only on a real identity change; do not duplicate the initial feed request.
+    const nextSession = { userId: user.id, token };
+    if (isSocialSessionCurrent(observedSession.current, nextSession)) return;
+    observedSession.current = nextSession;
     setSessionEpoch((value) => value + 1);
   }, [user.id, token]);
   const refreshVisibleModeration = useCallback(async () => {
