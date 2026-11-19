@@ -1506,9 +1506,10 @@ export function DentalFlow({
   expertHeader?: React.ReactNode;
   canCompose?: boolean;
 }) {
-  const sessionKey = socialSessionKey(user.id, token);
-  const [readySessionKey, setReadySessionKey] = useState(sessionKey);
-  const sessionReady = readySessionKey === sessionKey;
+  const [sessionEpoch, setSessionEpoch] = useState(0);
+  const [readySession, setReadySession] = useState({ userId: user.id, token });
+  const sessionKey = socialSessionKey(user.id, sessionEpoch);
+  const sessionReady = isSocialSessionCurrent(readySession, { userId: user.id, token });
   const followLocks = useRef(new Set<string>());
   const feedFollowLocks = useRef(new Set<string>());
   const editLocks = useRef(new Set<string>());
@@ -1544,6 +1545,10 @@ export function DentalFlow({
   const moderationResumeGate = useRef(createModerationResumeGate());
   const sessionScope = useRef({ userId: user.id, token });
   sessionScope.current = { userId: user.id, token };
+  useEffect(() => {
+    // Advance a non-secret generation when either account or bearer session changes.
+    setSessionEpoch((value) => value + 1);
+  }, [user.id, token]);
   const refreshVisibleModeration = useCallback(async () => {
     if (moderationRefreshLocks.current.has(sessionKey)) return;
     const candidates = selectOwnedModerationCandidates(pages.items);
@@ -1663,7 +1668,7 @@ export function DentalFlow({
   useEffect(() => {
     // Hide and discard account-owned overlays before the new session can paint.
     moderationResumeGate.current = createModerationResumeGate();
-    setReadySessionKey(sessionKey);
+    setReadySession({ userId: user.id, token });
     setCompose(false);
     setComments(null);
     setImage(null);
