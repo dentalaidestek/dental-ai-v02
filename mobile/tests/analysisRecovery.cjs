@@ -23,6 +23,14 @@ test('persisted analysis reopens after app restart even when patient is outside 
  h.event({event_type:'PATIENT_UPDATED',entity_id:1});await h.flush();
  assert.equal(h.states[6],42);assert.equal(h.states[7]?.analysis.patient_id,42);
 });
+test('analysis realtime refresh delegates status fetch to clinical workspace instead of parent polling',async()=>{
+ let calls=0;const h=harness({props:{initialAnalysisId:7},fetchAnalysis:async()=>{calls++;return result}});
+ h.render();await h.flush();assert.equal(calls,1);
+ h.event({event_type:'ANALYSIS_UPDATED',entity_type:'analysis',entity_id:7});await h.flush();assert.equal(calls,1);
+ const walk=node=>node&&typeof node==='object'?[node,...(node.children||[]).flat(Infinity).flatMap(walk)]:[];
+ const clinicalNode=walk(h.render()).find(node=>node.props?.analysisId===7&&typeof node.props?.onWorkspaceChange==='function');
+ assert.ok(clinicalNode);assert.equal(clinicalNode.props.refreshKey,1);
+});
 test('patient-profile analysis action selects the requested server-verified patient',async()=>{
  const ids=[];const h=harness({props:{initialPatientId:42},fetchPatient:async(_token,id)=>{ids.push(id);return {patient}}});h.render();await h.flush();
  assert.deepEqual(ids,[42]);assert.equal(h.states[6],42);assert.match(JSON.stringify(h.render()),/Test.*Patient/);assert.equal(h.states[0].length,1);
