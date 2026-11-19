@@ -33,7 +33,7 @@ export type IndexStatus={ready:boolean;complete:boolean;state:string;completed:n
 const isRecord=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const safeId=(value:unknown):value is number=>typeof value==='number'&&Number.isSafeInteger(value)&&value>0;
 const boundedText=(value:unknown,max:number,allowEmpty=true):value is string=>typeof value==='string'&&value.length<=max&&(allowEmpty||value.trim().length>0);
-const validCursor=(value:unknown):value is number=>value===null||safeId(value);
+const validCursor=(value:unknown):boolean=>value===null||safeId(value);
 
 function validateAcademicQuiz(value:unknown):Quiz{
  if(!isRecord(value)||!safeId(value.message_id)||!Array.isArray(value.questions)||value.questions.length<1||value.questions.length>20)throw Error('Akademik soru seti doğrulanamadı.');
@@ -55,8 +55,8 @@ function validateAcademicMessage(value:unknown,course:number):Message{
  if(value.vote!==undefined&&value.vote!==null&&!['like','dislike','none'].includes(String(value.vote)))throw Error('Yanıt geri bildirimi doğrulanamadı.');
  for(const source of value.sources){
   if(!isRecord(source))throw Error('Akademik kaynak kaydı doğrulanamadı.');
-  for(const key of ['title','display_name','filename','quote','label','url'] as const)if(source[key]!==undefined&&!boundedText(source[key],12000))throw Error('Akademik kaynak metni sınır dışında.');
-  for(const key of ['material_id','page','page_start','page_end'] as const)if(source[key]!==undefined&&!safeId(source[key]))throw Error('Akademik kaynak sayfa kimliği doğrulanamadı.');
+  for(const key of ['title','display_name','filename','quote','label','url'] as const)if(source[key]!==undefined&&source[key]!==null&&!boundedText(source[key],12000))throw Error('Akademik kaynak metni sınır dışında.');
+  for(const key of ['material_id','page','page_start','page_end'] as const)if(source[key]!==undefined&&source[key]!==null&&!safeId(source[key]))throw Error('Akademik kaynak sayfa kimliği doğrulanamadı.');
   if(source.page_start!==undefined&&source.page_end!==undefined&&Number(source.page_end)<Number(source.page_start))throw Error('Akademik kaynak sayfa aralığı geçersiz.');
  }
  if(value.artifact!==null&&value.artifact!==undefined){
