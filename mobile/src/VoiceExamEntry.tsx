@@ -289,8 +289,8 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
     {!!review.review.uncertain&&<ResultSection name="Belirsiz / doğrulanmamış beyanlar" items={review.review.uncertain}/>}
     {!!review.review.appointment&&<Text style={{color:"#9A6700",marginTop:10,lineHeight:20}}>Randevu konuşmada geçiyor olabilir; kabul veya kesinleşme hekim tarafından ayrıca doğrulanmalıdır. Onay bölümünde tarih/saat seçilmeden randevu oluşturulmaz.</Text>}
     {!!lastRemoved&&<Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={undoRemovedItem} style={{paddingVertical:12}}><Text style={{color:"#1769AA",fontWeight:"800"}}>Son kaldırılan bulguyu geri al</Text></Pressable>}
-    <Text style={{color:muted,marginTop:10}}>Bunlar taslak bilgilerdir; hasta dosyasına kaydedilmedi.</Text>
-    <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>void finalize()} style={{backgroundColor:navy,padding:15,borderRadius:12,alignItems:"center",marginTop:14}}><Text style={{color:"white",fontWeight:"800"}}>Hekim Kontrolünden Sonra Klinik Değerlendirme</Text></Pressable>
+    <Text style={{color:muted,marginTop:10}}>Bunlar taslak bilgilerdir; hasta dosyasına kaydedilmedi. Muayeneyi bitirince kaynaklı klinik değerlendirme otomatik hazırlanır; alanları düzenlerseniz yeniden çalıştırabilirsiniz.</Text>
+    <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>void finalize()} style={{backgroundColor:navy,padding:15,borderRadius:12,alignItems:"center",marginTop:14}}><Text style={{color:"white",fontWeight:"800"}}>{processing?"İşlem sürüyor…":"Klinik değerlendirmeyi yeniden çalıştır"}</Text></Pressable>
    </View>}
    {finalResult&&<View style={{marginTop:18,borderTopWidth:1,borderTopColor:line,paddingTop:15}}>
     <Text style={{fontSize:18,fontWeight:"800",color:navy}}>Kaynaklı klinik değerlendirme</Text>
