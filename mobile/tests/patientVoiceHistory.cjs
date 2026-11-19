@@ -5,7 +5,7 @@ const helperCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/pati
 vm.runInNewContext(helperCode,{exports:presentation});
 const refreshCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/patientVoiceHistoryRefresh.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
 vm.runInNewContext(refreshCode,{exports:resumePolicy});
-const history=(value='Olumsuz beyan: sistemik rahatsızlık yok')=>({ok:true,revision:'a'.repeat(64),notice:'Önceki hekim onaylı sesli muayene kayıtlarıdır.',fields:{medical_history:{value,quote:value,analysis_id:17},medications:{value:'Metformin beyanı',quote:'Metformin kullanıyorum',analysis_id:17},allergies:{value:'Olmadığı belirtildi: penisilin alerjisi',quote:'Alerjim yok',analysis_id:17}}});
+const history=(value='Olumsuz beyan: sistemik rahatsızlık yok')=>({ok:true,revision:'a'.repeat(64),notice:'Önceki hekim onaylı sesli muayene kayıtlarıdır.',fields:{medical_history:{value,quote:'',analysis_id:17},medications:{value:'Metformin beyanı',quote:'',analysis_id:17},allergies:{value:'Olmadığı belirtildi: penisilin alerjisi',quote:'',analysis_id:17}}});
 function mount(getVoiceHistory,initialAppState='active'){
  const source=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativePatientVoiceHistory.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2020}}).outputText;
  const exports={},listeners=new Set(),focusState={current:true};
@@ -158,4 +158,29 @@ test('anamnesis AppState listener is removed when the patient profile unmounts',
  assert.equal(api.listenerCount(),0);
  api.setAppState('background');api.setAppState('active');
  assert.equal(calls,1,'an unmounted patient screen must not issue background clinical reads');
+});
+
+test('switching account invalidates a late anamnesis response for the same patient id',async()=>{
+ let resolveOld;
+ const api=mount((token,id)=>token==='A'?new Promise(resolve=>{resolveOld=resolve}):Promise.resolve(history('Yeni hesabın onaylı beyanı')));let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(api.Component,{token:'A',patientId:8}));await new Promise(resolve=>setImmediate(resolve))});
+ await renderer.act(async()=>{tree.update(React.createElement(api.Component,{token:'B',patientId:8}));await new Promise(resolve=>setImmediate(resolve))});
+ await renderer.act(async()=>{resolveOld(history('Önceki hesaba ait özel anamnez'));await new Promise(resolve=>setImmediate(resolve))});
+ const rendered=content(tree.toJSON());
+ assert.ok(rendered.includes('Yeni hesabın onaylı beyanı'));
+ assert.equal(rendered.includes('Önceki hesaba ait özel anamnez'),false);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('approved anamnesis refreshes on the matching patient update event only',async()=>{
+ let calls=0;const api=mount(async()=>history('Onaylı sürüm '+(++calls)));let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(api.Component,{token:'owner-token',patientId:8}));await new Promise(resolve=>setImmediate(resolve))});
+ api.setEvent({entity_id:9,event_type:'PATIENT_UPDATED',payload:{patient_id:9}});
+ await renderer.act(async()=>{tree.update(React.createElement(api.Component,{token:'owner-token',patientId:8}));await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(calls,1);
+ api.setEvent({entity_id:8,event_type:'PATIENT_UPDATED',payload:{patient_id:8}});
+ await renderer.act(async()=>{tree.update(React.createElement(api.Component,{token:'owner-token',patientId:8}));await new Promise(resolve=>setImmediate(resolve))});
+ assert.equal(calls,2);
+ assert.ok(content(tree.toJSON()).includes('Onaylı sürüm 2'));
+ await renderer.act(async()=>tree.unmount());
 });

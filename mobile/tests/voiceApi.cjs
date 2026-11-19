@@ -424,13 +424,24 @@ test('anonymous voice patient creation rejects invalid keys and ambiguous receip
 
 test('native voice history uses authenticated no-store GET and validates approved provenance',async()=>{
  const original=global.fetch;let call;
- global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'a'.repeat(64),fields:{medical_history:{value:'Astım beyanı',quote:'Önceki onaylı kayıt',analysis_id:17}},notice:'Hastayla güncelliğini doğrulayın.'}))};
+ global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'a'.repeat(64),fields:{medical_history:{value:'Astım beyanı',quote:'',analysis_id:17}},notice:'Hastayla güncelliğini doğrulayın.'}))};
  try{
   const result=await api.getVoiceHistory('secret',12);
   assert.ok(call.url.endsWith('/patients/12/voice-exam/history'));
   assert.equal(call.init.method,'GET');assert.equal(call.init.headers.Authorization,'Bearer secret');
   assert.equal(call.init.headers['Cache-Control'],'no-store');assert.equal(call.init.body,undefined);
   assert.equal(result.fields.medical_history.value,'Astım beyanı');assert.equal(result.fields.medical_history.analysis_id,17);
+ }finally{global.fetch=original}
+});
+
+test('approved voice history rejects any retained transcript quote',async()=>{
+ const original=global.fetch,base={ok:true,revision:'a'.repeat(64),fields:{medications:{value:'Metformin beyanı',quote:'',analysis_id:17}},notice:'Hastayla güncelliğini doğrulayın.'};
+ try{
+  global.fetch=async()=>response(JSON.stringify(base));
+  const result=await api.getVoiceHistory('token',8);
+  assert.equal(result.fields.medications.quote,'');
+  global.fetch=async()=>response(JSON.stringify({...base,fields:{medications:{...base.fields.medications,quote:'Metformin kullanıyorum'}}}));
+  await assert.rejects(()=>api.getVoiceHistory('token',8),/geçmişi doğrulanamadı/);
  }finally{global.fetch=original}
 });
 
