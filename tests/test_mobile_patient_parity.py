@@ -14,6 +14,79 @@ def _patient_media_receipt_secret(monkeypatch):
     monkeypatch.setenv("PATIENT_MEDIA_RECEIPT_KEY", "11" * 32)
 
 
+def test_tooth_treatment_history_is_bounded_owner_and_tooth_scoped_with_snapshot_cursor(chat):
+    client, engine = chat
+    base = datetime(2026, 11, 19, 9, 0, 0)
+    with Session(engine) as session:
+        session.add_all([
+            main.Patient(id=81, anonymous_id="SYNTHETIC-TOOTH-HISTORY-81", owner_user_id=1),
+            main.Patient(id=82, anonymous_id="SYNTHETIC-TOOTH-HISTORY-82", owner_user_id=1),
+        ])
+        session.add_all([
+            main.Treatment(
+                id=1000 + index, patient_id=81, tooth_number="36",
+                treatment_name=f"36 treatment {index}",
+                created_at=base + timedelta(minutes=index),
+            )
+            for index in range(25)
+        ])
+        session.add_all([
+            main.Treatment(
+                id=1100 + index, patient_id=81, tooth_number="37",
+                treatment_name=f"37 treatment {index}",
+                created_at=base + timedelta(minutes=30 + index),
+            )
+            for index in range(2)
+        ])
+        session.commit()
+
+    first = client.get("/api/mobile/v1/patients/81/teeth/36/treatments")
+    assert first.status_code == 200, first.text
+    assert first.headers["cache-control"] == "private, no-store"
+    assert len(first.json()["items"]) == 20
+    assert all(item["tooth_number"] == "36" for item in first.json()["items"])
+    assert first.json()["next_cursor"]
+
+    # A newer write after page one must not leak into the original history snapshot.
+    with Session(engine) as session:
+        session.add(main.Treatment(
+            id=2000, patient_id=81, tooth_number="36",
+            treatment_name="newer concurrent treatment",
+            created_at=base + timedelta(days=1),
+        ))
+        session.commit()
+
+    cursor = first.json()["next_cursor"]
+    second = client.get(
+        "/api/mobile/v1/patients/81/teeth/36/treatments",
+        params={"cursor": cursor},
+    )
+    assert second.status_code == 200, second.text
+    assert len(second.json()["items"]) == 5
+    assert second.json()["next_cursor"] is None
+    assert all(item["tooth_number"] == "36" for item in second.json()["items"])
+    all_ids = [item["id"] for item in first.json()["items"] + second.json()["items"]]
+    assert len(all_ids) == 25
+    assert len(set(all_ids)) == 25
+    assert 2000 not in all_ids
+
+    other_tooth = client.get(
+        "/api/mobile/v1/patients/81/teeth/37/treatments",
+        params={"cursor": cursor},
+    )
+    assert other_tooth.status_code == 422, other_tooth.text
+    other_patient = client.get(
+        "/api/mobile/v1/patients/82/teeth/36/treatments",
+        params={"cursor": cursor},
+    )
+    assert other_patient.status_code == 422, other_patient.text
+    assert len(client.get("/api/mobile/v1/patients/81/teeth/37/treatments").json()["items"]) == 2
+    assert client.get("/api/mobile/v1/patients/81/teeth/19/treatments").status_code == 422
+
+    client.headers["Authorization"] = "Bearer token2"
+    assert client.get("/api/mobile/v1/patients/81/teeth/36/treatments").status_code == 404
+
+
 def test_tooth_chart_initial_focus_matches_web_latest_analysis_and_is_owner_scoped(chat, monkeypatch):
     client, engine = chat
     monkeypatch.setattr(mobile_api, "engine", engine)
