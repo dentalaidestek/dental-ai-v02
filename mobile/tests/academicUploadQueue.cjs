@@ -7,7 +7,7 @@ const apiExports={};
 vm.runInNewContext(compile('../src/academicApi.ts'),{exports:apiExports,require:name=>name==='./api'?{request:async()=>({})}:{}});
 const queueExports={};
 vm.runInNewContext(compile('../src/academicUploadQueue.ts'),{exports:queueExports,require:name=>name==='./academicApi'?apiExports:{}});
-const {createAcademicUploadQueue,parseAcademicUploadQueue,replaceAcademicUploadIntent,removeAcademicUploadIntent,serializeAcademicUploadQueue,MAX_ACADEMIC_UPLOAD_QUEUE_ITEMS}=queueExports;
+const {createAcademicUploadQueue,parseAcademicUploadQueue,replaceAcademicUploadIntent,mergeAcademicUploadIntent,removeAcademicUploadIntent,serializeAcademicUploadQueue,MAX_ACADEMIC_UPLOAD_QUEUE_ITEMS}=queueExports;
 const intent=(n,overrides={})=>({version:2,user:1,course:3,name:`lecture-${n}.pdf`,mime:'application/pdf',uri:`file:///cache/academic/${n}.pdf`,size:100,request_key:`synthetic-upload-key-${String(n).padStart(4,'0')}`,...overrides});
 
 test('Academic upload queue round-trips only within its account and course scope',()=>{
@@ -54,4 +54,47 @@ test('Academic upload queue removes exactly one request and represents an empty 
  assert.deepEqual(next.items.map(item=>item.request_key),[intent(1).request_key,intent(3).request_key]);
  const one=createAcademicUploadQueue(1,3,[intent(1)]);
  assert.equal(removeAcademicUploadIntent(one,intent(1).request_key),null);
+});
+
+
+test('legacy v2 upload receipt merges into an already upgraded v3 queue without downgrading its digest',()=>{
+ const legacy=intent(1),upgraded={...legacy,version:3,content_sha256:'a'.repeat(64)},queue=createAcademicUploadQueue(1,3,[upgraded]);
+ const merged=mergeAcademicUploadIntent(queue,legacy);
+ assert.equal(merged.items[0].version,3);
+ assert.equal(merged.items[0].content_sha256,upgraded.content_sha256);
+});
+
+test('a v3 legacy upload receipt upgrades a matching v2 queue entry without changing its request key',()=>{
+ const legacy=intent(1),queue=createAcademicUploadQueue(1,3,[legacy]),upgraded={...legacy,version:3,content_sha256:'b'.repeat(64)};
+ const merged=mergeAcademicUploadIntent(queue,upgraded);
+ assert.equal(merged.items[0].version,3);
+ assert.equal(merged.items[0].request_key,legacy.request_key);
+});
+
+test('queue migration rejects different content digests or a changed file identity under one key',()=>{
+ const legacy=intent(1),v3={...legacy,version:3,content_sha256:'a'.repeat(64)};
+ assert.throws(()=>mergeAcademicUploadIntent(createAcademicUploadQueue(1,3,[v3]),{...v3,content_sha256:'c'.repeat(64)}),/farklı içerik/);
+ assert.throws(()=>mergeAcademicUploadIntent(createAcademicUploadQueue(1,3,[legacy]),{...legacy,name:'other.pdf'}),/çelişiyor/);
+ assert.throws(()=>replaceAcademicUploadIntent(createAcademicUploadQueue(1,3,[v3]),{...v3,uri:'file:///cache/other.pdf'}),/kimliği değiştirilemez/);
+});
+
+test('native multi-file picker persists the whole queue before the first upload begins',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../src/NativeAcademic.tsx'),'utf8');
+ const pick=source.slice(source.indexOf('async function pick()'),source.indexOf('const disabled='));
+ assert.ok(pick.includes('multiple:true'));
+ assert.ok(pick.indexOf('await persistUploadQueue(queue.items)')>=0);
+ assert.ok(pick.indexOf('await persistUploadQueue(queue.items)')<pick.indexOf('await processUploadQueue(queue.items)'));
+ assert.ok(source.includes('store.setItemAsync(uploadQueueKey,serializeAcademicUploadQueue(queue))'));
+ assert.doesNotMatch(source,/SecureStore\.setItemAsync\(uploadKey/);
+});
+
+test('native Academic recovery migrates the old single-file intent before deleting it and resumes the queue sequentially',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../src/NativeAcademic.tsx'),'utf8');
+ const restore=source.slice(source.indexOf('async function restoreUpload()'),source.indexOf('async function processUploadQueue('));
+ assert.ok(restore.indexOf('await persistUploadQueue(queue?.items||[])')<restore.indexOf('await SecureStore.deleteItemAsync(uploadKey)'));
+ assert.ok(restore.includes('mergeAcademicUploadIntent'));
+ const process=source.slice(source.indexOf('async function processUploadQueue('),source.indexOf('async function retryUpload('));
+ assert.ok(process.includes('for(const original of [...initial])'));
+ assert.ok(process.includes('await persistUploadQueue(remaining)'));
+ assert.ok(process.includes('bound.content_sha256!'));
 });
