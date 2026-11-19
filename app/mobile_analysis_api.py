@@ -22,7 +22,7 @@ from app.main import (
     classify_dental_image, storage_ensure_local, storage_persist_file,
     _record_realtime_event, _publish_realtime_event, on_loop,
 )
-from app.mobile_api import _mobile_user
+from app.mobile_api import _mobile_private_no_store, _mobile_user
 from app.work_jobs import WorkJob
 from app.analysis_upload_receipts import (
     AnalysisUploadReceiptConflict,
@@ -490,11 +490,9 @@ async def mobile_legacy_analysis_radiograph(
         ".png": "image/png",
         ".webp": "image/webp",
     }.get(path.suffix.lower(), "application/octet-stream")
-    return FileResponse(
-        path,
-        media_type=media_type,
-        headers={"Cache-Control": "private, no-store"},
-    )
+    response = FileResponse(path, media_type=media_type)
+    _mobile_private_no_store(response)
+    return response
 
 
 @router.get("/analyses/{analysis_id}/assets/{asset_id}")
@@ -522,12 +520,9 @@ async def mobile_analysis_image(
         ".png": "image/png",
         ".webp": "image/webp",
     }.get(path.suffix.lower(), "application/octet-stream")
-    return FileResponse(
-        path,
-        media_type=media_type,
-        filename=original_filename,
-        headers={"Cache-Control": "private, no-store"},
-    )
+    response = FileResponse(path, media_type=media_type, filename=original_filename)
+    _mobile_private_no_store(response)
+    return response
 
 
 @router.get("/analyses")
