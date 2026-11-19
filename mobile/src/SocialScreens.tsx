@@ -1554,7 +1554,7 @@ export function DentalFlow({
     setSessionEpoch((value) => value + 1);
   }, [user.id, token]);
   const refreshVisibleModeration = useCallback(async () => {
-    if (moderationRefreshLocks.current.has(sessionKey)) return;
+    if (!sessionReady || moderationRefreshLocks.current.has(sessionKey)) return;
     const candidates = selectOwnedModerationCandidates(pages.items);
     if (!candidates.length) return;
     moderationRefreshLocks.current.add(sessionKey);
@@ -1598,7 +1598,7 @@ export function DentalFlow({
     } finally {
       moderationRefreshLocks.current.delete(sessionKey);
     }
-  }, [pages.items, pages.setItems, token, user.id]);
+  }, [pages.items, pages.setItems, sessionReady, sessionKey, token, user.id]);
   const requestResumeModerationRefresh = useCallback(() => {
     if (moderationResumeGate.current()) {
       void refreshVisibleModeration();
