@@ -145,7 +145,7 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
    scopeCleanup.current=Promise.all([priorCleanup,cleanupWork]).then(()=>undefined).catch(()=>undefined);
   };
  },[key]);
-useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(ready&&!storageBlocked&&value!==draft.current.transcript){void persist({...draft.current,transcript:value,ended:false}).catch(()=>{if(mounted.current)setError('Metin bu cihazda saklanamadı. Ekrandan ayrılmadan önce bağlantıyı ve cihazı kontrol edin.')})}},[value,ready,storageBlocked]);
+useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(ready&&!storageBlocked&&value!==draft.current.transcript){void persist({...draft.current,transcript:value}).catch(()=>{if(mounted.current)setError('Metin bu cihazda saklanamadı. Ekrandan ayrılmadan önce bağlantıyı ve cihazı kontrol edin.')})}},[value,ready,storageBlocked]);
  function drain():Promise<void>{
   if(draining.current)return draining.current;
   const drainKey=key;
@@ -310,9 +310,9 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
   {transcriptPreview?<View style={s.preview}><Text style={s.previewLabel}>SON ALINAN KONUŞMA METNİ</Text><Text selectable numberOfLines={4} style={s.previewText}>{transcriptPreview}</Text></View>:null}
   {!ready&&<ActivityIndicator color="#1769AA"/>}
   <View style={s.controls}>
-   {recording?button('Ⅱ  Duraklat',()=>void pause(),working,true):button(view.audioStarted?'▶  Devam et':'Mikrofonu başlat',()=>void start(),occupied||view.segments.length>0,true)}
+   {recording?button('Ⅱ  Duraklat',()=>void pause(),working,true):button(view.ended?'Muayene tamamlandı':view.audioStarted?'▶  Devam et':'Mikrofonu başlat',()=>void start(),occupied||view.segments.length>0||view.ended,true)}
    {active.current&&stopped.current&&!recording&&button('Ses bölümünü güvenle tamamla',()=>void(async()=>{await cut();await drain()})().catch(error=>setError(error instanceof Error?error.message:'Ses bölümü tamamlanamadı; yerel kayıt korundu.')),occupied)}
-   {button('Muayeneyi bitir',()=>void finish(),working||!recording&&!view.transcript&&!view.segments.length,true)}
+   {button('Muayeneyi bitir',()=>void finish(),working||view.ended||!recording&&!view.transcript&&!view.segments.length,true)}
   </View>
   {view.segments.some(segment=>segment.ready)&&!recording&&button('Bekleyen sesleri yazıya çevir',()=>{setError('');void(async()=>{await persist({...draft.current,segments:draft.current.segments.map(s=>s.transcribed?s:{...s,ready:true})});await drain()})().catch(()=>setError('Ses taslağı güncellenemedi.'))},occupied)}
   {view.segments.filter(segment=>!segment.ready&&!segment.transcribed&&isPrivateVoiceRecordingUri(segment.uri)).map(segment=><Pressable key={segment.id} accessibilityRole="button" disabled={occupied||disabled||!ready} onPress={()=>discardInterruptedSegment(segment.id)} style={[s.cleanupButton,(occupied||disabled||!ready)&&s.disabledButton]}><Text style={s.cleanupText}>Yarım kalan ses bölümünü kaldır</Text></Pressable>)}
