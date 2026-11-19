@@ -639,7 +639,7 @@ def test_mobile_analysis_asset_denies_another_owner_before_storage_hydration(tmp
     engine, owner, analysis_id, asset_id = _create_mobile_analysis_download_records(
         tmp_path, monkeypatch, 'mobile-analysis-owner-boundary.db'
     )
-    with Session(engine) as session:
+    with Session(engine, expire_on_commit=False) as session:
         stranger = main.User(
             username='mobile-analysis-stranger',
             role='DOCTOR',
