@@ -910,3 +910,7 @@ Rechecked the previously reported TypeScript TS2554 at ModernScreens.tsx:112. Th
 Inspected .github/workflows/android-test-apk.yml, mobile-android.yml and security-recovery.yml. All use the valid GitHub-hosted ubuntu-latest runner label; none depends on a self-hosted runner. The latest inspected Android APK job (run 44273348890) has an empty step list, and log retrieval returns BlobNotFound 404. The current HEAD has no check-runs or commit status entries. Evidence therefore points to runner allocation/startup before checkout, not a TypeScript or Gradle diagnostic. The available GitHub result does not expose the precise platform-side quota/billing/provisioning cause. No workflow was dispatched to avoid repeating CI email notifications.
 
 Full tsc --noEmit, npm test, Python security suite, Gradle APK and device acceptance remain unverified for the current HEAD.
+
+## Academic AI answer actions — 2026-11-19
+
+Web-first review found that native reactions triggered five unrelated workspace reads and that native answer cards lacked a share action. Native now has accessible share/like/dislike controls, strict feedback acknowledgement validation, optimistic rollback and a local message-only vote update. Nine helper/component/API regressions are registered in `npm run test:beta`; they were committed but not executed in this connector-only run. Native uses the system share sheet; one-tap clipboard parity remains open. Details: `docs/mobile-academic-answer-actions-20261119.md`. No dependency, migration, main merge, deployment or CI dispatch.
