@@ -10,6 +10,37 @@ def course(engine,ident=1,owner=1):
     with Session(engine) as s:s.add(main.StudyCourse(id=ident,owner_user_id=owner,title='Synthetic course'));s.commit()
 
 
+def test_mobile_academic_router_source_parses_and_registers_each_route_once():
+    import ast
+    from pathlib import Path
+    from app.mobile_academic_api import router
+
+    source_path = Path(main.__file__).with_name("mobile_academic_api.py")
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    declared = []
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for decorator in node.decorator_list:
+            if not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute):
+                continue
+            owner = decorator.func.value
+            if not isinstance(owner, ast.Name) or owner.id != "router" or not decorator.args:
+                continue
+            route_path = decorator.args[0]
+            if isinstance(route_path, ast.Constant) and isinstance(route_path.value, str):
+                declared.append((decorator.func.attr.upper(), route_path.value))
+
+    registered = [
+        (method, route.path)
+        for route in router.routes
+        for method in (route.methods or ())
+    ]
+    assert declared, "the native Academic adapter must declare routes"
+    assert len(declared) == len(set(declared)), "duplicate route decorators register shadow endpoints"
+    assert len(registered) == len(set(registered)), "FastAPI router must not register duplicate method/path pairs"
+
+
 def test_native_academic_course_crud_and_ownership(chat):
     client,engine=chat
     result=client.post('/api/mobile/v1/academic/library',json={'title':'Synthetic new course','description':'Synthetic description','request_key':'synthetic-course-crud-key-0001'})
