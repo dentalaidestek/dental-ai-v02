@@ -66,7 +66,7 @@ def mobile_patient_media(patient_id:int,user=Depends(_mobile_user),limit:int=60,
         rows=s.exec(query.order_by(PatientMedia.id.desc()).offset(offset if before is None else 0).limit(limit+1)).all()
         has_more=len(rows)>limit
         rows=rows[:limit]
-        return {"items":[{"id":m.id,"filename":m.original_filename,"media_type":m.media_type,"tooth_number":m.tooth_number,"note":m.note,"uploaded_at":m.uploaded_at,"url":f"/api/mobile/v1/patients/{patient_id}/media/{m.id}/file"} for m in rows],"next_before":rows[-1].id if has_more and rows else None}
+        return {"items":[{"id":m.id,"filename":m.original_filename,"media_type":m.media_type,"tooth_number":m.tooth_number,"note":m.note,"uploaded_at":m.uploaded_at,"url":f"/api/mobile/v1/patients/{patient_id}/media/{m.id}/file","thumbnail_url":f"/api/mobile/v1/patients/{patient_id}/media/{m.id}/thumbnail"} for m in rows],"next_before":rows[-1].id if has_more and rows else None}
 
 
 @router.post("/patients/{patient_id}/media")
@@ -87,14 +87,43 @@ async def mobile_upload_media(patient_id:int,user=Depends(_mobile_user),file:Upl
 
 @router.get("/patients/{patient_id}/media/{media_id}/file")
 def mobile_media_file(patient_id:int,media_id:int,user=Depends(_mobile_user)):
+    # Resolve ownership and copy the storage reference while the DB session is
+    # open; never hold a pooled connection during an R2 download.
     with Session(engine,expire_on_commit=False) as s:
         _user_owned_patient(s,user,patient_id)
         row=s.get(PatientMedia,media_id)
-        if not row or row.patient_id!=patient_id or row.owner_user_id!=user.id: raise HTTPException(status_code=404,detail="Medya bulunamadı.")
-        try: path=storage_ensure_local(row.file_path)
-        except FileNotFoundError: raise HTTPException(status_code=404,detail="Dosya bulunamadı.")
-        types={".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp",".heic":"image/heic"}
-        return FileResponse(path,media_type=types.get(path.suffix.lower(),"application/octet-stream"),filename=row.original_filename,headers={"Cache-Control":"private, no-store"})
+        if not row or row.patient_id!=patient_id or row.owner_user_id!=user.id:
+            raise HTTPException(status_code=404,detail="Medya bulunamadı.")
+        file_path=row.file_path
+        filename=row.original_filename
+    try:
+        path=storage_ensure_local(file_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404,detail="Dosya bulunamadı.")
+    except Exception as exc:
+        raise HTTPException(status_code=503,detail="Klinik görüntü deposuna şu anda erişilemiyor.",headers={"Retry-After":"2"}) from exc
+    types={".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp",".heic":"image/heic"}
+    return FileResponse(path,media_type=types.get(path.suffix.lower(),"application/octet-stream"),filename=filename,headers={"Cache-Control":"private, no-store","Pragma":"no-cache","Vary":"Authorization","X-Content-Type-Options":"nosniff"})
+
+
+@router.get("/patients/{patient_id}/media/{media_id}/thumbnail")
+def mobile_media_thumbnail(patient_id:int,media_id:int,user=Depends(_mobile_user)):
+    with Session(engine,expire_on_commit=False) as s:
+        _user_owned_patient(s,user,patient_id)
+        row=s.get(PatientMedia,media_id)
+        if not row or row.patient_id!=patient_id or row.owner_user_id!=user.id:
+            raise HTTPException(status_code=404,detail="Medya bulunamadı.")
+        file_path=row.file_path
+    from app.clinical_media_thumbnail import ensure_thumbnail
+    try:
+        path=ensure_thumbnail(file_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404,detail="Klinik görüntü bulunamadı.")
+    except ValueError as exc:
+        raise HTTPException(status_code=415,detail="Klinik görüntü önizlemesi oluşturulamadı.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503,detail="Önizleme deposuna şu anda erişilemiyor.",headers={"Retry-After":"2"}) from exc
+    return FileResponse(path,media_type="image/jpeg",filename=f"clinical-{media_id}-thumbnail.jpg",headers={"Cache-Control":"private, no-store","Pragma":"no-cache","Vary":"Authorization","X-Content-Type-Options":"nosniff","Content-Security-Policy":"default-src 'none'; sandbox"})
 
 @router.get("/patients/{patient_id}/media/{media_id}")
 def mobile_media_meta(patient_id:int,media_id:int,user=Depends(_mobile_user)):
