@@ -332,14 +332,14 @@ class AdminNotice(SQLModel, table=True):
     user_id: int = Field(index=True)
     title: str
     message: str
-    is_read: bool = False  # legacy compatibility; read_at is authoritative for new notices
+    is_read: bool = False  # Canonical read state used by web and native notification centers.
     notice_type: str = Field(default="ADMIN", index=True)
     related_type: Optional[str] = Field(default=None, index=True)
     related_id: Optional[str] = Field(default=None, index=True)
     dedup_key: Optional[str] = Field(default=None, index=True)
     target_url: Optional[str] = None
     status: str = Field(default="ACTIVE", index=True)
-    read_at: Optional[datetime] = Field(default=None, index=True)
+    read_at: Optional[datetime] = Field(default=None, index=True)  # Read timestamp for retention/audit; it does not override is_read.
     resolved_at: Optional[datetime] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
