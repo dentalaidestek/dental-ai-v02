@@ -201,6 +201,55 @@ export async function socialRequest<T>(
     throw error;
   }finally{clearTimeout(timeout);externalSignal?.removeEventListener("abort",abort)}
 }
+export function normalizeSocialFeedPost(value: unknown): SocialPost {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ApiError(502, "Dental Akış gönderi yanıtı doğrulanamadı.");
+  }
+  const post = value as Record<string, unknown>;
+  const validId = (item: unknown) => Number.isSafeInteger(item) && (item as number) > 0;
+  const validCount = (item: unknown) => Number.isSafeInteger(item) && (item as number) >= 0;
+  if (
+    !validId(post.id) ||
+    !validId(post.author_id) ||
+    typeof post.author_name !== "string" ||
+    !post.author_name.trim() ||
+    post.author_name.length > 160 ||
+    typeof post.text !== "string" ||
+    post.text.length > 5000 ||
+    !["PUBLISHED", "PENDING", "REJECTED"].includes(String(post.status)) ||
+    !validId(post.version) ||
+    typeof post.owned !== "boolean" ||
+    typeof post.pinned !== "boolean" ||
+    typeof post.comments_closed !== "boolean" ||
+    typeof post.liked !== "boolean" ||
+    !validCount(post.like_count) ||
+    !validCount(post.comment_count) ||
+    !Array.isArray(post.media) ||
+    post.media.length > 4 ||
+    post.media.some((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return true;
+      const media = item as Record<string, unknown>;
+      return !validId(media.id) ||
+        typeof media.url !== "string" ||
+        media.url !== `/api/expert-social/media/${media.id}`;
+    }) ||
+    typeof post.created_at !== "string" ||
+    !Number.isFinite(Date.parse(post.created_at)) ||
+    (post.author_photo !== undefined && post.author_photo !== null && typeof post.author_photo !== "string") ||
+    (post.author_specialty !== undefined && post.author_specialty !== null && typeof post.author_specialty !== "string") ||
+    (post.author_followed !== undefined && typeof post.author_followed !== "boolean") ||
+    (post.author_support_available !== undefined && typeof post.author_support_available !== "boolean") ||
+    (post.link_url !== undefined && post.link_url !== null && typeof post.link_url !== "string") ||
+    (post.cover_media_id !== undefined && post.cover_media_id !== null && !validId(post.cover_media_id))
+  ) {
+    throw new ApiError(502, "Dental Akış gönderi alanları doğrulanamadı.");
+  }
+  if (post.status !== "PUBLISHED" && post.owned !== true) {
+    throw new ApiError(502, "Yayınlanmamış gönderinin sahibi doğrulanamadı.");
+  }
+  return value as SocialPost;
+}
+
 export const getFeed = async (
   t: string,
   mode: "discover" | "following",
