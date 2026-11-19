@@ -133,3 +133,35 @@ def test_web_and_native_delete_paths_enqueue_thumbnail_cleanup():
     assert "enqueue_patient_media_cleanup(s, thumbnail_path)" in bulk_delete
     assert "thumbnail_reference(file_path)" in native_delete
     assert "enqueue_patient_media_cleanup(session, thumbnail_path)" in native_delete
+
+
+
+def test_single_flight_lock_registry_is_released_after_waiters_finish(tmp_path, monkeypatch):
+    original = tmp_path / "lock.jpg"
+    _jpeg(original)
+    derivative = tmp_path / "lock.thumb.jpg"
+
+    def ensure_local(reference):
+        path = Path(reference)
+        if not path.exists():
+            raise FileNotFoundError(str(reference))
+        return path
+
+    def write_bytes(reference, payload, *, content_type=None):
+        Path(reference).write_bytes(payload)
+
+    monkeypatch.setattr(thumbnails.object_storage, "ensure_local", ensure_local)
+    monkeypatch.setattr(thumbnails.object_storage, "write_bytes", write_bytes)
+    thumbnails.ensure_thumbnail(original)
+    assert str(derivative) not in thumbnails._locks
+
+
+def test_thumbnail_endpoint_rechecks_owner_after_generation():
+    from pathlib import Path
+
+    api = Path("app/mobile_modern_api_v3.py").read_text(encoding="utf-8")
+    start = api.index("def mobile_media_thumbnail")
+    end = api.index("@router.get(\"/patients/{patient_id}/media/{media_id}\")", start)
+    block = api[start:end]
+    assert "still_owned=bool(media" in block
+    assert "delete_thumbnail(file_path)" in block
