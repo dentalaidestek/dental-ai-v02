@@ -262,8 +262,8 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    if(typeof cacheDirectory!=='string'||!cacheDirectory.startsWith('file:///')||!cacheDirectory.endsWith('/'))
     throw Error('Uygulamanın özel ses önbelleği kullanılamıyor.');
    const id=Crypto.randomUUID(),uri=cacheDirectory+'voice-import-'+id+'.'+resolved.extension;
-   await FileSystem.copyAsync({from:asset.uri,to:uri});
    copiedUri=uri;copiedMime=resolved.mime;
+   await FileSystem.copyAsync({from:asset.uri,to:uri});
    if(!isPrivateVoiceRecordingUri(uri,cacheDirectory,resolved.mime))
     throw Error('Seçilen ses dosyası uygulamanın özel önbelleğine güvenli biçimde kopyalanamadı.');
    const copiedInfo=await FileSystem.getInfoAsync(uri);

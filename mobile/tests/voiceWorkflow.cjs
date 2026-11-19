@@ -28,13 +28,15 @@ test('voice draft accepts private imported audio only with a matching supported 
 
 test('native recorder mirrors web audio-file import through the private idempotent ASR draft',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativeVoiceRecorder.tsx'),'utf8');
- assert.match(source,/DocumentPicker\\.getDocumentAsync/);
- assert.match(source,/copyToCacheDirectory:true/);
- assert.match(source,/voice-import-/);
- assert.match(source,/readPrivateVoiceAudioDuration\\(uri,resolved\\.mime\\)/);
- assert.match(source,/segments:\\[\\.\\.\\.draft\\.current\\.segments,segment\\]/);
- assert.match(source,/transcribeNativeRecording\\(token,patientId,segment\\.uri,segment\\.id,requestController\\.signal,segment\\.mime\\|\\|'audio\\/mp4'\\)/);
- assert.match(source,/validateVoiceAudioDuration\\(duration\\)/);
+ for(const fragment of [
+  'DocumentPicker.getDocumentAsync',
+  'copyToCacheDirectory:true',
+  'voice-import-',
+  'readPrivateVoiceAudioDuration(uri,resolved.mime)',
+  'segments:[...draft.current.segments,segment]',
+  "transcribeNativeRecording(token,patientId,segment.uri,segment.id,requestController.signal,segment.mime||'audio/mp4')",
+  'validateVoiceAudioDuration(duration)'
+ ])assert.ok(source.includes(fragment),fragment);
 });
 
 test('voice draft is account-patient bound, expires, and appends each segment only once',()=>{
