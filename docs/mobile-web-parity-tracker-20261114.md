@@ -817,3 +817,16 @@ Changes: added owner-scoped TCKN matching without returning TCKN in list payload
 Regression sources: `tests/test_mobile_patient_parity.py` covers web/native TCKN parity, partial matching, owner isolation, no-store headers, list-payload minimization and ordering. `mobile/tests/patientDirectoryPresentation.cjs` covers Turkish normalization, row labels, age zero, bearer-only query encoding and native list wiring; registered in `npm run test:beta`. Python and Node suites were not executed in this connector-only run. Full typecheck, beta, Security Recovery, Expo/Gradle, device and 60k-load acceptance remain open.
 
 At starting HEAD `a156fc7`, no current-head workflow run or combined status existed. Workflows remain manual-only; a historical Android job had no steps and its log returned `BlobNotFound 404`, so the compiler/test process did not start. No dispatch was sent. The native list/detail path remains owner-only; ADMIN-wide web directory access was not copied into a list-only mobile change. Evidence: `docs/mobile-patient-directory-search-parity-20261119.md`. No patient data, schema, migration, main merge or production deploy.
+
+
+## 2026-11-19 — Native patient profile three-way edit conflict handling
+
+Web-first review re-read `patient_detail.html`, `main.py::edit_patient`, `mobile_api.py::mobile_patient_detail`, native profile and API mutation code. Found two native-only hazards: after HTTP 409, explicit reload discarded all local form edits; and a realtime/app-resume refresh could advance the detail revision while a dirty edit form remained unchanged, allowing a stale draft to overwrite concurrent edits without another 409.
+
+Added a typed three-way merge helper. Unchanged local fields adopt the latest server values, local-only edits stay in the draft, and fields changed differently by both sessions require an explicit clinician choice. Saving is blocked until every same-field conflict is resolved. Dirty drafts keep their old revision across realtime refresh; the user must explicitly merge/review the latest snapshot before the refreshed revision can be used. Owner scope, no-store, optimistic revision contract, clinical history provenance and secure pending mutation behavior remain unchanged. No new endpoint, schema, query, polling, migration or patient-data mutation.
+
+Regression sources in `mobile/tests/patientProfileUI.cjs` cover unrelated concurrent edits, same-field conflict choices, save blocking, refreshed-revision retry, and realtime refresh during an open dirty form. The file is already registered in `npm run test:beta`. These renderer tests are committed but not executed in this run.
+
+Commits: `d482081` (merge helper), `b2268b0` (native conflict handling), `a43dc2d` (preserve draft across refresh), `cc350f6` and `135c8dc` (conflict/realtime regressions), `680b0ae` (documentation). Evidence: `docs/mobile-patient-edit-conflict-merge-20261119.md`.
+
+At starting HEAD `817a879`, combined status and PR-associated workflow runs were empty. The PR body records 2026-11-16 Android typecheck/APK and Python security jobs with runner ID 0, no steps and missing log blobs; npm/tsc, Gradle and pytest did not start. Exact hosted-runner/account/billing sub-cause remains unknown. Full typecheck, beta, Python security, Expo/Gradle, physical-device and 60k-load acceptance remain open. No main merge or live deploy.
