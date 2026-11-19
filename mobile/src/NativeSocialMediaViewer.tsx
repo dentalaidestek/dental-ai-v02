@@ -257,12 +257,11 @@ export default function NativeSocialMediaViewer({
           onTouchCancel={() => { gesture.current = null; }}
         >
           {active && (
+            <View key={requestKey} pointerEvents="none" style={{flex: 1}}>
             <Image
-              key={requestKey}
               source={api.socialImageSource(active.url, token)}
               resizeMode="contain"
               accessibilityLabel={`Gönderi görseli ${index + 1} / ${items.length}`}
-              pointerEvents="none"
               onLoad={(event: any) => {
                 if (requestKeyRef.current !== requestKey) return;
                 const source = event?.nativeEvent?.source;
@@ -293,6 +292,7 @@ export default function NativeSocialMediaViewer({
                 },
               ]}
             />
+            </View>
           )}
           {loading && <ActivityIndicator size="large" color="#FFFFFF" />}
           {failed && (

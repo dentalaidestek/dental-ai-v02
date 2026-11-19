@@ -63,6 +63,7 @@ export async function verifyProgramAction(token:string,intent:ProgramActionInten
   if(source.status==='ACTIVE')return 'NOT_APPLIED';
   return 'UNKNOWN';
  }
+ if(!('days' in intent))return 'UNKNOWN';
  let allFound=true;
  for(const day of intent.days){
   const expectedStart=day+'T'+source.start_local.slice(11);

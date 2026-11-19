@@ -842,7 +842,7 @@ function CommentThread({
           )}
         </View>
       )}
-      {editing && sessionReady && (
+      {editing && (
         <Sheet
           title="Yorumu düzenle"
           onClose={() => {

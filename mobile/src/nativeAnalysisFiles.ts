@@ -5,6 +5,10 @@ import {ANALYSIS_MAX_IMAGE_BYTES,ANALYSIS_MAX_BATCH_BYTES} from './uploadLimits'
 const LEGACY_ANALYSIS_PREFIX='dai-analysis-';
 import {cleanupStaleClinicalMediaTemps,deleteClinicalMediaTemp,deleteClinicalMediaVaultFile,decryptClinicalMediaFile,encryptClinicalMediaFile,validateClinicalMediaVaultFile} from './clinicalMediaVault';
 
+// Re-exported for the composer: the stale-temp sweep is part of the native
+// analysis file contract shared by NativeAnalysisUpload and patient media.
+export {cleanupStaleClinicalMediaTemps};
+
 export async function cacheAnalysisImages(images:Array<{uri:string;name?:string;type?:string}>,userId:number,patientId:number):Promise<UploadImage[]>{
   const normalized=normalizeAnalysisImages(images),cached:UploadImage[]=[];
   try{

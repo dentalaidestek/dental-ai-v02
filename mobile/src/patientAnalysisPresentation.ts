@@ -1,6 +1,7 @@
 export type PatientAnalysisAssetSummary = {
   id: number;
   image_type: string;
+  original_filename?: string;
 };
 
 export type PatientAnalysisAssetGroups = {

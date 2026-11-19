@@ -8,7 +8,7 @@ import React,{useCallback,useEffect,useRef,useState}from"react";
 
 import * as SecureStore from"expo-secure-store";
 import * as Crypto from "expo-crypto";
-import{ActivityIndicator,Alert,FlatList,Image,KeyboardAvoidingView,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View}from"react-native";
+import{ActivityIndicator,Alert,FlatList,Image,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View}from"react-native";
 import{getAnalysisHistory,getConsultation,getConsultationUpdates,getConsultations,getCourses,getAcademicMessages,getExperts,getNotifications,markNotificationRead,markAllNotificationsRead,askAcademic,sendConsultationMessage,getConsultationMessageReceipt,markConsultationRead,createConsultation,Expert,Consultation,Course,ChatMessage}from"./modernApi";
 import{useRealtime}from"./realtime";
 import {applyConsultationInboxEvent,applyConsultationChatEvent,mergeConsultationMessages,consultationStatusLabel,consultationMessagePreview} from "./consultationRealtime";

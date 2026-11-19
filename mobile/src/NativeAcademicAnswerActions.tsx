@@ -57,6 +57,6 @@ export default function NativeAcademicAnswerActions({token,course,messageId,cont
     <Text style={textStyle}>{current==='dislike'?'✓ Beğenmedin':'Beğenme'}</Text>
    </Pressable>
   </View>
-  {!!notice&&<Text accessibilityRole="status" style={{fontSize:12,color:'#53657B'}}>{notice}</Text>}
+  {!!notice&&<Text accessibilityRole="text" accessibilityLiveRegion="polite" style={{fontSize:12,color:'#53657B'}}>{notice}</Text>}
  </View>;
 }

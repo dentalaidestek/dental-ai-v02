@@ -69,7 +69,7 @@ function validAnalysisJob(value:any):boolean{
   typeof value.status==='string'&&value.status.length>0&&value.status.length<=40&&typeof value.retryable==='boolean';
 }
 
-export function normalizeAnalysisImages(images:Array<{uri:string;name?:string;type?:string}>){
+export function normalizeAnalysisImages(images:Array<{uri:string;name?:string;type?:string}>):Array<{uri:string;name:string;type:string;legacyUri?:string;encryptedUri?:string}>{
   if(!Array.isArray(images)||!images.length||images.length>ANALYSIS_MAX_IMAGES||images.some(i=>!i||typeof i.uri!=="string"||!i.uri))throw Error(`1–${ANALYSIS_MAX_IMAGES} geçerli klinik görüntü seçin.`);
   const allowedTypes=new Set(["image/jpeg","image/png","image/webp"]);
   const allowedExtensions=/\.(?:jpe?g|png|webp)$/i;
