@@ -21,7 +21,7 @@ function harness(){
  const draftModule={chunkedDraftStore:()=>store,draftKey:(userId,scope)=>userId+':'+scope,readDraft:async(s,key)=>{const value=await s.getItemAsync(key);return value?JSON.parse(value):null},submitDraft:async(s,key,draft,send)=>{const intent={...draft,attempted:true};await s.setItemAsync(key,JSON.stringify(intent));const result=await send(intent);await s.deleteItemAsync(key);return result}};
  loadModuleRealm(code,exports,n=>n==='react'?react:n==='react-native'?native:n==='react-native-safe-area-context'?{SafeAreaView:'SafeAreaView'}:n==='./socialApi'?api:n==='./socialDraft'?draftModule:n==='expo-secure-store'?store:n==='expo-image-picker'?picker:n==='expo-crypto'?{randomUUID:()=> 'synthetic-id'}:n==='./socialSessionScope'?sessionScopeExports:{}); return {alerts,refs,requests,shared,opened,uploads,previews,posts,picker,storeValues,getPostCalls,getModerationCalls,sessionScope:sessionScopeExports,api,setGetPostResponse:value=>getPostResponse=value,setModerationResponse:value=>moderationResponse=value,setGetCommentsHandler:fn=>{getCommentsHandler=fn},render:(name,props)=>{cursor=ri=ei=ci=0;const tree=exports.__test[name](props);while(effects.length)effects.shift()();return tree}};
 }
-function nodes(tree){if(!tree||typeof tree!=='object')return [];return [tree,...(tree.props?.children||[]).flat(Infinity).flatMap(nodes)];}
+function nodes(tree){if(!tree||typeof tree!=='object')return [];const out=[tree];if(typeof tree.type==='function'){try{const rendered=tree.type({...tree.props,children:tree.props?.children});out.push(...nodes(rendered))}catch{}}for(const c of (tree.props?.children||[]).flat(Infinity))out.push(...nodes(c));return out;}
 const text=n=>typeof n==='string'?n:!n||typeof n!=='object'?'':(n.props?.children||[]).flat(Infinity).map(text).join('');
 test('Android owner menu exposes every action without an Alert exceeding three buttons',()=>{
  const h=harness(),props={token:'synthetic',post:{id:1,author_id:1,author_name:'Expert',text:'Science',media:[],status:'PUBLISHED',owned:true,created_at:'2026-11-10'},onEdit(){}};
@@ -96,7 +96,7 @@ test('Dental Flow native filters use the web taxonomy and reset the paged scope'
  assert.match(feed,/specialties\.map\(\(specialty\)/);
  assert.match(feed,/navigation\.navigate\("ExpertDirectory"\)/);
  assert.match(feed,/expertId === user.id && canCompose/,'the feed composer is restricted to an owned profile with server-confirmed publish permission');
- assert.doesNotMatch(feed,/!expertId || expertId === user.id/,'ordinary members must not see a composer that the API rejects');
+ assert.doesNotMatch(feed,/!expertId \|\| expertId === user\.id/,'ordinary members must not see a composer that the API rejects');
 
  assert.match(feed,/mode === "following" && !followed/);
  assert.match(feed,/feedFollowLocks\.current\.has\(authorId\)/);

@@ -1511,7 +1511,7 @@ export function DentalFlow({
   const sessionKey = socialSessionKey(user.id, sessionEpoch);
   const sessionReady = isSocialSessionCurrent(readySession, { userId: user.id, token });
   const followLocks = useRef(new Set<string>());
-  const feedFollowLocks = useRef(new Set<string>());
+  const feedFollowLocks = useRef(new Set<number>());
   const editLocks = useRef(new Set<string>());
   const profileGeneration = useRef(0);
   const [mode, setMode] = useState<"discover" | "following">("discover"),
@@ -1648,25 +1648,33 @@ export function DentalFlow({
     followed: boolean,
   ): Promise<boolean> => {
     const requestSession = { userId: user.id, token };
-    const lockKey = `${sessionKey}:${authorId}`;
-    if (feedFollowLocks.current.has(lockKey)) {
+    if (feedFollowLocks.current.has(authorId)) {
       throw new Error("Bu uzman için takip işlemi zaten sürüyor.");
     }
-    feedFollowLocks.current.add(lockKey);
+    feedFollowLocks.current.add(authorId);
     try {
       const result = await api.setFollow(token, authorId, followed);
       if (!isSocialSessionCurrent(sessionScope.current, requestSession)) return false;
       const next = result.following_by_viewer;
-      pages.setItems((v) =>
-        mode === "following" && !next
-          ? v.filter((x) => x.author_id !== authorId)
-          : v.map((x) =>
-              x.author_id === authorId ? { ...x, author_followed: next } : x,
-            ),
-      );
+      if (mode === "following" && !followed) {
+        // Web parity: unfollowing inside the following feed drops that
+        // author's posts; when the feed empties, send the clinician to the
+        // expert directory to pick someone new.
+        const remaining = pages.items.filter(
+          (x) => x.author_id !== authorId,
+        ).length;
+        pages.setItems((v) => v.filter((x) => x.author_id !== authorId));
+        if (remaining === 0) navigation.navigate("ExpertDirectory");
+      } else {
+        pages.setItems((v) =>
+          v.map((x) =>
+            x.author_id === authorId ? { ...x, author_followed: next } : x,
+          ),
+        );
+      }
       return next;
     } finally {
-      feedFollowLocks.current.delete(lockKey);
+      feedFollowLocks.current.delete(authorId);
     }
   };
   useEffect(() => {
@@ -1709,7 +1717,7 @@ export function DentalFlow({
           </Pressable>
         )}
       </View>
-      {!expertId && (
+      {expertId === undefined && (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Uzmanları keşfet"
@@ -1794,20 +1802,40 @@ export function DentalFlow({
           ))}
         </View>
       )}
-      {!expertId && specialties.length > 0 && (
+      {expertId === undefined && specialties.length > 0 && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={s.filterRow}
           accessibilityLabel="Branşa göre filtrele"
         >
-          {["", ...specialties].map((specialty) => {
+          <Pressable
+            key="all"
+            accessibilityRole="button"
+            accessibilityLabel="Branş filtresi: Tümü"
+            accessibilityState={{ selected: selectedSpecialty === "" }}
+            onPress={() => setSelectedSpecialty("")}
+            style={[
+              s.filterChip,
+              selectedSpecialty === "" && s.filterChipSelected,
+            ]}
+          >
+            <Text
+              style={[
+                s.filterChipText,
+                selectedSpecialty === "" && s.filterChipTextSelected,
+              ]}
+            >
+              Tümü
+            </Text>
+          </Pressable>
+          {specialties.map((specialty) => {
             const selected = selectedSpecialty === specialty;
             return (
               <Pressable
-                key={specialty || "all"}
+                key={specialty}
                 accessibilityRole="button"
-                accessibilityLabel={`Branş filtresi: ${specialty || "Tümü"}`}
+                accessibilityLabel={`Branş filtresi: ${specialty}`}
                 accessibilityState={{ selected }}
                 onPress={() => setSelectedSpecialty(specialty)}
                 style={[s.filterChip, selected && s.filterChipSelected]}
@@ -1818,7 +1846,7 @@ export function DentalFlow({
                     selected && s.filterChipTextSelected,
                   ]}
                 >
-                  {specialty || "Tümü"}
+                  {specialty}
                 </Text>
               </Pressable>
             );
