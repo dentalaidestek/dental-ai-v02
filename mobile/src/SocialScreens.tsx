@@ -1509,9 +1509,9 @@ export function DentalFlow({
   const sessionKey = socialSessionKey(user.id, token);
   const [readySessionKey, setReadySessionKey] = useState(sessionKey);
   const sessionReady = readySessionKey === sessionKey;
-  const followLock = useRef(false);
-  const feedFollowLocks = useRef(new Set<number>());
-  const editLock = useRef(false);
+  const followLocks = useRef(new Set<string>());
+  const feedFollowLocks = useRef(new Set<string>());
+  const editLocks = useRef(new Set<string>());
   const profileGeneration = useRef(0);
   const [mode, setMode] = useState<"discover" | "following">("discover"),
     [selectedSpecialty, setSelectedSpecialty] = useState(""),
@@ -1540,15 +1540,15 @@ export function DentalFlow({
     false,
     true,
   );
-  const moderationRefreshLock = useRef(false);
+  const moderationRefreshLocks = useRef(new Set<string>());
   const moderationResumeGate = useRef(createModerationResumeGate());
   const sessionScope = useRef({ userId: user.id, token });
   sessionScope.current = { userId: user.id, token };
   const refreshVisibleModeration = useCallback(async () => {
-    if (moderationRefreshLock.current) return;
+    if (moderationRefreshLocks.current.has(sessionKey)) return;
     const candidates = selectOwnedModerationCandidates(pages.items);
     if (!candidates.length) return;
-    moderationRefreshLock.current = true;
+    moderationRefreshLocks.current.add(sessionKey);
     const requestUserId = user.id;
     const requestToken = token;
     try {
@@ -1563,10 +1563,7 @@ export function DentalFlow({
                 requestToken,
                 candidate.id,
               );
-              if (
-                sessionScope.current.userId !== requestUserId ||
-                sessionScope.current.token !== requestToken
-              ) {
+              if (!isSocialSessionCurrent(sessionScope.current, { userId: requestUserId, token: requestToken })) {
                 return;
               }
               pages.setItems((current) =>
@@ -1590,7 +1587,7 @@ export function DentalFlow({
         );
       }
     } finally {
-      moderationRefreshLock.current = false;
+      moderationRefreshLocks.current.delete(sessionKey);
     }
   }, [pages.items, pages.setItems, token, user.id]);
   const requestResumeModerationRefresh = useCallback(() => {
@@ -1627,20 +1624,29 @@ export function DentalFlow({
       if (typeof removeFocus === "function") removeFocus();
     };
   }, [navigation, requestResumeModerationRefresh]);
-  const update = (p: api.SocialPost | null, id: number) =>
+  const update = (
+    p: api.SocialPost | null,
+    id: number,
+    expectedSession = { userId: user.id, token },
+  ) => {
+    if (!isSocialSessionCurrent(sessionScope.current, expectedSession)) return;
     pages.setItems((v) =>
       p ? v.map((x) => (x.id === id ? p : x)) : v.filter((x) => x.id !== id),
     );
+  };
   const updateFollow = async (
     authorId: number,
     followed: boolean,
   ): Promise<boolean> => {
-    if (feedFollowLocks.current.has(authorId)) {
+    const requestSession = { userId: user.id, token };
+    const lockKey = `${sessionKey}:${authorId}`;
+    if (feedFollowLocks.current.has(lockKey)) {
       throw new Error("Bu uzman için takip işlemi zaten sürüyor.");
     }
-    feedFollowLocks.current.add(authorId);
+    feedFollowLocks.current.add(lockKey);
     try {
       const result = await api.setFollow(token, authorId, followed);
+      if (!isSocialSessionCurrent(sessionScope.current, requestSession)) return false;
       const next = result.following_by_viewer;
       pages.setItems((v) =>
         mode === "following" && !next
@@ -1651,7 +1657,7 @@ export function DentalFlow({
       );
       return next;
     } finally {
-      feedFollowLocks.current.delete(authorId);
+      feedFollowLocks.current.delete(lockKey);
     }
   };
   useEffect(() => {
@@ -1677,8 +1683,9 @@ export function DentalFlow({
         .then((result) => { if (request === profileGeneration.current) setStats(result); })
         .catch((e) => { if (request === profileGeneration.current) setError(message(e)); });
     return () => { profileGeneration.current++; };
-  }, [token, expertId]);
+  }, [token, user.id, expertId]);
   const profile = (id: number, name: string) => {
+    if (!isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) return;
     setComments(null);
     navigation.push("ExpertProfile", { id, name });
   };
@@ -1714,9 +1721,10 @@ export function DentalFlow({
               title={stats.following_by_viewer ? "Takibi bırak" : "Takip et"}
               disabled={saving}
               onPress={async () => {
-                if (followLock.current) return;
+                const requestSession = { userId: user.id, token };
+                if (followLocks.current.has(sessionKey)) return;
                 const request = profileGeneration.current;
-                followLock.current = true;
+                followLocks.current.add(sessionKey);
                 setSaving(true);
                 try {
                   const r = await api.setFollow(
@@ -1724,7 +1732,7 @@ export function DentalFlow({
                     expertId,
                     !stats.following_by_viewer,
                   );
-                  if (request !== profileGeneration.current) return;
+                  if (request !== profileGeneration.current || !isSocialSessionCurrent(sessionScope.current, requestSession)) return;
                   // The follow write succeeded; retain its authoritative state even if refreshing counts fails.
                   setStats((previous) => previous ? {
                     ...previous,
@@ -1741,8 +1749,8 @@ export function DentalFlow({
                 } catch (e) {
                   if (request === profileGeneration.current) setError(message(e));
                 } finally {
-                  followLock.current = false;
-                  setSaving(false);
+                  followLocks.current.delete(sessionKey);
+                  if (isSocialSessionCurrent(sessionScope.current, requestSession)) setSaving(false);
                 }
               }}
             />
@@ -1831,19 +1839,21 @@ export function DentalFlow({
             post={item}
             onFollow={updateFollow}
             showExpertActions={!expertId}
-            onSupport={() =>
+            onSupport={() => {
+              if (!isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) return;
               navigation.navigate("NewConsultation", {
                 expert: {
                   user_id: item.author_id,
                   display_name: item.author_name,
                 },
-              })
-            }
-            onUpdate={(p) => update(p, item.id)}
-            onComments={() => setComments(item)}
+              });
+            }}
+            onUpdate={(p) => update(p, item.id, { userId: user.id, token })}
+            onComments={() => { if (isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) setComments(item); }}
             onProfile={() => profile(item.author_id, item.author_name)}
-            onImage={(media, index) => setImage({ media, index })}
+            onImage={(media, index) => { if (isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) setImage({ media, index }); }}
             onEdit={() => {
+              if (!isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) return;
               setEditing(item);
               setEditText(item.text);
               setError("");
@@ -1872,8 +1882,9 @@ export function DentalFlow({
           key={`${user.id}:${token}`}
           token={token}
           userId={user.id}
-          onClose={() => setCompose(false)}
+          onClose={() => { if (isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) setCompose(false); }}
           onPosted={(p) => {
+            if (!isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) return;
             pages.setItems((v) => [p, ...v.filter((x) => x.id !== p.id)]);
             setError("");
           }}
@@ -1886,6 +1897,7 @@ export function DentalFlow({
           userId={user.id}
           post={comments}
           onClose={() => {
+            if (!isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) return;
             setComments(null);
             void pages.refresh();
           }}
@@ -1899,14 +1911,14 @@ export function DentalFlow({
           token={token}
           media={image.media}
           initialIndex={image.index}
-          onClose={() => setImage(null)}
+          onClose={() => { if (isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) setImage(null); }}
         />
       )}
-      {editing && (
+      {editing && sessionReady && (
         <Sheet
           title="Gönderiyi düzenle"
           onClose={() => {
-            if (saving || editLock.current) return;
+            if (saving || editLocks.current.has(sessionKey)) return;
             if (editText !== editing.text) {
               Alert.alert(
                 "Değişiklikler kaydedilmedi",
@@ -1935,21 +1947,23 @@ export function DentalFlow({
               title={saving ? "Kaydediliyor…" : "Kaydet"}
               disabled={saving}
               onPress={async () => {
-                if (editLock.current || !editText.trim()) return;
-                editLock.current = true;
+                const requestSession = { userId: user.id, token };
+                if (editLocks.current.has(sessionKey) || !editText.trim()) return;
+                editLocks.current.add(sessionKey);
                 setSaving(true);
                 try {
                   const p = await api.patchPost(token, editing, {
                     text: editText.trim(),
                   });
-                  update(p, p.id);
+                  if (!isSocialSessionCurrent(sessionScope.current, requestSession)) return;
+                  update(p, p.id, requestSession);
                   setEditing(null);
                   setError("");
                 } catch (e) {
-                  setError(message(e));
+                  if (isSocialSessionCurrent(sessionScope.current, requestSession)) setError(message(e));
                 } finally {
-                  editLock.current = false;
-                  setSaving(false);
+                  editLocks.current.delete(sessionKey);
+                  if (isSocialSessionCurrent(sessionScope.current, requestSession)) setSaving(false);
                 }
               }}
             />
