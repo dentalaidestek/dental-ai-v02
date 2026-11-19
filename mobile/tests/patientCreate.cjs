@@ -8,6 +8,13 @@ const renderer=require('react-test-renderer');
 
 global.IS_REACT_ACT_ENVIRONMENT=true;
 
+require.extensions['.ts']=(module,filename)=>{
+  const source=fs.readFileSync(filename,'utf8');
+  module._compile(ts.transpileModule(source,{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020},
+  }).outputText,filename);
+};
+
 class ApiError extends Error{
   constructor(status,message){super(message);this.status=status;}
 }
