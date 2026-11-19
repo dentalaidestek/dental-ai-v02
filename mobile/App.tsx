@@ -194,7 +194,7 @@ function NotificationPermissionIntro({userId}:{userId:number}){
  <View style={{backgroundColor:"#FFF",borderRadius:24,padding:24}}>
  <Text style={{fontSize:35,textAlign:"center"}}>🔔</Text>
  <Text style={{fontSize:21,fontWeight:"900",color:C.navy,textAlign:"center",marginTop:12}}>Dental AI bildirimleri</Text>
- <Text style={{color:C.muted,lineHeight:22,textAlign:"center",marginTop:12}}>Uygulama içi bildirimleri Bildirimler ekranında görebilirsiniz. Sistem bildirimlerini Profil > Cihaz Bildirimleri bölümünden isteğe bağlı açabilirsiniz.</Text>
+ <Text style={{color:C.muted,lineHeight:22,textAlign:"center",marginTop:12}}>Uygulama içi bildirimleri Bildirimler ekranında görebilirsiniz. Sistem bildirimlerini Profil {'>'} Cihaz Bildirimleri bölümünden isteğe bağlı açabilirsiniz.</Text>
  <Text style={{color:C.muted,fontSize:12,lineHeight:18,marginTop:12}}>İşletim sistemi izni yalnızca Cihaz Bildirimleri bölümündeki açık tercihinizle istenir. Kilit ekranında hasta adı veya klinik ayrıntı gösterilmez.</Text>
  <Pressable accessibilityRole="button" disabled={working} style={[s.primary,{marginTop:20}]} onPress={()=>void finish()}><Text style={s.primaryText}>Anladım</Text></Pressable>
  </View></View>;

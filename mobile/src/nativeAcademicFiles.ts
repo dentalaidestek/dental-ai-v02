@@ -47,7 +47,7 @@ export async function uploadAcademic(token:string,course:number,file:AcademicFil
  if(supplied&&supplied!=='application/octet-stream'&&supplied!==mime)throw Error('Dosya uzantısı ile içerik türü eşleşmiyor.');
  const info=await FS.getInfoAsync(file.uri);
  if(!info.exists||!Number.isFinite(info.size)||info.size<1||info.size>maxBytes)throw Error('Dosya okunamadı veya dersin dosya boyutu sınırı aşıldı.');
- const task=FS.createUploadTask(\`https://dentalai.tr/api/mobile/v1/academic/courses/\${course}/materials\`,file.uri,{httpMethod:'POST',uploadType:FS.FileSystemUploadType.MULTIPART,fieldName:'files',mimeType:mime,parameters:{original_filename:file.name},headers:{Authorization:'Bearer '+token,Cookie:''}},p=>progress(p.totalBytesExpectedToSend>0?Math.min(1,p.totalBytesSent/p.totalBytesExpectedToSend):0));
+ const task=FS.createUploadTask(`https://dentalai.tr/api/mobile/v1/academic/courses/${course}/materials`,file.uri,{httpMethod:'POST',uploadType:FS.FileSystemUploadType.MULTIPART,fieldName:'files',mimeType:mime,parameters:{original_filename:file.name},headers:{Authorization:'Bearer '+token,Cookie:''}},p=>progress(p.totalBytesExpectedToSend>0?Math.min(1,p.totalBytesSent/p.totalBytesExpectedToSend):0));
  let rejectAbort:(error:Error)=>void=()=>{};
  const cancelled=new Promise<never>((_,reject)=>{rejectAbort=reject});
  const cancel=()=>{void task.cancelAsync().catch(()=>{});rejectAbort(new ApiError(408,'Aktarımın sonucu belirsiz. Tekrar yüklemeden önce ders kaynaklarını kontrol edin.'))};

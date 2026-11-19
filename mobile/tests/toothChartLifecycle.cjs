@@ -393,7 +393,7 @@ test('tooth chart rejects a patient response outside the requested patient scope
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
  const content=flat(tree.toJSON());
  assert.ok(content.includes('Sunucu farklı bir hasta kaydı döndürdü.'));
- assert.ok(!content.includes('Synthetic'),'a different patient's chart must never render');
+ assert.ok(!content.includes('Synthetic'),"a different patient's chart must never render");
  await renderer.act(async()=>tree.unmount());
 });
 
