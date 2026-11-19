@@ -179,7 +179,7 @@ test('home unread refresh follows the same notice-only event policy as the web s
 test('home badge uses a count-only request and filters unrelated realtime events',()=>{
  const app=fs.readFileSync(path.join(__dirname,'../App.tsx'),'utf8');
  const api=fs.readFileSync(path.join(__dirname,'../src/modernApi.ts'),'utf8');
- const start=app.indexOf('function Home('),end=app.indexOf('\\nfunction ',start+10);
+ const start=app.indexOf('function Home('),end=app.indexOf('\nfunction ',start+10);
  const home=app.slice(start,end);
  assert.ok(home.includes('getNotificationUnreadCount(token)'));
  assert.ok(home.includes('shouldRefreshHomeUnread(lastEvent)'));
