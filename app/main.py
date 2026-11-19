@@ -11434,12 +11434,17 @@ def delete_patient_media(request: Request, patient_id: int, media_id: int):
         if user.role != "ADMIN" and media.owner_user_id != user.id:
             return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
         file_path = media.file_path
-        queued = work_jobs.enqueue_patient_media_cleanup(s, file_path)
+        from app.clinical_media_thumbnail import thumbnail_reference
+        thumbnail_path = thumbnail_reference(file_path) if file_path else None
+        queued = work_jobs.enqueue_patient_media_cleanup(s, file_path) if file_path else True
+        thumbnail_queued = work_jobs.enqueue_patient_media_cleanup(s, thumbnail_path) if thumbnail_path else True
         s.delete(media)
         s.commit()
 
     if file_path and not queued:
         storage_delete(file_path)
+    if thumbnail_path and not thumbnail_queued:
+        storage_delete(thumbnail_path)
     return RedirectResponse(f"/patients/{patient_id}#clinical-media", status_code=303)
 
 
@@ -11474,8 +11479,12 @@ def delete_all_patient_media(request: Request, patient_id: int):
             if not media_items:
                 break
             for media in media_items:
+                from app.clinical_media_thumbnail import thumbnail_reference
                 if not work_jobs.enqueue_patient_media_cleanup(s, media.file_path):
                     fallback_paths.append(media.file_path)
+                thumbnail_path = thumbnail_reference(media.file_path)
+                if not work_jobs.enqueue_patient_media_cleanup(s, thumbnail_path):
+                    fallback_paths.append(thumbnail_path)
                 s.delete(media)
             s.flush()
             s.expunge_all()
