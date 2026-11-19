@@ -33,6 +33,32 @@ test('academic timeline rejects duplicate, unordered, oversized and cross-course
  for(const items of cases)await assert.rejects(api(async()=>({items,next_before:items[0]?.id??null})).timeline('token',3));
  await assert.rejects(api(async()=>({items:valid,next_before:0})).timeline('token',3));
 });
+
+const validWorkspace={course:{id:3,title:'Synthetic course',description:'Synthetic'},materials:[{id:2,name:'Synthetic.pdf',mime:'application/pdf',size:1024,index_status:'READY',url:'/api/mobile/v1/academic/courses/3/materials/2/file'}],max_file_bytes:157286400,max_upload_count:12,next_before:null};
+test('academic library and workspace enforce descending bounded cursors and course-owned file paths',async()=>{
+ const a=api(async path=>path.startsWith('/academic/library')?{items:[{id:4,title:'Synthetic course'}],next_before:null}:validWorkspace);
+ assert.equal((await a.library('token')).items[0].id,4);
+ assert.equal((await a.workspace('token',3)).materials[0].id,2);
+ await assert.rejects(api(async()=>({items:[{id:4,title:'A'},{id:4,title:'B'}],next_before:null})).library('token'));
+ await assert.rejects(api(async()=>({items:[{id:4,title:'A'}],next_before:4})).library('token'));
+ await assert.rejects(api(async()=>({...validWorkspace,materials:[{...validWorkspace.materials[0],url:'/api/mobile/v1/academic/courses/9/materials/2/file'}]})).workspace('token',3));
+ await assert.rejects(api(async()=>({...validWorkspace,max_file_bytes:500*1024*1024})).workspace('token',3));
+ await assert.rejects(api(async()=>({...validWorkspace,next_before:2})).workspace('token',3));
+});
+test('academic quizzes, learning and indexed source pages reject malformed payloads',async()=>{
+ const quiz={message_id:11,questions:[{number:1,stem:'Synthetic stem',options:['A','B','C','D','E'],result:null}]};
+ const learning={learning:{practiced_facts:1,due_count:1,correct:1,wrong:0,weak_count:0,review:[{fact:'Synthetic fact',source:'Synthetic page 1',due:true,correct:1,wrong:0,needs_practice:false}]}};
+ const source={filename:'Synthetic.pdf',page:2,status:'READY',ocr_text:'Synthetic OCR',chunks:[{id:7,title:null,text:'Synthetic chunk'}]};
+ const a=api(async path=>path.endsWith('/quizzes')?{quizzes:[quiz]}:path.endsWith('/learning')?learning:source);
+ assert.equal((await a.quizzes('token',3)).quizzes[0].message_id,11);
+ assert.equal((await a.learning('token',3)).learning.review.length,1);
+ assert.equal((await a.sourcePage('token',3,2,2)).chunks[0].title,null);
+ await assert.rejects(api(async()=>({quizzes:[{...quiz,questions:[{...quiz.questions[0],number:0}]}]})).quizzes('token',3));
+ await assert.rejects(api(async()=>({learning:{...learning.learning,review:[...learning.learning.review,...learning.learning.review,...learning.learning.review,...learning.learning.review,...learning.learning.review,...learning.learning.review,...learning.learning.review]}})).learning('token',3));
+ await assert.rejects(api(async()=>({...source,page:3})).sourcePage('token',3,2,2));
+ await assert.rejects(api(async()=>({...source,chunks:[{id:7,title:null,text:'x'.repeat(200001)}]})).sourcePage('token',3,2,2));
+ await assert.rejects(api(async()=>({run:{...running,partial:{unexpected:true}}})).runStatus('token',3,12));
+});
 test('academic persisted intent is user and course bound and rejects malformed work',()=>{const a=api(),v={user:1,course:3,request_key:'synthetic-key-0001',message:'Synthetic question'};assert.equal(a.parseIntent(JSON.stringify(v),1,3).message,v.message);assert.throws(()=>a.parseIntent(JSON.stringify(v),2,3));assert.throws(()=>a.parseIntent(JSON.stringify(v),1,4));assert.throws(()=>a.parseIntent(JSON.stringify({...v,message:''}),1,3));assert.throws(()=>a.validateRun({run:{...running,status:'mystery'}}));});
 function ui(overrides={},saved=null,timerApi={}){const exports={},calls=[],courseCalls=[],storage=new Map(),a=api();if(saved)storage.set('dai.academic.run.1.3',JSON.stringify(saved));const native={StyleSheet:{create:x=>x},Platform:{OS:'android'},Alert:{alert(){}},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','KeyboardAvoidingView','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};native.FlatList=props=>React.createElement('FlatList',props,props.ListHeaderComponent,...props.data.map((item,index)=>React.createElement(React.Fragment,{key:index},props.renderItem({item,index}))),props.ListFooterComponent,props.data.length?null:props.ListEmptyComponent);
  const endpoint={...a,library:async()=>({items:[{id:3,title:'Synthetic course'}],next_before:null}),courseCreateReceipt:async()=>null,createCourse:async(_t,title,description,request_key)=>{courseCalls.push({title,description,request_key});return{course:{id:4,title,description},materials:[],max_file_bytes:157286400,max_upload_count:12,next_before:null}},workspace:async()=>({course:{id:3,title:'Synthetic course'},materials:[],max_file_bytes:157286400,max_upload_count:12,next_before:null}),timeline:async()=>({items:[],next_before:null}),quizzes:async()=>({quizzes:[]}),indexStatus:async()=>({ready:true,state:'ready',total:1,completed:1,files:[]}),learning:async()=>({learning:{practiced_facts:0,due_count:0,correct:0,wrong:0,weak_count:0,review:[]}}),activeRun:async()=>null,receipt:async()=>null,createRun:async(_t,_c,intent)=>{calls.push(intent);return running},...overrides};
