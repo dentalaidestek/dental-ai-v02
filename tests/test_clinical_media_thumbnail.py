@@ -115,3 +115,21 @@ def test_thumbnail_route_and_gallery_use_private_owner_scoped_derivatives():
     assert '"Cache-Control":"private, no-store"' in route
     assert 'item.thumbnail_url||item.url' in native
     assert "preview.url" in native
+
+
+
+def test_web_and_native_delete_paths_enqueue_thumbnail_cleanup():
+    from pathlib import Path
+
+    main = Path("app/main.py").read_text(encoding="utf-8")
+    mobile = Path("app/mobile_api.py").read_text(encoding="utf-8")
+    single_delete = main[main.index("def delete_patient_media"):main.index("def delete_all_patient_media")]
+    bulk_delete = main[main.index("def delete_all_patient_media"):main.index("@app.get(\"/analyses\"")]
+    native_delete = mobile[mobile.index("def mobile_delete_patient_media"):mobile.index("@router.get(\"/patients/{patient_id}/media/{media_id}/file\")")]
+
+    assert "thumbnail_reference(file_path)" in single_delete
+    assert "enqueue_patient_media_cleanup(s, thumbnail_path)" in single_delete
+    assert "thumbnail_reference(media.file_path)" in bulk_delete
+    assert "enqueue_patient_media_cleanup(s, thumbnail_path)" in bulk_delete
+    assert "thumbnail_reference(file_path)" in native_delete
+    assert "enqueue_patient_media_cleanup(session, thumbnail_path)" in native_delete
