@@ -29,3 +29,8 @@ No backend route, patient record, database schema, migration, authorization poli
 The new regression covers Turkish whitespace normalization, the 100-character bound, safe row details, explicit empty/loading/error copy, search-field accessibility text, pagination and absence of direct TCKN rendering. The test is committed but the repository's Node/React Native suite and TypeScript compiler could not be executed in this connector-only run. GitHub Actions currently has no run for the new HEAD; historical push-triggered Android jobs failed before any step with empty step arrays. No CI pass, Android build or physical-device acceptance is claimed.
 
 No main merge, production deploy, APK/IPA publication or clinical record mutation.
+
+
+## Follow-up regression
+
+A source review of the new pagination footer found that a failed next-page request could show both the retry action and the normal “Daha fazla hasta” action. The normal action is now hidden while a page error is present; the retained cursor is retried only through the explicit retry control. The native regression asserts this state. Commits: `ffe4b3f` and `ecebb85`. The isolated 4-test suite was rerun after this fix and passed.
