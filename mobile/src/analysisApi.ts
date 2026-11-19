@@ -1,4 +1,6 @@
 import {Patient,ApiError} from "./api";
+import {ANALYSIS_MAX_IMAGES} from "./uploadLimits";
+export {ANALYSIS_MAX_IMAGES} from "./uploadLimits";
 import {revalidateSession} from './sessionExpiry';
 
 const API_BASE="https://dentalai.tr/api/mobile/v1";
