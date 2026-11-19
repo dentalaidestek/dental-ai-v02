@@ -25,7 +25,7 @@ If the app was killed or the second file failed, later files selected in the sam
 
 ## Regression coverage
 
-Added `mobile/tests/academicUploadQueue.cjs` with 13 Node tests covering account/course binding, malformed manifests, queue limits, duplicate entries, v2/v3 upgrades, immutable request identity, legacy migration, sequential multi-file persistence, fresh-upload request count and TypeScript parser diagnostics. Registered in `npm run test:beta`.
+Added `mobile/tests/academicUploadQueue.cjs` with 13 Node tests covering account/course binding, malformed manifests, queue limits, duplicate entries, v2/v3 upgrades, immutable request identity, legacy migration, sequential multi-file persistence, fresh-upload request count and TypeScript parser diagnostics. Registered in `npm run test:beta` and the `native-academic-security` job in `.github/workflows/security-recovery.yml` (workflow remains manual-only).
 
 ## Verification boundary
 
