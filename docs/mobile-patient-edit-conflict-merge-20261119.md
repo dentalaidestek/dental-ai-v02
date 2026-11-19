@@ -68,3 +68,8 @@ A second pass found the same stale-revision risk in the network-uncertain path: 
 The reconciliation path now uses the same three-way merge before clearing the uncertainty lock. If the server contains the exact submitted draft, the write is confirmed. If the write did not land, the local-only fields are preserved and unrelated current server fields are adopted. Same-field conflicts remain explicit and keep saving blocked. Added a renderer regression that simulates a 503 followed by a current server read, then verifies the retry carries the latest revision and preserves the other session's phone/address updates.
 
 This follow-up is also committed test source, not an executed React Native suite.
+
+
+## Follow-up — account-scope isolation
+
+A further review found that the in-memory edit snapshot also needs an explicit account/patient scope. Without it, a component reused during an account switch could briefly carry the previous patient's dirty edit snapshot into the next profile's first response if the edit revisions differ. The snapshot now includes the composite user/token/patient scope and becomes inactive immediately when that scope changes. Added an account-switch renderer regression with a delayed new-profile response and a different revision; it asserts the previous draft is never rendered in the new account. This test is committed but not executed.
