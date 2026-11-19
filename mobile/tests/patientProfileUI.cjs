@@ -37,6 +37,20 @@ test('presentation model preserves zero age, safe identity fallbacks, and web ac
  assert.equal(presentationExports.patientProfileAgeLabel(null),'Hasta kaydı');
  assert.deepEqual(presentationExports.patientProfileQuickActions().map(item=>item.key),['chart','analysis','appointment','treatment']);
 });
+test('three-way profile merge adopts unrelated server edits and reports same-field conflicts',()=>{
+ const base={first_name:'Ada',last_name:'Kaya',phone:'05551112222',birth_date:'2000-01-01',tc_kimlik_no:'',address:'Ankara',chief_complaint:'Ağrı'};
+ const draft={...base,first_name:'Cihan',chief_complaint:'Şişlik'};
+ const latest={...base,last_name:'Yılmaz',phone:'05559998877',chief_complaint:'Kırık'};
+ const merged=presentationExports.patientProfileMergeEditConflict(base,draft,latest);
+ assert.equal(merged.values.first_name,'Cihan','local-only edits must remain in the draft');
+ assert.equal(merged.values.last_name,'Yılmaz','remote-only edits must be adopted');
+ assert.equal(merged.values.phone,'05559998877','unmodified local phone must not overwrite the remote phone');
+ assert.equal(merged.values.address,'Ankara');
+ assert.deepEqual(merged.conflicts.map(item=>item.field),['chief_complaint']);
+ assert.equal(merged.conflicts[0].draftValue,'Şişlik');
+ assert.equal(merged.conflicts[0].currentValue,'Kırık');
+});
+
 test('patient profile quick-action tiles are accessible and retain their native actions',async()=>{
  const calls=[];
  const routed={...actions,chart:()=>calls.push('chart'),analysis:()=>calls.push('analysis'),appointment:()=>calls.push('appointment')};
@@ -183,12 +197,14 @@ test('uncertain treatment creation survives remount and reuses the exact secure 
  await renderer.act(async()=>tree.unmount());
 });
 
-test('stale patient revision preserves the draft until the clinician explicitly reloads current data',async()=>{
- let reads=0,attempted;
- const latest={...patient(8),edit_revision:'b'.repeat(64),patient:{...patient(8).patient,first_name:'Latest'}};
+test('stale patient revision merges drafts and requires an explicit choice for same-field conflicts',async()=>{
+ let reads=0;const writes=[];
+ const initial=patient(8);
+ const latest={...patient(8),edit_revision:'b'.repeat(64),patient:{...patient(8).patient,first_name:'Latest',phone:'05559998877'}};
+ const saved={...latest,edit_revision:'c'.repeat(64),patient:{...latest.patient,first_name:'Draft'}};
  const Profile=component({
-  getPatient:async()=>reads++===0?patient(8):latest,
-  editPatient:async(_token,_id,payload)=>{attempted=payload;throw Object.assign(new Error('Hasta bilgileri başka bir oturumda güncellendi.'),{status:409})}
+  getPatient:async()=>{reads++;return reads===1?initial:reads===2?latest:saved},
+  editPatient:async(_token,_id,payload)=>{writes.push(payload);if(writes.length===1)throw Object.assign(new Error('Hasta bilgileri başka bir oturumda güncellendi.'),{status:409});return {ok:true,patient:saved.patient,edit_revision:saved.edit_revision}}
  });
  let tree;
  const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
@@ -197,14 +213,53 @@ test('stale patient revision preserves the draft until the clinician explicitly 
  const first=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad');
  await renderer.act(async()=>first.props.onChangeText('Draft'));
  await press('Değişiklikleri Kaydet');
- assert.equal(attempted.expected_revision,'a'.repeat(64));
- assert.ok(text(tree.toJSON()).includes('başka bir oturumda güncellendi'));
- assert.ok(text(tree.toJSON()).includes('Güncel hasta bilgilerini yükle'));
- await press('Güncel hasta bilgilerini yükle');
- const refreshed=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad');
- assert.equal(refreshed.props.value,'Latest');
- assert.ok(text(tree.toJSON()).includes('Güncel hasta bilgileri yüklendi'));
- assert.ok(!text(tree.toJSON()).includes('Güncel hasta bilgilerini yükle'));
+ assert.equal(writes[0].expected_revision,'a'.repeat(64));
+ assert.ok(text(tree.toJSON()).includes('Güncel kayıtla taslağı birleştir'));
+ await press('Güncel kayıtla taslağı birleştir');
+ let name=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad');
+ assert.equal(name.props.value,'Draft','the local draft must not be discarded');
+ assert.ok(text(tree.toJSON()).includes('Taslağınız: Draft'));
+ assert.ok(text(tree.toJSON()).includes('Güncel kayıt: Latest'));
+ const save=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Değişiklikleri Kaydet')));
+ assert.equal(save.props.disabled,true,'same-field conflicts must block saving');
+ await press('Taslağımı koru');
+ name=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad');
+ assert.equal(name.props.value,'Draft');
+ assert.ok(!text(tree.toJSON()).includes('Eşzamanlı alan değişiklikleri'));
+ await press('Değişiklikleri Kaydet');
+ assert.equal(writes[1].expected_revision,'b'.repeat(64),'retry must use the refreshed revision');
+ assert.equal(writes[1].first_name,'Draft');
+ assert.equal(writes[1].phone,'05559998877','unmodified fields must keep the concurrent server update');
+ assert.ok(reads>=3,'successful save must reload the authoritative profile');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('realtime refresh during an open patient draft does not silently advance its edit revision',async()=>{
+ let reads=0;const writes=[];
+ const initial=patient(8);initial.patient.phone='05551112222';initial.patient.address='Ankara';
+ const latest={...patient(8),edit_revision:'b'.repeat(64),patient:{...initial.patient,phone:'05559998877',address:'İzmir'}};
+ const saved={...latest,edit_revision:'c'.repeat(64),patient:{...latest.patient,first_name:'Local draft'}};
+ const Profile=component({
+  getPatient:async()=>{reads++;return reads===1?initial:reads===2?latest:saved},
+  editPatient:async(_token,_id,payload)=>{writes.push(payload);return {ok:true,patient:saved.patient,edit_revision:saved.edit_revision}}
+ });
+ let tree;
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ await press('Hasta Bilgileri');
+ const name=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad');
+ await renderer.act(async()=>name.props.onChangeText('Local draft'));
+ const refresh=tree.root.findByType('RefreshControl');
+ await renderer.act(async()=>refresh.props.onRefresh());
+ assert.ok(text(tree.toJSON()).includes('Güncel kayıtla taslağı birleştir'));
+ assert.equal(tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad').props.value,'Local draft');
+ await press('Güncel kayıtla taslağı birleştir');
+ assert.equal(tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad').props.value,'Local draft');
+ assert.equal(tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Telefon').props.value,'05559998877');
+ await press('Değişiklikleri Kaydet');
+ assert.equal(writes[0].expected_revision,'b'.repeat(64));
+ assert.equal(writes[0].phone,'05559998877');
+ assert.equal(writes[0].address,'İzmir');
  await renderer.act(async()=>tree.unmount());
 });
 
