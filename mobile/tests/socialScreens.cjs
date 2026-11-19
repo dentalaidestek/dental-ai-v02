@@ -404,6 +404,7 @@ test('Dental Flow gates old feed, comments, images and edits while a new session
  assert.match(flow,/\{image && sessionReady && \(/);
  assert.match(flow,/\{editing && sessionReady && \(/);
  assert.match(flow,/moderationResumeGate\.current = createModerationResumeGate\(\)/);
+ assert.match(flow,/if \(!sessionReady \|\| moderationRefreshLocks\.current\.has\(sessionKey\)\) return/);
 });
 
 test('Dental Flow ignores delayed follow, edit and compose results from a previous session',()=>{
