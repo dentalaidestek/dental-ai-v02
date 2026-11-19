@@ -2897,7 +2897,10 @@ def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Dep
             raise HTTPException(status_code=404, detail="Klinik görüntü bulunamadı.")
 
         file_path = media.file_path
+        from app.clinical_media_thumbnail import thumbnail_reference
+        thumbnail_path = thumbnail_reference(file_path)
         queued = work_jobs.enqueue_patient_media_cleanup(session, file_path)
+        thumbnail_queued = work_jobs.enqueue_patient_media_cleanup(session, thumbnail_path)
         session.delete(media)
         event = _record_realtime_event(
             session, user.id, "PATIENT_MEDIA_DELETED", "patient", patient_id,
@@ -2907,9 +2910,12 @@ def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Dep
 
     on_loop(_publish_realtime_event, event)
     cleanup_pending = queued
-    if not queued:
+    if not queued or not thumbnail_queued:
         try:
-            storage_delete(file_path)
+            if not queued:
+                storage_delete(file_path)
+            if not thumbnail_queued:
+                storage_delete(thumbnail_path)
         except Exception:
             # The database deletion already committed; do not report a false API failure.
             import logging
