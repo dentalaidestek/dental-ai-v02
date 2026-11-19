@@ -57,7 +57,7 @@ function validateAcademicMessage(value:unknown,course:number):Message{
   if(!isRecord(source))throw Error('Akademik kaynak kaydı doğrulanamadı.');
   for(const key of ['title','display_name','filename','quote','label','url'] as const)if(source[key]!==undefined&&source[key]!==null&&!boundedText(source[key],12000))throw Error('Akademik kaynak metni sınır dışında.');
   for(const key of ['material_id','page','page_start','page_end'] as const)if(source[key]!==undefined&&source[key]!==null&&!safeId(source[key]))throw Error('Akademik kaynak sayfa kimliği doğrulanamadı.');
-  if(source.page_start!==undefined&&source.page_end!==undefined&&Number(source.page_end)<Number(source.page_start))throw Error('Akademik kaynak sayfa aralığı geçersiz.');
+  if(source.page_start!==undefined&&source.page_start!==null&&source.page_end!==undefined&&source.page_end!==null&&Number(source.page_end)<Number(source.page_start))throw Error('Akademik kaynak sayfa aralığı geçersiz.');
  }
  if(value.artifact!==null&&value.artifact!==undefined){
   const artifact=value.artifact;
