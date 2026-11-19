@@ -836,3 +836,5 @@ Follow-up review found that the network-uncertain profile-write reconciliation p
 
 
 A final privacy pass scoped the native in-memory patient edit snapshot to the composite account/token/patient identity. A component reused during an account switch now invalidates the old snapshot before the new profile request can resolve; an account-switch renderer regression with a delayed response is included in `mobile/tests/patientProfileUI.cjs`. Commits: `2b5fdde` and `47822d4`; documentation: `d643c2a`. No cross-account profile data is intentionally retained; full renderer/device execution remains pending.
+
+The snapshot scope declaration was moved after the composite `scope` value is initialized, so account-scope invalidation is evaluated against the current identity without a temporal-dead-zone reference. Follow-up commit: `a60145b`.
