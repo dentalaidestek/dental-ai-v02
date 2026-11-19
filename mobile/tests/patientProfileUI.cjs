@@ -240,7 +240,7 @@ test('realtime refresh during an open patient draft does not silently advance it
  const latest={...patient(8),edit_revision:'b'.repeat(64),patient:{...initial.patient,phone:'05559998877',address:'İzmir'}};
  const saved={...latest,edit_revision:'c'.repeat(64),patient:{...latest.patient,first_name:'Local draft'}};
  const Profile=component({
-  getPatient:async()=>{reads++;return reads===1?initial:reads===2?latest:saved},
+  getPatient:async()=>{reads++;return reads===1?initial:reads<4?latest:saved},
   editPatient:async(_token,_id,payload)=>{writes.push(payload);return {ok:true,patient:saved.patient,edit_revision:saved.edit_revision}}
  });
  let tree;
