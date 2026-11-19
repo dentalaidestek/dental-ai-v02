@@ -37,6 +37,7 @@ import {
   selectOwnedModerationCandidates,
 } from "./socialModerationRefresh";
 import NativeSocialMediaViewer from "./NativeSocialMediaViewer";
+import { socialSessionKey, isSocialSessionCurrent } from "./socialSessionScope";
 
 const C = {
   navy: "#071B35",
@@ -1505,6 +1506,7 @@ export function DentalFlow({
   expertHeader?: React.ReactNode;
   canCompose?: boolean;
 }) {
+  const sessionKey = socialSessionKey(user.id, token);
   const followLock = useRef(false);
   const feedFollowLocks = useRef(new Set<number>());
   const editLock = useRef(false);
@@ -1523,7 +1525,7 @@ export function DentalFlow({
       ReturnType<typeof api.getSocialStats>
     > | null>(null);
   const pages = usePagedRecords<api.SocialPost>(
-    `${user.id}.${mode}.${expertId || 0}.${expertId ? "" : selectedSpecialty}`,
+    `${sessionKey}.${mode}.${expertId || 0}.${expertId ? "" : selectedSpecialty}`,
     async (before) => {
       if (expertId) {
         const p = await api.getExpertPosts(token, expertId, before);
