@@ -880,4 +880,4 @@ Found a native-only inconsistency: the tooth preview pin already mapped FDI unit
 
 Added `mobile/tests/toothSurfaceOptions.cjs` to `npm run test:beta`. Isolated Node 22.16 helper tests passed 4/4 and standalone strict TypeScript compilation passed. GitHub source-contract checks verified both picker bindings, both label lookups, FDI guard and beta registration. The committed component-wiring test is not claimed as locally executed; full React Native typecheck, complete beta suite, Python security tests, Expo exports, Gradle APK and device acceptance remain open.
 
-Commits: `bf7ede7` (FDI helper), `ca66763` (native integration), `dcbd349` (regressions), `20cd470` (beta registration), `a9a2533` (technical note), `<TRACKER_COMMIT>` (tracker evidence). No schema change, main merge, production deploy or clinical record mutation.
+Commits: `bf7ede7` (FDI helper), `ca66763` (native integration), `dcbd349` (regressions), `20cd470` (beta registration), `a9a2533` (technical note), tracker evidence update. No schema change, main merge, production deploy or clinical record mutation.
