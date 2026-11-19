@@ -901,3 +901,12 @@ Re-read the web Program page/form and the native range, create/edit, recurrence,
 Advanced the cursor to v2 with HMAC-SHA256 over canonical JSON, keyed by a domain-separated derivation of the authenticated bearer session token. The /program range route now obtains the same token used by _mobile_user, verifies the MAC before parsing the payload, and retains the 15-minute expiry, 409 mutation invalidation, owner/view/day checks and private no-store headers. Session rotation intentionally invalidates old cursors; the native screen can recover through its first-page refresh.
 
 Added backend tests for key derivation, token binding, tampering, expiry/future timestamps and authenticated endpoint cache/tamper behavior. The tests are committed but not executed in this connector-only run. Full pytest, Android typecheck, component suite, APK/device and 60k-user load acceptance remain open. No schema or dependency change, main merge, deploy or patient record mutation.
+
+
+## 2026-11-19 — Android typecheck root-cause recheck
+
+Rechecked the previously reported TypeScript TS2554 at ModernScreens.tsx:112. The failing call belonged to the duplicate legacy MediaGallery and invoked uploadPatientMedia with only the token, patient ID, file, undefined tooth and media type, while the current durable upload contract requires requestKey and batchId as well. The duplicate component and its direct upload path are absent from the current ModernScreens.tsx. App.tsx routes MediaGallery to NativePatientMedia; mobile/tests/patientMediaRoute.cjs asserts that the duplicate component/upload call stay removed and is included in test:beta. This confirms that specific TS2554 source is no longer present; it does not prove the full project typecheck passes.
+
+Inspected .github/workflows/android-test-apk.yml, mobile-android.yml and security-recovery.yml. All use the valid GitHub-hosted ubuntu-latest runner label; none depends on a self-hosted runner. The latest inspected Android APK job (run 44273348890) has an empty step list, and log retrieval returns BlobNotFound 404. The current HEAD has no check-runs or commit status entries. Evidence therefore points to runner allocation/startup before checkout, not a TypeScript or Gradle diagnostic. The available GitHub result does not expose the precise platform-side quota/billing/provisioning cause. No workflow was dispatched to avoid repeating CI email notifications.
+
+Full tsc --noEmit, npm test, Python security suite, Gradle APK and device acceptance remain unverified for the current HEAD.
