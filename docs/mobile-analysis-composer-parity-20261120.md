@@ -49,7 +49,7 @@ This is a source-level fix for the missing-symbol/type-export errors. It is not 
 Added and registered in `npm run test:beta`:
 
 - `analysisImageLimitContract.cjs`: shared four-image constant, API import/re-export and both native consumers.
-- `analysisComposerPresentation.cjs`: web step order/copy, saved-media title, 15/48 MiB guidance, saved/new count and native screen wiring.
+- `analysisComposerPresentation.cjs`: web step order/copy, saved-media title, 15/48 MiB guidance, saved/new count and native screen wiring. It also asks TypeScript to transpile the native TSX component and fails on syntax diagnostics.
 
 ## Verification boundary
 
