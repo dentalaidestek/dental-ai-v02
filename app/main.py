@@ -84,6 +84,7 @@ from app.expert_consultation_requests import (
 from app.academic_learning import StudyLearningState,StudyReview,StudyAttempt
 from app.academic_study_runs import StudyRun
 from app.academic_course_receipts import StudyCourseCreateReceipt
+from app.academic_material_upload_receipts import StudyMaterialUploadReceipt
 from app.academic_recovery_store import AcademicRecoveryEvent
 from app.study_retrieval_v2 import materialize_visual_sources, invalidate_retrieval_caches, invalidate_user_retrieval_caches
 from app.study_v2_service import (
@@ -4779,6 +4780,7 @@ def upload_study_materials(
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(default=[]),
     chat_upload: bool = Form(False),
+    client_request_key: Optional[str] = None,
 ):
     user = get_current_user(request)
     if not user:
@@ -4804,8 +4806,20 @@ def upload_study_materials(
         return HTMLResponse("Yüklenecek PDF veya görsel seçin.", status_code=400)
     if len(selected) > STUDY_MAX_UPLOAD_COUNT:
         return HTMLResponse(f"Tek seferde en fazla {STUDY_MAX_UPLOAD_COUNT} dosya yükleyebilirsiniz.", status_code=400)
+    if client_request_key is not None and (
+        not re.fullmatch(r"[A-Za-z0-9_-]{16,80}", client_request_key) or len(selected) != 1
+    ):
+        return JSONResponse({"ok": False, "error": "Geçersiz veya çoklu dosya aktarım anahtarı."}, status_code=422)
 
+    from sqlalchemy.exc import IntegrityError
+    from app.academic_material_upload_receipts import (
+        material_upload_payload_hash,
+        public_material_upload_receipt,
+    )
     saved_paths: list[Path] = []
+    pending_receipt_data = None
+    new_receipt_payload = None
+    replay_receipt_payload = None
     try:
         with Session(engine, expire_on_commit=False) as s:
             course = _owned_study_course(s, user, course_id)
@@ -4829,6 +4843,7 @@ def upload_study_materials(
                 destination = destination_dir / stored_name
                 saved_paths.append(destination)
                 total = 0
+                content_hasher = hashlib.sha256() if client_request_key else None
                 with destination.open("wb") as output:
                     while True:
                         chunk = upload.file.read(1024 * 1024)
@@ -4838,6 +4853,8 @@ def upload_study_materials(
                         if total > STUDY_MAX_FILE_BYTES:
                             raise ValueError("Bir ders notu dosyası en fazla 150 MB olabilir.")
                         output.write(chunk)
+                        if content_hasher is not None:
+                            content_hasher.update(chunk)
                 if not _study_file_has_valid_signature(destination, extension):
                     raise ValueError("Seçilen dosyalardan biri geçerli PDF, JPG, PNG veya WEBP değil.")
                 storage_persist_file(destination, content_type=mime_type)
@@ -4865,6 +4882,19 @@ def upload_study_materials(
                     size_bytes=total,
                 )
                 pending_materials.append(material)
+                if client_request_key:
+                    content_sha256 = content_hasher.hexdigest()
+                    pending_receipt_data = {
+                        "content_sha256": content_sha256,
+                        "payload_hash": material_upload_payload_hash(
+                            owner_user_id=user.id,
+                            course_id=course_id,
+                            filename=original_name,
+                            mime_type=mime_type,
+                            size_bytes=total,
+                            content_sha256=content_sha256,
+                        ),
+                    }
                 # Default-off shadow build. It never changes the live V1 ask
                 # path; enabling it only prepares a V2 generation for later
                 # benchmark/canary comparison.
@@ -4877,14 +4907,50 @@ def upload_study_materials(
             live_user = s.get(User, user.id)
             if not course or not live_user or not live_user.is_active:
                 raise ValueError("Ders silindi veya erişim yetkiniz değişti.")
-            for material in pending_materials:
-                s.add(material)
-                s.flush()
-                enqueue_material_v2(s, material)
-            if legacy_indexing_required():
-                work_jobs.enqueue(s, kind="LEGACY_INDEX", resource_type="COURSE", resource_id=course_id)
-            course.updated_at = _utcnow_naive()
-            s.add(course)
+            if client_request_key:
+                receipt = s.exec(select(StudyMaterialUploadReceipt).where(
+                    StudyMaterialUploadReceipt.owner_user_id == user.id,
+                    StudyMaterialUploadReceipt.course_id == course_id,
+                    StudyMaterialUploadReceipt.request_key == client_request_key,
+                )).first()
+                if receipt is not None:
+                    if not hmac.compare_digest(receipt.payload_hash, pending_receipt_data["payload_hash"]):
+                        raise HTTPException(409, "İstek anahtarı farklı dosya içeriği için kullanılmış.")
+                    existing_material = s.exec(select(StudyMaterial).where(
+                        StudyMaterial.id == receipt.material_id,
+                        StudyMaterial.course_id == course_id,
+                        StudyMaterial.owner_user_id == user.id,
+                    )).first()
+                    if existing_material is None:
+                        raise HTTPException(410, "Bu istekle yüklenen kaynak daha sonra silinmiş.")
+                    replay_receipt_payload = public_material_upload_receipt(receipt, existing_material)
+                    added = 0
+                else:
+                    material = pending_materials[0]
+                    s.add(material)
+                    s.flush()
+                    receipt = StudyMaterialUploadReceipt(
+                        owner_user_id=user.id,
+                        course_id=course_id,
+                        request_key=client_request_key,
+                        payload_hash=pending_receipt_data["payload_hash"],
+                        content_sha256=pending_receipt_data["content_sha256"],
+                        material_id=material.id,
+                    )
+                    s.add(receipt)
+                    s.flush()
+                    new_receipt_payload = public_material_upload_receipt(receipt, material)
+                    enqueue_material_v2(s, material)
+            else:
+                for material in pending_materials:
+                    s.add(material)
+                    s.flush()
+                    enqueue_material_v2(s, material)
+            if not replay_receipt_payload:
+                if legacy_indexing_required():
+                    work_jobs.enqueue(s, kind="LEGACY_INDEX", resource_type="COURSE", resource_id=course_id)
+                course.updated_at = _utcnow_naive()
+                s.add(course)
             s.commit()
             # === TEMP_STUDY_TRACE_UPLOAD_COMMIT_BEGIN ===
             trace_event(
@@ -4894,6 +4960,33 @@ def upload_study_materials(
                 elapsed_ms=round((_study_trace_time.perf_counter() - _upload_trace_started) * 1000, 1),
             )
             # === TEMP_STUDY_TRACE_UPLOAD_COMMIT_END ===
+    except IntegrityError:
+        for path in saved_paths:
+            try:
+                storage_delete(path)
+            except Exception:
+                logger.warning("Duplicate Academic upload object cleanup failed", exc_info=True)
+        if client_request_key and pending_receipt_data:
+            with Session(engine) as replay_session:
+                receipt = replay_session.exec(select(StudyMaterialUploadReceipt).where(
+                    StudyMaterialUploadReceipt.owner_user_id == user.id,
+                    StudyMaterialUploadReceipt.course_id == course_id,
+                    StudyMaterialUploadReceipt.request_key == client_request_key,
+                )).first()
+                if receipt is not None:
+                    if not hmac.compare_digest(receipt.payload_hash, pending_receipt_data["payload_hash"]):
+                        raise HTTPException(409, "İstek anahtarı farklı dosya içeriği için kullanılmış.")
+                    material = replay_session.exec(select(StudyMaterial).where(
+                        StudyMaterial.id == receipt.material_id,
+                        StudyMaterial.course_id == course_id,
+                        StudyMaterial.owner_user_id == user.id,
+                    )).first()
+                    if material is None:
+                        raise HTTPException(410, "Bu istekle yüklenen kaynak daha sonra silinmiş.")
+                    replay_receipt_payload = public_material_upload_receipt(receipt, material)
+            if replay_receipt_payload:
+                return JSONResponse({"ok": True, "receipt": replay_receipt_payload})
+        raise
     except ValueError as exc:
         # === TEMP_STUDY_TRACE_UPLOAD_VALUE_ERROR_BEGIN ===
         trace_event(
@@ -4922,11 +5015,21 @@ def upload_study_materials(
             storage_delete(path)
         raise
 
+    if replay_receipt_payload:
+        for path in saved_paths:
+            try:
+                storage_delete(path)
+            except Exception:
+                logger.warning("Replayed Academic upload object cleanup failed", exc_info=True)
+        return JSONResponse({"ok": True, "receipt": replay_receipt_payload})
+
     # Index once after upload; the user does not wait for embedding work.
     # === TEMP_STUDY_TRACE_UPLOAD_SCHEDULE_BEGIN ===
     trace_event("upload.index.scheduled", course_id=course_id)
     background_tasks.add_task(_wake_academic_modal_indexer)
     # === TEMP_STUDY_TRACE_UPLOAD_SCHEDULE_END ===
+    if client_request_key:
+        return JSONResponse({"ok": True, "receipt": new_receipt_payload})
     if chat_upload:
         return JSONResponse({'ok': True, 'added': added, 'ready': False})
     return RedirectResponse(f"/notes/courses/{course_id}", status_code=303)
