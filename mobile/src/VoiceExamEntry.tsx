@@ -128,6 +128,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   const request=++generation.current,currentScope=scope.current,patientId=selected.id;
   let activeSessionId=sessionIdOverride||voiceSessionId||Crypto.randomUUID();
   const forceFresh=forceFreshExtraction.current;
+  let extractedForFinalization:VoiceExtraction|null=null;
   processingOwner.current=request;setProcessing(true);setClinicalError("");setExtractionProgress("");
   try{
    const chunks=splitVoiceTranscript(text);
@@ -173,8 +174,10 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
     }
    });
    if(request!==generation.current||currentScope!==scope.current)return;
-   setReview(historyApplied?mergeVoiceHistory(result,historyFields):result);setLastRemoved(null);setEditingFields(false);setFinalResult(null);
-   setExtractionProgress(`\u2713 ${chunks.length} bölüm tamamlandı. Tüm görüşme tek klinik değerlendirme için hazır.`);
+   const nextReview=historyApplied?mergeVoiceHistory(result,historyFields):result;
+   extractedForFinalization=nextReview;
+   setReview(nextReview);setLastRemoved(null);setEditingFields(false);setFinalResult(null);
+   setExtractionProgress(`\u2713 ${chunks.length} bölüm tamamlandı. Kaynaklı klinik değerlendirme hazırlanıyor.`);
   }catch(e){
    if(request===generation.current&&currentScope===scope.current){
     const message=e instanceof Error?e.message:"Muayene değerlendirilemedi.";
@@ -186,6 +189,9 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    }
   }finally{
    if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false);}
+  }
+  if(extractedForFinalization&&request===generation.current&&currentScope===scope.current){
+   await finalize(extractedForFinalization,text,Boolean(completeText));
   }
  }
  function removeExtractedItem(key:"teeth"|"literature_topics"|"source_requests"|"communication"|"decision_barriers"|"follow_up_questions",index:number){
@@ -220,7 +226,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   forceFreshExtraction.current=true;
   await processText();
  }
- async function finalize(){if(!selected||!consent||!review||processingLock.current||audioBusy||deviceCheckBusy||audioSession.started&&!audioSession.finished)return;processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const data=review.review;const response=await finalizeVoice(token,selected.id,{context:{fields:data.fields||{},teeth:data.teeth||[],literature_topics:data.literature_topics||[],source_requests:data.source_requests||[],...(data.appointment?{appointment:data.appointment}:{})},insights:data.communication||data.insights||[],uncertain:(data.uncertain||'').slice(0,3000),conversation_text:transcript});if(request===generation.current&&currentScope===scope.current)setFinalResult(response.final as Record<string,unknown>)}catch(e){if(request===generation.current&&currentScope===scope.current)setClinicalError(e instanceof Error?e.message:"Son değerlendirme tamamlanamadı.")}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
+ async function finalize(sourceReview:VoiceExtraction|null=review,sourceTranscript:string=transcript,afterExplicitFinish=false){if(!selected||!consent||!sourceReview||processingLock.current||(!afterExplicitFinish&&(audioBusy||deviceCheckBusy||audioSession.started&&!audioSession.finished)))return;processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const data=sourceReview.review;const response=await finalizeVoice(token,selected.id,{context:{fields:data.fields||{},teeth:data.teeth||[],literature_topics:data.literature_topics||[],source_requests:data.source_requests||[],...(data.appointment?{appointment:data.appointment}:{})},insights:data.communication||data.insights||[],uncertain:(data.uncertain||'').slice(0,3000),conversation_text:sourceTranscript});if(request===generation.current&&currentScope===scope.current){setFinalResult(response.final as Record<string,unknown>);setExtractionProgress("✓ Kaynaklı klinik değerlendirme tamamlandı.")}}catch(e){if(request===generation.current&&currentScope===scope.current){setClinicalError(e instanceof Error?e.message:"Son değerlendirme tamamlanamadı.");setExtractionProgress("Çıkarım tamamlandı; kaynaklı değerlendirme başarısız. Aynı taslakla yeniden deneyin.")}}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
  
  if(stage==="exam")return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:42}}>
   <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>{const back=()=>{generation.current++;processingLock.current=false;setProcessing(false);setStage("select")};if(transcript.trim())Alert.alert("Muayeneden ayrıl","Muayene metni bu hesaba ve hastaya bağlı cihaz taslağında korunur. Hasta dosyasına yalnız onaylanan alanlar kaydedilir.",[{text:"Vazgeç",style:"cancel"},{text:"Geri dön",style:"destructive",onPress:back}]);else back()}}><Text style={{color:navy,fontWeight:"700"}}>‹ Hasta seçimine dön</Text></Pressable>
