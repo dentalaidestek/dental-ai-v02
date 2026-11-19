@@ -7,6 +7,7 @@ from app.mobile_program_api import (
     _decode_program_cursor,
     _encode_program_cursor,
     _program_local_start_utc,
+    _program_cursor_key,
 )
 
 ISTANBUL = ZoneInfo("Europe/Istanbul")
@@ -66,3 +67,16 @@ def test_program_local_start_conversion_does_not_use_host_timezone():
 
     assert _program_local_start_utc(local_start, ISTANBUL) == expected
     assert _program_local_start_utc(local_start.replace(tzinfo=ISTANBUL), ISTANBUL) == expected
+
+
+
+def test_program_cursor_key_is_domain_separated_and_rejects_non_session_tokens():
+    import hashlib
+
+    token = "A" * 43
+    expected = hashlib.sha256(b"dental-ai:program-cursor:v2:" + token.encode("ascii")).digest()
+    assert _program_cursor_key(token) == expected
+    assert _program_cursor_key(token) != token.encode("ascii")
+
+    with pytest.raises(ValueError):
+        _program_cursor_key("short")

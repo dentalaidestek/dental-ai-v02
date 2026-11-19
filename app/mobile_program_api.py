@@ -1,6 +1,7 @@
 """Native calendar uses the web recurrence, patient and reminder rules."""
 import base64
 import hashlib
+import hmac
 import json
 import re
 from datetime import date,datetime,timedelta,timezone
@@ -28,6 +29,17 @@ def _event(session,web,event,user):
 
 _PROGRAM_CURSOR_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,512}$")
 _PROGRAM_CURSOR_TTL = timedelta(minutes=15)
+
+_PROGRAM_CURSOR_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
+
+
+def _program_cursor_key(session_token: str) -> bytes:
+    """Derive a domain-separated MAC key from the authenticated opaque session token."""
+    if not isinstance(session_token, str) or not _PROGRAM_CURSOR_TOKEN_PATTERN.fullmatch(session_token):
+        raise ValueError("invalid Program session token")
+    return hashlib.sha256(
+        b"dental-ai:program-cursor:v2:" + session_token.encode("ascii")
+    ).digest()
 
 
 def _program_cursor_owner(user_id: int) -> str:
