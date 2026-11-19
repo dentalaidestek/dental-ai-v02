@@ -20,6 +20,7 @@ import {SafeAreaProvider,SafeAreaView} from "react-native-safe-area-context";
 import {DentalFlow} from "./src/SocialScreens";
 import NativeSocialAdmin from "./src/NativeSocialAdmin";
 import {usePagedRecords} from "./src/usePagedRecords";
+import {normalizePatientDirectorySearch,patientDirectoryDetails,patientDirectoryAgeLabel} from "./src/patientDirectoryPresentation";
 import {subscribeSessionExpiry} from "./src/sessionExpiry";
 import {useSessionHealth} from "./src/useSessionHealth";
 import{restoreStoredSession}from"./src/session";
@@ -59,7 +60,7 @@ function Login({done}:{done:(token:string,user:User)=>void}){return <NativeAuth 
 function Header({title,sub,action}:{title:string;sub?:string;action?:React.ReactNode}){return <View style={s.header}><View style={{flex:1}}><Text style={s.hTitle}>{title}</Text>{sub&&<Text style={s.hSub}>{sub}</Text>}</View>{action}</View>}
 function Stat({v,l}:{v:any;l:string}){return <View style={s.stat}><Text style={s.statV}>{v}</Text><Text style={s.statL}>{l}</Text></View>}
 function Quick({title,sub,icon,onPress}:{title:string;sub:string;icon:string;onPress?:()=>void}){return <Pressable style={s.quick} onPress={onPress}><View style={s.quickIcon}><Icon n={icon}/></View><Text style={s.cardTitle}>{title}</Text><Text style={s.cardSub}>{sub}</Text></Pressable>}
-const PatientRow=React.memo(function PatientRow({p,on}:{p:Patient;on:()=>void}){const ini=((p.first_name?.[0]||"")+(p.last_name?.[0]||"")).toUpperCase()||"H";return <Pressable style={s.patient} onPress={on}><View style={s.avatar}><Text style={s.avatarT}>{ini}</Text></View><View style={{flex:1}}><Text style={s.pName}>{p.first_name||"İsimsiz"} {p.last_name||"Hasta"}</Text><Text style={s.cardSub}>{p.phone||p.anonymous_id}</Text></View><Icon n="chevron"/></Pressable>});
+const PatientRow=React.memo(function PatientRow({p,on}:{p:Patient;on:()=>void}){const ini=((p.first_name?.[0]||"")+(p.last_name?.[0]||"")).toUpperCase()||"H",details=patientDirectoryDetails(p);return <Pressable style={s.patient} onPress={on}><View style={s.avatar}><Text style={s.avatarT}>{ini}</Text></View><View style={{flex:1,minWidth:0}}><Text style={s.pName}>{p.first_name||"İsimsiz"} {p.last_name||"Hasta"}</Text>{details.map((value,index)=><Text key={index} style={s.cardSub}>{value}</Text>)}</View><Icon n="chevron"/></Pressable>});
 
 const DASHBOARD_ASSET="https://dentalai.tr/static/dashboard/mobile/";
 function VisualFeature({title,description,asset,tint,onPress,photo=false}:{title:string;description:string;asset:string;tint:string;onPress:()=>void;photo?:boolean}){
@@ -99,10 +100,65 @@ function Home({token,user}:{token:string;user:User}){const nav:any=useNavigation
 function NewPatient({token,onCreated}:{token:string;onCreated:(p:Patient)=>void}){return <NativeNewPatient token={token} onCreated={onCreated}/>;}
 
 function Patients({token,route,chartMode=false}:{token:string;route?:any;chartMode?:boolean}){
- const nav:any=useNavigation(),[q,setQ]=useState(""),[search,setSearch]=useState("");useEffect(()=>{const next=route?.params?.search;if(typeof next==="string"){setQ(next);setSearch(next)}},[route?.params?.search]);const{lastEvent}=useRealtime();
- const pages=usePagedRecords<Patient>(token+":"+search,async offset=>{const r=await getPatients(token,search,offset||0);const next=(offset||0)+r.items.length;return {items:r.items,next_before:next<r.total?next:null}},false,true,"offset");
- useEffect(()=>{if(!["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED"].includes(String(lastEvent?.event_type||lastEvent?.type)))return;const timer=setTimeout(()=>void pages.refresh(),150);return()=>clearTimeout(timer)},[lastEvent,pages.refresh]);
- return <View style={s.page}><View style={{padding:18}}><Header title={chartMode?"Diş Şeması İçin Hasta Seç":"Hastalar"} sub={chartMode?"Hastanızı seçerek mevcut diş şemasına doğrudan ulaşın.":pages.items.length+" kayıt yüklendi"} action={chartMode?undefined:<Pressable accessibilityLabel="Yeni hasta" style={s.add} onPress={()=>nav.navigate("NewPatient")}><Icon n="plus" a/></Pressable>}/><View style={s.search}><Icon n="search"/><TextInput accessibilityLabel={chartMode?"Diş şeması için hasta ara":"Hasta ara"} style={s.searchInput} placeholder={chartMode?"Hasta adı, soyadı veya hasta no...":"Hasta ara…"} value={q} onChangeText={setQ} returnKeyType="search" onSubmitEditing={()=>setSearch(q.trim())}/><Pressable onPress={()=>setSearch(q.trim())}><Text style={s.secondaryText}>Ara</Text></Pressable></View></View><FlatList data={pages.items} keyExtractor={p=>String(p.id)} contentContainerStyle={{padding:18,paddingTop:0}} renderItem={({item})=>chartMode?<Pressable accessibilityRole="button" accessibilityLabel={`${item.first_name||"Hasta"} ${item.last_name||""}, diş şemasını aç`} style={s.patient} onPress={()=>nav.navigate("ToothChart",{id:item.id})}><View style={s.avatar}><Text style={s.avatarT}>{((item.first_name?.[0]||"")+(item.last_name?.[0]||"")).toUpperCase()||"H"}</Text></View><View style={{flex:1,minWidth:0}}><Text style={s.pName}>{item.first_name||"İsimsiz"} {item.last_name||"Hasta"}</Text><Text style={s.cardSub}>Hasta No: {item.anonymous_id||"-"} · {item.age?`${item.age} yaş`:"Hasta kaydı"}</Text></View><Text style={{fontSize:11,fontWeight:"800",color:"#0878F9"}}>Şemayı Aç ›</Text></Pressable>:<PatientRow p={item} on={()=>nav.navigate("PatientDetail",{id:item.id})}/>} refreshing={pages.busy} onRefresh={pages.refresh} ListEmptyComponent={<Text style={s.cardSub}>{pages.busy?"Yükleniyor…":pages.error?"Hasta listesi alınamadı.":chartMode?"Henüz diş şeması için hasta kaydı bulunmuyor.":"Hasta bulunamadı."}</Text>} ListFooterComponent={<><Text style={s.err}>{pages.error}</Text>{pages.error&&<Pressable onPress={pages.refresh}><Text style={s.secondaryText}>Tekrar dene</Text></Pressable>}{pages.hasMore&&<Pressable disabled={pages.busy} style={s.secondary} onPress={pages.loadMore}><Text style={s.secondaryText}>Daha fazla hasta</Text></Pressable>}</>}/></View>
+ const nav:any=useNavigation(),[q,setQ]=useState(""),[search,setSearch]=useState("");
+ const{lastEvent}=useRealtime();
+ const applySearch=useCallback(()=>{
+  const normalized=normalizePatientDirectorySearch(q);
+  setQ(normalized);
+  setSearch(normalized);
+ },[q]);
+ useEffect(()=>{
+  const next=route?.params?.search;
+  if(typeof next==="string"){
+   const normalized=normalizePatientDirectorySearch(next);
+   setQ(normalized);
+   setSearch(normalized);
+  }
+ },[route?.params?.search]);
+ const pages=usePagedRecords<Patient>(token+":"+search,async offset=>{
+  const r=await getPatients(token,search,offset||0),next=(offset||0)+r.items.length;
+  return {items:r.items,next_before:next<r.total?next:null};
+ },false,true,"offset");
+ useEffect(()=>{
+  if(!["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED"].includes(String(lastEvent?.event_type||lastEvent?.type)))return;
+  const timer=setTimeout(()=>void pages.refresh(),150);
+  return()=>clearTimeout(timer);
+ },[lastEvent,pages.refresh]);
+ const emptyMessage=pages.busy?"Yükleniyor…":pages.error?"Hasta listesi alınamadı.":search?"Eşleşen hasta bulunamadı.":chartMode?"Henüz diş şeması için hasta kaydı bulunmuyor.":"Henüz kayıtlı hasta bulunmuyor.";
+ return <View style={s.page}>
+  <View style={{padding:18}}>
+   <Header title={chartMode?"Diş Şeması İçin Hasta Seç":"Hastalar"} sub={chartMode?"Hastanızı seçerek mevcut diş şemasına doğrudan ulaşın.":pages.items.length+" hasta yüklendi"} action={chartMode?undefined:<Pressable accessibilityRole="button" accessibilityLabel="Yeni hasta" style={s.add} onPress={()=>nav.navigate("NewPatient")}><Icon n="plus" a/></Pressable>}/>
+   <View style={s.search}>
+    <Icon n="search"/>
+    <TextInput accessibilityLabel={chartMode?"Diş şeması için hasta ara":"Hasta ara: ad, soyad, hasta no, telefon veya TC"} style={s.searchInput}
+     placeholder="Ad, soyad, hasta no, telefon veya TC ile ara…" value={q} onChangeText={setQ}
+     maxLength={100} autoCapitalize="none" autoCorrect={false} returnKeyType="search" onSubmitEditing={applySearch}/>
+    <Pressable accessibilityRole="button" accessibilityLabel="Hasta aramasını uygula" onPress={applySearch}><Text style={s.secondaryText}>Ara</Text></Pressable>
+   </View>
+  </View>
+  <FlatList data={pages.items} keyExtractor={p=>String(p.id)} contentContainerStyle={{padding:18,paddingTop:0}}
+   keyboardShouldPersistTaps="handled"
+   renderItem={({item})=>chartMode
+    ?<Pressable accessibilityRole="button" accessibilityLabel={`${item.first_name||"Hasta"} ${item.last_name||""}, diş şemasını aç`} style={s.patient} onPress={()=>nav.navigate("ToothChart",{id:item.id})}>
+      <View style={s.avatar}><Text style={s.avatarT}>{((item.first_name?.[0]||"")+(item.last_name?.[0]||"")).toUpperCase()||"H"}</Text></View>
+      <View style={{flex:1,minWidth:0}}><Text style={s.pName}>{item.first_name||"İsimsiz"} {item.last_name||"Hasta"}</Text><Text style={s.cardSub}>Hasta No: {item.anonymous_id||"-"} · {patientDirectoryAgeLabel(item.age)}</Text></View>
+      <Text style={{fontSize:11,fontWeight:"800",color:"#0878F9"}}>Şemayı Aç ›</Text>
+     </Pressable>
+    :<PatientRow p={item} on={()=>nav.navigate("PatientDetail",{id:item.id})}/>}
+   refreshing={pages.busy} onRefresh={pages.refresh}
+   onEndReached={()=>{if(pages.hasMore&&!pages.busy)void pages.loadMore();}} onEndReachedThreshold={0.4}
+   ListEmptyComponent={<View style={{alignItems:"center",paddingVertical:22}}>
+    <Text style={s.cardSub}>{emptyMessage}</Text>
+    {!!search&&!pages.busy&&!pages.error&&<Pressable accessibilityRole="button" onPress={()=>{setQ("");setSearch("");}} style={{marginTop:10}}><Text style={s.secondaryText}>Aramayı temizle</Text></Pressable>}
+    {pages.error&&<Pressable accessibilityRole="button" onPress={()=>void pages.refresh()} style={{marginTop:10}}><Text style={s.secondaryText}>Tekrar dene</Text></Pressable>}
+   </View>}
+   ListFooterComponent={<View style={{paddingVertical:12,alignItems:"center"}}>
+    {pages.error&&<Text style={s.err}>{pages.error}</Text>}
+    {pages.busy&&pages.items.length>0&&<ActivityIndicator size="small" color={C.navy}/>}
+    {pages.hasMore&&!pages.busy&&<Pressable accessibilityRole="button" style={s.secondary} onPress={()=>void pages.loadMore()}><Text style={s.secondaryText}>Daha fazla hasta</Text></Pressable>}
+   </View>}
+  />
+ </View>;
 }
 function PatientDetailScreen({token,userId,route,navigation}:{token:string;userId:number;route:any;navigation:any}){
  const id=route.params.id,root=()=>navigation.getParent()?.getParent();
