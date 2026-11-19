@@ -5,9 +5,9 @@ const vm=require('node:vm');
 const ts=require('typescript');
 const source=fs.readFileSync(require.resolve('../src/voiceDraftScope.ts'),'utf8');
 const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
-const exports={};
-vm.runInNewContext(code,{exports});
-const {isVoiceDraftScopeCurrent}=exports;
+const moduleExports={};
+vm.runInNewContext(code,{exports:moduleExports});
+const {isVoiceDraftScopeCurrent}=moduleExports;
 
 test('voice draft scope accepts only the active owner-patient key',()=>{
  assert.equal(isVoiceDraftScopeCurrent('dai.voice.1.8','dai.voice.1.8'),true);
