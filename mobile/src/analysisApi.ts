@@ -123,7 +123,13 @@ export async function getAnalysis(token:string,id:number){
   throw new ApiError(502,"Analiz yanıtı hasta kapsamı veya veri minimizasyonu sözleşmesini karşılamıyor.");
  return result;
 }
-export function startAnalysisAI(token:string,id:number){if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");return call<{ok:boolean;status:string}>("/analyses/"+id+"/ai",token,{method:"POST"});}
+export async function startAnalysisAI(token:string,id:number){
+ if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz analiz kimliği.");
+ const result=await call<{ok:boolean;status:string;job_id:number}>("/analyses/"+id+"/ai",token,{method:"POST"});
+ if(result?.ok!==true||typeof result.status!=="string"||!result.status.trim()||result.status.length>40||!Number.isSafeInteger(result.job_id)||result.job_id<=0)
+  throw new ApiError(502,"Klinik AI iş kaydı doğrulanamadı.");
+ return result;
+}
 
 export type AnalysisHistoryItem={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;clinical_notes?:string|null;status:string;created_at:string};
 export function getAnalysisHistory(token:string,patientId?:number){

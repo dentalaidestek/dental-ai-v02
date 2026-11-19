@@ -32,7 +32,7 @@ test('AI rejects invalid analysis IDs before a network request',async()=>{
 });
 test('AI status and start use authorized mobile API routes',async()=>{
  const original=global.fetch,calls=[];
- global.fetch=async(url,init)=>{calls.push({url,init});return new Response(JSON.stringify(url.endsWith('/ai')?{ok:true,status:'VISION_READY'}:{analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7,anonymous_id:'SYNTHETIC-7',age:null,chief_complaint:null},assets:[]}),{status:200})};
+ global.fetch=async(url,init)=>{calls.push({url,init});return new Response(JSON.stringify(url.endsWith('/ai')?{ok:true,status:'VISION_READY',job_id:31}:{analysis:{id:23,patient_id:7,status:'VISION_READY'},patient:{id:7,anonymous_id:'SYNTHETIC-7',age:null,chief_complaint:null},assets:[]}),{status:200})};
  try{
   await api.getAnalysis('secret',23);
   await api.startAnalysisAI('secret',23);
@@ -44,6 +44,12 @@ test('AI status and start use authorized mobile API routes',async()=>{
  }finally{global.fetch=original}
 });
 
+test('AI start rejects a response without a durable job receipt',async()=>{
+ const original=global.fetch;
+ global.fetch=async()=>new Response(JSON.stringify({ok:true,status:'VISION_READY'}),{status:200});
+ try{await assert.rejects(()=>api.startAnalysisAI('token',23),error=>error.status===502)}
+ finally{global.fetch=original}
+});
 test('AI refuses malformed created-job response instead of persisting an invalid job ID',async()=>{
  const originalFetch=global.fetch,originalFormData=global.FormData;
  class NativeFormStub{append(){}}
