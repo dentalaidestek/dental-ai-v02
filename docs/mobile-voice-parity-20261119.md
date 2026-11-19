@@ -77,3 +77,45 @@ typecheck have **not** been executed in this run.
   `npm audit fix --force` because it can force an Expo major-version change.
 - Device-level microphone, foreground/background, Android build, and
   60,000-user load validation remain outstanding.
+
+
+## Additional web-parity regression — terminal finish state
+
+A second pass compared the actual web control lifecycle in
+`app/static/voice-exam-live.js` with
+`mobile/src/NativeVoiceRecorder.tsx`.
+
+On web, `stateChanged()` hides the microphone start control whenever
+`finished === true`. The native recorder previously kept rendering
+`Devam et` after `draft.ended` was persisted. Its `start()` guard did not
+check that terminal flag, and the prop-to-draft synchronization effect reset
+`ended:false` whenever the transcript changed. That meant editing the
+already-finished transcript could reopen the microphone in the same exam
+session; a repeated finish action could also repeat the ASR/final-review
+handoff.
+
+The native flow now:
+- Uses `canResumeVoiceDraft()` as a shared terminal-state predicate.
+- Rejects microphone start when the draft is ended or still has pending audio.
+- Rejects a second finish callback for an already-ended draft.
+- Shows `Muayene tamamlandı` and disables both start and finish controls.
+- Preserves the ended flag when the clinician edits the transcript; text edits
+  remain available for a fresh extraction/final review but do not reopen audio.
+- Requires clearing the local draft before starting a new voice session.
+
+A component-level regression now records and finishes one session, attempts
+both controls again, edits the transcript, and verifies that the session stays
+closed and no second ASR or finish callback occurs. The shared helper also has
+fresh/ended/pending-segment assertions.
+
+## Current branch CI snapshot
+
+At the previously inspected HEAD `382df6282241ba7bdebc7f2d7e0b0b9df26e77b8`,
+GitHub returned zero check runs and a pending commit status with no status
+entries. The most recent Android APK push run available for inspection,
+`44273348890`, targets an older SHA
+`5b692f7637d60136446f1efaa09178009ba1d209`; its only job ended before step
+1 with `runner_id=0`, an empty runner name, and no steps. It is not evidence
+that this branch's typecheck or tests failed or passed. Both Android and
+security recovery workflows are still manual-only; no workflow was
+dispatched during this change.
