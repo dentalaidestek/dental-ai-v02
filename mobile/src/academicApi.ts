@@ -2,7 +2,9 @@ import {request} from './api';
 export type Course={id:number;title:string;description?:string;material_count?:number};
 export type Material={id:number;name:string;mime:string;size:number;index_status:string;url:string};
 export type CourseCreateIntent={version:1|2;user:number;title:string;description:string;known_ids:number[];request_key?:string};
-export type UploadIntent={version:1;user:number;course:number;name:string;uri:string;size:number|null;known_ids:number[]};
+export type UploadIntent={version:2|3;user:number;course:number;name:string;mime:string;uri:string;size:number|null;request_key:string;content_sha256?:string};
+export type AcademicUploadReceipt={course_id:number;request_key:string;material_id:number;name:string;mime:string;size:number;content_sha256:string;payload_hash:string;created_at:string};
+export function academicMimeFromName(name:string):string|null{const extension=name.split('.').pop()?.toLowerCase();return extension==='pdf'?'application/pdf':extension==='jpg'||extension==='jpeg'?'image/jpeg':extension==='png'?'image/png':extension==='webp'?'image/webp':null;}
 export function parseCourseCreateIntent(raw:string,user:number):CourseCreateIntent{
  const value=JSON.parse(raw);
  if((value?.version!==1&&value?.version!==2)||value.user!==user||typeof value.title!=='string'||value.title.trim().length<2||value.title.length>120||typeof value.description!=='string'||value.description.length>500||!Array.isArray(value.known_ids)||value.known_ids.some((id:unknown)=>!Number.isSafeInteger(id)||Number(id)<1)||(value.version===2&&(typeof value.request_key!=='string'||!/^[-_a-zA-Z0-9]{16,80}$/.test(value.request_key)))||(value.version===1&&value.request_key!==undefined))throw Error('Bekleyen ders oluşturma isteği doğrulanamadı.');
@@ -13,14 +15,11 @@ export function findCreatedCourse(items:Course[],intent:CourseCreateIntent):Cour
  const prior=new Set(intent.known_ids);
  return items.find(item=>item&&Number.isSafeInteger(item.id)&&!prior.has(item.id)&&item.title===intent.title&&(item.description||'')===intent.description)||null;
 }
-export function findUploadedMaterial(items:Material[],name:string,knownIds:number[],size:number|null=null):Material|null{
- if(!Array.isArray(items)||typeof name!=='string'||!Array.isArray(knownIds)||(size!==null&&(!Number.isSafeInteger(size)||size<1)))return null;
- const prior=new Set(knownIds);
- return items.find(item=>item&&Number.isSafeInteger(item.id)&&!prior.has(item.id)&&item.name===name&&(size===null||item.size===size))||null;
-}
 export function parseUploadIntent(raw:string,user:number,course:number):UploadIntent{
  const value=JSON.parse(raw);
- if(value?.version!==1||value.user!==user||value.course!==course||typeof value.name!=='string'||!value.name||typeof value.uri!=='string'||!value.uri.startsWith('file://')||!Array.isArray(value.known_ids)||value.known_ids.some((id:unknown)=>!Number.isSafeInteger(id)||Number(id)<1)||(value.size!==null&&(!Number.isSafeInteger(value.size)||value.size<1)))throw Error('Bekleyen dosya aktarımı doğrulanamadı. Sunucudaki kaynakları kontrol edin.');
+ const mime=typeof value?.name==='string'?academicMimeFromName(value.name):null;
+ const validDigest=typeof value?.content_sha256==='string'&&/^[a-f0-9]{64}$/.test(value.content_sha256);
+ if((value?.version!==2&&value?.version!==3)||value.user!==user||value.course!==course||typeof value.name!=='string'||!value.name||value.name.length>240||value.name.trim()!==value.name||value.name.includes('/')||value.name.includes(String.fromCharCode(92))||typeof value.uri!=='string'||!value.uri.startsWith('file://')||!mime||value.mime!==mime||typeof value.request_key!=='string'||!/^[-_a-zA-Z0-9]{16,80}$/.test(value.request_key)||(value.size!==null&&(!Number.isSafeInteger(value.size)||value.size<1||value.size>150*1024*1024))||(value.version===2&&value.content_sha256!==undefined)||(value.version===3&&(!validDigest||!Number.isSafeInteger(value.size)||value.size<1)))throw Error('Bekleyen dosya aktarımı doğrulanamadı. Sunucudaki kaynak fişi kontrol edilmelidir.');
  return value as UploadIntent;
 }
 export type Workspace={course:Course;materials:Material[];max_file_bytes:number;max_upload_count:number;next_before:number|null};
@@ -35,6 +34,12 @@ const isRecord=(value:unknown):value is Record<string,unknown>=>!!value&&typeof 
 const safeId=(value:unknown):value is number=>typeof value==='number'&&Number.isSafeInteger(value)&&value>0;
 const boundedText=(value:unknown,max:number,allowEmpty=true):value is string=>typeof value==='string'&&value.length<=max&&(allowEmpty||value.trim().length>0);
 const validCursor=(value:unknown):value is number|null=>value===null||safeId(value);
+
+export function validateAcademicUploadReceipt(value:unknown,course:number,requestKey:string,expectedName?:string,expectedSize?:number,expectedMime?:string):AcademicUploadReceipt{
+ if(!isRecord(value)||!safeId(value.course_id)||value.course_id!==course||value.request_key!==requestKey||!safeId(value.material_id)||!boundedText(value.name,240,false)||value.name.includes('/')||value.name.includes(String.fromCharCode(92))||!['application/pdf','image/jpeg','image/png','image/webp'].includes(String(value.mime))||!Number.isSafeInteger(value.size)||Number(value.size)<1||Number(value.size)>150*1024*1024||!/^([a-f0-9]{64})$/.test(String(value.content_sha256))||!/^([a-f0-9]{64})$/.test(String(value.payload_hash))||!boundedText(value.created_at,80,false)||!Number.isFinite(Date.parse(String(value.created_at))))throw Error('Akademik dosya kayıt fişi doğrulanamadı.');
+ if(expectedName!==undefined&&value.name!==expectedName||expectedSize!==undefined&&value.size!==expectedSize||expectedMime!==undefined&&value.mime!==expectedMime)throw Error('Sunucudaki dosya fişi bekleyen aktarım ile eşleşmiyor.');
+ return value as unknown as AcademicUploadReceipt;
+}
 
 function validateAcademicQuiz(value:unknown):Quiz{
  if(!isRecord(value)||!safeId(value.message_id)||!Array.isArray(value.questions)||value.questions.length<1||value.questions.length>20)throw Error('Akademik soru seti doğrulanamadı.');
@@ -121,6 +126,12 @@ export async function courseCreateReceipt(t:string,requestKey:string):Promise<Wo
 export const renameCourse=async(t:string,c:number,title:string)=>validateWorkspace(await write<unknown>(t,coursePath(c),'PUT',{title}),c);
 export const deleteCourse=(t:string,c:number)=>write<{ok:boolean}>(t,coursePath(c),'DELETE');
 export const deleteMaterial=(t:string,c:number,m:number)=>write<{ok:boolean}>(t,coursePath(c)+`/materials/${id(m)}`,'DELETE');
+export async function uploadReceipt(t:string,c:number,requestKey:string):Promise<AcademicUploadReceipt|null>{
+ if(!/^[-_a-zA-Z0-9]{16,80}$/.test(requestKey))throw Error('Geçersiz Akademik AI dosya istek anahtarı.');
+ const value=await request<unknown>(coursePath(c)+'/materials/receipt?request_key='+encodeURIComponent(requestKey),t);
+ if(!isRecord(value)||!('receipt' in value))throw Error('Akademik dosya kayıt fişi yanıtı doğrulanamadı.');
+ return value.receipt===null?null:validateAcademicUploadReceipt(value.receipt,c,requestKey);
+}
 export function validateIndexStatus(v:IndexStatus):IndexStatus{if(!v||typeof v.ready!=='boolean'||typeof v.complete!=='boolean'||!['ready','partial','preparing','failed'].includes(v.state)||!Number.isSafeInteger(v.completed)||v.completed<0||!Number.isSafeInteger(v.total)||v.total<0||!Array.isArray(v.files)||v.files.length!==v.total||v.files.some(f=>!f||!Number.isSafeInteger(f.id)||f.id<1||typeof f.filename!=='string'||!['preparing','updating','ready','update_failed','failed'].includes(f.state)))throw Error('Akademik indeks durumu doğrulanamadı.');return v}
 export const indexNeedsPolling=(v:IndexStatus|null)=>!!v&&!v.complete&&v.files.some(f=>f.state==='preparing'||f.state==='updating');
 export const indexStatus=async(t:string,c:number)=>validateIndexStatus(await request<IndexStatus>(coursePath(c)+'/index-status',t));

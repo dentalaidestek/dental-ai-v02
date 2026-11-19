@@ -1,7 +1,20 @@
 export type NotificationReadState = {
   created_at: string;
   read_at?: string | null;
+  is_read?: boolean;
 };
+
+/**
+ * Prefer the canonical read flag when the API supplies it. Older mobile
+ * responses exposed only read_at, so retain that as a backwards-compatible
+ * fallback until every supported server has the canonical field.
+ */
+export function normalizeNotificationReadAt(item: NotificationReadState): string | null {
+  const isRead = typeof item.is_read === "boolean" ? item.is_read : Boolean(item.read_at);
+  if (!isRead) return null;
+  if (typeof item.read_at === "string" && item.read_at.trim()) return item.read_at;
+  return typeof item.created_at === "string" && item.created_at.trim() ? item.created_at : null;
+}
 
 /** API datetimes without an explicit offset are naive UTC, like the web client treats them. */
 export function parseNotificationTimestamp(value: string): number {

@@ -22,7 +22,7 @@ from app.main import (
     classify_dental_image, storage_ensure_local, storage_persist_file,
     _record_realtime_event, _publish_realtime_event, on_loop,
 )
-from app.mobile_api import _mobile_user
+from app.mobile_api import _mobile_private_no_store, _mobile_user
 from app.work_jobs import WorkJob
 from app.analysis_upload_receipts import (
     AnalysisUploadReceiptConflict,
@@ -467,34 +467,36 @@ def start_mobile_analysis(analysis_id: int, user: User = Depends(_mobile_user)):
 
 
 @router.get("/analyses/{analysis_id}/legacy-radiograph")
-def mobile_legacy_analysis_radiograph(
+async def mobile_legacy_analysis_radiograph(
     analysis_id: int,
     user: User = Depends(_mobile_user),
 ):
     """Serve the web profile's legacy radiograph fallback without exposing its storage path."""
     with Session(engine, expire_on_commit=False) as session:
         analysis, _ = _access(session, user, analysis_id)
-        if not analysis.radiograph_path:
+        file_path = analysis.radiograph_path
+        if not file_path:
             raise HTTPException(status_code=404, detail="Radyografik görüntü bulunamadı.")
-        try:
-            path = storage_ensure_local(analysis.radiograph_path)
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="Radyografik görüntü dosyası bulunamadı.") from exc
-        media_type = {
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".png": "image/png",
-            ".webp": "image/webp",
-        }.get(path.suffix.lower(), "application/octet-stream")
-        return FileResponse(
-            path,
-            media_type=media_type,
-            headers={"Cache-Control": "private, no-store"},
-        )
+
+    # R2/local hydration can perform network I/O. Do not keep a SQL connection
+    # checked out while it runs; the web and patient-media download paths do not.
+    try:
+        path = await run_in_threadpool(storage_ensure_local, file_path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Radyografik görüntü dosyası bulunamadı.") from exc
+    media_type = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(path.suffix.lower(), "application/octet-stream")
+    response = FileResponse(path, media_type=media_type)
+    _mobile_private_no_store(response)
+    return response
 
 
 @router.get("/analyses/{analysis_id}/assets/{asset_id}")
-def mobile_analysis_image(
+async def mobile_analysis_image(
     analysis_id: int,
     asset_id: int,
     user: User = Depends(_mobile_user),
@@ -504,17 +506,24 @@ def mobile_analysis_image(
         asset = session.get(ImageAsset, asset_id)
         if not asset or asset.analysis_id != analysis.id:
             raise HTTPException(status_code=404, detail="Görüntü bulunamadı.")
-        try:
-            path = storage_ensure_local(asset.file_path)
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="Görüntü dosyası bulunamadı.") from exc
-        media_type = {
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".png": "image/png",
-            ".webp": "image/webp",
-        }.get(path.suffix.lower(), "application/octet-stream")
-        return FileResponse(path, media_type=media_type, filename=asset.original_filename, headers={"Cache-Control": "private, no-store"})
+        file_path = asset.file_path
+        original_filename = asset.original_filename
+
+    # Never hydrate remote clinical media while the authorization session is open.
+    try:
+        path = await run_in_threadpool(storage_ensure_local, file_path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Görüntü dosyası bulunamadı.") from exc
+    media_type = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(path.suffix.lower(), "application/octet-stream")
+    response = FileResponse(path, media_type=media_type, filename=original_filename)
+    _mobile_private_no_store(response)
+    return response
+
 
 @router.get("/analyses")
 def mobile_analysis_history(user: User = Depends(_mobile_user), patient_id: Optional[int] = None, before: Optional[int] = Query(None, ge=1), limit: int = Query(50, ge=1, le=100), tooth_number: Optional[str] = None):

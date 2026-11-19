@@ -1,6 +1,7 @@
 import {ChatFile,validateChatFile} from "./chatFiles";
 import {ApiError} from './api';
 import {revalidateSession} from './sessionExpiry';
+import {normalizeNotificationReadAt} from "./notificationState";
 const API_BASE="https://dentalai.tr/api/mobile/v1";
 async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
  const headers:any={Authorization:"Bearer "+token,...(!(init.body instanceof FormData)?{"Content-Type":"application/json"}:{}),...(init.headers||{})};
@@ -52,7 +53,7 @@ export const getSupportTicket=async(t:string,id:number,before?:number)=>{if(!Num
 export const markSupportTicketRead=(t:string,id:number,through?:number)=>req<{ok:boolean;unread_count:number}>("/support/tickets/"+id+"/read"+(through?("?through_message_id="+through):""),t,{method:"POST"});
 export const replySupportTicket=(t:string,id:number,message:string,key=supportKey())=>{if(!Number.isSafeInteger(id)||id<=0||!message.trim()||message.trim().length>4000)throw Error("Yanıt alanını kontrol edin.");return req<{ok:boolean;ticket_id:number;message_id:number;status:string;replayed:boolean}>("/support/tickets/"+id+"/reply",t,{method:"POST",body:JSON.stringify({message:message.trim(),request_key:key})})};
 
-export type Notice={id:number;title:string;message:string;notice_type:string;target_url?:string|null;read_at?:string|null;created_at:string};
+export type Notice={id:number;title:string;message:string;notice_type:string;target_url?:string|null;read_at?:string|null;is_read?:boolean;created_at:string};
 export type Expert={user_id:number;display_name:string;specialty:string;academic_title?:string|null;institution?:string|null;bio?:string|null;availability:string;consultation_price:number;rating_avg?:number|null;review_count:number};
 export type Consultation={id:number;other_user_id:number;other_display_name:string;specialty:string;tooth_region?:string|null;status:string;status_key?:string;status_label?:string;question:string;requested_at:string;last_message?:string|null;last_message_at?:string|null;last_message_id?:number;messages_deleted_at?:string|null;unread_count:number};
 export type ChatMessage={id:number;sender_user_id:number;message_type:string;content:string;reply_to_message_id?:number|null;created_at:string;has_media?:boolean};
@@ -72,11 +73,17 @@ export const getNotifications=async(t:string,noticeId?:number)=>{
  if(noticeId!==undefined&&(!Number.isSafeInteger(noticeId)||noticeId<=0))throw Error("Geçersiz bildirim kimliği.");
  const r=await req<any>("/notifications"+(noticeId!==undefined?"?notice_id="+encodeURIComponent(noticeId):""),t);
  const items=r?.items??r?.notifications;
- if(!Array.isArray(items)||items.some((n:unknown)=>!n||typeof n!=="object"||!Number.isSafeInteger((n as Notice).id)||typeof (n as Notice).title!=="string"||typeof (n as Notice).message!=="string"))
+ if(!Array.isArray(items)||items.some((n:unknown)=>!n||typeof n!=="object"||!Number.isSafeInteger((n as Notice).id)||typeof (n as Notice).title!=="string"||typeof (n as Notice).message!=="string"||((n as Notice).is_read!==undefined&&typeof (n as Notice).is_read!=="boolean")))
   throw Error("Bildirim sunucusundan geçersiz liste alındı. Tekrar deneyin.");
  const unread=Number(r?.unread??r?.unread_count??0);
  if(!Number.isSafeInteger(unread)||unread<0)throw Error("Bildirim sunucusundan geçersiz okunmamış sayısı alındı.");
- return {items:items.map((n:Notice&{is_read?:boolean})=>({...n,read_at:n.read_at||(n.is_read?n.created_at:null)})) as Notice[],unread};
+ return {items:items.map((n:Notice)=>({...n,read_at:normalizeNotificationReadAt(n)})) as Notice[],unread};
+};
+export const getNotificationUnreadCount=async(t:string)=>{
+ const result=await req<{unread_count:number}>("/notifications/unread-count",t);
+ if(!Number.isSafeInteger(result?.unread_count)||result.unread_count<0)
+  throw Error("Bildirim sayısı doğrulanamadı.");
+ return result.unread_count;
 };
 export const markNotificationRead=(t:string,id:number)=>{
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz bildirim kimliği.");
@@ -127,7 +134,7 @@ export const deleteMedia=async(t:string,patientId:number,mediaId:number):Promise
 export const getMedia=async(t:string,p:number,before?:number)=>{
  if(!Number.isSafeInteger(p)||p<=0||(before!==undefined&&(!Number.isSafeInteger(before)||before<=0)))
   throw Error("Geçersiz hasta veya sayfa kimliği.");
- const r=await req<{items:any[];next_before?:number|null}>(`/patients/${p}/media`+(before!==undefined?`?before=${encodeURIComponent(before)}`:""),t);
+ const r=await req<{items:any[];next_before?:number|null}>(`/patients/${p}/media?limit=40`+(before!==undefined?`&before=${encodeURIComponent(before)}`:""),t);
  const cursor=r?.next_before??null;
  if(!Array.isArray(r?.items)||r.items.length>40||
    new Set(r.items.map(m=>m?.id)).size!==r.items.length||
@@ -138,7 +145,7 @@ export const getMedia=async(t:string,p:number,before?:number)=>{
    (r.items.length===0&&cursor!==null)||
    (before!==undefined&&(r.items.some(m=>m.id>=before)||(cursor!==null&&cursor>=before))))
   throw Error("Klinik medya sunucusundan geçersiz liste alındı.");
- return {items:r.items.map(m=>({...m,filename:m.filename||m.original_filename||"",url:`${API_BASE}/patients/${p}/media/${m.id}/file`})),next_before:cursor};
+ return {items:r.items.map(m=>({...m,filename:m.filename||m.original_filename||"",url:`${API_BASE}/patients/${p}/media/${m.id}/file`,thumbnail_url:`${API_BASE}/patients/${p}/media/${m.id}/thumbnail`})),next_before:cursor};
 };
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
 export type ConsultationRequestPayload={expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string;request_key?:string};

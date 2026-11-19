@@ -8,6 +8,8 @@ require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(
 }).outputText,filename);
 
 const {applyNotificationReadAllSnapshot,parseNotificationTimestamp}=require('../src/notificationState.ts');
+const {normalizeNotificationReadAt}=require('../src/notificationState.ts');
+const {shouldRefreshHomeUnread}=require('../src/notificationRefresh.ts');
 const {isValidExpoPushToken}=require('../src/pushToken.ts');
 
 test('mark-all snapshot reads only notices created at or before the captured cutoff',()=>{
@@ -151,4 +153,38 @@ test('installation claim does not request notification permission or enable a ne
  assert.ok(!claim.includes('requestPermissionsAsync'));
  assert.ok(!claim.includes('registerPushDevice'));
  assert.ok(!claim.includes('setItemAsync(enabledKey(userId), "1")'));
+});
+
+test('canonical is_read wins over stale or missing read_at while old responses remain compatible',()=>{
+ const created='2026-11-18T10:00:00.000Z';
+ assert.equal(normalizeNotificationReadAt({created_at:created,is_read:true,read_at:null}),created);
+ assert.equal(normalizeNotificationReadAt({created_at:created,is_read:false,read_at:'2026-11-18T10:01:00.000Z'}),null);
+ assert.equal(normalizeNotificationReadAt({created_at:created,read_at:'2026-11-18T10:01:00.000Z'}),'2026-11-18T10:01:00.000Z');
+ assert.equal(normalizeNotificationReadAt({created_at:created,is_read:true,read_at:'2026-11-18T10:02:00.000Z'}),'2026-11-18T10:02:00.000Z');
+});
+
+test('home unread refresh follows the same notice-only event policy as the web sync handler',()=>{
+ for(const type of ['NOTICE_CREATED','NOTICE_RESOLVED','NOTIFICATIONS_READ']){
+  assert.equal(shouldRefreshHomeUnread({event_type:type}),true,type);
+  assert.equal(shouldRefreshHomeUnread({type:type.toLowerCase()}),true,type+' fallback');
+ }
+ for(const type of ['PATIENT_CREATED','PATIENT_UPDATED','PATIENT_DELETED','ANALYSIS_CREATED','ANALYSIS_UPDATED','PROGRAM_UPDATED','MESSAGE_CREATED','CASE_CREATED','PROFILE_UPDATED','CASE_STATUS_UPDATED']){
+  assert.equal(shouldRefreshHomeUnread({event_type:type}),false,type);
+ }
+ assert.equal(shouldRefreshHomeUnread(null),false);
+ assert.equal(shouldRefreshHomeUnread({event_type:7}),false);
+ assert.equal(shouldRefreshHomeUnread({event_type:'PATIENT_UPDATED',type:'NOTICE_CREATED'}),false);
+});
+
+test('home badge uses a count-only request and filters unrelated realtime events',()=>{
+ const app=fs.readFileSync(path.join(__dirname,'../App.tsx'),'utf8');
+ const api=fs.readFileSync(path.join(__dirname,'../src/modernApi.ts'),'utf8');
+ const start=app.indexOf('function Home('),end=app.indexOf('\nfunction ',start+10);
+ const home=app.slice(start,end);
+ assert.ok(home.includes('getNotificationUnreadCount(token)'));
+ assert.ok(home.includes('shouldRefreshHomeUnread(lastEvent)'));
+ assert.ok(!home.includes('getNotifications(token)'));
+ assert.ok(!home.includes('if(lastEvent)loadUnread()'));
+ assert.ok(api.includes('"/notifications/unread-count"'));
+ assert.ok(api.includes('normalizeNotificationReadAt(n)'));
 });

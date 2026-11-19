@@ -532,3 +532,126 @@ def test_mobile_patient_media_download_hydrates_r2_after_db_session_closes(tmp_p
         assert storage_threads and storage_threads[0] != loop_thread
     finally:
         engine.dispose()
+
+
+def _create_mobile_analysis_download_records(tmp_path, monkeypatch, db_name):
+    from sqlmodel import Session, SQLModel, create_engine
+    from app import main, mobile_analysis_api
+
+    engine = create_engine(f'sqlite:///{tmp_path / db_name}')
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(mobile_analysis_api, 'engine', engine)
+    with Session(engine, expire_on_commit=False) as session:
+        user = main.User(
+            username=f'{db_name}-owner',
+            role='DOCTOR',
+            display_name='Analysis Reader',
+        )
+        session.add(user); session.commit()
+        patient = main.Patient(
+            anonymous_id=f'{db_name}-patient',
+            owner_user_id=user.id,
+        )
+        session.add(patient); session.commit()
+        analysis = main.Analysis(
+            patient_id=patient.id,
+            status='VISION_READY',
+            radiograph_path='r2://clinical/legacy-radiograph.jpg',
+        )
+        session.add(analysis); session.commit()
+        asset = main.ImageAsset(
+            analysis_id=analysis.id,
+            original_filename='panoramic.jpg',
+            stored_filename='analysis-panoramic.jpg',
+            file_path='r2://clinical/analysis-panoramic.jpg',
+            image_type='PANORAMIC',
+        )
+        session.add(asset); session.commit()
+        return engine, user, analysis.id, asset.id
+
+
+def test_mobile_analysis_image_hydrates_r2_after_authorization_session_closes(tmp_path, monkeypatch):
+    from app import mobile_analysis_api
+
+    engine, user, analysis_id, asset_id = _create_mobile_analysis_download_records(
+        tmp_path, monkeypatch, 'mobile-analysis-asset-download.db'
+    )
+    target = tmp_path / 'hydrated-analysis.jpg'
+    target.write_bytes(bytes([255, 216, 255]) + b'synthetic')
+    loop_thread = threading.get_ident()
+    storage_threads = []
+
+    def hydrate(reference):
+        assert reference == 'r2://clinical/analysis-panoramic.jpg'
+        assert engine.pool.checkedout() == 0, 'analysis R2 hydration must not hold a SQL connection'
+        storage_threads.append(threading.get_ident())
+        return target
+
+    monkeypatch.setattr(mobile_analysis_api, 'storage_ensure_local', hydrate)
+    try:
+        response = asyncio.run(mobile_analysis_api.mobile_analysis_image(analysis_id, asset_id, user))
+        assert response.status_code == 200
+        assert response.media_type == 'image/jpeg'
+        assert 'panoramic.jpg' in response.headers.get('content-disposition', '')
+        assert response.headers.get('cache-control') == 'private, no-store'
+        assert response.headers.get('pragma') == 'no-cache'
+        assert 'authorization' in response.headers.get('vary', '').lower()
+        assert storage_threads and storage_threads[0] != loop_thread
+    finally:
+        engine.dispose()
+
+
+def test_mobile_legacy_radiograph_hydrates_r2_after_authorization_session_closes(tmp_path, monkeypatch):
+    from app import mobile_analysis_api
+
+    engine, user, analysis_id, _ = _create_mobile_analysis_download_records(
+        tmp_path, monkeypatch, 'mobile-analysis-legacy-download.db'
+    )
+    target = tmp_path / 'hydrated-legacy-radiograph.jpg'
+    target.write_bytes(bytes([255, 216, 255]) + b'synthetic')
+    loop_thread = threading.get_ident()
+    storage_threads = []
+
+    def hydrate(reference):
+        assert reference == 'r2://clinical/legacy-radiograph.jpg'
+        assert engine.pool.checkedout() == 0, 'legacy R2 hydration must not hold a SQL connection'
+        storage_threads.append(threading.get_ident())
+        return target
+
+    monkeypatch.setattr(mobile_analysis_api, 'storage_ensure_local', hydrate)
+    try:
+        response = asyncio.run(mobile_analysis_api.mobile_legacy_analysis_radiograph(analysis_id, user))
+        assert response.status_code == 200
+        assert response.media_type == 'image/jpeg'
+        assert response.headers.get('cache-control') == 'private, no-store'
+        assert response.headers.get('pragma') == 'no-cache'
+        assert 'authorization' in response.headers.get('vary', '').lower()
+        assert storage_threads and storage_threads[0] != loop_thread
+    finally:
+        engine.dispose()
+
+
+def test_mobile_analysis_asset_denies_another_owner_before_storage_hydration(tmp_path, monkeypatch):
+    from fastapi import HTTPException
+    from sqlmodel import Session
+    from app import main, mobile_analysis_api
+
+    engine, owner, analysis_id, asset_id = _create_mobile_analysis_download_records(
+        tmp_path, monkeypatch, 'mobile-analysis-owner-boundary.db'
+    )
+    with Session(engine, expire_on_commit=False) as session:
+        stranger = main.User(
+            username='mobile-analysis-stranger',
+            role='DOCTOR',
+            display_name='Unrelated Clinician',
+        )
+        session.add(stranger); session.commit()
+    calls = []
+    monkeypatch.setattr(mobile_analysis_api, 'storage_ensure_local', lambda path: calls.append(path))
+    try:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(mobile_analysis_api.mobile_analysis_image(analysis_id, asset_id, stranger))
+        assert error.value.status_code == 404
+        assert calls == [], 'unauthorized analysis access must not trigger R2 hydration'
+    finally:
+        engine.dispose()

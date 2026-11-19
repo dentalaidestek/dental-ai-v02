@@ -1780,6 +1780,22 @@ def unregister_mobile_push_device(
     return {"ok": True}
 
 
+@router.get("/notifications/unread-count")
+def mobile_notification_unread_count(
+    response: Response,
+    user: User = Depends(_mobile_user),
+):
+    """Return only the signed-in user's unread badge count; never load notice bodies."""
+    response.headers.update(_PRIVATE_MOBILE_RESPONSE_HEADERS)
+    with Session(engine, expire_on_commit=False) as session:
+        unread_count = int(session.exec(select(func.count(AdminNotice.id)).where(
+            AdminNotice.user_id == user.id,
+            AdminNotice.status == "ACTIVE",
+            AdminNotice.is_read == False,
+        )).one() or 0)
+    return {"unread_count": unread_count}
+
+
 @router.get("/notifications")
 def mobile_notifications(
     response: Response,
@@ -1811,7 +1827,7 @@ def mobile_notifications(
         items = [{
             "id": n.id, "title": n.title, "message": n.message,
             "notice_type": n.notice_type, "target_url": n.target_url,
-            "read_at": n.read_at, "created_at": n.created_at,
+            "read_at": n.read_at, "is_read": bool(n.is_read), "created_at": n.created_at,
         } for n in rows]
         legacy_items = [{
             **item,
@@ -2897,7 +2913,10 @@ def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Dep
             raise HTTPException(status_code=404, detail="Klinik görüntü bulunamadı.")
 
         file_path = media.file_path
+        from app.clinical_media_thumbnail import thumbnail_reference
+        thumbnail_path = thumbnail_reference(file_path)
         queued = work_jobs.enqueue_patient_media_cleanup(session, file_path)
+        thumbnail_queued = work_jobs.enqueue_patient_media_cleanup(session, thumbnail_path)
         session.delete(media)
         event = _record_realtime_event(
             session, user.id, "PATIENT_MEDIA_DELETED", "patient", patient_id,
@@ -2907,9 +2926,12 @@ def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Dep
 
     on_loop(_publish_realtime_event, event)
     cleanup_pending = queued
-    if not queued:
+    if not queued or not thumbnail_queued:
         try:
-            storage_delete(file_path)
+            if not queued:
+                storage_delete(file_path)
+            if not thumbnail_queued:
+                storage_delete(thumbnail_path)
         except Exception:
             # The database deletion already committed; do not report a false API failure.
             import logging

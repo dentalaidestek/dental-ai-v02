@@ -39,6 +39,16 @@ test('duplicate legacy gallery and its non-durable direct upload path are remove
   assert.doesNotMatch(screens,/deleteAllPatientMedia/);
 });
 
+test('canonical media pagination keeps the current getMedia TypeScript signature',()=>{
+  const native=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+  const api=fs.readFileSync(require.resolve('../src/modernApi.ts'),'utf8');
+  const legacy=fs.readFileSync(require.resolve('../src/ModernScreens.tsx'),'utf8');
+  assert.match(api,/export const getMedia=async\(t:string,p:number,before\?:number\)/);
+  assert.match(native,/getMedia\(token,patientId,more\?cursor\?\?undefined:undefined\)/);
+  assert.doesNotMatch(legacy,/getMedia\(/);
+  assert.doesNotMatch(legacy,/export function MediaGallery/);
+});
+
 test('native archive retains web-matched metadata, batch limits, receipts and recovery',()=>{
   const native=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
   const web=fs.readFileSync(require.resolve('../../app/templates/patient_detail.html'),'utf8');
