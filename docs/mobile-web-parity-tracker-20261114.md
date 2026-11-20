@@ -1035,7 +1035,7 @@ The patient-history integration fixture also places all 25 records at the same t
 Web-first review re-read `patient_detail.html`, `patient_treatment_history_items.html`, `patient_history_web.py`, `patient_history_pagination.py` and the mounted mobile analysis-history route before editing.
 
 - Native analysis history now requests the backend's `stable_order=true` / `before_cursor` contract, matching web `created_at DESC, id DESC` order. Patient and FDI filters are validated on every page; duplicate IDs, malformed/looping cursors and mismatched patient rows fail closed.
-- A first-page compatibility fallback retains numeric-ID pagination for older deployed servers that omit the stable cursor field. Once a stable cursor is issued, the continuation must remain stable.
+- A first-page compatibility fallback retains numeric-ID pagination for older deployed servers that omit the stable cursor field or return `next_cursor: null` alongside a valid numeric `next_before`. Once a stable cursor is issued, the continuation must remain stable.
 - Native treatment history now uses web-aligned bordered cards and metadata chips for tooth/date/material, while preserving result and doctor-note fields. The native edit action is disabled until profile/treatment/delete durable-intent gates are resolved.
 - Added `patientAnalysisHistoryCursor.cjs`, updated `patientAnalysisHistory.cjs` and `patientHistoryRetry.cjs`, and added `patientTreatmentPresentation.cjs`. Both new tests are registered in beta and Security Recovery.
 - Isolated strict TypeScript + Node checks: stable cursor helper 7 assertions; treatment presentation helper 13 assertions. Committed React Native / repository test files were not executed in this runtime.
