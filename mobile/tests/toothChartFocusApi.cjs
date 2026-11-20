@@ -3,6 +3,10 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const ts=require('typescript');
+const directoryPresentation={};
+const directorySource=fs.readFileSync(require.resolve('../src/patientDirectoryPresentation.ts'),'utf8');
+const directoryCode=ts.transpileModule(directorySource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+vm.runInNewContext(directoryCode,{exports:directoryPresentation});
 
 function loadApi(fetchImpl){
  const source=fs.readFileSync(require.resolve('../src/api.ts'),'utf8');
@@ -12,7 +16,7 @@ function loadApi(fetchImpl){
   exports,
   require:name=>{
    if(name==='./sessionExpiry')return{reportSessionExpiry(){},revalidateSession:async()=>{}};
-   if(name==='./patientDirectoryPresentation')return require('../src/patientDirectoryPresentation.ts');
+   if(name==='./patientDirectoryPresentation')return directoryPresentation;
    throw Error('unexpected import '+name);
   },
   fetch:fetchImpl,
