@@ -3404,13 +3404,37 @@ def _profile_photo_url(user: Optional[User]) -> Optional[str]:
     return f"/profile-photo/{user.id}?v={_profile_photo_version(user.profile_photo_path)}"
 
 
+def _queue_uncommitted_account_asset_cleanup(reference: Optional[str]) -> None:
+    """Persist cleanup for a newly written account asset whose DB transaction failed.
+
+    Do not delete directly: content-addressed profile photos can reuse a key that
+    is still referenced by the current account. The collector performs the
+    authoritative reference check before touching object storage.
+    """
+    if not reference:
+        return
+    try:
+        from app.work_jobs import enqueue_account_asset_cleanup, is_account_asset_reference
+        if not is_account_asset_reference(str(reference)):
+            logger.warning("Uncommitted account asset is outside the cleanup allowlist")
+            return
+        with Session(engine, expire_on_commit=False) as cleanup_session:
+            if enqueue_account_asset_cleanup(cleanup_session, str(reference)):
+                cleanup_session.commit()
+    except Exception:
+        logger.warning("Uncommitted account asset cleanup could not be queued", exc_info=True)
+
+
 def _remove_replaced_profile_photo(previous: Optional[str], current: Optional[str]) -> None:
-    """Remove only the superseded object, after the DB points at the new object."""
+    """Legacy fallback only; current generated keys are queued in the metadata transaction."""
     if previous and previous != current:
+        from app.work_jobs import is_account_asset_reference
+        if is_account_asset_reference(previous):
+            return
         try:
             storage_delete(previous)
         except Exception:
-            logger.warning("Superseded profile photo could not be removed", exc_info=True)
+            logger.warning("Legacy superseded profile photo could not be removed", exc_info=True)
 
 
 @app.get("/profile-photo/{user_id}")
@@ -3451,13 +3475,15 @@ def account_profile_photo(request: Request, profile_photo_data: str = Form(...))
             db_user = s.get(User, user.id)
             previous_path = db_user.profile_photo_path
             db_user.profile_photo_path = path
+            from app.work_jobs import enqueue_replaced_account_asset_cleanup
+            enqueue_replaced_account_asset_cleanup(s, previous_path, path)
             s.add(db_user)
             photo_version=_profile_photo_version(path)
             photo_event=_record_realtime_event(s,user.id,"PROFILE_PHOTO_UPDATED","user",user.id,
                 {"user_id":user.id,"photo_url":f"/profile-photo/{user.id}?v={photo_version}","version":photo_version})
             s.commit()
     except Exception:
-        storage_delete(path)
+        _queue_uncommitted_account_asset_cleanup(path)
         raise
     _remove_replaced_profile_photo(previous_path, path)
     on_loop(_publish_realtime_event, photo_event)
