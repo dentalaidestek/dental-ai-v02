@@ -9,6 +9,7 @@ on:
     paths:
       - ".github/workflows/mobile-android.yml"
       - "mobile/**"
+      - "docs/account-erasure-guest-cleanup-20261120.md"
       - "app/**"
       - "tests/**"
   pull_request:
@@ -17,6 +18,7 @@ on:
     paths:
       - ".github/workflows/mobile-android.yml"
       - "mobile/**"
+      - "docs/account-erasure-guest-cleanup-20261120.md"
       - "app/**"
       - "tests/**"
   workflow_dispatch:
