@@ -64,7 +64,7 @@ function mountMedia(getMedia, options={}){
   if(name==='./NativeAnalysisUpload')return {default:props=>React.createElement('NativeAnalysisUpload',props)};
   if(name==='expo-file-system/legacy')return {getInfoAsync:async uri=>({uri,exists:true,size:1064,isDirectory:()=>false})};
   if(name==='./sessionExpiry')return {revalidateSession:async()=>{}};
-  if(name==='./appResumeRefresh'||name==='./uploadLimits'||name==='./clinicalMediaPicker'||name==='./clinicalMediaBatch'||name==='./clinicalMediaRecovery'||name==='./analysisApi')return loadSrcModule(name.slice(2),requireChain);
+  if(name==='./appResumeRefresh'||name==='./uploadLimits'||name==='./clinicalMediaPicker'||name==='./clinicalMediaBatch'||name==='./clinicalMediaRecovery'||name==='./analysisApi'||name==='./analysisComposerPresentation')return loadSrcModule(name.slice(2),requireChain);
   throw Error('Unexpected import '+name);
  };
  vm.runInNewContext(code,{exports,Error,Date,Set,JSON,Number,Array,Promise,require:requireChain});
@@ -232,9 +232,9 @@ test('delayed delete confirmation from previous account cannot delete old patien
 
 test('every delayed clinical media action verifies the current patient before network mutations',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
- assert.match(source,/async function remove\(id\?:number,reconcile=false\)\{if\(!current\(\)\|\|mutation\.current/);
+ assert.match(source,/async function remove\(id\?:number,reconcile=false\)\{\s*if\(!current\(\)\|\|mutation\.current/);
  assert.match(source,/function confirmDelete\(id\?:number\)\{if\(!current\(\)\|\|mutation\.current/);
- assert.match(source,/async function upload\(reconcile=false\)\{if\(!current\(\)\|\|mutation\.current/);
+ assert.match(source,/async function upload\(reconcile=false\)\{\s*if\(!current\(\)\|\|mutation\.current/);
  assert.match(source,/async function analyze\(\)\{if\(!current\(\)\|\|mutation\.current/);
  assert.match(source,/async function pick\(type:'PHOTO'\|'RADIOGRAPH'\)\{\s*if\(!current\(\)\|\|mutation\.current/);
 });
@@ -369,7 +369,8 @@ test('saved gallery selection opens the same durable composer used for new analy
  assert.equal(checks.length,2);
  await renderer.act(async()=>checks[0].props.onPress());
  const checksAgain=tree.root.findAllByType('Pressable').filter(n=>n.props.accessibilityRole==='checkbox'&&visible(n).includes('Analiz için seç'));
- await renderer.act(async()=>checksAgain[1].props.onPress());
+ // Selected rows show '☑ Seçili'; the remaining unchecked checkbox belongs to the second image.
+ await renderer.act(async()=>checksAgain[0].props.onPress());
  const analyze=tree.root.findAllByType('Pressable').find(n=>visible(n).includes('Seçilenleri AI ile Analiz Et'));
  assert.ok(analyze);
  await renderer.act(async()=>analyze.props.onPress());
@@ -405,7 +406,7 @@ test('clinical media upload persists its receipt key before transfer and display
  const Media=mountMedia(async()=>({items:[],next_before:null}),{
   storage,picker,
   onReceipt:async(_token,patientId,key)=>{receiptCalls.push([patientId,key]);return {found:false}},
-  onUpload:async(_token,patientId,file,_tooth,mediaType,key,onProgress)=>{
+  onUpload:async(_token,patientId,file,_tooth,mediaType,key,_batchId,onProgress)=>{
    uploadCalls.push([patientId,file.name,mediaType,key]);
    assert.ok(storage.has('dai.patient-media.upload.1.8'),'upload intent must be persisted before network transfer');
    onProgress({loaded:512,total:1024,lengthComputable:true});

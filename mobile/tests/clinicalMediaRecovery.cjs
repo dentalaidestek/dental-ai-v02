@@ -45,6 +45,7 @@ function loadModernApiWithDeleteResponse(body,status=200){
    if(name==='./chatFiles')return{validateChatFile:()=>true};
    if(name==='./api')return{ApiError};
    if(name==='./sessionExpiry')return{revalidateSession:async()=>{}};
+   if(name==='./notificationState')return require('../src/notificationState.ts');
    throw Error('Unexpected module '+name);
   }
  });

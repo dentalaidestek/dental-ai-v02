@@ -5,7 +5,7 @@ const compile=f=>ts.transpileModule(fs.readFileSync(require.resolve(f),'utf8'),{
 const text=n=>typeof n==='string'?n:!n?'':(n.children||[]).map(text).join(''),button=(t,label)=>t.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(c=>text(c)===label));
 const image={uri:'file:///cache/dai-analysis-synthetic.png',name:'synthetic.png',type:'image/png'},intent={userId:1,patientId:8,requestKey:'synthetic-upload-key-001',toothNumber:'36',clinicalNotes:'Synthetic clinical note',images:[image]},receipt={analysis_id:41,patient_id:8,job_id:5,status:'VISION_PENDING'};
 function ui(overrides={},raw=null){const exports={},storage=new Map(),calls=[],model=require('../src/analysisUpload.ts');if(raw)storage.set('dai.analysis.upload.1.8',raw);const secure={getItemAsync:async k=>storage.get(k)||null,setItemAsync:async(k,v)=>storage.set(k,v),deleteItemAsync:async k=>storage.delete(k)},native={StyleSheet:{create:x=>x},...Object.fromEntries(['ActivityIndicator','Image','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))},api={...model,analysisUploadReceipt:async()=>null,uploadAnalysis:async(_t,v,progress)=>{calls.push(v);progress(100);return receipt},...overrides};
- vm.runInNewContext(compile('../src/NativeAnalysisUpload.tsx'),{exports,Error,AbortController,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=> '00000000-0000-4000-8000-000000000001'}:n==='./socialDraft'?{chunkedDraftStore:()=>secure}:n==='./analysisUpload'?api:n==='./analysisApi'?require('../src/analysisApi.ts'):n==='./nativeAnalysisFiles'?{cacheAnalysisImages:async items=>items.map((item,i)=>{const uri='file:///documents/dai-clinical-vault/1/8/synthetic-'+i+'.dai';return{uri,encryptedUri:uri,previewUri:item.uri,name:item.name||('synthetic-'+i+'.png'),type:item.type||'image/png'}}),clearAnalysisImages:overrides.clearAnalysisImages||(async()=>{}),clearLegacyAnalysisSources:overrides.clearLegacyAnalysisSources||(async()=>{}),cleanupStaleClinicalMediaTemps:async()=>{},ensureEncryptedAnalysisImages:async items=>items.map((item,i)=>{if(item.encryptedUri)return item;const uri='file:///documents/dai-clinical-vault/1/8/legacy-'+i+'.dai';return{uri,encryptedUri:uri,legacyUri:item.uri.startsWith('file:///cache/dai-analysis-')?item.uri:undefined,name:item.name,type:item.type}}),prepareAnalysisUploadImages:async items=>({images:items.map((item,i)=>({uri:'file:///cache/dai-clinical-upload-'+i+'.png',name:item.name,type:item.type})),cleanup:async()=>{}}),validateCachedAnalysisImages:async()=>{}}:n==='expo-image-picker'?{requestMediaLibraryPermissionsAsync:async()=>({granted:true}),launchImageLibraryAsync:async()=>({canceled:false,assets:[{uri:image.uri,fileName:image.name,mimeType:image.type},{uri:image.uri+'2',fileName:'second.png',mimeType:image.type}]})}:{} });return{Component:exports.default,calls,storage,api};}
+ vm.runInNewContext(compile('../src/NativeAnalysisUpload.tsx'),{exports,Error,AbortController,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=> '00000000-0000-4000-8000-000000000001'}:n==='./socialDraft'?{chunkedDraftStore:()=>secure}:n==='./analysisUpload'?api:n==='./analysisApi'?require('../src/analysisApi.ts'):n==='./analysisComposerPresentation'?require('../src/analysisComposerPresentation.ts'):n==='./nativeAnalysisFiles'?{cacheAnalysisImages:async items=>items.map((item,i)=>{const uri='file:///documents/dai-clinical-vault/1/8/synthetic-'+i+'.dai';return{uri,encryptedUri:uri,previewUri:item.uri,name:item.name||('synthetic-'+i+'.png'),type:item.type||'image/png'}}),clearAnalysisImages:overrides.clearAnalysisImages||(async()=>{}),clearLegacyAnalysisSources:overrides.clearLegacyAnalysisSources||(async()=>{}),cleanupStaleClinicalMediaTemps:async()=>{},ensureEncryptedAnalysisImages:async items=>items.map((item,i)=>{if(item.encryptedUri)return item;const uri='file:///documents/dai-clinical-vault/1/8/legacy-'+i+'.dai';return{uri,encryptedUri:uri,legacyUri:item.uri.startsWith('file:///cache/dai-analysis-')?item.uri:undefined,name:item.name,type:item.type}}),prepareAnalysisUploadImages:async items=>({images:items.map((item,i)=>({uri:'file:///cache/dai-clinical-upload-'+i+'.png',name:item.name,type:item.type})),cleanup:async()=>{}}),validateCachedAnalysisImages:async()=>{}}:n==='expo-image-picker'?{requestMediaLibraryPermissionsAsync:async()=>({granted:true}),launchImageLibraryAsync:async()=>({canceled:false,assets:[{uri:image.uri,fileName:image.name,mimeType:image.type},{uri:image.uri+'2',fileName:'second.png',mimeType:image.type}]})}:{} });return{Component:exports.default,calls,storage,api};}
 async function mount(h,onCreated=async()=>{},existingMediaIds=[],onExistingMediaIdsLoaded,patient){let t;await renderer.act(async()=>t=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,onCreated,existingMediaIds,onExistingMediaIdsLoaded,patient})));return t}
 test('native analysis composer sends multiple images, FDI and clinical notes with one stable key',async()=>{const h=ui(),opened=[],t=await mount(h,async id=>opened.push(id));await renderer.act(async()=>button(t,'Galeriden Ekle').props.onPress());await renderer.act(async()=>{t.root.findByProps({accessibilityLabel:'Analiz FDI diş numaraları'}).props.onChangeText('36,46');t.root.findByProps({accessibilityLabel:'Analiz klinik bilgileri'}).props.onChangeText('Synthetic history')});await renderer.act(async()=>{const b=button(t,'Analizi Başlat');b.props.onPress();b.props.onPress();await new Promise(r=>setImmediate(r))});assert.equal(h.calls.length,1);assert.equal(h.calls[0].images.length,2);assert.equal(h.calls[0].toothNumber,'36,46');assert.equal(h.calls[0].clinicalNotes,'Synthetic history');assert.deepEqual(opened,[41]);assert.equal(h.storage.size,0);await renderer.act(async()=>t.unmount())});
 test('saved uncertain upload checks server receipt before sending any bytes on reopen',async()=>{const h=ui({analysisUploadReceipt:async()=>receipt},JSON.stringify(intent)),opened=[],t=await mount(h,async id=>opened.push(id));assert.equal(h.calls.length,0);assert.deepEqual(opened,[41]);assert.equal(h.storage.size,0);await renderer.act(async()=>t.unmount())});
@@ -28,7 +28,7 @@ test('mixed analysis intent accepts saved media plus new files and keeps old new
  assert.deepEqual(Array.from(api.parseUploadIntent(JSON.stringify(mixed),1,8).existingMediaIds),[31,32]);
  assert.deepEqual(Array.from(api.parseUploadIntent(JSON.stringify(intent),1,8).existingMediaIds),[]);
  for(const ids of [[31,31],[0],['31'],[31,32,33,34,35]])assert.throws(()=>api.parseUploadIntent(JSON.stringify({...mixed,existingMediaIds:ids}),1,8));
- assert.throws(()=>api.parseUploadIntent(JSON.stringify({...mixed,existingMediaIds:[31,32,33],images:[image,image]}),1,8),/toplamı 1 ile 4/);
+ assert.throws(()=>api.parseUploadIntent(JSON.stringify({...mixed,existingMediaIds:[31,32,33],images:[image,image]}),1,8),/toplamı en fazla 4/);
  assert.doesNotThrow(()=>api.parseUploadIntent(JSON.stringify({...mixed,existingMediaIds:[31],images:[]}),1,8));
 });
 test('native composer can analyze saved gallery media without requiring a new file',async()=>{
@@ -42,7 +42,8 @@ test('mixed composer limits new picker slots by already selected saved media',as
  const h=ui(),t=await mount(h,async()=>{},[31,32]);
  await renderer.act(async()=>button(t,'Galeriden Ekle').props.onPress());
  assert.equal(h.calls.length,0);
- assert.ok(text(t.toJSON()).includes('2 kayıtlı klinik görüntü seçildi'));
+ // Canonical count label from analysisComposerPresentation (4545099e): "4 / 4 görüntü seçildi · 2 kayıtlı · 2 yeni".
+ assert.ok(text(t.toJSON()).includes('4 / 4 görüntü seçildi · 2 kayıtlı · 2 yeni'));
  await renderer.act(async()=>{button(t,'Analizi Başlat').props.onPress();await new Promise(r=>setImmediate(r))});
  assert.equal(h.calls.length,1);assert.equal(h.calls[0].existingMediaIds.length,2);assert.equal(h.calls[0].images.length,2);
  await renderer.act(async()=>t.unmount());
@@ -51,7 +52,8 @@ test('four saved images disable additional native picker slots',async()=>{
  const h=ui(),t=await mount(h,async()=>{},[31,32,33,34]);
  assert.equal(button(t,'Galeriden Ekle').props.disabled,true);
  assert.equal(button(t,'Kameradan Ekle').props.disabled,true);
- assert.ok(text(t.toJSON()).includes('4 kayıtlı klinik görüntü seçildi'));
+ // Canonical count label from analysisComposerPresentation (4545099e): "4 / 4 görüntü seçildi · 4 kayıtlı".
+ assert.ok(text(t.toJSON()).includes('4 / 4 görüntü seçildi · 4 kayıtlı'));
  assert.ok(text(t.toJSON()).includes('4 / 4 görüntü'));
  await renderer.act(async()=>t.unmount());
 });
@@ -71,8 +73,12 @@ test('native multipart upload sends saved media IDs in the same request as new i
 test('recovered upload draft reports its original saved-media IDs to the gallery preview',async()=>{
  const saved={...intent,existingMediaIds:[31,32]},h=ui({},JSON.stringify(saved)),loaded=[];
  const t=await mount(h,async()=>{},[99],ids=>loaded.push(Array.from(ids)));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
  assert.deepEqual(loaded,[[31,32]]);
- assert.ok(text(t.toJSON()).includes('2 kayıtlı klinik görüntü seçildi'));
+ // Canonical count label from analysisComposerPresentation (4545099e); the restored draft also
+// re-mounts its saved encrypted image, so the label reports "· 2 kayıtlı · 1 yeni".
+ assert.ok(text(t.toJSON()).includes('· 2 kayıtlı'));
+ assert.ok(text(t.toJSON()).includes('· 1 yeni'));
  await renderer.act(async()=>t.unmount());
 });
 test('definitive missing saved-media response releases the stale local intent',async()=>{
@@ -172,6 +178,9 @@ test('native analysis composer gives a neutral fallback when patient age and com
 test('cancelling an active analysis transfer preserves the durable intent for receipt reconciliation',async()=>{
  let signal;const h=ui({uploadAnalysis:async(_token,_intent,progress,activeSignal)=>{signal=activeSignal;progress(25,256,1024);return new Promise((_resolve,reject)=>activeSignal.addEventListener('abort',()=>reject(Object.assign(new Error('Synthetic uncertain transfer'),{status:408})),{once:true}))}});
  const t=await mount(h);
+ // The composer legitimately requires clinical context before send (canStartAnalysis contract);
+ // the transfer under test starts only after those fields are provided.
+ await renderer.act(async()=>{t.root.findByProps({accessibilityLabel:'Analiz FDI diş numaraları'}).props.onChangeText('36');t.root.findByProps({accessibilityLabel:'Analiz klinik bilgileri'}).props.onChangeText('Synthetic clinical note')});
  await renderer.act(async()=>{button(t,'Analizi Başlat').props.onPress();await new Promise(r=>setImmediate(r))});
  assert.ok(signal,'upload starts with an abort signal');
  assert.ok(text(t.toJSON()).includes('256 B / 1.0 KiB'));

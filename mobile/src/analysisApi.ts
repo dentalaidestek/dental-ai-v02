@@ -5,10 +5,6 @@ import {revalidateSession} from './sessionExpiry';
 
 const API_BASE="https://dentalai.tr/api/mobile/v1";
 
-// One shared native analysis image-count contract (restored: 16b0beb3 removed
-// the definition but left every importer and usage in place).
-export const ANALYSIS_MAX_IMAGES = 4;
-
 
 async function call<T>(path:string,token:string,options:RequestInit={}):Promise<T>{
   const controller=new AbortController(),external=options.signal,abort=()=>controller.abort();
