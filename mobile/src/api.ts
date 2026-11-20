@@ -1,6 +1,6 @@
 import {reportSessionExpiry,revalidateSession} from './sessionExpiry';
 import {normalizePatientDirectorySearch} from './patientDirectoryPresentation';
-const API_BASE = "https://dentalai.tr/api/mobile/v1";
+export const API_BASE = "https://dentalai.tr/api/mobile/v1";
 
 export type User={id:number;username:string;email?:string|null;display_name:string;role:string;is_active:boolean;email_verified_at?:string|null;professional_title?:string|null;specialty?:string|null;university?:string|null};
 export type Patient={id:number;tc_kimlik_no?:string|null;address?:string|null;anonymous_id:string;first_name?:string|null;last_name?:string|null;phone?:string|null;birth_date?:string|null;age?:number|null;chief_complaint?:string|null;created_at?:string};
