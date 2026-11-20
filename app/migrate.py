@@ -1,7 +1,7 @@
 """Explicit, serialized release migration: python -m app.migrate.
 
 The existing idempotent baseline DDL is retained; revision 2 adds durable work, provider reservations and immutable analysis-result pointers;
-revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata; revision 5 adds lazy visual page artifacts; revision 6 adds one-time email verification state; revision 9 adds shared authentication admission counters; revision 10 adds isolated email-change challenges; revision 11 adds consultation chat retention and a committed media-deletion outbox. revision 12 adds private membership-verification records; revision 15 adds native Program idempotency fields; revision 16 adds online owner-scoped Program and reminder queue indexes; revision 17 adds native Academic course-create receipts; revision 18 adds unique tooth-observation indexes; revision 19 adds the patient treatment-history keyset index. Web/workers only
+revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata; revision 5 adds lazy visual page artifacts; revision 6 adds one-time email verification state; revision 9 adds shared authentication admission counters; revision 10 adds isolated email-change challenges; revision 11 adds consultation chat retention and a committed media-deletion outbox. revision 12 adds private membership-verification records; revision 15 adds native Program idempotency fields; revision 16 adds online owner-scoped Program and reminder queue indexes; revision 17 adds native Academic course-create receipts; revision 18 adds unique tooth-observation indexes; revision 19 adds the patient treatment-history keyset index; revision 20 adds a partial pending-reminder queue index. Web/workers only
 check the revision in production, avoiding repeated boot-time DDL/backfills.
 """
 import logging
@@ -460,7 +460,7 @@ def _upgrade_treatment_history_index(main):
                     text("SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)"),
                     {"name": index_name},
                 ).scalar()
-                if revision == TREATMENT_HISTORY_INDEX_REVISION:
+                if revision in (TREATMENT_HISTORY_INDEX_REVISION, REVISION):
                     columns = inspect(connection).get_indexes("treatment")
                     if valid is not True or not any(
                         item.get("name") == index_name and item.get("column_names") == expected_columns
@@ -515,7 +515,7 @@ def _upgrade_treatment_history_index(main):
             indexes = inspect(connection).get_indexes("treatment")
             present = any(item.get("name") == index_name and item.get("column_names") == expected_columns
                           for item in indexes)
-            if revision == TREATMENT_HISTORY_INDEX_REVISION:
+            if revision in (TREATMENT_HISTORY_INDEX_REVISION, REVISION):
                 if not present:
                     raise RuntimeError("Treatment history index is missing at revision 19")
                 return True
@@ -838,6 +838,8 @@ def _apply_baseline():
 def apply():
     _apply_baseline()
     from app import main
+    if not _upgrade_program_reminder_pending_index(main):
+        raise RuntimeError("Could not apply Program pending reminder index revision 20")
     from app.expert_social_schema import apply as apply_social_schema
     apply_social_schema(main.engine)
 
