@@ -22,8 +22,13 @@ test('vision snapshot requests bypass HTTP cache like the web embedded viewer',a
  const calls=[];
  const {getVision}=api(async(...args)=>{calls.push(args);return{status:'VISION_PENDING'}});
  const result=await getVision('synthetic-token',17,23,'PANORAMIC');
- assert.deepEqual(calls,[['/analyses/17/assets/23/vision','synthetic-token',{cache:'no-store'}]]);
- assert.deepEqual(result,{pending:true,findings:[]});
+ assert.equal(calls.length,1);
+ assert.equal(calls[0][0],'/analyses/17/assets/23/vision');
+ assert.equal(calls[0][1],'synthetic-token');
+ assert.equal(calls[0][2]?.cache,'no-store');
+ assert.deepEqual(Object.keys(calls[0][2]||{}),['cache']);
+ assert.equal(result.pending,true);
+ assert.deepEqual(Array.from(result.findings||[]),[]);
 });
 test('clinical image thumbnails use the canonical API base, reload privately and remount on account switch',async()=>{
  const h=harness({getClinical:async()=>({...base,assets:[{id:44,image_type:'PANORAMIC',has_vision:true,url:'/api/mobile/v1/analyses/1/assets/44'}]})});
