@@ -1990,11 +1990,13 @@ def test_mobile_original_media_file_route_is_the_single_mounted_hardened_handler
     # FastAPI may retain included routers as lazy router entries rather than
     # flattening every APIRoute into app.routes. OpenAPI is the public mounted
     # route surface and remains stable across that internal representation.
-    mounted_paths = [
+    mounted_mobile_paths = [
         path for path, operations in main.app.openapi().get("paths", {}).items()
-        if path.rstrip("/").endswith(route_suffix) and "get" in operations
+        if path.rstrip("/") == "/api/mobile/v1" + route_suffix and "get" in operations
     ]
-    assert len(mounted_paths) == 1
+    # The unprefixed path is the separate web download route, not a second
+    # mobile handler. Count only the canonical /api/mobile/v1 endpoint here.
+    assert mounted_mobile_paths == ["/api/mobile/v1" + route_suffix]
     assert "app.include_router(mobile_router)" in inspect.getsource(main)
 
     # The modern adapter must not shadow the canonical original-file route.
