@@ -12,6 +12,10 @@ const presentationExports={};
 const presentationSource=fs.readFileSync(require.resolve('../src/patientAnalysisPresentation.ts'),'utf8');
 const presentationCode=ts.transpileModule(presentationSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
 vm.runInNewContext(presentationCode,{exports:presentationExports});
+const historyPresentationExports={};
+const historyPresentationSource=fs.readFileSync(require.resolve('../src/patientHistoryPresentation.ts'),'utf8');
+const historyPresentationCode=ts.transpileModule(historyPresentationSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+vm.runInNewContext(historyPresentationCode,{exports:historyPresentationExports,Date,Math,Number,String,Error,Promise,Array,Object});
 
 function loadHistory({assets,legacy=true}){
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativePatientHistory.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2020}}).outputText;
@@ -38,6 +42,7 @@ function loadHistory({assets,legacy=true}){
    if(name==='./analysisApi')return analysisApi;
    if(name==='./realtime')return {useRealtime:()=>({lastEvent:null})};
    if(name==='./patientAnalysisPresentation')return presentationExports;
+   if(name==='./patientHistoryPresentation')return historyPresentationExports;
    throw new Error('Unexpected import '+name);
   },
   Date,Math,Number,String,Error,Promise,Array,Object
@@ -75,6 +80,19 @@ test('patient history loads legacy radiograph only through the authenticated pro
  await renderer.act(async()=>tree.unmount());
 });
 
+
+test('native history cards expose the web detail action and stable status/date labels',async()=>{
+ const History=loadHistory({assets:[],legacy:false});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(History,{token:'synthetic-token',patientId:8}));await flush()});
+ const texts=tree.root.findAllByType('Text').map(node=>String(node.props.children));
+ assert.ok(texts.includes('Analiz #41'));
+ assert.ok(texts.includes('Detay'));
+ assert.ok(texts.includes('Başarılı'));
+ assert.ok(texts.some(value=>value.includes('20.11.2026')||value.includes('17.11.2026')));
+ await renderer.act(async()=>tree.unmount());
+});
+
 test('existing RADIOGRAPH assets suppress the legacy fallback',async()=>{
  const History=loadHistory({assets:[{id:9,original_filename:'bitewing.png',image_type:'RADIOGRAPH',has_vision:false}],legacy:true});
  let tree;
@@ -91,7 +109,7 @@ test('existing RADIOGRAPH assets suppress the legacy fallback',async()=>{
 test('native analysis status matches the web profile status labels',()=>{
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativePatientHistory.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const exports={};
- vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?{AppState:{addEventListener:()=>({remove(){}})},ActivityIndicator:'ActivityIndicator',Image:'Image',Modal:'Modal',Pressable:'Pressable',ScrollView:'ScrollView',Text:'Text',View:'View'}:name==='@react-navigation/native'?{useIsFocused:()=>true}:name==='./modernApi'?{}:name==='./analysisApi'?{}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='./patientAnalysisPresentation'?presentationExports:{}});
+ vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?{AppState:{addEventListener:()=>({remove(){}})},ActivityIndicator:'ActivityIndicator',Image:'Image',Modal:'Modal',Pressable:'Pressable',ScrollView:'ScrollView',Text:'Text',View:'View'}:name==='@react-navigation/native'?{useIsFocused:()=>true}:name==='./modernApi'?{}:name==='./analysisApi'?{}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='./patientAnalysisPresentation'?presentationExports:name==='./patientHistoryPresentation'?historyPresentationExports:{}});
  assert.equal(exports.analysisStatus({status:'AI_ANALYZED'}),'Başarılı');
  assert.equal(exports.analysisStatus({status:'AI_FINAL'}),'Yarım kaldı');
  assert.equal(exports.analysisStatus({status:'FAILED'}),'Başarısız');
