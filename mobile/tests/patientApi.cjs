@@ -373,3 +373,17 @@ test('tooth treatment history rejects invalid ids, FDI values and cross-tooth re
  }finally{global.fetch=original}
 });
 
+
+test('patient profile keeps tooth-chart data opt-in while chart reads request it explicitly',async()=>{
+ const original=global.fetch,urls=[];
+ const body={patient:{id:8},edit_revision:'a'.repeat(64),teeth:[],surfaces:[],treatments:[],media:[]};
+ global.fetch=async url=>{urls.push(String(url));return reply(body)};
+ try{
+  const profile=await getPatient('token',8);
+  assert.deepEqual(profile.teeth,[]);
+  await getPatient('token',8,true);
+  assert.equal(urls.length,2);
+  assert.match(urls[0],/\/patients\/8$/,'ordinary profile reads must not request chart collections');
+  assert.match(urls[1],/\/patients\/8\?include_chart=true$/,'tooth-chart reads must explicitly request FDI data');
+ }finally{global.fetch=original}
+});
