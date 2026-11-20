@@ -66,11 +66,11 @@ export async function getPatients(token:string,q="",offset=0){
  return result;
 }
 const validTreatmentHistoryCursor=(value:unknown):value is string=>typeof value==="string"&&/^[A-Za-z0-9_-]{24,512}$/.test(value);
-export async function getPatient(token:string,id:number,includeChart=false){
+export async function getPatient(token:string,id:number,includeChart=false,includeMedia=false){
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz hasta kimliği.");
- // Profile reads stay lean; only the dedicated tooth-chart screen opts into
- // the bounded FDI status/surface collections.
- const path="/patients/"+id+"?include_chart="+(includeChart?"true":"false");
+ // Current native screens opt into only the data they render. Legacy clients
+ // that omit these query flags keep the original full detail response.
+ const path="/patients/"+id+"?include_chart="+(includeChart?"true":"false")+"&include_media="+(includeMedia?"true":"false");
  const result=await request<PatientDetail>(path,token);
  if(!result?.patient||result.patient.id!==id||
     (result.edit_revision!==undefined&&(typeof result.edit_revision!=="string"||!/^[a-f0-9]{64}$/.test(result.edit_revision)))||
