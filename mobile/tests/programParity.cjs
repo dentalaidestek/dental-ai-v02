@@ -8,7 +8,7 @@ function component(file,api){
  const exports={},native={StyleSheet:{create:x=>x},AppState:{addEventListener:()=>({remove(){}})},BackHandler:{addEventListener:()=>({remove(){}})},Alert:{alert:(...args)=>api.onAlert?.(...args)},PanResponder:{create:()=>({panHandlers:{}})},...Object.fromEntries(['ActivityIndicator','FlatList','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
  native.FlatList=props=>React.createElement('FlatList',props,props.ListHeaderComponent,...(props.data||[]).map((item,index)=>React.createElement(React.Fragment,{key:item.key},props.renderItem?.({item,index}))),props.ListEmptyComponent&&!(props.data||[]).length?props.ListEmptyComponent:null,props.ListFooterComponent);
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/'+file+'.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
- vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true,usePreventRemove:()=>{}}:name==='./programApi'?{checkProgramConflicts:async()=>({advisory:true,total:0,items:[]}),getProgramMutation:async()=>({state:'NOT_FOUND'}),verifyProgramAction:async()=> 'UNKNOWN',...api}:name==='./programIntent'?{loadProgramRequestKey:async()=>null,getOrCreateProgramRequestKey:async()=> 'program-request-key-00000001',clearProgramRequestKey:async()=>{},loadProgramActionIntent:async()=>null,saveProgramActionIntent:async()=>{},clearProgramActionIntent:async()=>{},...api}:name==='./programInlineAdd'?require('../src/programInlineAdd.ts'):name==='./programModel'?require('../src/programModel.ts'):name==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'SYNTHETIC',first_name:'Synthetic'}})}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:{default:name.slice(2)}});
+ vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true,usePreventRemove:()=>{},useNavigation:()=>({navigate:(...args)=>api.onNavigate?.(...args)})}:name==='./programApi'?{checkProgramConflicts:async()=>({advisory:true,total:0,items:[]}),getProgramMutation:async()=>({state:'NOT_FOUND'}),verifyProgramAction:async()=> 'UNKNOWN',...api}:name==='./programIntent'?{loadProgramRequestKey:async()=>null,getOrCreateProgramRequestKey:async()=> 'program-request-key-00000001',clearProgramRequestKey:async()=>{},loadProgramActionIntent:async()=>null,saveProgramActionIntent:async()=>{},clearProgramActionIntent:async()=>{},...api}:name==='./programInlineAdd'?require('../src/programInlineAdd.ts'):name==='./programModel'?require('../src/programModel.ts'):name==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'SYNTHETIC',first_name:'Synthetic'}})}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:{default:name.slice(2)}});
  return exports.default;
 }
 const button=(tree,label)=>tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>text(child)===label));
@@ -454,5 +454,36 @@ test('native Program editor applies the inline-add date and preserves the sugges
  assert.equal(startDate.props.value,'2030-01-09');
  assert.equal(endDate.props.value,'2030-01-09');
  assert.equal(startTime.props.value,'10:00');
+ await renderer.act(async()=>tree.unmount());
+});
+
+
+test('web patient link in a Program card opens the matching native patient profile',async()=>{
+ const calls=[];
+ const data=page();
+ data.items=[{...data.items[0],patient_id:8,patient_name:'Synthetic Patient'}];
+ const Program=component('NativeProgram',{getProgram:async()=>data,onNavigate:(...args)=>calls.push(args)});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'token',userId:1}));await tick()});
+ const link=tree.root.findByProps({accessibilityLabel:'Hasta profilini aç: Synthetic Patient'});
+ assert.equal(link.props.accessibilityRole,'link');
+ await renderer.act(async()=>link.props.onPress());
+ assert.deepEqual(calls,[['AppTabs',{screen:'Patients',params:{screen:'PatientDetail',params:{id:8}}}]]);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('Program cards mirror web event type, recurrence, completion and today labels',async()=>{
+ const data=page();
+ data.items=[{...data.items[0],status:'COMPLETED',recurrence_rule:'WEEKLY'}];
+ const Program=component('NativeProgram',{getProgram:async()=>data});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Program,{token:'token',userId:1}));await tick()});
+ assert.equal(tree.root.findAllByProps({testID:'program-event-type-1'}).length,1);
+ assert.equal(tree.root.findAllByProps({testID:'program-event-status-1'}).length,1);
+ assert.equal(tree.root.findAllByProps({testID:'program-day-today-2030-01-07'}).length,1);
+ assert.ok(text(tree.toJSON()).includes('Hasta / Randevu'));
+ assert.ok(text(tree.toJSON()).includes('Her hafta'));
+ assert.ok(text(tree.toJSON()).includes('Tamamlandı'));
+ assert.ok(text(tree.toJSON()).includes('Bugün'));
  await renderer.act(async()=>tree.unmount());
 });
