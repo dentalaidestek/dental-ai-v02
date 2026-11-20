@@ -502,6 +502,11 @@ def test_mobile_patient_media_upload_receipt_replays_once_and_is_owner_scoped(ch
     }, files={"file": ("synthetic.png", payload, "image/png")})
     assert first.status_code == 200, first.text
     assert first.json()["replayed"] is False
+    first_media = first.json()["media"]
+    assert isinstance(first_media["uploaded_at"], str)
+    assert set(first_media) == {
+        "id", "original_filename", "media_type", "tooth_number", "note", "uploaded_at",
+    }, "the durable receipt must not expose storage references or fingerprints"
 
     replay = client.post("/api/mobile/v1/patients/84/media", data={
         "media_type": "PHOTO", "request_key": key,
@@ -509,6 +514,7 @@ def test_mobile_patient_media_upload_receipt_replays_once_and_is_owner_scoped(ch
     assert replay.status_code == 200, replay.text
     assert replay.json()["replayed"] is True
     assert replay.json()["media"]["id"] == first.json()["media"]["id"]
+    assert replay.json()["media"]["uploaded_at"] == first_media["uploaded_at"]
     assert len(persisted) == 1, "replayed upload must not persist a second object"
 
     status = client.get(f"/api/mobile/v1/patients/84/media/uploads/{key}")
