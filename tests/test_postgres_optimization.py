@@ -738,8 +738,9 @@ def _explain_analyze_index_names(connection, statement, params=None):
 def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
     engine, _, _ = pg
     # Synthetic only: 60k distinct accounts plus a deliberately busy account.
-    # Terminal reminders remain in the due-time range so the planner must use
-    # the (status, run_at) index to skip history rather than scan DONE rows.
+    # The due scan sees terminal past jobs, pending future jobs and a small due
+    # subset; both single-column indexes are costly, so (status, run_at) is the
+    # selective ordered path rather than relying on a fragile tiny-table plan.
     with engine.begin() as connection:
         connection.execute(text("SET LOCAL TIME ZONE 'UTC'"))
         connection.execute(text("""
@@ -773,6 +774,15 @@ def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
             SELECT 100000+n,100000+n,now()-interval '30 minutes',now()-interval '30 minutes',30,
                    now()-interval '30 days','scale-terminal-' || n,'DONE',0,NULL,
                    now()-interval '30 days',now()-interval '29 minutes'
+            FROM generate_series(1,60000) AS n
+        """))
+        connection.execute(text("""
+            INSERT INTO programreminderjob
+                (schedule_event_id,owner_user_id,occurrence_start_at,run_at,reminder_minutes,
+                 event_updated_at,dedup_key,status,attempts,last_error,created_at,completed_at)
+            SELECT 200000+n,100000+n,now()+interval '2 days',now()+interval '2 days',30,
+                   now()-interval '30 days','scale-future-' || n,'PENDING',0,NULL,
+                   now()-interval '30 days',NULL
             FROM generate_series(1,60000) AS n
         """))
         connection.execute(text("""
