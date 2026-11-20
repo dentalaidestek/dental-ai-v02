@@ -404,8 +404,9 @@ def enqueue_replaced_account_asset_cleanup(
     """Queue only a superseded allowlisted account asset in the caller's transaction.
 
     The collector re-checks every supported metadata owner before deleting. A
-    same-path upload is a no-op, which matters for content-addressed profile
-    photos where uploading identical bytes reuses the existing object key.
+    same-path replacement is a no-op for idempotent callers and legacy references.
+    New profile-photo uploads use unique keys so an old receipt cannot target a
+    later upload of identical image bytes.
     """
     if not previous_reference or previous_reference == current_reference:
         return False
