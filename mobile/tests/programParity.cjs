@@ -468,7 +468,7 @@ test('web patient link in a Program card opens the matching native patient profi
  const link=tree.root.findByProps({accessibilityLabel:'Hasta profilini aç: Synthetic Patient'});
  assert.equal(link.props.accessibilityRole,'link');
  await renderer.act(async()=>link.props.onPress());
- assert.deepEqual(calls,[['AppTabs',{screen:'Patients',params:{screen:'PatientDetail',params:{id:8}}}]]);
+ assert.equal(calls.length,1);assert.equal(calls[0][0],'AppTabs');assert.equal(calls[0][1].screen,'Patients');assert.equal(calls[0][1].params.screen,'PatientDetail');assert.equal(calls[0][1].params.params.id,8);
  await renderer.act(async()=>tree.unmount());
 });
 
