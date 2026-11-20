@@ -57,5 +57,6 @@ Corrections:
 3. Exported the one canonical mobile API base and reused it for clinical image requests.
 4. Added cache: reload to private clinical image sources and an account-scoped React key for profile thumbnails, so an account change remounts the image instead of reusing the previous account's rendered component.
 5. Added a renderer regression for API base, forced reload, Authorization replacement and account-scoped remount.
+6. Native vision snapshot reads now explicitly use no-store, matching the web embedded viewer even though the backend already sends private no-store headers; a regression verifies the fetch option and pending response contract.
 
 These changes are committed; the new HEAD still requires hosted CI execution. No claim of green post-fix tests is made here. No main merge, production deploy, clinical record mutation or store publication.
