@@ -206,7 +206,7 @@ export const getConsultation=async(t:string,id:number,before?:number)=>{
 export const getConsultationUpdates=async(t:string,id:number,afterId:number)=>{
  if(!Number.isSafeInteger(id)||id<=0||!Number.isSafeInteger(afterId)||afterId<0)
   throw Error("Geçersiz görüşme veya devam mesajı.");
- const result=await req<{case:any;messages:ChatMessage[];has_more:boolean;next_after?:number|null}>(`/consultations/${id}/messages-live?after_id=${encodeURIComponent(afterId)}`,t);
+ const result=await req<{case:any;messages:ChatMessage[];has_more:boolean;next_after?:number|null}>(`/consultations/${id}/messages-live?after_id=${encodeURIComponent(afterId)}`,t,{method:'GET'});
  const cursor=result?.next_after??null;
  if(!result?.case||result.case.id!==id||typeof result.case.status!=="string"||
     !Array.isArray(result.messages)||result.messages.length>100||typeof result.has_more!=="boolean"||

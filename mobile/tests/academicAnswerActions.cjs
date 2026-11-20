@@ -5,19 +5,19 @@ function compile(file){return ts.transpileModule(fs.readFileSync(require.resolve
 function loadHelper(){
  const file='../src/academicAnswerActions.ts',result=compile(file),errors=(result.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error);
  assert.deepEqual(errors,[],file);
- const exports={};vm.runInNewContext(result.outputText,{exports});return exports;
+ const exports={};vm.compileFunction(result.outputText,['exports'])(exports);return exports;
 }
 function loadAcademicApi(request){
  const file='../src/academicApi.ts',result=compile(file),errors=(result.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error);
  assert.deepEqual(errors,[],file);
- const exports={};vm.runInNewContext(result.outputText,{exports,require:name=>name==='./api'?{request}:{}});return exports;
+ const exports={};vm.compileFunction(result.outputText,['exports','require'])(exports,name=>name==='./api'?{request}:{});return exports;
 }
 function loadComponent(feedback,share){
  const file='../src/NativeAcademicAnswerActions.tsx',result=compile(file),errors=(result.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error);
  assert.deepEqual(errors,[],file);
  const exports={},helper=loadHelper();
  const native={Pressable:'Pressable',Share:{share},Text:'Text',View:'View'};
- vm.runInNewContext(result.outputText,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='./academicApi'?{feedback}:name==='./academicAnswerActions'?helper:{}});
+ vm.compileFunction(result.outputText,['exports','require'])(exports,name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='./academicApi'?{feedback}:name==='./academicAnswerActions'?helper:{});
  return exports.default;
 }
 const nodeText=node=>typeof node==='string'?node:!node?'':(node.children||[]).map(nodeText).join('');
