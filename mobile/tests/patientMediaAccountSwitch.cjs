@@ -60,7 +60,7 @@ function mountMedia(getMedia, options={}){
    uploadPatientMedia:async(...args)=>options.onUpload?options.onUpload(...args):({media:{id:1,original_filename:'synthetic.png',media_type:'PHOTO'},replayed:false})
   };
   if(name==='./modernApi')return {getMedia,analyzeSelectedPatientMedia:async()=>({analysis_id:1}),deleteMedia:async(...args)=>options.onDelete?.(...args),deleteAllPatientMedia:async(...args)=>options.onDelete?.(...args)};
-  if(name==='./realtime')return {useRealtime:()=>({lastEvent:null})};
+  if(name==='./realtime')return {useRealtime:()=>({lastEvent:options.getLastEvent?options.getLastEvent():(options.lastEvent||null)})};
   if(name==='./NativeAnalysisUpload')return {default:props=>React.createElement('NativeAnalysisUpload',props)};
   if(name==='expo-file-system/legacy')return {getInfoAsync:async uri=>({uri,exists:true,size:1064,isDirectory:()=>false})};
   if(name==='./sessionExpiry')return {revalidateSession:async()=>{}};
@@ -204,7 +204,7 @@ test('gallery selection and pagination are restricted to the loaded patient scop
 
 test('refresh is blocked during unresolved mutation and paging callback observes current scope',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
- assert.match(source,/if\(loadLock\.current\|\|\(more&&\(mutation\.current\|\|uncertain\|\|loadedOwner!==owner\)\)\)return;/);
+ assert.match(source,/if\(loadLock\.current\)\{if\(!more&&current\(\)\)refreshPending\.current=true;return;\}/);\n assert.match(source,/refreshPending\.current&&!mutation\.current/);
  assert.match(source,/onRefresh=\{\(\)=>\{if\(!mutation\.current&&!uncertain&&loadedOwner===owner\)void loader\.current\(\)\}\}/);
  assert.match(source,/\[token,patientId,cursor,uncertain,loadedOwner\]/);
 });
@@ -547,4 +547,35 @@ test('clinical gallery refreshes on focus and app foreground without polling',as
  assert.equal(listeners.size,1);
  await renderer.act(async()=>tree.unmount());
  assert.equal(listeners.size,0,'unmount removes the app-state listener');
+});
+
+ 
+test('realtime media events during cursor paging coalesce into one refresh after the page settles',async()=>{
+ const calls=[],pending=[];let event=null;
+ const Media=mountMedia(async(_token,_patient,before)=>{
+  calls.push(before??null);
+  return new Promise(resolve=>pending.push({before,resolve}));
+ },{getLastEvent:()=>event});
+ const props={token:'account',patientId:8,onAnalysis:()=>{}};
+ const flush=()=>new Promise(resolve=>setImmediate(resolve));
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,props));await flush()});
+ assert.deepEqual(calls,[null]);
+ await renderer.act(async()=>{pending.shift().resolve({items:[{id:50,url:'https://example.invalid/50.jpg',media_type:'PHOTO'}],next_before:50});await flush()});
+ await pressByAccessibilityLabel(tree,'Klinik görselleri aç');
+ assert.deepEqual(calls,[null,null],'opening the gallery refreshes the first page');
+ await renderer.act(async()=>{pending.shift().resolve({items:[{id:50,url:'https://example.invalid/50.jpg',media_type:'PHOTO'}],next_before:50});await flush()});
+ const list=tree.root.findByType('FlatList');
+ await renderer.act(async()=>{list.props.onEndReached();await flush()});
+ assert.deepEqual(calls,[null,null,50]);
+ event={event_type:'PATIENT_MEDIA_CREATED',payload:{patient_id:8,media_id:51}};
+ await renderer.act(async()=>{tree.update(React.createElement(Media,{...props,pulse:1}));await flush()});
+ event={event_type:'PATIENT_MEDIA_DELETED',payload:{patient_id:8,media_id:49}};
+ await renderer.act(async()=>{tree.update(React.createElement(Media,{...props,pulse:2}));await flush()});
+ assert.deepEqual(calls,[null,null,50],'realtime refresh must wait instead of being dropped or overlapping the page request');
+ await renderer.act(async()=>{pending.shift().resolve({items:[{id:40,url:'https://example.invalid/40.jpg',media_type:'PHOTO'}],next_before:null});await flush()});
+ assert.deepEqual(calls,[null,null,50,null],'one coalesced first-page refresh runs after paging unlocks');
+ await renderer.act(async()=>{pending.shift().resolve({items:[{id:51,url:'https://example.invalid/51.jpg',media_type:'PHOTO'}],next_before:null});await flush()});
+ assert.ok(tree.root.findAllByType('Image').some(node=>String(node.props.source?.uri).includes('/51.jpg')));
+ await renderer.act(async()=>tree.unmount());
 });
