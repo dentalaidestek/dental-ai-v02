@@ -928,18 +928,20 @@ def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
         engine,
         """
         SELECT id FROM programreminderjob
-        WHERE status='PENDING' AND run_at <= now()
+        WHERE status=:status AND run_at <= now()
         ORDER BY run_at LIMIT 100
         FOR UPDATE SKIP LOCKED
         """,
+        {'status': 'PENDING'},
     )
     wakeup_plan = _explain_analyze_index_names(
         engine,
         """
         SELECT run_at FROM programreminderjob
-        WHERE status='PENDING'
+        WHERE status=:status
         ORDER BY run_at LIMIT 1
         """,
+        {'status': 'PENDING'},
     )
     assert 'ix_scheduleevent_owner_start_at' in range_plan
     assert {'ix_scheduleevent_owner_created_at','ix_scheduleevent_owner_updated_at'} & snapshot_plan
