@@ -3104,20 +3104,30 @@ async def mobile_patient_media_file(patient_id: int, media_id: int, user: User =
     # Resolve the owner and immutable storage reference in a short DB session.
     # R2 hydration runs outside the pool; ownership and source identity are then
     # checked again immediately before the original is returned to the client.
-    with Session(engine, expire_on_commit=False) as session:
-        patient = session.get(Patient, patient_id)
-        media = session.get(PatientMedia, media_id)
-        if (
-            not patient
-            or patient.owner_user_id != user.id
-            or not media
-            or media.patient_id != patient_id
-            or media.owner_user_id != user.id
-            or not media.file_path
-        ):
-            return private_error(404, "Görüntü bulunamadı.")
-        file_path = media.file_path
-        original_filename = media.original_filename
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            patient = session.get(Patient, patient_id)
+            media = session.get(PatientMedia, media_id)
+            if (
+                not patient
+                or patient.owner_user_id != user.id
+                or not media
+                or media.patient_id != patient_id
+                or media.owner_user_id != user.id
+                or not media.file_path
+            ):
+                return private_error(404, "Görüntü bulunamadı.")
+            file_path = media.file_path
+            original_filename = media.original_filename
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Clinical media original authorization lookup failed for media_id=%s", media_id
+        )
+        return private_error(
+            503,
+            "Klinik görüntü güvenli biçimde doğrulanamadı; lütfen yeniden deneyin.",
+            retry_after="2",
+        )
 
     try:
         path = await run_in_threadpool(storage_ensure_local, file_path)
