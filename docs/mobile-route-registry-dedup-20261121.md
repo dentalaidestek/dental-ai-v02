@@ -53,3 +53,24 @@ This is **not** a repository pytest run. The actual Security Recovery pytest job
 - No schema migration was added or run.
 - PR #257 remains open and Draft.
 - No main merge, production deploy, APK/IPA publication, or store release.
+
+
+## Follow-up after the first hosted execution — 2026-11-21
+
+The next available hosted run provided source-level evidence that was not available at the starting head:
+
+- Android run #4364: TypeScript typecheck, session/auth, and realtime/pagination steps passed. The beta suite failed on two stale source-contract assertions; the APK job had started but was not yet complete at the time of this check.
+- Security Recovery run #2062: native clinical, native Program, native voice, and native Academic jobs passed. Native Social failed one source-contract assertion (79/80 passed). The Python/PostgreSQL security job was still running; no final result is claimed.
+
+Both beta failures were caused by tests that still asserted the old inline route-registry implementation:
+
+1. mobile/tests/social.cjs expected the removed _mobile_mounted_routes marker.
+2. mobile/tests/patientMediaRoute.cjs expected a direct mobile_modern_router.routes list-comprehension assignment.
+
+The implementation had deliberately moved to the pure app.mobile_route_registry.remove_shadowed_routes helper. The tests were updated to verify the helper import, canonical-router-before-modern-router order, and the continued presence of both canonical and adapter route declarations. The assertions now use literal source contracts rather than brittle escaped regexes.
+
+The updated Social and clinical-media test source was read back from the branch. Ten focused source-contract assertions passed against the current GitHub file contents; the route helper's six isolated behavior cases also passed. These checks do not replace the repository Node test run.
+
+After the two test fixes, current head is 86f0d34e296aabbfd968241505b4d38d39b0d167. Security Recovery run #2066 is pending and has no job records yet. No exact-head Android run was present in the latest lookup. Therefore the two stale assertions are fixed in source, but their hosted rerun is still outstanding. The Python/PostgreSQL result from run #2062 also remains unverified.
+
+No main merge, production deployment, schema migration, patient-record mutation, or store publication occurred.
