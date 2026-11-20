@@ -3,6 +3,7 @@ from app import main, mobile_analysis_api, mobile_api, mobile_modern_api_v3
 from app.work_jobs import WorkJob, prune_history
 from sqlmodel import Session, select
 from datetime import datetime, timedelta
+from pathlib import Path
 from PIL import Image
 import io
 import json
@@ -495,8 +496,9 @@ def test_mobile_patient_media_upload_receipt_replays_once_and_is_owner_scoped(ch
     Image.new("RGB", (16, 12), (10, 20, 30)).save(raw, format="PNG")
     payload = raw.getvalue()
     key = "synthetic-media-upload-0001"
+    batch_id = "synthetic-media-batch-0001"
     first = client.post("/api/mobile/v1/patients/84/media", data={
-        "media_type": "PHOTO", "request_key": key,
+        "media_type": "PHOTO", "request_key": key, "batch_id": batch_id,
     }, files={"file": ("synthetic.png", payload, "image/png")})
     assert first.status_code == 200, first.text
     assert first.json()["replayed"] is False
@@ -691,8 +693,9 @@ def test_mobile_patient_media_preserves_extension_and_enforces_web_validation(ch
     raw = io.BytesIO()
     Image.new("RGB", (16, 12), (12, 24, 36)).save(raw, format="PNG")
     long_name = "x" * 300 + ".png"
+    batch_id = "synthetic-media-validation-batch-0001"
     saved = client.post("/api/mobile/v1/patients/86/media", data={
-        "media_type": "PHOTO", "request_key": "synthetic-media-long-name-0001",
+        "media_type": "PHOTO", "request_key": "synthetic-media-long-name-0001", "batch_id": batch_id,
     }, files={"file": (long_name, raw.getvalue(), "image/png")})
     assert saved.status_code == 200, saved.text
     with Session(engine) as session:
@@ -702,13 +705,13 @@ def test_mobile_patient_media_preserves_extension_and_enforces_web_validation(ch
 
     invalid_tooth = client.post("/api/mobile/v1/patients/86/media", data={
         "media_type": "PHOTO", "tooth_number": "56",
-        "request_key": "synthetic-media-invalid-fdi-0001",
+        "request_key": "synthetic-media-invalid-fdi-0001", "batch_id": batch_id,
     }, files={"file": ("synthetic.png", raw.getvalue(), "image/png")})
     assert invalid_tooth.status_code == 422
 
     monkeypatch.setattr(mobile_api, "MOBILE_MAX_PATIENT_MEDIA_BYTES", 64)
     oversized = client.post("/api/mobile/v1/patients/86/media", data={
-        "media_type": "PHOTO", "request_key": "synthetic-media-over-limit-0001",
+        "media_type": "PHOTO", "request_key": "synthetic-media-over-limit-0001", "batch_id": batch_id,
     }, files={"file": ("synthetic.png", raw.getvalue(), "image/png")})
     assert oversized.status_code == 413
 
@@ -1133,7 +1136,7 @@ def test_native_patient_media_delete_replay_is_idempotent_and_owner_scoped(chat,
         "already_deleted": True,
         "storage_cleanup_pending": None,
     }
-    assert deleted_paths == ["synthetic/private/880.png"]
+    assert set(deleted_paths) == {"synthetic/private/880.png", "synthetic/private/880.thumb.jpg"}
 
     # Existing media from another patient is never treated as an idempotent miss.
     assert client.delete("/api/mobile/v1/patients/88/media/890").status_code == 404
