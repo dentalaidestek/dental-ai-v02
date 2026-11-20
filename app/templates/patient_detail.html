@@ -305,6 +305,8 @@
 
         {% if treatments %}
         <div class="patient-history-list" id="patientTreatmentHistoryList" data-expanded="false">
+            {% set expanded = false %}
+            {% set first_page = true %}
             {% include "patient_treatment_history_items.html" %}
         </div>
         {% if treatments|length > 3 or treatments_has_more %}
