@@ -1,10 +1,10 @@
 const fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),assert=require('node:assert/strict'),{test}=require('node:test'),React=require('react'),renderer=require('react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
-const presentation={},resumePolicy={};
-const helperCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/patientVoiceHistoryPresentation.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
-vm.runInNewContext(helperCode,{exports:presentation});
-const refreshCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/patientVoiceHistoryRefresh.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
-vm.runInNewContext(refreshCode,{exports:resumePolicy});
+// Load the pure helper modules through require.extensions so they run in this realm:
+// deepStrictEqual on vm-realm arrays/prototypes would fail cross-realm comparisons.
+require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
+const presentation=require('../src/patientVoiceHistoryPresentation.ts');
+const resumePolicy=require('../src/patientVoiceHistoryRefresh.ts');
 const history=(value='Olumsuz beyan: sistemik rahatsızlık yok')=>({ok:true,revision:'a'.repeat(64),notice:'Önceki hekim onaylı sesli muayene kayıtlarıdır.',fields:{medical_history:{value,quote:'',analysis_id:17},medications:{value:'Metformin beyanı',quote:'',analysis_id:17},allergies:{value:'Olmadığı belirtildi: penisilin alerjisi',quote:'',analysis_id:17}}});
 function mount(getVoiceHistory,initialAppState='active'){
  const source=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativePatientVoiceHistory.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2020}}).outputText;
@@ -20,7 +20,7 @@ function mount(getVoiceHistory,initialAppState='active'){
   }
  };
  let event=null;
- vm.runInNewContext(source,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./voiceApi'?{getVoiceHistory}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:name==='./patientVoiceHistoryPresentation'?presentation:name==='./patientVoiceHistoryRefresh'?resumePolicy:{default:name.slice(2)}});
+ vm.runInNewContext(source,{exports,Error,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./voiceApi'?{getVoiceHistory}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:name==='./patientVoiceHistoryPresentation'?presentation:name==='./patientVoiceHistoryRefresh'?resumePolicy:{default:name.slice(2)}});
  return {
   Component:exports.default,
   setEvent:value=>{event=value},
@@ -30,7 +30,7 @@ function mount(getVoiceHistory,initialAppState='active'){
  };
 }
 const content=node=>typeof node==='string'?node:Array.isArray(node)?node.map(content).join(''):node?.children?node.children.map(content).join(''):'';
-const press=(tree,label)=>tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(item=>content(item)===label));
+const press=(tree,label)=>tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel===label||node.findAllByType('Text').some(item=>content(item)===label));
 test('approved anamnesis rows preserve negative statements and stable clinical ordering',()=>{
  const rows=presentation.patientVoiceHistoryRows({allergies:{value:'Alerjim yok',quote:'Alerjim yok',analysis_id:4},medical_history:{value:'Diyabet öyküsü',quote:'Şekerim var',analysis_id:3},medications:{value:'Metformin',quote:'Metformin',analysis_id:3}});
  assert.deepEqual(rows.map(row=>row.key),['medical_history','medications','allergies']);

@@ -194,7 +194,11 @@ test('clinical text API rejects invalid patient and oversized transcripts before
  try{
   await assert.rejects(()=>api.extractVoice('token',0,'muayene'),/geçerli bir hasta/);
   await assert.rejects(()=>api.extractVoice('token',3,'   '),/boş olamaz/);
-  await assert.rejects(()=>api.extractVoice('token',3,'a'.repeat(18001)),/18.000 karakteri/);
+  // The 18000 single-shot bound was replaced by the resumable web-sized chunk
+  // pipeline (12000-char chunks, 72000-char/216KB total contract, see
+  // "process long examinations in resumable web-sized chunks"). The boundary
+  // the API itself enforces before any network call is now the 72000 total.
+  await assert.rejects(()=>api.extractVoice('token',3,'a'.repeat(72001)),/72.000 karakteri/);
   await assert.rejects(()=>api.finalizeVoice('token',-1,{context:{},insights:[],uncertain:'',conversation_text:'metin'}),/geçerli bir hasta/);
   await assert.rejects(()=>api.finalizeVoice('token',3,{context:{},insights:[],uncertain:'',conversation_text:'a'.repeat(72001)}),/72.000 karakteri/);
   assert.equal(calls,0);

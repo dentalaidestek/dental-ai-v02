@@ -123,6 +123,7 @@ function contextFromVoiceReview(review:VoiceExtraction["review"]):Record<string,
 export async function extractVoice(token:string,patientId:number,transcript:string,options:ExtractVoiceOptions={}):Promise<VoiceExtraction>{
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Klinik değerlendirme için geçerli bir hasta seçin.");
  if(typeof transcript!=="string"||!transcript.trim())throw Error("Muayene metni boş olamaz. Metniniz korunuyor.");
+ if(transcript.length>72000)throw Error("Görüşme metni 72.000 karakteri aşamaz. Metniniz korunuyor.");
  const chunks=splitVoiceTranscript(transcript);
  if(!chunks.length)throw Error("Muayene metni boş olamaz. Metniniz korunuyor.");
  const sessionId=options.sessionId||("ephemeral_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2));
@@ -143,7 +144,7 @@ export async function extractVoice(token:string,patientId:number,transcript:stri
   const requestKey=sessionId.replace(/-/g,"").slice(0,24)+"_"+index+"_"+transcriptHash;
   const result=await send<VoiceExtraction>(token,`/patients/${patientId}/voice-exam/text`,{transcript:chunks[index],consent:true,context,request_key:requestKey});
   if(!result.review||typeof result.revision!=="string"||!/^[a-f0-9]{64}$/.test(result.revision))
-   throw Error("Klinik çıkarım yanıtı eksik. Metninizi koruyup tekrar deneyin.");
+   throw Error("Klinik çıkarım yanıtında muayene bilgileri bulunamadı. Metninizi koruyup tekrar deneyin.");
   if(revision&&revision!==result.revision)throw Error("Hasta dosyası görüşme sırasında değişti. Taslak korunuyor; güncel hasta bilgilerini yeniden kontrol edin.");
   revision=result.revision;review=mergeVoiceChunkReview(review,validateVoiceReview(result.review));
   await options.onCheckpoint?.({cursor:index+1,revision,review});

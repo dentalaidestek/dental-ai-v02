@@ -6,7 +6,11 @@ const source=fs.readFileSync(path.join(__dirname,'../App.tsx'),'utf8');
 test('patient profile appointment action carries selected patient identity',()=>{
  assert.match(source,/appointment:\(\)=>root\(\)\?\.navigate\("Program",\{patientId:id\}\)/);
  const profile=fs.readFileSync(path.join(__dirname,'../src/NativePatientProfile.tsx'),'utf8');
- assert.ok(profile.includes("['Randevu',actions.appointment]"));
+ // Quick actions were refactored into presentation-driven tiles; the appointment
+ // handler must still be wired through to actions.appointment.
+ assert.ok(profile.includes('appointment:actions.appointment'));
+ const presentationSrc=fs.readFileSync(path.join(__dirname,'../src/patientProfilePresentation.ts'),'utf8');
+ assert.ok(presentationSrc.includes("key: 'appointment'")&&presentationSrc.includes("label: 'Randevu'"));
 });
 test('program route passes patient context to native screen',()=>{
  assert.match(source,/name="Program"[^\n]*<NativePatientAppointment[^\n]*patientId=\{route\.params\.patientId\}/);
@@ -22,7 +26,9 @@ test('patient appointment uses verified patient ID and appointment event type',(
 });
 test('appointment form rejects malformed dates and duplicate submission',()=>{
  assert.match(editor,/programPayload\(/);
- assert.match(editor,/if\(lock\.current\|\|loading\|\|loadError\|\|uncertain\)return/);
+ // The save() guard also blocks on !intentReady (request-key receipt reconciliation);
+ // all four duplicate-submission guards remain, so allow that extra real gate.
+ assert.match(editor,/if\(lock\.current\|\|loading(?:\|\|!intentReady)?\|\|loadError\|\|uncertain\)return/);
  assert.match(editor,/lock\.current=true;setBusy\(true\)/);
  assert.match(editor,/lock\.current=false;setBusy\(false\)/);
  const model=fs.readFileSync(path.join(__dirname,'../src/programModel.ts'),'utf8');

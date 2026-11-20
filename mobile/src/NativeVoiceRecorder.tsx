@@ -365,7 +365,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
  return <View style={s.card}>
   <View style={s.header}>
    <View style={s.headerCopy}><Text style={s.eyebrow}>SESLİ MUAYENE</Text><Text style={s.title}>Görüşme kaydı</Text></View>
-   {view.audioStarted&&<View style={s.timerPill}><Text style={s.timer}>{formatVoiceElapsed(elapsedMs)}</Text></View>}
+   {(view.audioStarted||elapsedMs>0)&&<View style={s.timerPill}><Text style={s.timer}>{formatVoiceElapsed(elapsedMs)}</Text></View>}
   </View>
   <View style={s.hero}>
    {view.audioStarted&&<View style={[s.micCircle,recording&&s.micCircleActive]}><Text style={s.micGlyph}>🎙</Text></View>}

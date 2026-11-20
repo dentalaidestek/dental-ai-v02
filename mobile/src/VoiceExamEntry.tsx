@@ -32,8 +32,8 @@ function VoiceEvidence({item}:{item:{quote?:string;origin?:string;edited?:boolea
  </View>;
 }
 
-function ResultSection({name,items}:{name:string;items:unknown}){
- const [expanded,setExpanded]=useState(false);const rows=Array.isArray(items)?items:items==null?[]:[items];
+function ResultSection({name,items,defaultOpen=false}:{name:string;items:unknown;defaultOpen?:boolean}){
+ const [expanded,setExpanded]=useState(defaultOpen);const rows=Array.isArray(items)?items:items==null?[]:[items];
  return <View style={{borderWidth:1,borderColor:line,borderRadius:13,marginTop:12,overflow:"hidden"}}>
  <Pressable accessibilityRole="button" accessibilityState={{expanded}} onPress={()=>setExpanded(v=>!v)} style={{padding:14,flexDirection:"row",justifyContent:"space-between",alignItems:"center",backgroundColor:"#F6FAFD"}}>
  <Text style={{fontWeight:"800",color:navy,flex:1}}>{name} ({rows.length})</Text><Text style={{color:navy}}>{expanded?"−":"+"}</Text>
@@ -95,7 +95,14 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   const storageKey="dai.voice.patient.create."+userId;
   try{
    let requestKey=await SecureStore.getItemAsync(storageKey);
-   if(!requestKey){requestKey=Crypto.randomUUID().replace(/-/g,"");await SecureStore.setItemAsync(storageKey,requestKey);}
+   if(!requestKey){
+    // Web parity (voice-exam.js key()): the request key is pure 32-hex randomness.
+    // Strip the UUID version (index 12) and variant (index 16) nibbles so the derived
+    // key carries no UUID metadata, exactly like the web path.
+    const hex=Crypto.randomUUID().replace(/-/g,"");
+    requestKey=hex.slice(0,12)+"0"+hex.slice(13,16)+"0"+hex.slice(17);
+    await SecureStore.setItemAsync(storageKey,requestKey);
+   }
    const result=await createAnonymousVoicePatient(token,requestKey);
    if(accountScope.current!==requestScope)return;
    await SecureStore.deleteItemAsync(storageKey);
@@ -150,11 +157,15 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    }else if(forceFresh)activeSessionId=Crypto.randomUUID();
    forceFreshExtraction.current=false;
    setVoiceSessionId(activeSessionId);
-   const checkpointKey=userId?`dai.voice.extraction.${userId}.${patientId}.${activeSessionId}`:"";
+   // A session-suffixed checkpoint key is only safe when the session id itself is
+   // bounded; otherwise fall back to the legacy account-patient key so the
+   // checkpoint stays addressable and forceFresh deletes exactly what was written.
+   const sessionKeyValid=/^[A-Za-z0-9_-]{16,80}$/.test(activeSessionId);
+   const checkpointKey=userId?(sessionKeyValid?`dai.voice.extraction.${userId}.${patientId}.${activeSessionId}`:`dai.voice.extraction.${userId}.${patientId}`):"";
    const legacyCheckpointKey=userId?`dai.voice.extraction.${userId}.${patientId}`:"";
    let resume: {cursor:number;revision:string;review:VoiceExtraction["review"]}|undefined;
    if(userId){
-    if(legacyCheckpointKey)await extractionStore.deleteItemAsync(legacyCheckpointKey);
+    if(legacyCheckpointKey&&legacyCheckpointKey!==checkpointKey)await extractionStore.deleteItemAsync(legacyCheckpointKey);
     if(forceFresh){await extractionStore.deleteItemAsync(checkpointKey);}
     else{
      const raw=await extractionStore.getItemAsync(checkpointKey);
@@ -286,7 +297,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
       <Text style={{color:processing?muted:"#B42318",fontWeight:"700"}}>Randevu doğrulanmadı — taslaktan çıkar</Text>
      </Pressable>
     </View>}
-    {!!review.review.uncertain&&<ResultSection name="Belirsiz / doğrulanmamış beyanlar" items={review.review.uncertain}/>}
+    {!!review.review.uncertain&&<ResultSection name="Belirsiz / doğrulanmamış beyanlar" items={review.review.uncertain} defaultOpen/>}
     {!!review.review.appointment&&<Text style={{color:"#9A6700",marginTop:10,lineHeight:20}}>Randevu konuşmada geçiyor olabilir; kabul veya kesinleşme hekim tarafından ayrıca doğrulanmalıdır. Onay bölümünde tarih/saat seçilmeden randevu oluşturulmaz.</Text>}
     {!!lastRemoved&&<Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={undoRemovedItem} style={{paddingVertical:12}}><Text style={{color:"#1769AA",fontWeight:"800"}}>Son kaldırılan bulguyu geri al</Text></Pressable>}
     <Text style={{color:muted,marginTop:10}}>Bunlar taslak bilgilerdir; hasta dosyasına kaydedilmedi. Muayeneyi bitirince kaynaklı klinik değerlendirme otomatik hazırlanır; alanları düzenlerseniz yeniden çalıştırabilirsiniz.</Text>
@@ -294,7 +305,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    </View>}
    {finalResult&&<View style={{marginTop:18,borderTopWidth:1,borderTopColor:line,paddingTop:15}}>
     <Text style={{fontSize:18,fontWeight:"800",color:navy}}>Kaynaklı klinik değerlendirme</Text>
-    {reviewSections.map(([key,label])=><ResultSection key={key} name={label} items={finalResult[key]}/>)}
+    {reviewSections.map(([key,label])=><ResultSection key={key} name={label} items={finalResult[key]} defaultOpen/>)}
     <Text style={{color:"#B42318",marginTop:12}}>Hekim kontrolü gereklidir. Sonuç otomatik olarak hasta dosyasına yazılmaz.</Text>
    </View>}
    {finalResult&&review&&selected&&userId&&(!audioSession.started||audioSession.finished)&&<NativeVoiceApproval key={token+":"+selected.id+":"+review.revision} token={token} userId={userId} patientId={selected.id} review={review} labels={fieldLabels} onBusyChanged={setApplyBusy} onRecheck={()=>void recheckVoice()}/>}
