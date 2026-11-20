@@ -266,7 +266,7 @@ def retry(session, job):
 
 
 class WorkGarbage(SQLModel, table=True):
-    """Durable cleanup for generated results and private patient-media objects."""
+    """Durable cleanup for generated results, patient media and account-owned assets."""
     id: int | None = Field(default=None, primary_key=True)
     reference: str = Field(unique=True)
     available_at: datetime = Field(default_factory=lambda: now() + timedelta(days=1), index=True)
@@ -280,6 +280,14 @@ _PATIENT_MEDIA_OBJECT = re.compile(
 _GUEST_ANALYSIS_OBJECT = re.compile(
     r"uploads/guest_analysis_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)"
 )
+_ACCOUNT_ASSET_OBJECT = re.compile(
+    r"uploads/(?:"
+    r"profile_photos/user_[1-9][0-9]*_[0-9a-f]{16}\\.jpg|"
+    r"expert_credentials/user_[1-9][0-9]*/credential_[0-9a-f]{32}\\.(?:pdf|jpg|jpeg|png)|"
+    r"expert_title_changes/user_[1-9][0-9]*/title_[0-9a-f]{32}\\.(?:pdf|jpg|jpeg|png)|"
+    r"membership_documents/user_[1-9][0-9]*/[0-9a-f]{32}\\.(?:pdf|jpg|jpeg|png)"
+    r")"
+)
 
 
 def is_patient_media_reference(reference: str) -> bool:
@@ -290,6 +298,11 @@ def is_patient_media_reference(reference: str) -> bool:
 def is_guest_analysis_reference(reference: str) -> bool:
     """Accept only server-generated guest-analysis upload object keys."""
     return isinstance(reference, str) and _GUEST_ANALYSIS_OBJECT.fullmatch(reference) is not None
+
+
+def is_account_asset_reference(reference: str) -> bool:
+    """Accept only current server-generated profile and identity-document keys."""
+    return isinstance(reference, str) and _ACCOUNT_ASSET_OBJECT.fullmatch(reference) is not None
 
 
 def is_ai_result_reference(reference: str) -> bool:
@@ -373,6 +386,12 @@ def enqueue_ai_result_cleanup(session: Session, reference: str) -> bool:
 def enqueue_patient_media_cleanup(session: Session, reference: str) -> bool:
     """Queue a server-generated patient-media delete in the metadata transaction."""
     if not is_patient_media_reference(reference):
+        return False
+    return _enqueue_cleanup_reference(session, reference, delay_seconds=0)
+
+def enqueue_account_asset_cleanup(session: Session, reference: str) -> bool:
+    """Queue a private account-owned profile/verification object after metadata commit."""
+    if not is_account_asset_reference(reference):
         return False
     return _enqueue_cleanup_reference(session, reference, delay_seconds=0)
 
