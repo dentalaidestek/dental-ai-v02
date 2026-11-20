@@ -12,19 +12,19 @@ The mobile `GET /patients/{id}` response always queried every tooth status, ever
 
 ## Change
 
-- The new `include_chart` query is explicit for current native clients; the server default remains `true` so already-installed clients that omit the parameter keep the original response.
-- Current native profile reads send `include_chart=false` and return empty `teeth` and `surfaces` collections without querying those tables; tooth-chart reads send `include_chart=true`.
+- The new `include_chart` and `include_media` query flags are explicit for current native clients; both server defaults remain `true` so already-installed clients that omit them keep the original response.
+- Current native profile reads send `include_chart=false&include_media=false` and return empty chart/media arrays without querying those collections; tooth-chart reads send `include_chart=true&include_media=false`.
 - All six native tooth-chart read paths explicitly request `include_chart=true`, including initial load, refresh and post-mutation reconciliation.
-- Patient detail no longer fetches the duplicate 20-row media preview. The existing cursor-paginated `/patients/{id}/media` endpoint remains the source for the native clinical archive.
-- The response shape stays backward compatible (`teeth`, `surfaces`, `media` remain arrays), and legacy clients that omit `include_chart` still receive chart data. Ownership checks, `private, no-store`, treatment snapshot/cursor behavior and clinical write paths are unchanged.
+- Current native reads opt out of the duplicate 20-row media preview. The existing cursor-paginated `/patients/{id}/media` endpoint remains the source for the native clinical archive; legacy clients that omit `include_media` still receive the original preview page.
+- The response shape stays backward compatible (`teeth`, `surfaces`, `media` remain arrays), and legacy clients that omit both flags still receive chart data and the original media preview. Ownership checks, `private, no-store`, treatment snapshot/cursor behavior and clinical write paths are unchanged.
 
 This reduces the work performed by ordinary native profile opens without weakening the dedicated chart or gallery workflows. It is a query/payload reduction, not a measured 60,000-user capacity claim.
 
 ## Regression coverage added
 
-- Node API test: profile request omits the chart query and the chart request opts in.
+- Node API test: profile and chart requests send explicit independent chart/media flags.
 - Native chart lifecycle test: all six chart reads explicitly request the chart payload.
-- Python API test: profile omits chart/media data, explicit chart read returns FDI observations, paginated gallery still returns the saved media, and another account receives 404.
+- Python API test: profile opt-out omits chart/media data, explicit chart read returns FDI observations, legacy requests retain both preview collections, paginated gallery still returns saved media, and another account receives 404.
 
 ## Validation limits
 
