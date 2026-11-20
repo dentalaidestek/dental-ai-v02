@@ -31,6 +31,7 @@ function loadHistory(getAnalysisHistory){
    if(name==='./realtime')return {useRealtime:()=>({lastEvent:null})};
    if(name==='./patientAnalysisPresentation')return presentation;
    if(name==='./patientHistoryPresentation')return historyPresentation;
+   if(name==='./appResumeRefresh')return require('../src/appResumeRefresh.ts');
    throw new Error('Unexpected import '+name);
   },
   Date,Math,Number,String,Error,Promise,Array,Object,Set
