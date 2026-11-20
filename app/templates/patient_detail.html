@@ -247,95 +247,15 @@
         </div>
 
         {% if analyses %}
-        <div class="patient-history-list">
-            {% for analysis in analyses %}
-            {% set is_voice_review = analysis.id in (voice_review_ids | default([])) %}
-            <div class="patient-history-row analysis-history-item">
-                <div class="patient-history-main">
-                    <div class="patient-history-title">{% if is_voice_review %}Sesli muayene{% else %}Analiz{% endif %} #{{ analysis.id }}</div>
-                    <div class="patient-history-meta">
-                        {% if not is_voice_review %}<span>Diş {{ analysis.tooth_number or "-" }}</span>{% endif %}
-                        <span>{{ analysis.created_at.strftime("%d.%m.%Y %H:%M") }}</span>
-                        {% if is_voice_review %}
-                            <span class="analysis-status success">Kaydedildi</span>
-                        {% elif analysis.status in ["AI_ANALYZED", "FINAL", "ANALYSIS_COMPLETE"] %}
-                            <span class="analysis-status success">Başarılı</span>
-                        {% elif analysis.status in ["AI_ERROR", "FAILED", "ERROR"] %}
-                            <span class="analysis-status failed">Başarısız</span>
-                        {% else %}
-                            <span class="analysis-status partial">Yarım kaldı</span>
-                        {% endif %}
-                    </div>
-                </div>
-                <button type="button" class="analysis-detail-button" onclick="openAnalysisModal({{ analysis.id }})">Detay</button>
-            </div>
-
-            <div id="analysisModal-{{ analysis.id }}" class="analysis-modal" onclick="if(event.target === this) closeAnalysisModal({{ analysis.id }})">
-                <div class="analysis-modal-content">
-                    <button type="button" class="analysis-modal-close" onclick="closeAnalysisModal({{ analysis.id }})" aria-label="Kapat">×</button>
-                    <h2>{% if is_voice_review %}Sesli muayene{% else %}Analiz{% endif %} #{{ analysis.id }}</h2>
-
-                    <div class="analysis-modal-meta">
-                        {% if not is_voice_review %}<div><strong>Diş:</strong> {{ analysis.tooth_number or "-" }}</div>{% endif %}
-                        <div>
-                            <strong>Durum:</strong>
-                            {% if is_voice_review %}
-                                Kaydedildi
-                            {% elif analysis.status in ["AI_ANALYZED", "FINAL", "ANALYSIS_COMPLETE"] %}
-                                Başarılı
-                            {% elif analysis.status in ["AI_ERROR", "FAILED", "ERROR"] %}
-                                Başarısız
-                            {% else %}
-                                Yarım kaldı
-                            {% endif %}
-                        </div>
-                        <div><strong>Tarih:</strong> {{ analysis.created_at.strftime("%d.%m.%Y %H:%M") }}</div>
-                    </div>
-
-                    <h3>Yüklenen görüntüler</h3>
-                    {% set assets = analysis_assets.get(analysis.id, []) %}
-                    {% set image_assets = assets | selectattr("image_type", "ne", "RADIOGRAPH") | list %}
-                    {% set radiograph_assets = assets | selectattr("image_type", "equalto", "RADIOGRAPH") | list %}
-
-                    {% if image_assets %}
-                    <div class="analysis-image-grid">
-                        {% for asset in image_assets %}
-                        <div class="analysis-image-card">
-                            <img src="/{{ asset.file_path }}" alt="Analiz görüntüsü" loading="lazy">
-                            <div>{{ asset.original_filename }}</div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% else %}
-                    <p class="analysis-muted">Yüklenmiş klinik görüntü bulunmuyor.</p>
-                    {% endif %}
-
-                    <h3>Radyografiler</h3>
-                    {% if radiograph_assets %}
-                    <div class="analysis-image-grid">
-                        {% for asset in radiograph_assets %}
-                        <div class="analysis-image-card">
-                            <img src="/{{ asset.file_path }}" alt="Radyografik görüntü" loading="lazy">
-                            <div>{{ asset.original_filename }}</div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% elif analysis.radiograph_path %}
-                    <div class="analysis-image-card">
-                        <img src="/{{ analysis.radiograph_path }}" alt="Radyografik görüntü">
-                    </div>
-                    {% else %}
-                    <p class="analysis-muted">Radyografik görüntü bulunmuyor.</p>
-                    {% endif %}
-
-                    <h3>Tedavi önerisi</h3>
-                    <div class="analysis-treatment-box">
-                        <a class="btn" href="/analysis/{{ analysis.id }}" target="_blank" rel="noopener">Analiz sonucunu aç</a>
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
+        <div class="patient-history-list" id="patientAnalysisHistoryList">
+            {% include "patient_analysis_history_items.html" %}
         </div>
+        <button type="button" id="loadMoreAnalyses" class="patient-media-load-more"
+                data-url="/patients/{{ patient.id }}/history/analyses/page"
+                data-next-cursor="{{ analyses_next_cursor or '' }}"
+                onclick="loadPatientHistoryPage('analyses')"
+                {% if not analyses_has_more %}hidden{% endif %}>Daha fazla analiz yükle</button>
+        <p id="analysisHistoryLoadStatus" class="patient-media-load-status" role="status" aria-live="polite"></p>
         {% else %}
         <div class="patient-empty-state">Henüz analiz bulunmuyor.</div>
         {% endif %}
@@ -384,26 +304,18 @@
         </div>
 
         {% if treatments %}
-        <div class="patient-history-list">
-            {% for treatment in treatments %}
-            <div class="patient-history-row treatment-item" style="{% if loop.index > 3 %}display:none;{% endif %}">
-                <div class="patient-history-main">
-                    <div class="patient-history-title">{{ treatment.treatment_name }}</div>
-                    <div class="patient-history-meta">
-                        <span>Diş {{ treatment.tooth_number or "-" }}</span>
-                        <span>{{ treatment.treatment_date or "-" }}</span>
-                        {% if treatment.material %}<span>{{ treatment.material }}</span>{% endif %}
-                    </div>
-                    {% if treatment.result %}<p class="patient-history-note"><strong>Sonuç:</strong> {{ treatment.result }}</p>{% endif %}
-                    {% if treatment.doctor_note %}<p class="patient-history-note"><strong>Doktor Notu:</strong> {{ treatment.doctor_note }}</p>{% endif %}
-                </div>
-            </div>
-            {% endfor %}
+        <div class="patient-history-list" id="patientTreatmentHistoryList" data-expanded="false">
+            {% include "patient_treatment_history_items.html" %}
         </div>
-
-        {% if treatments|length > 3 %}
+        {% if treatments|length > 3 or treatments_has_more %}
         <button type="button" class="patient-show-more" id="showMoreTreatments" onclick="toggleTreatments()">Diğer tedavileri göster</button>
         {% endif %}
+        <button type="button" id="loadMoreTreatments" class="patient-media-load-more"
+                data-url="/patients/{{ patient.id }}/history/treatments/page"
+                data-next-cursor="{{ treatments_next_cursor or '' }}"
+                onclick="loadPatientHistoryPage('treatments')"
+                {% if not treatments_has_more %}hidden{% endif %}>Daha fazla tedavi yükle</button>
+        <p id="treatmentHistoryLoadStatus" class="patient-media-load-status" role="status" aria-live="polite"></p>
         {% else %}
         <div class="patient-empty-state">Henüz tedavi kaydı bulunmuyor.</div>
         {% endif %}
@@ -412,27 +324,65 @@
 
 <script>
 function toggleTreatments() {
-    const items = document.querySelectorAll(".treatment-item");
+    const list = document.getElementById("patientTreatmentHistoryList");
     const button = document.getElementById("showMoreTreatments");
+    if (!list || !button) return;
 
-    if (!button) return;
-
-    const hidden = Array.from(items).filter(function(item) {
-        return item.style.display === "none";
+    const expanded = list.dataset.expanded === "true";
+    const nextExpanded = !expanded;
+    list.querySelectorAll(".treatment-item").forEach(function(item) {
+        const initiallyVisible = item.dataset.initialVisible === "true";
+        item.style.display = nextExpanded || initiallyVisible ? "block" : "none";
     });
+    list.dataset.expanded = nextExpanded ? "true" : "false";
+    button.textContent = nextExpanded ? "Tedavileri gizle" : "Diğer tedavileri göster";
+}
 
-    if (hidden.length > 0) {
-        hidden.forEach(function(item) {
-            item.style.display = "block";
+async function loadPatientHistoryPage(kind) {
+    const isAnalysis = kind === "analyses";
+    const button = document.getElementById(isAnalysis ? "loadMoreAnalyses" : "loadMoreTreatments");
+    const list = document.getElementById(isAnalysis ? "patientAnalysisHistoryList" : "patientTreatmentHistoryList");
+    const status = document.getElementById(isAnalysis ? "analysisHistoryLoadStatus" : "treatmentHistoryLoadStatus");
+    if (!button || !list || button.disabled || button.hidden) return;
+
+    const cursor = button.dataset.nextCursor || "";
+    if (!cursor) {
+        button.hidden = true;
+        if (status) status.textContent = "Geçmiş imleci bulunamadı. Sayfayı yenileyin.";
+        return;
+    }
+
+    button.disabled = true;
+    if (status) status.textContent = "Kayıtlar yükleniyor…";
+    try {
+        const params = new URLSearchParams({before: cursor});
+        if (!isAnalysis) params.set("expanded", list.dataset.expanded === "true" ? "true" : "false");
+        const response = await fetch(button.dataset.url + "?" + params.toString(), {
+            credentials: "same-origin",
+            headers: {Accept: "application/json"}
         });
+        const payload = await response.json().catch(function() { return null; });
+        if (!response.ok || !payload || payload.ok !== true ||
+            typeof payload.html !== "string" ||
+            (payload.next_cursor !== null && typeof payload.next_cursor !== "string") ||
+            typeof payload.has_more !== "boolean") {
+            const message = response.status === 401
+                ? "Oturumunuz sona erdi. Sayfayı yenileyin."
+                : response.status === 403 || response.status === 404
+                    ? "Bu hasta geçmişine erişilemiyor."
+                    : "Geçmiş yüklenemedi. Yeniden deneyebilirsiniz.";
+            throw new Error(message);
+        }
 
-        button.textContent = "Tedavileri gizle";
-    } else {
-        items.forEach(function(item, index) {
-            item.style.display = index < 3 ? "block" : "none";
-        });
-
-        button.textContent = "Diğer tedavileri göster";
+        // HTML is rendered by the authenticated same-origin Jinja partial with autoescaping.
+        list.insertAdjacentHTML("beforeend", payload.html);
+        button.dataset.nextCursor = payload.next_cursor || "";
+        if (!payload.has_more || !payload.next_cursor) button.hidden = true;
+        if (status) status.textContent = payload.has_more ? "Daha fazla kayıt var." : "Tüm kayıtlar yüklendi.";
+    } catch (error) {
+        if (status) status.textContent = error && error.message ? error.message : "Geçmiş yüklenemedi.";
+    } finally {
+        if (!button.hidden) button.disabled = false;
     }
 }
 </script>
