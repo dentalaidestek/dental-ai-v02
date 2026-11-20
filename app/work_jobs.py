@@ -305,6 +305,23 @@ def is_ai_result_reference(reference: str) -> bool:
     )
 
 
+def _ensure_sqlite_outer_transaction(session: Session) -> None:
+    """Keep a SAVEPOINT inside the caller's transaction on sqlite3.
+
+    Python's sqlite3 driver does not begin a database transaction for a SELECT.
+    Releasing the first SAVEPOINT can therefore commit it implicitly, making a
+    later Session.rollback() unable to undo a cleanup receipt. Production uses
+    PostgreSQL; this guard keeps SQLite/dev and transactional tests equivalent.
+    """
+    if session.get_bind().dialect.name != "sqlite":
+        return
+    connection = session.connection()
+    proxied = connection.connection
+    driver = getattr(proxied, "driver_connection", proxied)
+    if not getattr(driver, "in_transaction", False):
+        connection.exec_driver_sql("BEGIN")
+
+
 def _enqueue_cleanup_reference(session: Session, reference: str, *, delay_seconds: int = 30) -> bool:
     """Insert or re-arm a durable cleanup receipt without storing clinical content.
 
@@ -323,6 +340,7 @@ def _enqueue_cleanup_reference(session: Session, reference: str, *, delay_second
 
     row = WorkGarbage(reference=reference, available_at=stamp)
     try:
+        _ensure_sqlite_outer_transaction(session)
         with session.begin_nested():
             session.add(row)
             session.flush()
