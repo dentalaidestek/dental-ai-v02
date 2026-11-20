@@ -19,7 +19,7 @@ R2 failures retain the receipt and use bounded exponential retry delays (5, 10, 
 
 The web account, expert-profile and pending-title document handlers now enqueue a superseded allowlisted reference in the same database transaction that switches its metadata pointer. New uploads whose metadata transaction fails are also handed to the durable collector rather than being deleted directly. The collector re-checks all supported references before deleting and retains the receipt on R2 failure.
 
-Profile-photo keys now use a fresh random 16-hex token per upload instead of a content hash. This prevents a later upload of identical image bytes from reusing a path already queued for deletion, which would otherwise create a check/delete race between PostgreSQL and R2. Existing hash-based keys remain accepted by the strict cleanup allowlist for backward compatibility.
+Profile-photo keys now use a fresh random 16-hex token per upload instead of a content hash. If local/R2 persistence fails after the destination key is allocated, `_save_profile_photo` also queues that uncommitted key; the collector checks references before deletion. This prevents a later upload of identical image bytes from reusing a path already queued for deletion, which would otherwise create a check/delete race between PostgreSQL and R2. Existing hash-based keys remain accepted by the strict cleanup allowlist for backward compatibility.
 
 Rejected membership verification rows continue to retain their document reference as review history; this change does not define a retention or purge policy for those rows.
 
