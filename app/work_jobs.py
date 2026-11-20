@@ -282,10 +282,10 @@ _GUEST_ANALYSIS_OBJECT = re.compile(
 )
 _ACCOUNT_ASSET_OBJECT = re.compile(
     r"uploads/(?:"
-    r"profile_photos/user_[1-9][0-9]*_[0-9a-f]{16}\\.jpg|"
-    r"expert_credentials/user_[1-9][0-9]*/credential_[0-9a-f]{32}\\.(?:pdf|jpg|jpeg|png)|"
-    r"expert_title_changes/user_[1-9][0-9]*/title_[0-9a-f]{32}\\.(?:pdf|jpg|jpeg|png)|"
-    r"membership_documents/user_[1-9][0-9]*/[0-9a-f]{32}\\.(?:pdf|jpg|jpeg|png)"
+    r"profile_photos/user_[1-9][0-9]*_[0-9a-f]{16}\.jpg|"
+    r"expert_credentials/user_[1-9][0-9]*/credential_[0-9a-f]{32}\.(?:pdf|jpg|jpeg|png)|"
+    r"expert_title_changes/user_[1-9][0-9]*/title_[0-9a-f]{32}\.(?:pdf|jpg|jpeg|png)|"
+    r"membership_documents/user_[1-9][0-9]*/[0-9a-f]{32}\.(?:pdf|jpg|jpeg|png)"
     r")"
 )
 
