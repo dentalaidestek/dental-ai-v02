@@ -7,6 +7,18 @@ const React=require('react');
 const renderer=require('react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
 
+// Compile real src helper modules into the test realm so the harness chain
+// stays faithful to src instead of drifting behind new imports.
+const srcModuleCache={};
+function loadSrcModule(base,requireChain){
+ if(srcModuleCache[base])return srcModuleCache[base];
+ const source=fs.readFileSync(require.resolve('../src/'+base+'.ts'),'utf8');
+ const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
+ const moduleExports={};
+ srcModuleCache[base]=moduleExports;
+ vm.runInNewContext(code,{exports:moduleExports,Error,Date,Set,Map,JSON,Number,Array,Promise,RegExp,require:requireChain});
+ return moduleExports;
+}
 function mountMedia(getMedia, options={}){
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
@@ -23,7 +35,7 @@ function mountMedia(getMedia, options={}){
  };
  let keySequence=0;
  const exports={};
- vm.runInNewContext(code,{exports,Error,Date,Set,JSON,Number,Array,Promise,require:name=>{
+ const requireChain=name=>{
   if(name==='react')return {...React,default:React};
   if(name==='react-native')return native;
   if(name==='@react-navigation/native')return {useIsFocused:()=>options.focused===undefined?true:options.focused};
@@ -43,14 +55,19 @@ function mountMedia(getMedia, options={}){
    validateClinicalMediaVaultFile:async()=>{}
   };
   if(name==='./api')return {
+   ApiError:class extends Error{constructor(status,message){super(message);this.status=status}},
    getPatientMediaUpload:async(...args)=>options.onReceipt?options.onReceipt(...args):({found:false}),
    uploadPatientMedia:async(...args)=>options.onUpload?options.onUpload(...args):({media:{id:1,original_filename:'synthetic.png',media_type:'PHOTO'},replayed:false})
   };
   if(name==='./modernApi')return {getMedia,analyzeSelectedPatientMedia:async()=>({analysis_id:1}),deleteMedia:async(...args)=>options.onDelete?.(...args),deleteAllPatientMedia:async(...args)=>options.onDelete?.(...args)};
   if(name==='./realtime')return {useRealtime:()=>({lastEvent:null})};
   if(name==='./NativeAnalysisUpload')return {default:props=>React.createElement('NativeAnalysisUpload',props)};
+  if(name==='expo-file-system/legacy')return {getInfoAsync:async uri=>({uri,exists:true,size:1064,isDirectory:()=>false})};
+  if(name==='./sessionExpiry')return {revalidateSession:async()=>{}};
+  if(name==='./appResumeRefresh'||name==='./uploadLimits'||name==='./clinicalMediaPicker'||name==='./clinicalMediaBatch'||name==='./clinicalMediaRecovery'||name==='./analysisApi')return loadSrcModule(name.slice(2),requireChain);
   throw Error('Unexpected import '+name);
- }});
+ };
+ vm.runInNewContext(code,{exports,Error,Date,Set,JSON,Number,Array,Promise,require:requireChain});
  const Component=exports.default;
  const Wrapped=props=>React.createElement(Component,{userId:1,...props});
  Wrapped.appStateListeners=appStateListeners;
@@ -90,9 +107,9 @@ test('uncertain media deletion exposes a safe replay action for the same request
  assert.match(source,/\(uncertain&&!reconcile\)/);
  assert.match(source,/setUncertainDelete\(id\?\?null\)/);
  assert.match(source,/button\('Silme durumunu güvenle doğrula',\(\)=>void remove\(uncertainDelete\?\?undefined,true\)/);
- assert.match(source,/function confirmDelete\(id\?:number\)\{if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|loadedOwner!==owner\)return;/);
- assert.match(source,/confirmDelete\(preview\.id\),busy\|\|uncertain/);
- assert.match(source,/confirmDelete\(\),busy\|\|uncertain/);
+ assert.match(source,/function confirmDelete\(id\?:number\)\{if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|readOnly\|\|loadedOwner!==owner\)return;/);
+ assert.match(source,/confirmDelete\(preview\.id\),readOnly\|\|busy\|\|uncertain/);
+ assert.match(source,/confirmDelete\(\),readOnly\|\|busy\|\|uncertain/);
 });
 
 async function pressByAccessibilityLabel(tree,label){
@@ -144,13 +161,13 @@ test('clinical gallery offers recovery for failed reads and distinguishes empty 
  assert.match(source,/Bu hastaya ait klinik görsel bulunmuyor/);
  assert.match(source,/!loading&&!!error&&button\('Galeriyi yeniden yükle'/);
  assert.match(source,/!loading&&!error&&items\.length===0/);
- assert.match(source,/confirmDelete\(\),busy\|\|uncertain\|\|visibleItems\.length===0/);
+ assert.match(source,/confirmDelete\(\),readOnly\|\|busy\|\|uncertain\|\|visibleItems\.length===0/);
 });
 
 test('uncertain media mutations freeze selection and pagination until reconciliation',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
- assert.match(source,/disabled=\{busy\|\|uncertain\} onPress=\{\(\)=>toggle\(item\.id\)\}/);
- assert.match(source,/setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,4\)\.map\(x=>x\.id\)\)\},busy\|\|uncertain\|\|loadedOwner!==owner/);
+ assert.match(source,/disabled=\{readOnly\|\|busy\|\|uncertain\} onPress=\{\(\)=>toggle\(item\.id\)\}/);
+ assert.match(source,/setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,ANALYSIS_MAX_IMAGES\)\.map\(x=>x\.id\)\)\},readOnly\|\|busy\|\|uncertain\|\|loadedOwner!==owner/);
  assert.match(source,/onEndReached=\{\(\)=>\{if\(loadedOwner===owner&&cursor&&!loading&&!error&&!uncertain&&!mutation\.current\)/);
 });
 
@@ -173,14 +190,14 @@ test('account switch never exposes old patient thumbnails during pending new req
 test('clinical modal and destructive actions require the current loaded account',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  assert.match(source,/visible=\{open&&loadedOwner===owner\}/);
- assert.match(source,/function confirmDelete\(id\?:number\)\{if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|loadedOwner!==owner\)return;/);
- assert.match(source,/async function analyze\(\)\{if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|loadedOwner!==owner\|\|!selected\.length\)return;/);
+ assert.match(source,/function confirmDelete\(id\?:number\)\{if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|readOnly\|\|loadedOwner!==owner\)return;/);
+ assert.match(source,/async function analyze\(\)\{if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|readOnly\|\|loadedOwner!==owner\|\|!selected\.length\)return;/);
 });
 
 
 test('gallery selection and pagination are restricted to the loaded patient scope',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
- assert.match(source,/function toggle\(id:number\)\{if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|loadedOwner!==owner\|\|!visibleItems\.some\(item=>item\.id===id\)\)return;/);
+ assert.match(source,/function toggle\(id:number\)\{if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|readOnly\|\|loadedOwner!==owner\|\|!visibleItems\.some\(item=>item\.id===id\)\)return;/);
  assert.match(source,/if\(loadedOwner===owner&&cursor&&!loading&&!error&&!uncertain&&!mutation\.current\)/);
 });
 
@@ -215,9 +232,9 @@ test('delayed delete confirmation from previous account cannot delete old patien
 
 test('every delayed clinical media action verifies the current patient before network mutations',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
- assert.match(source,/async function remove\(id\?:number\)\{if\(!current\(\)\|\|mutation\.current/);
+ assert.match(source,/async function remove\(id\?:number,reconcile=false\)\{if\(!current\(\)\|\|mutation\.current/);
  assert.match(source,/function confirmDelete\(id\?:number\)\{if\(!current\(\)\|\|mutation\.current/);
- assert.match(source,/async function upload\(\)\{if\(!current\(\)\|\|mutation\.current/);
+ assert.match(source,/async function upload\(reconcile=false\)\{if\(!current\(\)\|\|mutation\.current/);
  assert.match(source,/async function analyze\(\)\{if\(!current\(\)\|\|mutation\.current/);
  assert.match(source,/async function pick\(type:'PHOTO'\|'RADIOGRAPH'\)\{\s*if\(!current\(\)\|\|mutation\.current/);
 });
@@ -243,10 +260,10 @@ test('picker permission resolving after an account switch cannot open the previo
 test('pending image thumbnails and uploads are scoped to the active patient account',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  assert.match(source,/const \[pendingOwner,setPendingOwner\]=useState\(''\)/);
- assert.match(source,/setMediaType\(type\);setPendingOwner\(owner\);setPending\(files\)/);
+ assert.match(source,/setMediaType\(type\);setPendingBatchId\(batchId\);setPendingOwner\(owner\);setPending\(encrypted\)/);
  assert.match(source,/pendingOwner===owner&&pending\.length>0&&<View>/);
- assert.match(source,/pendingOwner!==owner\|\|!pending\.length\)return/);
- assert.match(source,/setPending\(\[\]\);setPendingOwner\(''\);setUncertain\(false\)/);
+ assert.match(source,/pendingOwner!==owner\|\|!pending\.length\|\|!uploadReady\)return/);
+ assert.match(source,/setPending\(\[\]\);setPendingBatchId\(''\);setPendingOwner\(''\)/);
 });
 
 
@@ -281,8 +298,8 @@ test('failed older gallery page retains verified images and cursor for an explic
 
 test('bulk analysis selection is limited to four and rejects stale patient actions',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
- assert.match(source,/İlk 4 Görseli Seç/);
- assert.match(source,/if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|loadedOwner!==owner\)return;setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,4\)\.map\(x=>x\.id\)\)/);
+ assert.match(source,/İlk \$\{ANALYSIS_MAX_IMAGES\} Görseli Seç/);
+ assert.match(source,/if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|readOnly\|\|loadedOwner!==owner\)return;setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,ANALYSIS_MAX_IMAGES\)\.map\(x=>x\.id\)\)/);
 });
 
 
@@ -317,10 +334,10 @@ function loadModernApi(fetchImpl){
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
  class ApiError extends Error{constructor(status,message){super(message);this.status=status}}
  const exports={};
+ const requireChain=name=>name==='./api'?{ApiError}:name==='./sessionExpiry'?{revalidateSession:async()=>{}}:name==='./chatFiles'?{validateChatFile:()=>{}}:name==='./notificationState'?loadSrcModule('notificationState',requireChain):(()=>{throw Error('Unexpected import '+name)})();
  vm.runInNewContext(code,{
   exports,fetch:fetchImpl,AbortController,FormData,URLSearchParams,Response,
-  setTimeout,clearTimeout,
-  require:name=>name==='./api'?{ApiError}:name==='./sessionExpiry'?{revalidateSession:async()=>{}}:name==='./chatFiles'?{validateChatFile:()=>{}}:(()=>{throw Error('Unexpected import '+name)})()
+  setTimeout,clearTimeout,require:requireChain
  });
  return exports;
 }
@@ -403,7 +420,7 @@ test('clinical media upload persists its receipt key before transfer and display
  assert.ok(finishUpload,'upload should start after receipt lookup');
  assert.match(visible(tree.toJSON()),/50%/);
  const intent=JSON.parse(storage.get('dai.patient-media.upload.1.8'));
- assert.equal(intent.version,1);assert.equal(intent.userId,1);assert.equal(intent.patientId,8);
+ assert.equal(intent.version,3);assert.equal(intent.userId,1);assert.equal(intent.patientId,8);
  assert.equal(intent.files.length,1);assert.match(intent.files[0].requestKey,/^[A-Za-z0-9_-]{16,96}$/);
  assert.deepEqual(receiptCalls,[[8,intent.files[0].requestKey]]);
  assert.deepEqual(uploadCalls,[[8,'synthetic-clinical.png','PHOTO',intent.files[0].requestKey]]);
@@ -492,7 +509,7 @@ test('new patient media drafts persist ciphertext only and upload through a disp
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'account-a',patientId:8,onAnalysis:()=>{}}))});
  await press(tree,'▧ Fotoğraf Ekle');
  const raw=JSON.parse(storage.get('dai.patient-media.upload.1.8'));
- assert.equal(raw.version,2);
+ assert.equal(raw.version,3);
  assert.equal(raw.files[0].uri,encryptedUri);
  assert.equal(raw.files[0].encryptedUri,encryptedUri);
  assert.ok(!JSON.stringify(raw).includes('file:///picker/private-clinical.png'),'picker cache URI must not be persisted');
