@@ -2419,7 +2419,7 @@ async def mobile_patient_media_upload(
     note: Optional[str] = Form(None),
     media_type: str = Form("PHOTO"),
     request_key: str = Form(...),
-    batch_id: str = Form(...),
+    batch_id: str = Form(""),
     user: User = Depends(_mobile_user),
 ):
     media_type = (media_type or "").strip().upper()
@@ -2437,8 +2437,30 @@ async def mobile_patient_media_upload(
         fingerprint_key = encryption_key()
     except PatientMediaReceiptKeyUnavailable as exc:
         raise HTTPException(status_code=503, detail="Klinik görüntü yükleme kurtarma anahtarı yapılandırılmamış.") from exc
-    if not _PATIENT_MEDIA_BATCH_ID.fullmatch(batch_id or ""):
-        raise HTTPException(status_code=422, detail="Geçersiz klinik görüntü yükleme grubu.")
+    batch_id_valid = bool(_PATIENT_MEDIA_BATCH_ID.fullmatch(batch_id or ""))
+
+    # Match the web upload's early ownership gate: do not read, decode or stage
+    # a clinical image until the authenticated owner has been confirmed.
+    with Session(engine, expire_on_commit=False) as preflight:
+        patient = preflight.exec(select(Patient).where(
+            Patient.id == patient_id, Patient.owner_user_id == user.id
+        )).first()
+        if not patient:
+            raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
+        if not batch_id_valid:
+            prior_receipt = preflight.exec(select(WorkJob).where(
+                WorkJob.owner_user_id == user.id,
+                WorkJob.resource_id == patient_id,
+                WorkJob.resource_type == "PATIENT",
+                WorkJob.kind == _PATIENT_MEDIA_RECEIPT_KIND,
+                WorkJob.dedupe_key == receipt_key,
+            )).first()
+            # A replay may omit batch_id because the durable receipt already
+            # owns the original batch identity. New uploads must provide it.
+            if prior_receipt is None:
+                raise HTTPException(status_code=422, detail="Geçersiz klinik görüntü yükleme grubu.")
+        preflight.commit()
+
     image = image or file
     if not image or not image.filename:
         raise HTTPException(status_code=422, detail="Görüntü seçin.")
@@ -2486,6 +2508,10 @@ async def mobile_patient_media_upload(
                     replay_response = JSONResponse(existing)
                     _mobile_private_no_store(replay_response)
                     return replay_response
+            if not batch_id_valid:
+                # The preflight receipt may have been removed between the
+                # initial ownership check and this authoritative lookup.
+                raise HTTPException(status_code=422, detail="Geçersiz klinik görüntü yükleme grubu.")
             session.commit()
 
         # R2/network I/O is deliberately outside the SQL transaction and off
