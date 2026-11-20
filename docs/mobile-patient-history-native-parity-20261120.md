@@ -21,9 +21,10 @@ Inspected before the native change:
 - `mobile/tests/patientAnalysisHistory.cjs` — card/detail/status assertions.
 - `mobile/tests/patientHistoryRetry.cjs` — failed continuation retry and presentation edge cases.
 - `mobile/package.json` — registers the new regression in `test:beta`.
+- `.github/workflows/security-recovery.yml` — includes the focused retry regression in `native-clinical-security`.
 
 ## Validation boundary
 
-The GitHub source was read back from `feature/mobile-web-parity-20261110` after each sequential write. The new test is registered in the beta suite. This automation runtime has no repository checkout, node_modules, React Native/Expo dependencies or FastAPI/SQLModel environment, so the committed Node tests, full TypeScript check, Expo export, Android Gradle/device build and Python integration/security suites were not executed here. Do not treat source read-back as a test pass.
+The GitHub source was read back from `feature/mobile-web-parity-20261110` after each sequential write. The new test is registered in both the beta suite and the focused `native-clinical-security` job. The workflow remains manual-only, matching the existing runner/notification safeguard. This automation runtime has no repository checkout, node_modules, React Native/Expo dependencies or FastAPI/SQLModel environment, so the committed Node tests, full TypeScript check, Expo export, Android Gradle/device build and Python integration/security suites were not executed here. Do not treat source read-back as a test pass.
 
 No API, schema, database migration, patient data, AI provider, production deployment, APK/IPA publication or main branch was changed.
