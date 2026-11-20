@@ -464,7 +464,7 @@ def test_worker_receipt_checks_are_throttled_instead_of_per_queue_iteration(monk
     assert calls == ["poll", "maintenance", "poll", "poll", "maintenance"]
 
 
-def test_existing_revision_15_schema_bootstraps_both_push_tables(tmp_path):
+def test_revision_15_push_tables_bootstrap_without_bypassing_release_guard(tmp_path):
     from app import migrate
 
     engine = create_engine(
@@ -479,7 +479,12 @@ def test_existing_revision_15_schema_bootstraps_both_push_tables(tmp_path):
             "INSERT INTO dental_schema_revision (id, version) VALUES (1, 15)"
         ))
 
-    migrate.require_schema(engine)
+    # The additive compatibility helpers may prepare push tables, but they
+    # must not make an older release schema acceptable to the current service.
+    migrate._ensure_mobile_push_device_table(engine)
+    migrate._ensure_mobile_push_delivery_table(engine)
+    with pytest.raises(RuntimeError, match="Expected schema revision 19"):
+        migrate.require_schema(engine)
 
     inspector = inspect(engine)
     assert inspector.has_table("mobilepushdevice")
