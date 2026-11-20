@@ -1,4 +1,4 @@
-import {request} from './api';
+import {API_BASE,request} from './api';
 export type ClinicalJob={id:number;kind:'VISION'|'PRELIMINARY'|'FINAL';status:string;retryable:boolean};
 export type ClinicalResult={status:string;most_likely?:string;findings?:unknown[];treatment_options?:string[];treatment_cautions?:string[];preferred_approach?:string;differential?:string[];recommended_evaluation?:string[];uncertainty?:string;preliminary_assessment?:string;questions?:Array<{question:string;type:string}>};
 export type ClinicalWorkspace={analysis_id:number;patient_id:number;patient_anonymous_id:string;status:string;clinical_notes:string|null;tooth_number:string|null;revision:string;result:ClinicalResult|null;job:ClinicalJob|null;assets:Array<{id:number;image_type:string;has_vision:boolean;url:string}>};
@@ -80,6 +80,6 @@ export async function submitClinical(token:string,intent:ClinicalIntent){const r
 export const saveClinicalNote=(t:string,a:number,value:{note:string;finding:string;tooth:string})=>request<{ok:boolean}>(path(a)+'/clinical-note',t,{method:'POST',body:JSON.stringify(value)});
 export const analyzeTeeth=(t:string,a:number,teeth:string[])=>request<{ok:boolean;job:ClinicalJob}>(path(a)+'/selected-teeth',t,{method:'POST',body:JSON.stringify({teeth})});
 export const clinicalJobAction=(t:string,a:number,j:number,action:'cancel'|'retry')=>request<{ok:boolean}>(path(a)+`/jobs/${id(j)}/${action}`,t,{method:'POST'});
-export function clinicalImage(token:string,a:number,idValue:number){return{uri:'https://dentalai.tr/api/mobile/v1'+path(a)+'/assets/'+id(idValue),headers:{Authorization:'Bearer '+token,Cookie:''}}}
+export function clinicalImage(token:string,a:number,idValue:number){return{uri:API_BASE+path(a)+'/assets/'+id(idValue),headers:{Authorization:'Bearer '+token,Cookie:''},cache:'reload' as const}}
 export const clinicalBusy=(data:ClinicalWorkspace|null)=>!!data?.job&&['QUEUED','RUNNING'].includes(data.job.status);
 export async function getVision(token:string,analysis:number,asset:number,modality:string){const r=await request<any>(path(analysis)+`/assets/${id(asset)}/vision`,token);if(r.status==='VISION_PENDING')return{pending:true as const,findings:[]};if(r.ok===false)throw Error('Görüntü bulguları okunamadı. İş durumunu kontrol edin.');const {visionFindings}=await import('./visionModel');return{pending:false as const,findings:visionFindings(r,modality)};}
