@@ -2,6 +2,15 @@ name: Security recovery regression
 # Keep CI scoped to this development branch and its PR target. A push to this
 # branch also verifies whether GitHub can assign a hosted runner before any step.
 on:
+  push:
+    branches:
+      - feature/mobile-web-parity-20261110
+    paths:
+      - ".github/workflows/security-recovery.yml"
+      - ".github/workflows/mobile-android.yml"
+      - "app/**"
+      - "tests/**"
+      - "mobile/**"
   pull_request:
     branches:
       - feature/mobile-beta-20261110
