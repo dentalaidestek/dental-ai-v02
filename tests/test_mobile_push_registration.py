@@ -258,7 +258,7 @@ def test_push_registration_rejects_noncanonical_token_shapes(monkeypatch, tmp_pa
     engine.dispose()
 
 
-def test_existing_revision_15_schema_bootstraps_mobile_push_device_table(tmp_path):
+def test_revision_15_push_device_bootstrap_keeps_release_guard_strict(tmp_path):
     from app import migrate
 
     engine = create_engine(
@@ -279,7 +279,9 @@ def test_existing_revision_15_schema_bootstraps_mobile_push_device_table(tmp_pat
             "platform VARCHAR NOT NULL, enabled BOOLEAN NOT NULL, updated_at DATETIME NOT NULL)"
         ))
 
-    migrate.require_schema(engine)
+    migrate._ensure_mobile_push_device_table(engine)
+    with pytest.raises(RuntimeError, match="Expected schema revision 19"):
+        migrate.require_schema(engine)
 
     inspector = inspect(engine)
     assert inspector.has_table("mobilepushdevice")
