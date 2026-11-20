@@ -987,3 +987,14 @@ Commits in this run: `8158d10`, `d37a5ed`, `5627818`, `07d231c`, `de6d6d7`, and 
 - These checks do not replace the full mobile test suite or full `NativeClinicalReview.tsx` typecheck. Component integration tests are committed but remain unexecuted because this runtime has no repository checkout or React Native test dependencies, and GitHub Actions remains manual-only.
 
 Latest code/test head for this work: `fe6efde6d214d05d54fa3e1c67e14ac9d23af021`. No CI pass is claimed.
+
+
+## 2026-11-20 — Web clinical media gallery paging and thumbnails
+
+- Web-first comparison: `patient_detail.html` previously rendered every `PatientMedia` row and loaded the original full-resolution file for each small gallery card. Native already used 40-item descending-ID pagination and the private thumbnail derivative.
+- The web profile now loads 40 media rows plus one look-ahead row and separately displays the total count. The authenticated cookie-session page endpoint returns only display metadata, uses an owner-scoped descending-ID cursor, and sets private/no-store + Cookie variance headers.
+- Added a web-session thumbnail endpoint backed by the existing deterministic derivative helper. It releases the first DB session before storage hydration, then rechecks patient/media ownership and the unchanged file reference before serving. Orphan derivatives are removed when the record disappears during generation.
+- Gallery cards use private JPEG thumbnails; the modal still opens the original. “Daha fazla görsel yükle” fetches 40-row pages without losing selected IDs. The four-image AI limit is enforced across pages. Dynamic cards use DOM APIs/textContent and exact same-origin path validation.
+- Added `app/clinical_media_gallery.py`, `tests/test_clinical_media_gallery_pagination.py`, web route assertions in `tests/test_clinical_media_thumbnail.py`, and `mobile/tests/patientMediaWebGallery.cjs` (registered in `npm run test:beta`).
+- Validation in this run: 17/17 GitHub read-back source-contract assertions passed. The committed Python/Node suites were not executed because this environment has no repository checkout/dependency runner. Full pytest, mobile typecheck, Android build/device, browser interaction, PostgreSQL query-plan, and multi-instance R2 concurrency checks remain open.
+- Current PR head after this work: `37ca8274e2775413c3ecd0ca8a2a1a387fb3f58e` at the time of tracker update. PR remains Draft/open. No merge, deploy, migration, APK/IPA publication or patient-data mutation.
