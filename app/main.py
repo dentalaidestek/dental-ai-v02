@@ -8912,6 +8912,8 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
     user = get_current_user(request)
     if not user:
         return JSONResponse({"ok": False, "error": "Oturum gerekli."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
+    status_events: list[RealtimeEvent] = []
+    notification_events: list[RealtimeEvent] = []
     try:
         client_key = _normalize_consultation_client_message_id(client_message_id)
     except HTTPException as exc:

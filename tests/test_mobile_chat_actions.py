@@ -7,6 +7,8 @@ from PIL import Image
 from sqlmodel import SQLModel, Session, create_engine, select
 from app import main, mobile_api
 
+_SESSION_TOKEN={1:"token1-"+"A"*28,2:"token2-"+"A"*28,3:"token3-"+"A"*28}
+
 @pytest.fixture
 def chat(monkeypatch,tmp_path):
     engine=create_engine("sqlite:///"+str(tmp_path/"chat.db"),connect_args={"check_same_thread":False})
@@ -22,13 +24,13 @@ def chat(monkeypatch,tmp_path):
         for i in (1,2,3):
             s.add(main.User(id=i,username="chat-user-"+str(i),display_name="Synthetic "+str(i),role="DOCTOR",
                 is_active=True,email_verified_at=main._utcnow_naive()))
-            s.add(main.SessionToken(token_hash=main.hash_session_token("token"+str(i)),user_id=i,
+            s.add(main.SessionToken(token_hash=main.hash_session_token(_SESSION_TOKEN[i]),user_id=i,
                 expires_at=main._utcnow_naive()+timedelta(days=1)))
         s.add(main.ConsultationCase(id=1,requester_user_id=1,expert_user_id=2,specialty="Endodonti",
             clinical_summary="Synthetic",question="Synthetic",status="ACTIVE",
             expert_response_deadline=main._utcnow_naive()+timedelta(hours=1)))
         s.commit()
-    c=TestClient(main.app);c.headers["Authorization"]="Bearer token1"
+    c=TestClient(main.app);c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[1]
     return c,engine
 
 def test_two_participants_share_persisted_text_and_outsider_is_rejected(chat):
@@ -36,13 +38,13 @@ def test_two_participants_share_persisted_text_and_outsider_is_rejected(chat):
     r=c.post("/api/mobile/v1/consultations/1/messages",json={"content":"Synthetic first","client_message_id":"native-first-00000001"})
     assert r.status_code==200,r.text
     ident=r.json()["message"]["id"]
-    c.headers["Authorization"]="Bearer token2"
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[2]
     r=c.post("/api/mobile/v1/consultations/1/messages",json={"content":"Synthetic reply","reply_to_message_id":ident,"client_message_id":"native-reply-00000001"})
     assert r.status_code==200,r.text
     messages=c.get("/api/mobile/v1/consultations/1").json()["messages"]
     assert [m["sender_user_id"] for m in messages]==[1,2]
     assert messages[1]["reply_to_message_id"]==ident
-    c.headers["Authorization"]="Bearer token3"
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[3]
     assert c.get("/api/mobile/v1/consultations/1").status_code==404
     assert c.post("/api/mobile/v1/consultations/1/actions",json={"action":"complete"}).status_code==403
 
@@ -56,9 +58,9 @@ def test_photo_upload_is_sanitized_and_attachment_authorized(chat):
     r=c.get(f"/api/mobile/v1/consultations/1/attachments/{ident}")
     assert r.status_code==200
     assert r.headers["cache-control"]=="private, no-store"
-    c.headers["Authorization"]="Bearer token2"
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[2]
     assert c.get(f"/api/mobile/v1/consultations/1/attachments/{ident}").status_code==200
-    c.headers["Authorization"]="Bearer token3"
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[3]
     assert c.get(f"/api/mobile/v1/consultations/1/attachments/{ident}").status_code==404
 
 def test_malformed_or_unsupported_upload_does_not_create_message(chat):
@@ -69,11 +71,11 @@ def test_malformed_or_unsupported_upload_does_not_create_message(chat):
 
 def test_completion_reuses_web_roles_and_transitions(chat):
     c,engine=chat
-    c.headers["Authorization"]="Bearer token2"
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[2]
     r=c.post("/api/mobile/v1/consultations/1/actions",json={"action":"complete"})
     assert r.status_code==200,r.text
     assert c.get("/api/mobile/v1/consultations/1").json()["case"]["status"]=="EXPERT_COMPLETED"
-    c.headers["Authorization"]="Bearer token1"
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[1]
     r=c.post("/api/mobile/v1/consultations/1/actions",json={"action":"complete","completion_action":"CONTINUE"})
     assert r.status_code==200,r.text
     assert c.get("/api/mobile/v1/consultations/1").json()["case"]["status"]=="ACTIVE"
@@ -84,9 +86,9 @@ def test_delete_is_local_and_restore_preserves_messages(chat):
     assert r.status_code==200,r.text
     assert c.get("/api/mobile/v1/consultations").json()["items"]==[]
     assert c.get("/api/mobile/v1/messages/deleted").json()["items"][0]["id"]==1
-    c.headers["Authorization"]="Bearer token2"
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[2]
     assert c.get("/api/mobile/v1/consultations").json()["items"][0]["id"]==1
-    c.headers["Authorization"]="Bearer token1"
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[1]
     assert c.post("/api/mobile/v1/consultations/1/actions",json={"action":"restore"}).status_code==200
     assert c.get("/api/mobile/v1/consultations").json()["items"][0]["id"]==1
 
@@ -169,11 +171,11 @@ def test_message_receipt_is_private_and_sender_scoped(chat):
     assert own.status_code == 200
     assert own.headers["cache-control"] == "private, no-store"
     assert own.json()["message"]["id"] == first.json()["message"]["id"]
-    c.headers["Authorization"] = "Bearer token2"
+    c.headers["Authorization"] = "Bearer "+_SESSION_TOKEN[2]
     peer = c.get(f"/api/mobile/v1/consultations/1/message-receipt?client_message_id={key}")
     assert peer.status_code == 200
     assert peer.json()["message"] is None
-    c.headers["Authorization"] = "Bearer token3"
+    c.headers["Authorization"] = "Bearer "+_SESSION_TOKEN[3]
     assert c.get(f"/api/mobile/v1/consultations/1/message-receipt?client_message_id={key}").status_code == 404
 
 
@@ -183,7 +185,7 @@ def test_same_client_key_is_isolated_between_consultation_participants(chat):
     first = c.post("/api/mobile/v1/consultations/1/messages",
                    json={"content": "İlk hekim", "client_message_id": key})
     assert first.status_code == 200, first.text
-    c.headers["Authorization"] = "Bearer token2"
+    c.headers["Authorization"] = "Bearer "+_SESSION_TOKEN[2]
     second = c.post("/api/mobile/v1/consultations/1/messages",
                     json={"content": "Uzman yanıtı", "client_message_id": key})
     assert second.status_code == 200, second.text

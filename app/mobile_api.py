@@ -1943,6 +1943,8 @@ def mobile_experts(user:User=Depends(_mobile_user),specialty:str=Query("",max_le
 
 def _mobile_private_no_store(response: Response) -> None:
     """Prevent shared or persistent caching of participant-scoped clinical data."""
+    if response is None or not hasattr(response, "headers"):
+        return  # legacy direct-call harness: header shaping only applies to real HTTP responses
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["Pragma"] = "no-cache"
     vary = [part.strip() for part in response.headers.get("Vary", "").split(",") if part.strip()]
