@@ -7,6 +7,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app import account_erasure, main, object_storage, work_jobs
+from app.membership_verification import MembershipVerification
 
 
 @pytest.fixture
@@ -249,3 +250,191 @@ def test_guest_upload_finalization_serializes_with_account_erasure():
     erasure_source = Path(account_erasure.__file__).read_text(encoding="utf-8")
     begin = erasure_source.split("def begin_account_erasure", 1)[1]
     assert "erase_account_ai_data(session, user_id)" in begin
+
+
+def test_account_erasure_queues_profile_and_all_identity_documents(erasure_engine):
+    with Session(erasure_engine, expire_on_commit=False) as session:
+        owner = main.User(
+            username="erase-account-assets",
+            email="erase-account-assets@example.test",
+            role="DOCTOR",
+            display_name="Erase Account Assets",
+            is_active=True,
+        )
+        session.add(owner)
+        session.flush()
+        profile_photo = f"uploads/profile_photos/user_{owner.id}_{'a' * 16}.jpg"
+        credential = f"uploads/expert_credentials/user_{owner.id}/credential_{'b' * 32}.pdf"
+        title_change_document = f"uploads/expert_title_changes/user_{owner.id}/title_{'c' * 32}.pdf"
+        membership_document = f"uploads/membership_documents/user_{owner.id}/{'d' * 32}.pdf"
+        owner.profile_photo_path = profile_photo
+        profile = main.ExpertProfile(
+            user_id=owner.id,
+            specialty="Endodonti",
+            credential_document_path=credential,
+            credential_document_name="credential.pdf",
+            credential_document_mime="application/pdf",
+        )
+        title_change = main.ExpertTitleChange(
+            user_id=owner.id,
+            requested_title="Doç. Dr.",
+            status="PENDING_REVIEW",
+            credential_document_path=title_change_document,
+            credential_document_name="title-change.pdf",
+            credential_document_mime="application/pdf",
+        )
+        membership = MembershipVerification(
+            user_id=owner.id,
+            document_type="DIPLOMA",
+            document_path=membership_document,
+            document_name="diploma.pdf",
+            document_mime="application/pdf",
+            name_snapshot="Erase Account Assets",
+            title_snapshot="Diş Hekimi",
+            submitted_at=main._utcnow_naive(),
+        )
+        session.add_all([owner, profile, title_change, membership])
+        session.commit()
+        owner_id = owner.id
+        profile_id = profile.id
+        title_change_id = title_change.id
+        membership_id = membership.id
+
+        fallback = account_erasure.begin_account_erasure(
+            session, user_id=owner_id, actor="SELF"
+        )
+        session.commit()
+
+    assert fallback == []
+    with Session(erasure_engine) as session:
+        erased = session.get(main.User, owner_id)
+        assert erased is not None and erased.is_active is False
+        assert erased.profile_photo_path is None
+        retained_profile = session.get(main.ExpertProfile, profile_id)
+        assert retained_profile.credential_document_path is None
+        retained_title_change = session.get(main.ExpertTitleChange, title_change_id)
+        assert retained_title_change.credential_document_path is None
+        assert retained_title_change.credential_document_name is None
+        assert session.get(MembershipVerification, membership_id) is None
+        queued = {
+            row.reference
+            for row in session.exec(select(work_jobs.WorkGarbage)).all()
+        }
+        assert queued == {
+            profile_photo,
+            credential,
+            title_change_document,
+            membership_document,
+        }
+
+
+def test_account_asset_cleanup_allowlist_is_strict():
+    valid = (
+        "uploads/profile_photos/user_7_" + "a" * 16 + ".jpg",
+        "uploads/expert_credentials/user_7/credential_" + "b" * 32 + ".pdf",
+        "uploads/expert_title_changes/user_7/title_" + "c" * 32 + ".png",
+        "uploads/membership_documents/user_7/" + "d" * 32 + ".jpeg",
+    )
+    assert all(work_jobs.is_account_asset_reference(reference) for reference in valid)
+
+    invalid = (
+        "../uploads/profile_photos/user_7_" + "a" * 16 + ".jpg",
+        "uploads/profile_photos/user_0_" + "a" * 16 + ".jpg",
+        "uploads/profile_photos/user_7_" + "a" * 32 + ".jpg",
+        "uploads/expert_credentials/user_7/credential_" + "b" * 32 + ".exe",
+        "uploads/expert_title_changes/user_7/../title_" + "c" * 32 + ".pdf",
+        "uploads/membership_documents/user_7/" + "D" * 32 + ".pdf",
+        "uploads/patient-media/patient_7_" + "e" * 32 + ".jpg",
+        "r2://bucket/uploads/profile_photos/user_7_" + "a" * 16 + ".jpg",
+    )
+    assert all(not work_jobs.is_account_asset_reference(reference) for reference in invalid)
+
+
+def test_account_asset_cleanup_retries_r2_failure_and_survives_worker_restart(
+    erasure_engine, monkeypatch
+):
+    reference = "uploads/profile_photos/user_8_" + "f" * 16 + ".jpg"
+    with Session(erasure_engine) as session:
+        assert work_jobs.enqueue_account_asset_cleanup(session, reference)
+        session.commit()
+
+    calls = []
+    def delete_once_fails(path):
+        calls.append(path)
+        if len(calls) == 1:
+            raise object_storage.ObjectStorageError("synthetic R2 timeout")
+
+    monkeypatch.setattr(object_storage, "delete", delete_once_fails)
+    work_jobs.collect_garbage(erasure_engine)
+    with Session(erasure_engine) as session:
+        receipt = session.exec(
+            select(work_jobs.WorkGarbage).where(work_jobs.WorkGarbage.reference == reference)
+        ).one()
+        assert receipt.attempts == 1
+        assert receipt.available_at > work_jobs.now()
+        receipt.available_at = work_jobs.now() - timedelta(seconds=1)
+        session.add(receipt)
+        session.commit()
+
+    # A fresh collector invocation uses only the durable row, not process memory.
+    monkeypatch.setattr(object_storage, "delete", lambda path: calls.append(path))
+    work_jobs.collect_garbage(erasure_engine)
+    assert calls == [reference, reference]
+    with Session(erasure_engine) as session:
+        assert session.exec(
+            select(work_jobs.WorkGarbage).where(work_jobs.WorkGarbage.reference == reference)
+        ).all() == []
+
+
+def test_account_asset_cleanup_preserves_any_still_referenced_identity_object(
+    erasure_engine, monkeypatch
+):
+    references = {
+        "profile": "uploads/profile_photos/user_9_" + "a" * 16 + ".jpg",
+        "credential": "uploads/expert_credentials/user_9/credential_" + "b" * 32 + ".pdf",
+        "title": "uploads/expert_title_changes/user_9/title_" + "c" * 32 + ".pdf",
+        "membership": "uploads/membership_documents/user_9/" + "d" * 32 + ".pdf",
+    }
+    with Session(erasure_engine) as session:
+        owner = main.User(
+            username="retained-asset-owner",
+            email="retained-asset-owner@example.test",
+            role="DOCTOR",
+            display_name="Retained Asset Owner",
+            profile_photo_path=references["profile"],
+        )
+        session.add(owner)
+        session.flush()
+        session.add_all([
+            main.ExpertProfile(
+                user_id=owner.id,
+                specialty="Endodonti",
+                credential_document_path=references["credential"],
+            ),
+            main.ExpertTitleChange(
+                user_id=owner.id,
+                requested_title="Doç. Dr.",
+                credential_document_path=references["title"],
+            ),
+            MembershipVerification(
+                user_id=owner.id,
+                document_type="DIPLOMA",
+                document_path=references["membership"],
+                document_name="diploma.pdf",
+                document_mime="application/pdf",
+                name_snapshot="Retained Asset Owner",
+                submitted_at=main._utcnow_naive(),
+            ),
+        ])
+        for reference in references.values():
+            assert work_jobs.enqueue_account_asset_cleanup(session, reference)
+        session.commit()
+
+    deleted = []
+    monkeypatch.setattr(object_storage, "delete", lambda path: deleted.append(path))
+    for _ in references:
+        work_jobs.collect_garbage(erasure_engine)
+
+    assert deleted == []
+    with Session(erasure_engine) as session:
+        assert session.exec(select(work_jobs.WorkGarbage)).all() == []
