@@ -62,7 +62,7 @@ Kural: main'e merge yok, canlı deploy yok, DB migration yok (hepsi bu turda sa�
 - Loglarda KVK: çıktılarda TC/adres sızıntısı saptanmadı; error mesajları operational.
 
 **DÜZELTİLMESİ gereken ama bu turun kapsamı dışı kalan (bkz. §9):**
-- **K1 — Hesap silme hasta verisini tam silmiyor**: `account erasure` GuestAnalysis/medya kopyalarını bırakıyor olabilir (ChatGPT'nin nativeAuth testi kırmızı — üzerinde çalışıyor). Yüksek öncelik.
+- **K1 — Kısmen düzeltildi; kabul açık**: hesap silme artık GuestAnalysis/GuestImageAsset ve guest AI işlerini temizliyor; dosya/sonuç silmeleri WorkGarbage ile dayanıklı kuyruğa alınıyor. Patient/Analysis/ImageAsset/PatientMedia ve tedavi/diş/voice klinik kayıtları üçüncü taraf hasta verisi ve olası yasal saklama nedeniyle otomatik silinmiyor. Profil/üyelik/uzmanlık belgelerinin kalıcı retry kapsamı ve hukuki saklama çizelgesi hâlâ açık. Ayrıntı: `docs/account-erasure-guest-cleanup-20261120.md`.
 - Y1 — Onay günlüğü: hasta erişimlerinde yapılandırılmış audit izi yok (AgreementAcceptance yalnız sözleşmeler için).
 - Y2 — Admin işlemlerinde ayrıntılı audit trail kısmi.
 
@@ -113,7 +113,7 @@ Varsayım: tek Render instance, uvicorn 1 worker, `run_in_threadpool` havuzu ~40
 Bu turun sonunda `pytest -q` tam süit koşuldu; sonuç final raporda sayılarla verilir (arka plan koşusu).
 
 ## 9. Sonraki en önemli 10 eksiklik
-1. **K1 — Hesap silme = gerçek hasta veri silme**: GuestAnalysis, medya kopyaları ve türevlerinin silme akışına dahil edilmesi + doğrulama testi.
+1. **K1 — Hesap silme kabulü**: guest analizleri, görselleri ve geçici AI payload'ları için dayanıklı temizleme eklendi; profil/üyelik/uzmanlık belge retry'si, orphan guest asset denetimi ve yasal klinik saklama politikası doğrulaması açık.
 2. **Hasta erişim audit izi (Y1)**: her hasta veri okuması için yapılandırılmış kayıt (kim, hangi hasta, ne zaman, hangi uç) — KVKK madde 12.
 3. **Mobil uçlarda ip/kimlik bazlı rate limiting** (özellikle analiz, ASR, medya yükleme).
 4. **patientAnalysisHistory web paging sözleşmesinin mobilde tamamlanması** (kalan kırmızıların ana gövdesi).
