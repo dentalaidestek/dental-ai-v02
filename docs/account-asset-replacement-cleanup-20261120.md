@@ -20,7 +20,7 @@ The expert profile form also wrote a replacement credential before validating OR
 
 - Added `enqueue_replaced_account_asset_cleanup(session, previous, current)`. It is a no-op for empty or same-path values and delegates to the existing strict allowlist.
 - Profile-photo and credential/title-document replacements enqueue the old reference in the same SQL transaction that switches the metadata pointer.
-- The profile-photo post-commit helper no longer directly deletes current-format generated keys; those are collected only through the durable receipt. Unknown legacy profile-photo keys retain the old best-effort fallback.
+- The profile-photo post-commit helper no longer directly deletes current-format generated keys; those are collected only through the durable receipt. New profile-photo uploads use a random 16-hex key suffix, so a later identical upload cannot reuse a key already queued for deletion. Unknown legacy profile-photo keys retain the old best-effort fallback.
 - New account objects whose metadata transaction fails are queued for cleanup in a fresh short transaction. They are not directly deleted because profile-photo keys are content-addressed and may still be referenced by the current account.
 - Expert credential bytes are staged in memory and written only after the ORCID validation succeeds.
 - The mobile professional API needs no parallel implementation because it continues to delegate to the canonical web handlers.
