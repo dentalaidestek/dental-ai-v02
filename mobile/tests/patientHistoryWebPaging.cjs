@@ -62,6 +62,8 @@ test("patient profile loads authenticated server-rendered history pages", () => 
   const source = read("app/templates/patient_detail.html");
   assert.match(source, /patient_analysis_history_items\.html/);
   assert.match(source, /patient_treatment_history_items\.html/);
+  assert.match(source, /set expanded = false/);
+  assert.match(source, /set first_page = true/);
   assert.match(source, /loadMoreAnalyses/);
   assert.match(source, /loadMoreTreatments/);
   assert.match(source, /credentials: "same-origin"/);
