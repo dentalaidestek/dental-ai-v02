@@ -106,3 +106,22 @@ test('native thumbnails recheck exact ownership and source identity after R2 gen
   assert.match(main,/app\.include_router\(mobile_router\)[\s\S]*app\.include_router\(mobile_modern_router\)/);
   assert.match(main,/mobile_modern_router\.routes\[:\]\s*=\s*\[route for route in mobile_modern_router\.routes/);
 });
+
+test('canonical native original-file route rechecks ownership and exact source after R2 hydration',()=>{
+  const mobile=fs.readFileSync(require.resolve('../../app/mobile_api.py'),'utf8');
+  const block=mobile.split('@router.get("/patients/{patient_id}/media/{media_id}/file")')[1]?.split('async def _invoke_patient_web')[0]||'';
+  assert.ok(block,'canonical native original-file route must remain mounted');
+  assert.match(block,/await run_in_threadpool\(storage_ensure_local, file_path\)/);
+  assert.match(block,/current_patient\.owner_user_id == user\.id/);
+  assert.match(block,/current_media\.patient_id == patient_id/);
+  assert.match(block,/current_media\.owner_user_id == user\.id/);
+  assert.match(block,/current_media\.file_path == file_path/);
+  assert.match(block,/current_media\.original_filename == original_filename/);
+  assert.match(block,/except FileNotFoundError/);
+  assert.match(block,/except Exception/);
+  assert.match(block,/private_error\(\s*503/);
+  assert.match(block,/_mobile_private_no_store\(result\)/);
+  assert.match(block,/X-Content-Type-Options.*nosniff/);
+  assert.doesNotMatch(block,/raise HTTPException\(status_code=503/);
+});
+
