@@ -1,5 +1,5 @@
 import base64
-from test_mobile_chat_actions import chat
+from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from app import main,mobile_api
 from sqlmodel import Session,select
 from sqlalchemy import event as sqlalchemy_event
@@ -200,7 +200,7 @@ def test_program_cursor_rejects_scope_changes_and_invalidates_mutated_snapshots(
     assert isinstance(cursor,str) and len(cursor)>=16
     from app.mobile_program_api import _decode_program_cursor
     try:
-        _decode_program_cursor(cursor,'today',date(2030,1,7),2,main.APP_TIMEZONE,datetime.now(timezone.utc))
+        _decode_program_cursor(cursor,'today',date(2030,1,7),2,main.APP_TIMEZONE,datetime.now(timezone.utc),_SESSION_TOKEN[1])
         assert False,'another account must not reuse this cursor'
     except Exception as exc:
         assert getattr(exc,'status_code',None)==422
