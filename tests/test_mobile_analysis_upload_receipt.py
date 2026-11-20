@@ -5,6 +5,7 @@ from PIL import Image
 from sqlmodel import Session,select
 from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from app import main,mobile_analysis_api,work_jobs
+from app.work_jobs import WorkJob
 from app.analysis_upload_receipts import keyed_analysis_upload_fingerprint
 from app.patient_media_receipts import encryption_key
 
@@ -371,14 +372,14 @@ def test_missing_analysis_receipt_key_fails_closed_before_any_clinical_allocatio
     with Session(engine) as s:
         assert not s.exec(select(main.Analysis)).all()
         assert not s.exec(select(main.ImageAsset)).all()
-        assert not s.exec(select(work_jobs.WorkJob).where(work_jobs.kind=='UPLOAD_RECEIPT')).all()
+        assert not s.exec(select(work_jobs.WorkJob).where(WorkJob.kind=='UPLOAD_RECEIPT')).all()
 
 
 def test_keyed_analysis_receipt_rejects_tampered_fingerprint_without_second_analysis(chat,monkeypatch,tmp_path):
     c,engine,raw=setup(chat,monkeypatch,tmp_path)
     first=post(c,raw);assert first.status_code==200,first.text
     with Session(engine) as s:
-        receipt=s.exec(select(work_jobs.WorkJob).where(work_jobs.kind=='UPLOAD_RECEIPT')).one()
+        receipt=s.exec(select(work_jobs.WorkJob).where(WorkJob.kind=='UPLOAD_RECEIPT')).one()
         receipt.source_hash='a'*64
         s.add(receipt);s.commit()
     replay=post(c,raw)
