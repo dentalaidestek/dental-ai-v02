@@ -21,7 +21,7 @@ The web profile previously loaded every `Analysis` and `Treatment` for the patie
 
 ## Regression coverage
 
-- `tests/test_patient_history_pagination.py`: cursor validation, stable timestamp/id boundary, bounded initial profile, 25-row continuation, a newer concurrent insert not shifting the current cursor walk, voice-review DONE vs RUNNING labeling, analysis assets, collapsed/expanded treatment pages, private headers, invalid cursor and another-account denial.
+- `tests/test_patient_history_pagination.py`: cursor validation, equal-timestamp ID tie-break, bounded initial profile, 25-row continuation, a newer concurrent insert not shifting the current cursor walk, voice-review DONE vs RUNNING labeling, analysis assets, collapsed/expanded treatment pages, private headers, invalid cursor and another-account denial.
 - `mobile/tests/patientHistoryWebPaging.cjs`: source-contract guards for bounded queries, owner-scoped cookie routes, private headers, partial contents, treatment collapse state, and same-origin page loading.
 - The Node regression is registered in `npm run test:beta` and the manual Security Recovery native-clinical job. The Python integration test is registered in the manual Security Recovery pytest command.
 
