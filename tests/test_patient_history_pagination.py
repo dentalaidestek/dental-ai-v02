@@ -12,7 +12,7 @@ from app.patient_history_pagination import (
     history_page_slice,
 )
 from app.work_jobs import WorkJob
-from test_mobile_chat_actions import chat
+from test_mobile_chat_actions import chat, _SESSION_TOKEN
 
 
 def test_patient_history_cursor_round_trips_and_rejects_malformed_values():
@@ -48,7 +48,7 @@ def test_history_page_slice_uses_created_at_and_id_boundary():
 
 def test_web_patient_analysis_and_treatment_history_are_bounded_and_owner_scoped(chat):
     client, engine = chat
-    client.cookies.set(main.SESSION_COOKIE, "token1")
+    client.cookies.set(main.SESSION_COOKIE, _SESSION_TOKEN[1])
     base = datetime(2026, 11, 1, 9, 0)
     with Session(engine) as session:
         session.add(main.Patient(
