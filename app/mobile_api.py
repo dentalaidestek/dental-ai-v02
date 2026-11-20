@@ -2208,6 +2208,208 @@ def mobile_academic_messages(
             "next_before": page[-1].id if has_more and page else None,
         }
 
+_PATIENT_MEDIA_RECEIPT_KIND = "PATIENT_MEDIA_RECEIPT"
+
+
+def _patient_media_receipt_key(user_id: int, patient_id: int, request_key: str) -> str:
+    if (
+        not isinstance(user_id, int) or isinstance(user_id, bool) or user_id <= 0
+        or not isinstance(patient_id, int) or isinstance(patient_id, bool) or patient_id <= 0
+        or not _PATIENT_MEDIA_REQUEST_KEY.fullmatch(request_key or "")
+    ):
+        raise HTTPException(status_code=422, detail="Geçersiz klinik görüntü işlem anahtarı.")
+    return hashlib.sha256(
+        f"mobile-patient-media:{user_id}:{patient_id}:{request_key}".encode("ascii")
+    ).hexdigest()
+
+
+def _patient_media_payload_hash(
+    file_hash: str,
+    media_type: str,
+    tooth_number: Optional[str],
+    note: Optional[str],
+    original_name: str,
+) -> str:
+    """Build the legacy canonical digest; callers HMAC it before persistence."""
+    payload = [file_hash, media_type, tooth_number, note, original_name]
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _lock_patient_media_receipt(session: Session, receipt_key: Optional[str]) -> None:
+    if receipt_key and session.get_bind().dialect.name == "postgresql":
+        slot = int.from_bytes(
+            hashlib.sha256(("patient-media-receipt:" + receipt_key).encode()).digest()[:8],
+            "big",
+            signed=True,
+        )
+        session.execute(text("SELECT pg_advisory_xact_lock(:slot)"), {"slot": slot})
+
+
+def _patient_media_result(media: PatientMedia, replayed: bool = False) -> dict:
+    uploaded_at = media.uploaded_at
+    if isinstance(uploaded_at, datetime):
+        uploaded_at = uploaded_at.isoformat()
+    return {
+        "media": {
+            "id": media.id,
+            "original_filename": media.original_filename,
+            "media_type": media.media_type,
+            "tooth_number": media.tooth_number,
+            "note": media.note,
+            "uploaded_at": uploaded_at,
+        },
+        "replayed": replayed,
+    }
+
+
+def _find_patient_media_receipt(
+    session: Session,
+    user: User,
+    patient_id: int,
+    receipt_key: str,
+    digest: Optional[str] = None,
+    legacy_digest: Optional[str] = None,
+    key: Optional[bytes] = None,
+):
+    from app.patient_media_receipts import (
+        PatientMediaReceiptConflict,
+        PatientMediaReceiptCorrupt,
+        upgrade_legacy_receipt,
+    )
+
+    receipt = session.exec(
+        select(WorkJob).where(
+            WorkJob.owner_user_id == user.id,
+            WorkJob.resource_id == patient_id,
+            WorkJob.resource_type == "PATIENT",
+            WorkJob.kind == _PATIENT_MEDIA_RECEIPT_KIND,
+            WorkJob.dedupe_key == receipt_key,
+        )
+    ).first()
+    if receipt is None:
+        return None
+    if receipt.status != "DONE":
+        raise HTTPException(status_code=409, detail="Klinik görüntü işlem fişi henüz doğrulanamadı.")
+    if key is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Klinik görüntü yükleme kurtarma anahtarı yapılandırılmamış.",
+        )
+    try:
+        upgraded = upgrade_legacy_receipt(
+            receipt,
+            digest=digest,
+            legacy_digest=legacy_digest,
+            key=key,
+            owner_id=user.id,
+            patient_id=patient_id,
+        )
+    except PatientMediaReceiptConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Bu klinik görüntü işlem anahtarı farklı bir dosya veya bilgilerle kullanılmış.",
+        ) from exc
+    except PatientMediaReceiptCorrupt as exc:
+        raise HTTPException(status_code=409, detail="Klinik görüntü işlem fişi doğrulanamadı.") from exc
+    if upgraded:
+        session.add(receipt)
+    try:
+        saved = json.loads(receipt.payload_json or "{}")
+        media_id = int(saved["media_id"])
+        if int(saved.get("patient_id", 0)) != patient_id:
+            raise ValueError("receipt patient mismatch")
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+        raise HTTPException(status_code=409, detail="Klinik görüntü işlem fişi doğrulanamadı.")
+    media = session.get(PatientMedia, media_id)
+    if not media or media.patient_id != patient_id or media.owner_user_id != user.id:
+        raise HTTPException(
+            status_code=409,
+            detail="Önceki klinik görüntü kaydı artık galeride yok. Yeni bir işlem anahtarıyla yeniden seçin.",
+        )
+    return _patient_media_result(media, replayed=True)
+
+
+def _store_patient_media_receipt(
+    session: Session,
+    user: User,
+    patient_id: int,
+    media: PatientMedia,
+    receipt_key: str,
+    digest: str,
+    batch_id: str,
+    file_bytes: int,
+) -> None:
+    session.add(
+        WorkJob(
+            owner_user_id=user.id,
+            resource_id=patient_id,
+            resource_type="PATIENT",
+            kind=_PATIENT_MEDIA_RECEIPT_KIND,
+            source_hash=digest,
+            dedupe_key=receipt_key,
+            result_ref=batch_id,
+            payload_json=json.dumps(
+                {
+                    "patient_id": patient_id,
+                    "media_id": media.id,
+                    "batch_id": batch_id,
+                    "file_bytes": file_bytes,
+                    "fingerprint_version": 1,
+                },
+                sort_keys=True,
+            ),
+            status="DONE",
+        )
+    )
+
+
+def _patient_media_batch_usage(
+    session: Session,
+    user: User,
+    patient_id: int,
+    batch_id: str,
+) -> tuple[int, int]:
+    """Read a bounded set of persisted receipts for one owner/patient batch."""
+    receipts = session.exec(
+        select(WorkJob)
+        .where(
+            WorkJob.owner_user_id == user.id,
+            WorkJob.resource_id == patient_id,
+            WorkJob.resource_type == "PATIENT",
+            WorkJob.kind == _PATIENT_MEDIA_RECEIPT_KIND,
+            WorkJob.status == "DONE",
+            WorkJob.result_ref == batch_id,
+        )
+        .order_by(WorkJob.id.desc())
+        .limit(MAX_PATIENT_MEDIA_FILES + 1)
+    ).all()
+    total_bytes = 0
+    for receipt in receipts:
+        try:
+            payload = json.loads(receipt.payload_json or "{}")
+            if not isinstance(payload, dict):
+                raise ValueError("invalid patient media batch payload")
+            file_bytes = payload.get("file_bytes")
+            if (
+                payload.get("batch_id") != batch_id
+                or payload.get("patient_id") != patient_id
+                or not isinstance(file_bytes, int)
+                or isinstance(file_bytes, bool)
+                or file_bytes < 1
+                or file_bytes > MAX_PATIENT_MEDIA_FILE_BYTES
+            ):
+                raise ValueError("invalid patient media batch receipt")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            raise HTTPException(
+                status_code=409,
+                detail="Klinik görüntü yükleme grubu fişi doğrulanamadı.",
+            )
+        total_bytes += file_bytes
+    return len(receipts), total_bytes
+
+
 @router.post("/patients/{patient_id}/media")
 async def mobile_patient_media_upload(
     patient_id: int,
