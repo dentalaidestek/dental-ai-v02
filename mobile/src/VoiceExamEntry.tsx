@@ -82,9 +82,11 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  usePreventRemove(processing||audioBusy||deviceCheckBusy||applyBusy,()=>Alert.alert("İşlem sürüyor","Muayene veya kayıt tamamlanana kadar bekleyin."));
  const [lastRemoved,setLastRemoved]=useState<{key:"teeth"|"literature_topics"|"source_requests"|"communication"|"decision_barriers"|"follow_up_questions";index:number;item:unknown}|null>(null);
  const processingLock=useRef(false),processingOwner=useRef(0),generation=useRef(0),scope=useRef(token+":"+(selected?.id||0)),anonymousLock=useRef<string|null>(null),startAfterSelection=useRef(false),accountScope=useRef(token+":"+(userId||0));
- const forceFreshExtraction=useRef(false);
+ const forceFreshExtraction=useRef(false),sourceFingerprint=useRef(""),sourceSnapshot=useRef("");
+ const [sourceRetryable,setSourceRetryable]=useState(false);
+ function invalidateSourceReview(){sourceFingerprint.current="";sourceSnapshot.current="";setSourceRetryable(false);}
  scope.current=token+":"+(selected?.id||0);accountScope.current=token+":"+(userId||0);
- useEffect(()=>{const enterExam=startAfterSelection.current;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("");setTranscript("");setConsent(false);setHistoryFields({});setHistoryNotice("");setHistoryError("");setHistoryLoading(false);setHistoryConfirmed(false);setHistoryApplied(false);setStage(enterExam?"exam":"select")},[token,selected?.id]);
+ useEffect(()=>{const enterExam=startAfterSelection.current;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);invalidateSourceReview();setClinicalError("");setTranscript("");setConsent(false);setHistoryFields({});setHistoryNotice("");setHistoryError("");setHistoryLoading(false);setHistoryConfirmed(false);setHistoryApplied(false);setStage(enterExam?"exam":"select")},[token,selected?.id]);
  useEffect(()=>{setCreatingAnonymous(false);setSelected(null);setAudioBusy(false);setApplyBusy(false)},[token]);
  useEffect(()=>{let active=true;if(initialPatientId){void getPatient(token,initialPatientId).then(r=>{if(active)setSelected(r.patient)}).catch(()=>{if(active)setError("Seçili hasta bulunamadı veya erişim izni yok.")})}return()=>{active=false}},[token,initialPatientId]);
  async function createAnonymousPatient(){
@@ -125,7 +127,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   if(!historyConfirmed){setHistoryError("Önceki bilgileri hastayla doğruladığınızı işaretleyin.");return;}
   if(!Object.keys(historyFields).length||historyApplied)return;
   setHistoryApplied(true);setHistoryError("");
-  if(review){setReview(mergeVoiceHistory(review,historyFields));setFinalResult(null);setClinicalError("");}
+  if(review){setReview(mergeVoiceHistory(review,historyFields));setFinalResult(null);invalidateSourceReview();setClinicalError("");}
  }
  async function processText(completeText?:string,sessionIdOverride?:string){
   const text=completeText??transcript;
@@ -217,7 +219,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    if(!Array.isArray(latest)||index>=latest.length)return previous;
    return {...previous,review:{...previous.review,[key]:latest.filter((_,i)=>i!==index)}};
   });
-  setFinalResult(null);
+  setFinalResult(null);invalidateSourceReview();
  }
  function undoRemovedItem(){
   if(processingLock.current||!lastRemoved||!review)return;
@@ -230,14 +232,56 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    const restored=[...current];restored.splice(Math.min(index,restored.length),0,item as never);
    return {...previous,review:{...previous.review,[key]:restored}};
   });
-  setLastRemoved(null);setFinalResult(null);
+  setLastRemoved(null);setFinalResult(null);invalidateSourceReview();
  }
  async function recheckVoice(){
   if(!selected)return;
   forceFreshExtraction.current=true;
   await processText();
  }
- async function finalize(sourceReview:VoiceExtraction|null=review,sourceTranscript:string=transcript,afterExplicitFinish=false){if(!selected||!consent||!sourceReview||processingLock.current||(!afterExplicitFinish&&(audioBusy||deviceCheckBusy||audioSession.started&&!audioSession.finished)))return;processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");try{const data=sourceReview.review;const response=await finalizeVoice(token,selected.id,{context:{fields:data.fields||{},teeth:data.teeth||[],literature_topics:data.literature_topics||[],source_requests:data.source_requests||[],...(data.appointment?{appointment:data.appointment}:{})},insights:data.communication||data.insights||[],uncertain:(data.uncertain||'').slice(0,3000),conversation_text:sourceTranscript});if(request===generation.current&&currentScope===scope.current){setFinalResult(response.final as Record<string,unknown>);setExtractionProgress("✓ Kaynaklı klinik değerlendirme tamamlandı.")}}catch(e){if(request===generation.current&&currentScope===scope.current){setClinicalError(e instanceof Error?e.message:"Son değerlendirme tamamlanamadı.");setExtractionProgress("Çıkarım tamamlandı; kaynaklı değerlendirme başarısız. Aynı taslakla yeniden deneyin.")}}finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}}
+ async function finalize(sourceReview:VoiceExtraction|null=review,sourceTranscript:string=transcript,afterExplicitFinish=false){
+  if(!selected||!consent||!sourceReview||processingLock.current||(!afterExplicitFinish&&(audioBusy||deviceCheckBusy||audioSession.started&&!audioSession.finished)))return;
+  const data=sourceReview.review;
+  const payload={context:{fields:data.fields||{},teeth:data.teeth||[],literature_topics:data.literature_topics||[],source_requests:data.source_requests||[],...(data.appointment?{appointment:data.appointment}:{})},insights:data.communication||data.insights||[],uncertain:(data.uncertain||'').slice(0,3000),conversation_text:sourceTranscript};
+  const snapshot=JSON.stringify(payload);
+  const sourceOnlyRetry=Boolean(finalResult&&sourceRetryable&&sourceFingerprint.current&&sourceSnapshot.current===snapshot);
+  const requestPayload=sourceOnlyRetry?{...payload,source_fingerprint:sourceFingerprint.current}:payload;
+  let preservePriorReview=sourceOnlyRetry;
+  processingLock.current=true;const request=++generation.current,currentScope=scope.current;processingOwner.current=request;setProcessing(true);setClinicalError("");
+  try{
+   const response=await finalizeVoice(token,selected.id,requestPayload,sourceReview.revision);
+   if(request===generation.current&&currentScope===scope.current){
+    const final=response.final as Record<string,unknown>;
+    const reviewStatus=final.review_status&&typeof final.review_status==="object"&&!Array.isArray(final.review_status)?final.review_status as Record<string,unknown>:{};
+    if(final.not_modified===true){
+     if(!sourceOnlyRetry||final.source_fingerprint!==sourceFingerprint.current){preservePriorReview=false;throw Error("Önceki kaynak değerlendirmesi doğrulanamadı. Güncel taslağı yeniden değerlendirin.");}
+     setSourceRetryable(reviewStatus.source_retryable===true);
+     setExtractionProgress(reviewStatus.source_retryable===true?"Kaynaklar değişmedi. Önceki değerlendirme korunuyor; eksik kaynaklar için daha sonra yeniden deneyebilirsiniz.":"Kaynak kontrolü tamamlandı. Önceki değerlendirme korunuyor.");
+    }else{
+     sourceFingerprint.current=String(final.source_fingerprint||"");
+     sourceSnapshot.current=snapshot;
+     setSourceRetryable(reviewStatus.source_retryable===true);
+     setFinalResult(final);
+     setExtractionProgress(reviewStatus.source_retryable===true?"✓ Klinik değerlendirme hazır; bazı kaynaklar erişilemedi. Yalnız eksik kaynakları yeniden deneyebilirsiniz.":"✓ Kaynaklı klinik değerlendirme tamamlandı.");
+    }
+    setClinicalError("");
+   }
+  }catch(e){
+   if(request===generation.current&&currentScope===scope.current){
+    const message=e instanceof Error?e.message:"Son değerlendirme tamamlanamadı.";
+    if(message.includes("Hasta dosyası görüşme sırasında değişti")){
+     preservePriorReview=false;invalidateSourceReview();setFinalResult(null);forceFreshExtraction.current=true;
+     setExtractionProgress("Hasta kaydı değişti. Güncel hasta bilgileriyle yeniden çıkarım yapın.");
+    }else if(sourceOnlyRetry&&preservePriorReview&&finalResult){
+     setSourceRetryable(true);setClinicalError(message+" Önceki kısmi değerlendirme korunuyor.");
+     setExtractionProgress("Önceki kısmi değerlendirme korundu; kaynak kontrolünü daha sonra yeniden deneyebilirsiniz.");
+    }else{
+     setClinicalError(message);
+     setExtractionProgress("Çıkarım tamamlandı; kaynaklı değerlendirme başarısız. Aynı taslakla yeniden deneyin.");
+    }
+   }
+  }finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}
+ }
  
  if(stage==="exam")return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:42}}>
   <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>{const back=()=>{generation.current++;processingLock.current=false;setProcessing(false);setStage("select")};if(transcript.trim())Alert.alert("Muayeneden ayrıl","Muayene metni bu hesaba ve hastaya bağlı cihaz taslağında korunur. Hasta dosyasına yalnız onaylanan alanlar kaydedilir.",[{text:"Vazgeç",style:"cancel"},{text:"Geri dön",style:"destructive",onPress:back}]);else back()}}><Text style={{color:navy,fontWeight:"700"}}>‹ Hasta seçimine dön</Text></Pressable>
@@ -270,21 +314,21 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
     </>}
     {historyApplied&&<Text style={{color:"#1769AA",marginTop:9}}>Doğruladığınız bilgiler muayene taslağına eklendi. Önceki ve güncel beyanlar çelişiyorsa ayrıca gösterilir; hiçbir alan otomatik kaydedilmez.</Text>}
    </View>
-   <Pressable accessibilityRole="checkbox" accessibilityState={{checked:consent,disabled:processing||deviceCheckBusy||applyBusy}} disabled={processing||deviceCheckBusy||applyBusy} onPress={()=>{if(consent){generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);setClinicalError("")}setConsent(v=>!v)}} style={{flexDirection:"row",alignItems:"flex-start",gap:10,marginTop:18}}>
+   <Pressable accessibilityRole="checkbox" accessibilityState={{checked:consent,disabled:processing||deviceCheckBusy||applyBusy}} disabled={processing||deviceCheckBusy||applyBusy} onPress={()=>{if(consent){generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);invalidateSourceReview();setClinicalError("")}setConsent(v=>!v)}} style={{flexDirection:"row",alignItems:"flex-start",gap:10,marginTop:18}}>
     <Text style={{fontSize:21,color:navy}}>{consent?"☑":"☐"}</Text><Text style={{flex:1,color:navy,lineHeight:21}}>Hastayı bilgilendirdim. Sesimin yazıya çevrilmesine ve muayene bittiğinde metnin klinik yapay zekâ hizmetiyle değerlendirilmesine onay veriyorum.</Text>
    </Pressable>
    <Pressable accessibilityRole="button" accessibilityState={{expanded:privacyExpanded}} onPress={()=>setPrivacyExpanded(v=>!v)} style={{marginTop:14,paddingVertical:10}}><Text style={{fontWeight:"700",color:navy}}>Veriler ve taslak hakkında {privacyExpanded?"−":"+"}</Text></Pressable>
    {privacyExpanded&&<Text style={{color:muted,lineHeight:20}}>Kayıt sırasında ses parçaları konuşma metni için işlenir. Klinik çıkarım yalnız muayeneyi bitirdiğinizde veya metni değerlendirdiğinizde yapılır. Metin cihazın güvenli deposunda, bekleyen sesler özel uygulama alanında tutulur. Ham ses ve tam konuşma metni hasta dosyasına otomatik yazılmaz. Gereksiz kimlik bilgilerini konuşmayın. Taslağı bu ekrandan temizleyebilirsiniz.</Text>}
-   {!!userId&&<NativeVoiceRecorder key={token+":"+selected?.id} token={token} userId={userId} patientId={selected!.id} consent={consent} value={transcript} disabled={processing||applyBusy||deviceCheckBusy} onBusyChanged={setAudioBusy} onSessionState={state=>{setAudioSession({started:state.started,finished:state.finished});setVoiceSessionId(state.sessionId)}} onTranscript={v=>{generation.current++;setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} onFinished={(v,sessionId)=>{setVoiceSessionId(sessionId);setTranscript(v);void processText(v,sessionId)}}/>}
+   {!!userId&&<NativeVoiceRecorder key={token+":"+selected?.id} token={token} userId={userId} patientId={selected!.id} consent={consent} value={transcript} disabled={processing||applyBusy||deviceCheckBusy} onBusyChanged={setAudioBusy} onSessionState={state=>{setAudioSession({started:state.started,finished:state.finished});setVoiceSessionId(state.sessionId)}} onTranscript={v=>{generation.current++;setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null);invalidateSourceReview()}} onFinished={(v,sessionId)=>{setVoiceSessionId(sessionId);setTranscript(v);void processText(v,sessionId)}}/>}
    <Text style={{fontWeight:"800",color:navy,marginTop:20}}>Muayene metni</Text>
-   <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} editable={!processing&&!audioBusy&&!deviceCheckBusy&&!applyBusy} onChangeText={v=>{generation.current++;setClinicalError("");setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null)}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
+   <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} editable={!processing&&!audioBusy&&!deviceCheckBusy&&!applyBusy} onChangeText={v=>{generation.current++;setClinicalError("");setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null);invalidateSourceReview()}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
    <Text style={{color:muted,fontSize:12,marginTop:8}}>{transcript.length}/72000 karakter · Uzun görüşmeler 12.000 karakterlik güvenli bölümlere ayrılır; tamamlanan bölümler cihazın şifreli taslağında korunur.</Text>
    {!!extractionProgress&&<Text accessibilityLiveRegion="polite" style={{color:muted,marginTop:10}}>{extractionProgress}</Text>}
    {!!clinicalError&&<Text style={{color:"#B42318",marginTop:12}}>{clinicalError}</Text>}
    <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy||audioSession.started&&!audioSession.finished||!consent||!selected||!transcript.trim()||transcript.length>72000} onPress={()=>void processText()} style={{backgroundColor:processing||audioBusy||deviceCheckBusy||!consent||!selected||!transcript.trim()||transcript.length>72000?"#9BA7B7":"#1769AA",borderRadius:12,padding:15,alignItems:"center",marginTop:18}}><Text style={{color:"white",fontWeight:"800"}}>{processing?"Değerlendiriliyor…":"Muayeneyi Bitir ve Metni Çözümle"}</Text></Pressable>
    {review&&<View style={{marginTop:18,borderTopWidth:1,borderTopColor:line,paddingTop:15}}>
     <Text style={{fontSize:17,fontWeight:"800",color:navy}}>Çıkarılan muayene bilgileri</Text>
-    <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>setEditingFields(v=>!v)} style={{paddingVertical:12}}><Text style={{fontWeight:"800",color:"#1769AA"}}>{editingFields?"Düzenlemeyi bitir":"Çıkarılan bilgileri kontrol et / düzenle"}</Text></Pressable>{Object.entries(review.review.fields||{}).map(([name,item])=><View key={name} style={{paddingVertical:9,borderBottomWidth:1,borderBottomColor:line}}><Text style={{fontWeight:"700",color:navy}}>{fieldLabels[name]||name.replace(/_/g," ")}</Text>{editingFields?<TextInput multiline accessibilityLabel={fieldLabels[name]||name} value={item.value} editable={!processing&&!audioBusy&&!deviceCheckBusy&&!applyBusy} onChangeText={value=>{generation.current++;setReview(previous=>previous?{...previous,review:{...previous.review,fields:{...previous.review.fields,[name]:{...previous.review.fields?.[name],value,edited:true}}}}:previous);setFinalResult(null)}} style={{color:navy,borderWidth:1,borderColor:line,borderRadius:9,padding:10,marginTop:6}}/>:<Text style={{color:muted,marginTop:4}}>{item.value}</Text>}<VoiceEvidence item={item}/></View>)}
+    <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>setEditingFields(v=>!v)} style={{paddingVertical:12}}><Text style={{fontWeight:"800",color:"#1769AA"}}>{editingFields?"Düzenlemeyi bitir":"Çıkarılan bilgileri kontrol et / düzenle"}</Text></Pressable>{Object.entries(review.review.fields||{}).map(([name,item])=><View key={name} style={{paddingVertical:9,borderBottomWidth:1,borderBottomColor:line}}><Text style={{fontWeight:"700",color:navy}}>{fieldLabels[name]||name.replace(/_/g," ")}</Text>{editingFields?<TextInput multiline accessibilityLabel={fieldLabels[name]||name} value={item.value} editable={!processing&&!audioBusy&&!deviceCheckBusy&&!applyBusy} onChangeText={value=>{generation.current++;setReview(previous=>previous?{...previous,review:{...previous.review,fields:{...previous.review.fields,[name]:{...previous.review.fields?.[name],value,edited:true}}}}:previous);setFinalResult(null);invalidateSourceReview()}} style={{color:navy,borderWidth:1,borderColor:line,borderRadius:9,padding:10,marginTop:6}}/>:<Text style={{color:muted,marginTop:4}}>{item.value}</Text>}<VoiceEvidence item={item}/></View>)}
     <ReviewRemovableSection name="Hasta iletişimi ve hekim önerileri" items={review.review.communication} disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onRemove={index=>removeExtractedItem("communication",index)}/>
     <ReviewRemovableSection name="Karar verme engelleri" items={review.review.decision_barriers} disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onRemove={index=>removeExtractedItem("decision_barriers",index)}/>
     <ReviewRemovableSection name="Netleştirilmesi gereken takip soruları" items={review.review.follow_up_questions} disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onRemove={index=>removeExtractedItem("follow_up_questions",index)}/>
@@ -293,7 +337,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
     <ReviewRemovableSection name="Kaynak terimi adayları" items={review.review.source_requests} disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onRemove={index=>removeExtractedItem("source_requests",index)}/>
     {!!review.review.appointment&&<View style={{marginTop:12}}>
      <ResultSection name="Konuşulan randevu" items={review.review.appointment}/>
-     <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>{generation.current++;setReview(previous=>previous?{...previous,review:{...previous.review,appointment:undefined}}:previous);setFinalResult(null)}} style={{paddingVertical:12}}>
+     <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>{generation.current++;setReview(previous=>previous?{...previous,review:{...previous.review,appointment:undefined}}:previous);setFinalResult(null);invalidateSourceReview()}} style={{paddingVertical:12}}>
       <Text style={{color:processing?muted:"#B42318",fontWeight:"700"}}>Randevu doğrulanmadı — taslaktan çıkar</Text>
      </Pressable>
     </View>}
@@ -301,7 +345,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
     {!!review.review.appointment&&<Text style={{color:"#9A6700",marginTop:10,lineHeight:20}}>Randevu konuşmada geçiyor olabilir; kabul veya kesinleşme hekim tarafından ayrıca doğrulanmalıdır. Onay bölümünde tarih/saat seçilmeden randevu oluşturulmaz.</Text>}
     {!!lastRemoved&&<Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={undoRemovedItem} style={{paddingVertical:12}}><Text style={{color:"#1769AA",fontWeight:"800"}}>Son kaldırılan bulguyu geri al</Text></Pressable>}
     <Text style={{color:muted,marginTop:10}}>Bunlar taslak bilgilerdir; hasta dosyasına kaydedilmedi. Muayeneyi bitirince kaynaklı klinik değerlendirme otomatik hazırlanır; alanları düzenlerseniz yeniden çalıştırabilirsiniz.</Text>
-    <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>void finalize()} style={{backgroundColor:navy,padding:15,borderRadius:12,alignItems:"center",marginTop:14}}><Text style={{color:"white",fontWeight:"800"}}>{processing?"İşlem sürüyor…":"Klinik değerlendirmeyi yeniden çalıştır"}</Text></Pressable>
+    <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy||!!finalResult&&!sourceRetryable} onPress={()=>void finalize()} style={{backgroundColor:navy,padding:15,borderRadius:12,alignItems:"center",marginTop:14}}><Text style={{color:"white",fontWeight:"800"}}>{processing?"İşlem sürüyor…":finalResult&&sourceRetryable?"Eksik kaynakları yeniden dene":finalResult?"Değerlendirme hazır":"Klinik değerlendirmeyi yeniden çalıştır"}</Text></Pressable>
    </View>}
    {finalResult&&<View style={{marginTop:18,borderTopWidth:1,borderTopColor:line,paddingTop:15}}>
     <Text style={{fontSize:18,fontWeight:"800",color:navy}}>Kaynaklı klinik değerlendirme</Text>
