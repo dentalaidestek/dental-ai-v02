@@ -406,8 +406,11 @@ def collect_garbage(engine):
         garbage = session.exec(query).first()
         if garbage is None:
             return
-        garbage.available_at = now() + timedelta(minutes=5)
         garbage.attempts += 1
+        # Bounded exponential backoff prevents a storage outage from turning
+        # the shared cleanup worker into a constant retry loop.
+        retry_minutes = min(360, 5 * (2 ** min(max(0, garbage.attempts - 1), 7)))
+        garbage.available_at = now() + timedelta(minutes=retry_minutes)
         claim_attempts = garbage.attempts
         session.add(garbage)
         session.commit()
