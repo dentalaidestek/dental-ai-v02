@@ -66,3 +66,19 @@ No patient records, clinical audio, production database or live service were mod
 - Rechecked the latest recorded pre-change Android run `43772807470`: `typecheck` job `132992268544` and `beta-apk` job `132992268816` are marked failed, but both have zero steps. The job-log endpoint returns `BlobNotFound 404`. Security run `43772807464`, job `132992268677`, likewise has zero steps and its log returns `BlobNotFound 404`. These failures occurred before npm/tsc, Gradle or pytest and therefore do not expose a source-level compiler or security-test failure.
 - `.github/workflows/voice-regression.yml` is deliberately `workflow_dispatch`-only while hosted jobs fail before step 1. I could not initiate a manual dispatch from the available GitHub controls, and no run is claimed.
 - The exact hosted-runner, repository Actions-permission, or billing cause remains unverified. Owner-side Actions availability inspection is required; no speculative workflow edits were made.
+
+
+## Runner-backed CI triage — 2026-11-21
+
+The PR branch was confirmed identical to `48ed6b7f361c3f9780e36866378f02df0a70142b` before this follow-up. GitHub then executed real jobs (these are not the earlier zero-step/BlobNotFound runs):
+
+- Android run [44834400214](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44834400214): TypeScript typecheck passed; session/auth and realtime/pagination passed; Android release APK build and Android+iOS Expo bundle export passed. Beta had 898/901 tests passing and three voice regressions failing.
+- Security run [44834400180](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44834400180): Python security, PostgreSQL concurrency/migration, native Program, Academic and Social suites passed. Native Clinical had 251/254 and Native Voice 76/77 passing; the same three voice test failures were present.
+
+Failure causes were isolated from job logs:
+
+1. The invalid source-retry-key test expected the phrase `kaynağı doğrulanamadı`, while the implementation correctly rejects the malformed prior source **key** with `Önceki kaynak değerlendirmesi anahtarı doğrulanamadı.`. The assertion now matches the actual contract.
+2. The consent-withdrawal source assertion expected four state setters to be adjacent. The implementation intentionally calls `invalidateSourceReview()` between clearing the final result and the clinical error; the regression now asserts that invalidation contract instead of a stale statement layout.
+3. The source-only retry Pressable discarded the `finalize()` promise with `void`, so the rendered-workflow test could not await completion and raced the processing lock. The handler now returns the promise, matching the web button's returned `finalizeReview()` promise; the test awaits it and verifies the retry button is enabled before pressing.
+
+These fixes are committed separately. The follow-up commits themselves have not yet been run by Actions, so their new-head status remains unverified. No production patient data, audio, database, deployment or migration was touched.
