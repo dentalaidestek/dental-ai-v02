@@ -80,3 +80,6 @@ The canonical mobile original-file handler authorized the patient/media row, cop
 - `mobile/tests/patientMediaRoute.cjs`: source contract for the mounted canonical original-file route and its post-hydration ownership/source checks. The test is part of `npm run test:beta`.
 
 The change is limited to private original-file delivery and regression coverage. It does not change patient ownership rules, expose storage references, alter the original object, or modify the web handler. No patient rows or media objects were changed. No migration, main merge or live deployment was performed.
+### Follow-up: authorization-database failure handling
+
+The initial owner/media lookup and the post-hydration recheck now both fail closed with a generic private 503 and `Retry-After: 2` when the database cannot verify authorization. This avoids turning a database outage into a default, potentially cacheable 500. The Python regression simulates failure after the bearer session has been resolved and confirms that connection details are not returned.
