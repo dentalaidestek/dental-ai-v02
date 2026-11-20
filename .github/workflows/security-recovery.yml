@@ -2,15 +2,6 @@ name: Security recovery regression
 # Keep CI scoped to this development branch and its PR target. A push to this
 # branch also verifies whether GitHub can assign a hosted runner before any step.
 on:
-  push:
-    branches:
-      - feature/mobile-web-parity-20261110
-    paths:
-      - ".github/workflows/security-recovery.yml"
-      - "app/**"
-      - "tests/**"
-      - "mobile/**"
-      - "docs/account-erasure-guest-cleanup-20261120.md"
   pull_request:
     branches:
       - feature/mobile-beta-20261110
@@ -24,8 +15,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: security-recovery-${{ github.ref }}
-  cancel-in-progress: false
+  group: security-recovery-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
 jobs:
   native-voice-security:
     runs-on: ubuntu-latest
