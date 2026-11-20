@@ -56,7 +56,9 @@ These are isolated helper checks, not execution of the committed repository test
 
 ## CI and unresolved test evidence
 
-At current HEAD `fefda8c8d5f03b0ed16037a83c09539abb2a755d`:
+A concurrent manual backend adjustment in `app/mobile_analysis_api.py` was detected after the initial branch read and preserved. It keeps the stable cursor route's negative numeric `before` validation explicit; this file was not overwritten by the native changes.
+
+At current HEAD `754d2be90ac0576b3f639b40db5e57e5f580b822`:
 
 - Combined commit statuses: 0.
 - PR-triggered workflow runs: 0.
