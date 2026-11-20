@@ -1480,6 +1480,56 @@ def test_mobile_patient_media_responses_are_private_and_owner_scoped(chat, monke
     assert client.get(f"/api/mobile/v1/patients/801/media/{media_id}/file").status_code == 404
 
 
+
+@pytest.mark.parametrize("mutation", ["delete_media", "replace_source", "reassign_patient"])
+def test_mobile_thumbnail_rechecks_owner_and_exact_source_after_generation(
+    chat, monkeypatch, tmp_path, mutation
+):
+    client, engine = chat
+    monkeypatch.setattr(mobile_modern_api_v3, "engine", engine)
+    import app.clinical_media_thumbnail as thumbnails
+
+    thumbnail_path = tmp_path / f"{mutation}-thumbnail.jpg"
+    Image.new("RGB", (12, 12), "blue").save(thumbnail_path, format="JPEG")
+    deleted = []
+    source = f"r2://synthetic-private/patient-810/{mutation}.png"
+
+    def generate(reference):
+        assert reference == source
+        with Session(engine) as session:
+            patient = session.get(main.Patient, 810)
+            media = session.get(main.PatientMedia, 8101)
+            if mutation == "delete_media":
+                session.delete(media)
+            elif mutation == "replace_source":
+                media.file_path = "r2://synthetic-private/patient-810/replacement.png"
+            elif mutation == "reassign_patient":
+                patient.owner_user_id = 2
+            session.commit()
+        return thumbnail_path
+
+    monkeypatch.setattr(thumbnails, "ensure_thumbnail", generate)
+    monkeypatch.setattr(thumbnails, "delete_thumbnail", lambda reference: deleted.append(reference))
+
+    with Session(engine) as session:
+        session.add(main.Patient(id=810, anonymous_id="SYNTHETIC-THUMBNAIL-RACE", owner_user_id=1))
+        session.add(main.PatientMedia(
+            id=8101,
+            patient_id=810,
+            owner_user_id=1,
+            original_filename="synthetic.png",
+            stored_filename="synthetic.png",
+            file_path=source,
+            media_type="RADIOGRAPH",
+        ))
+        session.commit()
+
+    response = client.get("/api/mobile/v1/patients/810/media/8101/thumbnail")
+    assert response.status_code == 404, response.text
+    _assert_clinical_private_response(response)
+    assert deleted == [source], "a stale derivative must be deleted using its original source key"
+
+
 def test_mobile_patient_directory_search_matches_web_tckn_owner_scope_and_no_store(chat):
     client, engine = chat
     base = datetime(2026, 11, 19, 1, 0, 0)
