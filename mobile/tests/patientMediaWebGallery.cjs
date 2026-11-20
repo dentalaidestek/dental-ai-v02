@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 
 const template=fs.readFileSync(path.join(__dirname,'../../app/templates/patient_detail.html'),'utf8');
+const main=fs.readFileSync(path.join(__dirname,'../../app/main.py'),'utf8');
 const start=template.indexOf('(function () {\n    const grid = document.getElementById("patientMediaGrid");');
 const end=template.indexOf('function openPatientMediaGallery()',start);
 const galleryScript=template.slice(start,end);
