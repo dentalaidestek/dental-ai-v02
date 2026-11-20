@@ -155,6 +155,8 @@ def test_web_patient_analysis_and_treatment_history_are_bounded_and_owner_scoped
     ).status_code == 400
     assert client.get("/patients/8801/history/analyses/page").status_code == 200
 
-    client.cookies.set(main.SESSION_COOKIE, "token2")
+    # Use a real second-owner session token: an invalid literal token must
+    # return 401, while an authenticated non-owner must receive 403.
+    client.cookies.set(main.SESSION_COOKIE, _SESSION_TOKEN[2])
     assert client.get("/patients/8801/history/analyses/page").status_code == 403
     assert client.get("/patients/8801/history/treatments/page").status_code == 403
