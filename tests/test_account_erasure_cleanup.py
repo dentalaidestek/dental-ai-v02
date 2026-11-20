@@ -1,8 +1,11 @@
 """Account-erasure scope and durable guest-object cleanup regressions."""
+import base64
+import io
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from PIL import Image
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -559,3 +562,17 @@ def test_web_account_asset_replacements_use_transactional_cleanup_and_validate_b
         "storage_write_bytes(destination, document_bytes, content_type=document_mime)"
     )
     assert "_queue_uncommitted_account_asset_cleanup(new_credential_path)" in expert
+
+def test_profile_photo_keys_are_unique_for_identical_uploads(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path / "uploads")
+    monkeypatch.setattr(main, "storage_persist_file", lambda *args, **kwargs: None)
+    image_bytes = io.BytesIO()
+    Image.new("RGB", (16, 16), (30, 60, 90)).save(image_bytes, format="JPEG")
+    encoded = "data:image/jpeg;base64," + base64.b64encode(image_bytes.getvalue()).decode("ascii")
+
+    first = main._save_profile_photo(23, encoded)
+    second = main._save_profile_photo(23, encoded)
+
+    assert first != second
+    assert work_jobs.is_account_asset_reference(first)
+    assert work_jobs.is_account_asset_reference(second)
