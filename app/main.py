@@ -6390,6 +6390,48 @@ def program_copy_to_days(
             local_end = local_start + duration if duration else None
             start_utc = local_start.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
             end_utc = local_end.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None) if local_end else None
+
+            # A copy retry is a durable mutation, not a new appointment. Use the
+            # existing owner-scoped Program receipt columns (schema revision 15)
+            # so a lost HTTP response cannot duplicate the same source/day copy.
+            # The source row is locked above, serializing concurrent copies on
+            # PostgreSQL; the unique owner/key index is the final race fence.
+            copy_request_hash = hashlib.sha256(
+                f"dental-ai:program-copy:v1:{user.id}:{source.id}:{target_date.isoformat()}".encode("utf-8")
+            ).hexdigest()
+            copy_payload = {
+                "source_event_id": source.id,
+                "target_date": target_date.isoformat(),
+                "event_type": source.event_type,
+                "title": source.title,
+                "start_at": start_utc.isoformat(),
+                "end_at": end_utc.isoformat() if end_utc else None,
+                "patient_id": copied_patient_id,
+                "location": source.location,
+                "notes": source.notes,
+                "reminder_minutes": source.reminder_minutes,
+                "notification_enabled": source.notification_enabled,
+                "timezone_name": source.timezone_name or "Europe/Istanbul",
+            }
+            copy_payload_hash = hashlib.sha256(
+                json.dumps(
+                    copy_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                ).encode("utf-8")
+            ).hexdigest()
+            copy_receipt = s.exec(
+                select(ScheduleEvent)
+                .where(ScheduleEvent.owner_user_id == user.id)
+                .where(ScheduleEvent.client_request_hash == copy_request_hash)
+                .with_for_update()
+            ).first()
+            if copy_receipt:
+                if copy_receipt.client_payload_hash != copy_payload_hash:
+                    return HTMLResponse(
+                        "Bu gün için daha önce oluşturulan kopyanın içeriği değişti. Mevcut kaydı düzenleyin.",
+                        status_code=409,
+                    )
+                continue
+
             # A matching title/time alone is not a duplicate: clinics often
             # have different patients or event types with the same label.
             # Match the copied event's complete scheduling identity so a
@@ -6424,6 +6466,8 @@ def program_copy_to_days(
                 recurrence_rule="NONE",
                 recurrence_until=None,
                 timezone_name=source.timezone_name or "Europe/Istanbul",
+                client_request_hash=copy_request_hash,
+                client_payload_hash=copy_payload_hash,
             )
             s.add(copied_event)
             s.flush()
