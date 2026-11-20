@@ -37,7 +37,10 @@ test('support screen is registered and reachable from the app',()=>{
 
 test('backend scopes ticket reads and writes to the authenticated owner',()=>{
  assert.match(backend,/SupportTicket\.user_id\s*==\s*user\.id/);
- assert.match(backend,/ticket\.user_id\s*!=\s*user\.id/);
+ // Ownership moved into the _mobile_support_ticket_owned helper (user_id parameter; also validates REPORT reporter ownership).
+ assert.match(backend,/def _mobile_support_ticket_owned\(session: Session, ticket: SupportTicket, user_id: int\) -> bool:/);
+ assert.match(backend,/if ticket\.user_id != user_id:/);
+ assert.ok(backend.includes('if not ticket or not _mobile_support_ticket_owned(session, ticket, user.id):'),'detail/read/reply endpoints must use the owner helper');
  assert.match(backend,/SupportTicket\.source_type\s*==\s*"SUPPORT"/);
 });
 
@@ -64,7 +67,10 @@ test('native support exposes optional expert conversation linking and persists i
 test('native support exposes reports and cursor pagination for tickets and messages',()=>{
  assert.ok(api.includes('getSupportReports'));
  assert.ok(api.includes('getSupportTickets=async(t:string,before?:number)'));
- assert.ok(api.includes('before_id='+ 'before'));
+ // 'before_id='+'before' was a literal-concat artifact; the intent is that the cursor is forwarded
+ // from the `before` argument, which the client builds as "&before_id="+before / "?before_id="+before.
+ assert.ok(api.includes('"&before_id="+before'));
+ assert.ok(api.includes('"?before_id="+before'));
  assert.ok(screen.includes('Bildirimlerim'));
  assert.ok(screen.includes('Daha eski destek taleplerini yükle'));
  assert.ok(screen.includes('Daha eski mesajları yükle'));

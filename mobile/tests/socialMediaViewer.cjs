@@ -106,7 +106,9 @@ test("native Dental Flow viewer wires pinch, pan, swipe, retry and authenticated
   assert.ok(component.includes("opacity: loading || failed ? 0 : 1"));
   assert.ok(screen.includes("NativeSocialMediaViewer"));
   assert.ok(screen.includes("onImage={(media, index) => setImage({ media, index })}"));
-  assert.ok(screen.includes('key={`${user.id}:${token}:'));
+  // a1429501 moved session identity into socialSessionKey so bearer tokens never enter React keys;
+  // the remount/reset contract is unchanged (sessionKey rotates with user.id, token and session epoch).
+  assert.ok(screen.includes('key={`${sessionKey}:media:${image.media.map((item) => item.id).join(",")}`}'));
   assert.ok(screen.includes("setImage(null);"));
-  assert.ok(screen.includes("}, [token, user.id]);"));
+  assert.ok(screen.includes("}, [sessionKey]);"));
 });

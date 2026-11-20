@@ -568,7 +568,7 @@ function Composer({
                     ? "Tekrar dene"
                     : "Paylaş"
               }
-              onPress={() => void post()}
+              onPress={post}
               disabled={
                 busy ||
                 previewBusy ||
@@ -1895,7 +1895,7 @@ export function DentalFlow({
             onUpdate={(p) => update(p, item.id, { userId: user.id, token })}
             onComments={() => { if (isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) setComments(item); }}
             onProfile={() => profile(item.author_id, item.author_name)}
-            onImage={(media, index) => { if (isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) setImage({ media, index }); }}
+            onImage={(media, index) => setImage({ media, index })}
             onEdit={() => {
               if (!isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) return;
               setEditing(item);

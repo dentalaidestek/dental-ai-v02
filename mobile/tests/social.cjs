@@ -45,7 +45,7 @@ test('moderation status uses the owner-scoped minimal endpoint and rejects malfo
 });
 
 test('native social contract uses bearer, explicit states and versioned edits',async()=>{
- const original=global.fetch,calls=[];global.fetch=async(url,init)=>{calls.push({url,...init});return new Response('{}')};
+ const original=global.fetch,calls=[];global.fetch=async(url,init)=>{calls.push({url,...init});return new Response(String(url).includes('/feed/')?JSON.stringify({items:[],next_cursor:null}):'{}')};
  try{await api.getFeed('secret','discover',12);await api.setPostLike('secret',8,true);await api.setFollow('secret',7,false);await api.patchPost('secret',{id:8,version:3},{pinned:true});
  assert.match(calls[0].url,/feed\/discover\?limit=15&details=true&before=12/);assert.equal(calls[0].headers.Authorization,'Bearer secret');assert.equal(calls[0].credentials,'omit');assert.deepEqual(JSON.parse(calls[1].body),{liked:true});assert.deepEqual(JSON.parse(calls[2].body),{followed:false});assert.deepEqual(JSON.parse(calls[3].body),{version:3,pinned:true});}finally{global.fetch=original;}
 });
@@ -260,8 +260,8 @@ test('analysis history and clinical media deletion reject malformed IDs before r
  try{
   for(const id of [0,-1,1.5,NaN,Infinity]){
    await assert.rejects(()=>getAnalysisHistory('secret',id),/Geçersiz analiz/);
-   assert.throws(()=>deleteMedia('secret',id,4),/Geçersiz hasta/);
-   assert.throws(()=>deleteMedia('secret',7,id),/Geçersiz hasta/);
+   await assert.rejects(()=>deleteMedia('secret',id,4),/Geçersiz hasta/);
+   await assert.rejects(()=>deleteMedia('secret',7,id),/Geçersiz hasta/);
   }
   assert.equal(calls,0);
   const result=await deleteMedia('secret',7,4);
@@ -297,10 +297,12 @@ test('active mobile media routes and analysis pagination contracts',()=>{
  const main=fs.readFileSync(require('node:path').join(__dirname,'../../app/main.py'),'utf8');
  assert.match(main,/_mobile_mounted_routes/);
  assert.match(client,/body\.append\("file",\{uri:file\.uri/);
- assert.match(active,/file:UploadFile=File\(None\)/);
+ // mobile_api.py formatter emits `file: UploadFile = File(None)`; spacing is a style detail, the contract is unchanged.
+ assert.match(active,/file:\s*UploadFile\s*=\s*File\(None\)/);
  assert.match(active,/@router\.delete\("\/patients\/\{patient_id\}\/media\/\{media_id\}"\)/);
  assert.match(active,/PatientMedia\.id < before/);
- assert.match(extended,/def mobile_analysis_history\([^\n]*before: int \| None = None\)/);
+ // Signature grew to multi-line when patient_id/tooth_number scoping was added (ae5ef12e); the keyset contract is unchanged.
+ assert.match(extended,/def mobile_analysis_history\([\s\S]*?\bbefore: int \| None = None/);
  assert.match(extended,/Analysis\.id < before/);
 });
 
@@ -322,7 +324,8 @@ test('clinical media upload uses authorized multipart and validates committed re
   assert.equal(calls[0].init.body.get('tooth_number'),'11');
   assert.ok(calls[0].init.body.get('file'));
   global.fetch=async()=>new Response(JSON.stringify({media:{id:0}}),{status:200});
-  await assert.rejects(()=>uploadPatientMedia('token',5,file),/Yeniden yüklemeden önce galeriyi kontrol edin/);
+  // Canonical receipt message was hardened to mention the preserved request key (88e2f720); the guidance intent (never blind-retry a possibly committed upload) is unchanged.
+  await assert.rejects(()=>uploadPatientMedia('token',5,file),/Görüntü kayıt fişi doğrulanamadı\. Aynı işlem anahtarı korunuyor/);
   global.fetch=async()=>new Response(JSON.stringify({detail:'Erişim reddedildi'}),{status:403});
   await assert.rejects(()=>uploadPatientMedia('token',5,file),e=>e instanceof ApiError&&e.status===403);
  }finally{global.fetch=original;}

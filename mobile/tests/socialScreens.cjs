@@ -121,14 +121,15 @@ test('reply threads start collapsed and refresh their exhausted cache when reply
 });
 
 test('clinical media gallery prevents stale account mutations and pagination overlap',()=>{
- const source=fs.readFileSync(require.resolve('../src/ModernScreens.tsx'),'utf8');
- const gallery=source.slice(source.indexOf('export function MediaGallery('),source.indexOf('export function ExpertDirectory('));
- assert.ok(gallery.includes('const mounted=useRef(true)'), 'mounted state must be tracked');
- assert.ok(gallery.includes('generation.current++'), 'refresh generations invalidate stale requests');
- assert.ok(gallery.includes('scope!==patientScope.current||!mounted.current'), 'patient switch must cancel pending media picker');
- assert.ok(gallery.includes('loadingMoreRef.current||refreshing||uploading||deleting'), 'pagination must not overlap refresh or mutations');
- assert.ok(gallery.includes('if(mounted.current&&scope===patientScope.current)'), 'old account must not update gallery after upload');
- assert.ok(gallery.includes('if(mounted.current&&current===generation.current&&scope===patientScope.current)'), 'old page must not overwrite current patient');
+ // The duplicate ModernScreens gallery was removed in 2cfb204f and patientMediaRoute.cjs forbids restoring it;
+ // these protections are asserted against the canonical native archive (NativePatientMedia.tsx).
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.ok(source.includes('const mounted=useRef(true)'), 'mounted state must be tracked');
+ assert.ok(source.includes('const sequence=++request.current'), 'refresh generations invalidate stale requests');
+ assert.ok(source.includes('picker!==pickerGeneration.current'), 'patient switch must cancel pending media picker');
+ assert.ok(source.includes('loadLock.current||(more&&(mutation.current||uncertain||loadedOwner!==owner))'), 'pagination must not overlap refresh or mutations');
+ assert.ok(source.includes('if(!current())return;'), 'old account must not update gallery after upload');
+ assert.ok(source.includes('if(!current()||sequence!==request.current)return;'), 'old page must not overwrite current patient');
 });
 
 test('patient detail never renders stale clinical data after account or patient change',()=>{
@@ -143,23 +144,23 @@ test('patient detail never renders stale clinical data after account or patient 
 });
 
 test('clinical gallery hides old patient thumbnails and preview before effects run',()=>{
- const source=fs.readFileSync(require.resolve('../src/ModernScreens.tsx'),'utf8');
- const gallery=source.slice(source.indexOf('export function MediaGallery('),source.indexOf('export function ExpertDirectory('));
- assert.match(gallery,/visibleData=d\?\.accountScope===patientScope\.current\?d:null/);
- assert.match(gallery,/data=\{visibleData\?\.items\|\|\[\]\}/);
- assert.match(gallery,/visible=\{preview!==null&&preview\.accountScope===patientScope\.current\}/);
- assert.match(gallery,/preview\.accountScope!==patientScope\.current/);
- assert.match(gallery,/setD\(\{\.\.\.page,accountScope:scope\}\)/);
+ // Canonical gallery lives in NativePatientMedia.tsx (ModernScreens copy removed in 2cfb204f).
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/const visibleItems=loadedOwner===owner\?items:\[\]/,'thumbnails from another account stay hidden');
+ assert.match(source,/data=\{visibleItems\}/,'only owner-visible items are rendered');
+ assert.match(source,/visible=\{open&&loadedOwner===owner\}/,'the preview modal cannot show another patient');
+ assert.match(source,/setPreview\(null\)/,'preview resets when the owner scope changes');
+ assert.match(source,/setLoadedOwner\(owner\)/,'each committed page is stamped with the requesting owner');
 });
 
 test('clinical gallery ignores pending page responses from another account before effects run',()=>{
- const source=fs.readFileSync(require.resolve('../src/ModernScreens.tsx'),'utf8');
- const gallery=source.slice(source.indexOf('export function MediaGallery('),source.indexOf('export function ExpertDirectory('));
- assert.match(gallery,/const current=\+\+generation\.current;const scope=patientScope\.current/);
- assert.match(gallery,/current===generation\.current&&scope===patientScope\.current/);
- assert.match(gallery,/setD\(\{\.\.\.page,accountScope:scope\}\)/);
- assert.match(gallery,/previous\.accountScope===scope/);
- assert.match(gallery,/next_before:page\.next_before,accountScope:previous\.accountScope/);
+ // Canonical gallery lives in NativePatientMedia.tsx (ModernScreens copy removed in 2cfb204f).
+ const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/const sequence=\+\+request\.current/,'each page request snapshots the current generation');
+ assert.match(source,/if\(!current\(\)\|\|sequence!==request\.current\)return;/,'stale owner or generation cannot commit');
+ assert.match(source,/setLoadedOwner\(owner\)/,'pages are stamped with the requesting owner');
+ assert.match(source,/more&&\(mutation\.current\|\|uncertain\|\|loadedOwner!==owner\)/,'pagination never appends across owners');
+ assert.match(source,/setCursor\(page\.next_before\)/,'the cursor belongs to the committed page only');
 });
 
 test('expert directory does not display previous account results while new account loads',()=>{

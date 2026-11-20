@@ -815,7 +815,7 @@ export const patchPost = (
   });
 export const deletePost = (t: string, id: number) =>
   socialRequest(t, `/posts/${id}`, { method: "DELETE" });
-export const createPost = (
+export const createPost = async (
   t: string,
   payload: {
     text: string;
