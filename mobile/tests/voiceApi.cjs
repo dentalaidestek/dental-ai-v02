@@ -27,19 +27,36 @@ test('voice API rejects successful but incomplete clinical extraction',async()=>
 });
 test('voice finalization requires a clinical review payload',async()=>{
  const original=global.fetch;global.fetch=async()=>response(JSON.stringify({ok:true}));
- try{await assert.rejects(()=>api.finalizeVoice('secret',1,{context:{},insights:[],uncertain:'',conversation_text:'text'}),/son değerlendirme yanıtı eksik/)}finally{global.fetch=original}
+ try{await assert.rejects(()=>api.finalizeVoice('secret',1,{context:{},insights:[],uncertain:'',conversation_text:'text'}),/sürüm veya kaynak kimliği doğrulanamadı/)}finally{global.fetch=original}
 });
 
 test('voice finalization submits full transcript, clinician review and consent',async()=>{
  const original=global.fetch;let call;
- global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,final:{summary:'Değerlendirme tamamlandı'}}))};
+ global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'b'.repeat(64),summary:'Değerlendirme tamamlandı'}}))};
  try{
-  const payload={context:{fields:{chief_complaint:{value:'Ağrı',quote:'Dişim ağrıyor'}},teeth:[{tooth:'44',status:'OTHER',quote:'44 numarada klinik bulgu görüşüldü'}],literature_topics:[{topic:'endo.general',quote:'Kanal tedavisi konuşuldu'}]},insights:[{quote:'Dişim ağrıyor',observation:'Ağrı bildirimi',suggestion:'Ağrının süresi sorulmalı'}],uncertain:'Belirsiz ilaç dozu',conversation_text:'Tam görüşme metni'};
-  const result=await api.finalizeVoice('token',44,payload);
+  const payload={context:{fields:{chief_complaint:{value:'Ağrı',quote:'Dişim ağrıyor'}},teeth:[{tooth:'44',status:'OTHER',quote:'44 numarada klinik bulgu görüşüldü'}],literature_topics:[{topic:'endo.general',quote:'Kanal tedavisi konuşuldu'}]},insights:[{quote:'Dişim ağrıyor',observation:'Ağrı bildirimi',suggestion:'Ağrının süresi sorulmalı'}],uncertain:'Belirsiz ilaç dozu',conversation_text:'Tam görüşme metni',source_fingerprint:'b'.repeat(64)};
+  const result=await api.finalizeVoice('token',44,payload,'a'.repeat(64));
   assert.equal(result.final.summary,'Değerlendirme tamamlandı');
   assert.match(call.url,/\/patients\/44\/voice-exam\/finalize$/);
   assert.equal(call.init.headers.Authorization,'Bearer token');
   assert.deepEqual(JSON.parse(call.init.body),{...payload,consent:true});
+ }finally{global.fetch=original}
+});
+
+
+test('voice finalization rejects stale patient revisions and untrusted source retry fingerprints before showing a result',async()=>{
+ const original=global.fetch;let calls=0;
+ const payload={context:{fields:{}},insights:[],uncertain:'',conversation_text:'Muayene',source_fingerprint:'b'.repeat(64)};
+ try{
+  global.fetch=async()=>{calls++;return response(JSON.stringify({ok:true,revision:'c'.repeat(64),final:{source_fingerprint:'b'.repeat(64),not_modified:true,review_status:{source_retryable:true}}}))};
+  await assert.rejects(()=>api.finalizeVoice('token',4,payload,'a'.repeat(64)),/Hasta dosyası görüşme sırasında değişti/);
+  assert.equal(calls,1);
+  global.fetch=async()=>{calls++;throw Error('unexpected request')};
+  await assert.rejects(()=>api.finalizeVoice('token',4,{...payload,source_fingerprint:'bad'},'a'.repeat(64)),/kaynağı doğrulanamadı/);
+  await assert.rejects(()=>api.finalizeVoice('token',4,payload,'bad'),/sürüm bilgisi doğrulanamadı/);
+  assert.equal(calls,1);
+  global.fetch=async()=>response(JSON.stringify({ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'c'.repeat(64),not_modified:true,review_status:{source_retryable:true}}}));
+  await assert.rejects(()=>api.finalizeVoice('token',4,payload,'a'.repeat(64)),/Önceki kaynak değerlendirmesi doğrulanamadı/);
  }finally{global.fetch=original}
 });
 
@@ -142,12 +159,12 @@ test('clinical communication coaching from extraction is accepted in final paylo
  const communication=[{quote:'Tedaviden çekiniyorum',observation:'Kaygı',suggestion:'Açıklama yap'}];
  global.fetch=async(url,init)=>{
   if(String(url).endsWith('/text'))return response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review:{fields:{},communication,decision_barriers:[],follow_up_questions:[]}}));
-  finalRequest=JSON.parse(init.body);return response(JSON.stringify({ok:true,final:{summary:[]}}));
+  finalRequest=JSON.parse(init.body);return response(JSON.stringify({ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'b'.repeat(64),summary:[]}}));
  };
  try{
   const extracted=await api.extractVoice('token',4,'Tedaviden çekiniyorum');
   assert.deepEqual(extracted.review.communication,communication);
-  await api.finalizeVoice('token',4,{context:{fields:{}},insights:extracted.review.communication,uncertain:'',conversation_text:'Tedaviden çekiniyorum'});
+  await api.finalizeVoice('token',4,{context:{fields:{}},insights:extracted.review.communication,uncertain:'',conversation_text:'Tedaviden çekiniyorum'},'a'.repeat(64));
   assert.deepEqual(finalRequest.insights,communication);
  }finally{global.fetch=original}
 });
@@ -200,7 +217,7 @@ test('clinical text API rejects invalid patient and oversized transcripts before
   // the API itself enforces before any network call is now the 72000 total.
   await assert.rejects(()=>api.extractVoice('token',3,'a'.repeat(72001)),/72.000 karakteri/);
   await assert.rejects(()=>api.finalizeVoice('token',-1,{context:{},insights:[],uncertain:'',conversation_text:'metin'}),/geçerli bir hasta/);
-  await assert.rejects(()=>api.finalizeVoice('token',3,{context:{},insights:[],uncertain:'',conversation_text:'a'.repeat(72001)}),/72.000 karakteri/);
+  await assert.rejects(()=>api.finalizeVoice('token',3,{context:{},insights:[],uncertain:'',conversation_text:'a'.repeat(72001)}),/72.000 karakter/);
   assert.equal(calls,0);
  }finally{global.fetch=original}
 });
