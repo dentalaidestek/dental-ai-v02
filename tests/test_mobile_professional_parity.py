@@ -1,4 +1,4 @@
-from test_mobile_chat_actions import chat
+from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from test_mobile_account_parity import account
 from app import main
 from sqlmodel import Session, select
@@ -45,7 +45,7 @@ def test_membership_document_consent_validation_owner_and_no_expert_grant(accoun
     assert 'document_path' not in str(hub)
     assert client.post(route,data={'document_type':'STUDENT','consent':'yes'},files={'file':('proof.png',png(),'image/png')}).status_code==409
     with Session(engine) as s:assert len(s.exec(select(MembershipVerification)).all())==1
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     other=client.get('/api/mobile/v1/account/professional').json();assert other['membership']['status']=='NONE' and other['title_change'] is None
 
 
@@ -96,7 +96,7 @@ def test_native_availability_requires_current_rules_and_preserves_manual_choice(
     assert client.post(route,json={'availability':'BUSY'}).status_code==200
     with Session(engine) as s:
         p=s.exec(select(main.ExpertProfile).where(main.ExpertProfile.user_id==1)).one();assert p.availability=='BUSY' and not p.capacity_auto_busy
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     assert client.post(route,json={'availability':'AVAILABLE'}).status_code==404
 
 
@@ -114,5 +114,5 @@ def test_native_expert_document_reopens_review_and_closes_new_case_intake(accoun
     profile=result.json()['professional']['expert']
     assert profile['application_status']=='SUBMITTED' and profile['verification_status']=='PENDING' and not profile['specialty_verified'] and profile['availability']=='PASSIVE'
     assert client.post(route,files={'file':('updated.png',png(),'image/png')}).status_code==409
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     assert client.post(route,files={'file':('updated.png',png(),'image/png')}).status_code==403
