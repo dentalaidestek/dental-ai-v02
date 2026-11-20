@@ -71,3 +71,14 @@ The independent technical audit at this branch reports the last local mobile sui
 ## Safety
 
 No main merge, rebase, production deploy, migration, APK/IPA publication, provider call or production patient-data mutation was performed.
+
+
+## Same-scope refresh regression — 2026-11-20
+
+A further web/native behavior difference was found after the card and cursor work: the native profile's generic `load()` callback reset `allTreatments` to false on every successful refresh. A `TREATMENT_CREATED` / `TREATMENT_UPDATED` realtime event, pull-to-refresh, or a successful profile refresh therefore collapsed a history the clinician had explicitly expanded. The web page's append flow preserves `data-expanded` while loading later pages.
+
+The native refresh now preserves expansion only when the account, session token and patient scope are unchanged. A scope change still collapses the previous patient's history; the existing effect also clears cursor, page IDs and in-flight page requests on scope change. The first-page refresh still resets the page cursor and dedupe set, so expanded mode can continue from the refreshed first-page boundary without retaining stale appended rows.
+
+Regression coverage: `mobile/tests/patientTreatmentHistoryExpansion.cjs`, registered in `npm run test:beta` and the Security Recovery `native-clinical-security` job. The test covers same-scope refresh, account/session/patient changes, and the component's scope-reset contract.
+
+Validation boundary: source changes and GitHub read-back are confirmed. The committed Node test, full Expo typecheck and Android build were not executed in this runtime; current-head GitHub Actions still has no run/status result. No merge, deploy, migration or patient-data mutation.
