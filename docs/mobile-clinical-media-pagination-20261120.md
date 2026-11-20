@@ -51,10 +51,13 @@ The web gallery rejects malformed ordering/cursors before appending cards. The n
 - `76ba7091` — explicit TypeScript cursor narrowing
 - `3af51e96` — reset queued refresh on scope cleanup
 - `3299da90` — correct regression-test formatting
+- `737e66a0` — initial evidence report
+- `1f732adc` — match patient-owner preflight in route test
+- `e170a2a5` — assert the actual descending keyset query
 
 ## Validation and limits
 
-The changed files were read back from the target branch after the writes. The tests are committed and wired into `npm run test:beta`, but were **not executed** in this run: the available environment has no GitHub network access/local checkout, and GitHub reports no workflow runs or combined status checks for the starting PR head `cb68dbec7966214bd0c45b76fe102dfeef8e5411`. Therefore no new TypeScript, Jest/Node, Expo export, Android APK, PostgreSQL or device pass is claimed.
+The changed files were read back from the target branch after the writes. Static source checks passed: the three touched Node test files parse, `mobile/package.json` parses and includes the new test, and source assertions for the keyset route, owner checks, thumbnail recheck and private headers match the current branch. These are **not test executions**. The Node regressions are committed and wired into `npm run test:beta`, but were **not executed** in this run: the available environment has no GitHub network access/local checkout, and GitHub reports no workflow runs or combined status checks for the starting PR head `cb68dbec7966214bd0c45b76fe102dfeef8e5411`. Therefore no new TypeScript, Node runtime, Expo export/APK or device pass is claimed.
 
 The prior Android typecheck error recorded in PR #257 was traced to the obsolete duplicate `ModernScreens.MediaGallery` calling `uploadPatientMedia` with an outdated argument list; that duplicate screen was removed earlier and the canonical route now delegates to `NativePatientMedia`. This pass does not claim a fresh typecheck because the current head has no executable CI evidence.
 
