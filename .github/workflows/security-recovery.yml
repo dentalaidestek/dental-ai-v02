@@ -17,7 +17,9 @@ permissions:
   contents: read
 concurrency:
   group: security-recovery-${{ github.event.pull_request.head.ref || github.ref }}
-  cancel-in-progress: true
+  # Preserve the active Python/PostgreSQL and native security suites across commits.
+  # A newer pending PR run supersedes older pending runs without killing the active run.
+  cancel-in-progress: false
 jobs:
   native-voice-security:
     runs-on: ubuntu-latest
