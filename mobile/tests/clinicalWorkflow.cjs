@@ -4,12 +4,31 @@ const compile=f=>ts.transpileModule(fs.readFileSync(require.resolve(f),'utf8'),{
 const text=n=>typeof n==='string'?n:!n?'':(n.children||[]).map(text).join('');
 const button=(t,label)=>t.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(c=>text(c)===label));
 const revision='a'.repeat(64),base={analysis_id:1,patient_id:8,patient_anonymous_id:'SYNTHETIC-008',status:'AI_ANALYZED',revision,result:{status:'INITIAL',most_likely:'Synthetic likely condition',findings:['Synthetic string finding'],treatment_options:['Synthetic treatment'],treatment_cautions:['Synthetic caution'],preferred_approach:'Synthetic preferred approach',differential:['Synthetic differential'],recommended_evaluation:['Synthetic clinical exam'],uncertainty:'Synthetic uncertainty',questions:[{question:'Synthetic question?',type:'TEXT'}]},assets:[],clinical_notes:null,tooth_number:null,job:null};
-function api(request=async()=>({})){const exports={};vm.runInNewContext(compile('../src/clinicalApi.ts'),{exports,Error,require:()=>({request})});return exports}
+const apiBase=fs.readFileSync(require.resolve('../src/api.ts'),'utf8').match(/export const API_BASE = "([^"]+)"/)?.[1];
+assert.ok(apiBase,'canonical mobile API base must be exported');
+function api(request=async()=>({})){const exports={};vm.runInNewContext(compile('../src/clinicalApi.ts'),{exports,Error,require:()=>({request,API_BASE:apiBase})});return exports}
 function harness(overrides={},saved,initialFocused=true){const exports={},storage=new Map(),calls=[],a=api(),focus={current:initialFocused};if(saved)storage.set('dai.clinical.final.1.1',JSON.stringify(saved));const secure={getItemAsync:async k=>storage.get(k)||null,setItemAsync:async(k,v)=>storage.set(k,v),deleteItemAsync:async k=>storage.delete(k)},native={StyleSheet:{create:x=>x},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
  const endpoint={...a,getClinical:async()=>base,submitClinical:async(_t,intent)=>{calls.push(intent);return{ok:true,job:{id:7,kind:'FINAL',status:'QUEUED'}}},saveClinicalNote:async()=>({ok:true}),...overrides};
  const finding={};vm.runInNewContext(compile('../src/findings.ts'),{exports:finding});const presentation={};vm.runInNewContext(compile('../src/clinicalResultPresentation.ts'),{exports:presentation});
  vm.runInNewContext(compile('../src/NativeClinicalReview.tsx'),{exports,setTimeout,clearTimeout,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{useIsFocused:()=>focus.current}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=> 'synthetic-key'}:n==='./socialDraft'?{chunkedDraftStore:()=>secure}:n==='./clinicalApi'?endpoint:n==='./findings'?finding:n==='./clinicalResultPresentation'?presentation:{default:props=>React.createElement('Text',null,props.value)}});return{Component:exports.default,calls,storage,endpoint,focus};}
 async function open(h,props={}){let t;await renderer.act(async()=>t=renderer.create(React.createElement(h.Component,{token:'A',userId:1,analysisId:1,...props})));return t}
+test('clinical image thumbnails use the canonical API base, reload privately and remount on account switch',async()=>{
+ const h=harness({getClinical:async()=>({...base,assets:[{id:44,image_type:'PANORAMIC',has_vision:true,url:'/api/mobile/v1/analyses/1/assets/44'}]})});
+ const t=await open(h);
+ const image=()=>t.root.findAllByType('Image').find(node=>node.props.source?.uri===apiBase+'/analyses/1/assets/44');
+ const first=image();
+ assert.ok(first,'clinical asset thumbnail is rendered');
+ assert.equal(first.props.source.cache,'reload');
+ assert.equal(first.props.source.headers.Authorization,'Bearer A');
+ assert.equal(first.key,'1:1:44');
+ await renderer.act(async()=>{t.update(React.createElement(h.Component,{token:'B',userId:2,analysisId:1}));});
+ const second=image();
+ assert.ok(second,'thumbnail remains available after authenticated account change');
+ assert.equal(second.props.source.cache,'reload');
+ assert.equal(second.props.source.headers.Authorization,'Bearer B');
+ assert.equal(second.key,'2:1:44');
+ await renderer.act(async()=>t.unmount());
+});
 test('transient initial clinical workspace failure can recover with refresh without remount',async()=>{let attempts=0;const h=harness({getClinical:async()=>{attempts++;if(attempts===1)throw Object.assign(Error('Synthetic temporary service failure'),{status:503});return base}}),t=await open(h);await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});assert.equal(attempts,1);assert.equal(button(t,'Klinik Sonucu Yenile').props.disabled,false);assert.ok(text(t.toJSON()).includes('Synthetic temporary service failure'));await renderer.act(async()=>{button(t,'Klinik Sonucu Yenile').props.onPress();await new Promise(r=>setImmediate(r))});assert.equal(attempts,2);assert.ok(text(t.toJSON()).includes('Synthetic likely condition'));assert.ok(!text(t.toJSON()).includes('Synthetic temporary service failure'));await renderer.act(async()=>t.unmount())});
 test('clinical workspace refresh key publishes the latest durable job snapshot to its parent',async()=>{
  let calls=0;const snapshots=[];
