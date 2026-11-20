@@ -90,6 +90,8 @@ export function patientProfileEditError(values: PatientProfileEditValues): strin
 export type PatientProfileDeleteGate = Readonly<{
   busy: boolean;
   uncertain: boolean;
+  /** No unsaved or unresolved patient-profile edits may be discarded by deletion. */
+  profileEditReady: boolean;
   treatmentIntentReady: boolean;
   treatmentIntentBlocked: boolean;
   hasPendingTreatment: boolean;
@@ -106,6 +108,7 @@ export type PatientProfileDeleteGate = Readonly<{
 export function patientProfileCanDeletePatient(gate: PatientProfileDeleteGate): boolean {
   return gate.busy === false &&
     gate.uncertain === false &&
+    gate.profileEditReady === true &&
     gate.treatmentIntentReady === true &&
     gate.treatmentIntentBlocked === false &&
     gate.hasPendingTreatment === false &&
