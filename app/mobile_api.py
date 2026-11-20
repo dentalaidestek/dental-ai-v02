@@ -1358,7 +1358,7 @@ def mobile_update_treatment(patient_id: int, treatment_id: int, payload: MobileT
 def mobile_patient_detail(
     patient_id: int,
     response: Response,
-    include_chart: bool = Query(default=False),
+    include_chart: bool = Query(default=True),
     user: User = Depends(_mobile_user),
 ):
     _mobile_private_no_store(response)
