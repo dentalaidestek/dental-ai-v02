@@ -976,3 +976,14 @@ CI/typecheck/security boundary:
 - The new committed Node regressions, full Expo `tsc --noEmit`, Android Gradle build, and Python security suite have not been executed in this runtime. No green CI is claimed.
 
 Commits in this run: `8158d10`, `d37a5ed`, `5627818`, `07d231c`, `de6d6d7`, and this tracker update. No auth, owner-scope, patient-data, database, provider, workflow-trigger or production code was changed. No main merge, deploy, migration, APK/IPA publication or clinical record mutation.
+
+
+### Verification addendum — 2026-11-20
+
+- The first isolated run exposed a CommonJS test-harness mistake: a top-level `const exports` redeclared Node's wrapper binding. The new unit test now uses `moduleExports`; this was fixed in commit `fe6efde`.
+- Ran the committed presentation helper and corresponding test logic in an isolated Node 22 fixture: **3/3 passed**.
+- Ran strict TypeScript compilation of the standalone presentation helper: passed.
+- Ran a TypeScript TSX syntax fixture for the new ordered-result JSX: **0 syntax diagnostics**.
+- These checks do not replace the full mobile test suite or full `NativeClinicalReview.tsx` typecheck. Component integration tests are committed but remain unexecuted because this runtime has no repository checkout or React Native test dependencies, and GitHub Actions remains manual-only.
+
+Latest code/test head for this work: `fe6efde6d214d05d54fa3e1c67e14ac9d23af021`. No CI pass is claimed.
