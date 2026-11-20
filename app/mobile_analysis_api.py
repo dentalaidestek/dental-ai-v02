@@ -32,7 +32,8 @@ from app.analysis_upload_receipts import (
     verify_or_upgrade_analysis_upload_receipt,
 )
 from app.patient_media_receipts import PatientMediaReceiptKeyUnavailable
-from sqlalchemy import func, text
+from sqlalchemy import and_, func, or_, text
+from app.patient_history_pagination import decode_history_cursor, encode_history_cursor
 from starlette.concurrency import run_in_threadpool
 
 def _voice_review_ids(session, user_id, analysis_ids):
@@ -530,15 +531,15 @@ def mobile_analysis_history(
     response: Response,
     user: User = Depends(_mobile_user),
     patient_id: Optional[int] = None,
-    before: int | None = None,
+    before: Optional[int] = Query(None, ge=1),
+    before_cursor: Optional[str] = Query(None, max_length=192),
+    stable_order: bool = False,
     limit: int = Query(50, ge=1, le=100),
     tooth_number: Optional[str] = None,
 ):
     # Analysis history contains clinical notes and must never be cached by a
     # shared or persistent HTTP cache.
     _mobile_private_no_store(response)
-    if before is not None and before < 1:
-        raise HTTPException(status_code=400, detail="Geçersiz sayfa parametresi.")
     with Session(engine, expire_on_commit=False) as session:
         q = select(Analysis, Patient).join(Patient, Patient.id == Analysis.patient_id)
         count_query = (
@@ -574,12 +575,36 @@ def mobile_analysis_history(
             q = q.where(Analysis.tooth_number == tooth_number)
             count_query = count_query.where(Analysis.tooth_number == tooth_number)
 
-        if before is not None:
-            q = q.where(Analysis.id < before)
+        history_cursor = None
+        if stable_order:
+            if before is not None:
+                raise HTTPException(422, detail="Kararlı geçmiş imleci ile eski sayısal imleç birlikte kullanılamaz.")
+            try:
+                history_cursor = decode_history_cursor(before_cursor)
+            except ValueError as exc:
+                raise HTTPException(422, detail="Geçersiz analiz geçmişi imleci.") from exc
+            if history_cursor is not None:
+                cursor_created_at, cursor_id = history_cursor
+                q = q.where(or_(
+                    Analysis.created_at < cursor_created_at,
+                    and_(
+                        Analysis.created_at == cursor_created_at,
+                        Analysis.id < cursor_id,
+                    ),
+                ))
+            rows = session.exec(
+                q.order_by(Analysis.created_at.desc(), Analysis.id.desc()).limit(limit + 1)
+            ).all()
+        else:
+            if before_cursor is not None:
+                raise HTTPException(422, detail="Kararlı geçmiş imleci için stable_order etkin olmalıdır.")
+            if before is not None:
+                q = q.where(Analysis.id < before)
+            # Preserve the numeric-ID contract for older mobile clients.
+            rows = session.exec(
+                q.order_by(Analysis.id.desc()).limit(limit + 1)
+            ).all()
 
-        rows = session.exec(
-            q.order_by(Analysis.id.desc()).limit(limit + 1)
-        ).all()
         has_more = len(rows) > limit
         rows = rows[:limit]
 
@@ -597,9 +622,17 @@ def mobile_analysis_history(
         )
         total = int(session.exec(count_query).one() or 0)
 
+        next_before = (
+            rows[-1][0].id if has_more and rows and not stable_order else None
+        )
+        next_cursor = (
+            encode_history_cursor(rows[-1][0].created_at, rows[-1][0].id)
+            if has_more and rows and stable_order else None
+        )
         return {
             "total": total,
-            "next_before": rows[-1][0].id if has_more and rows else None,
+            "next_before": next_before,
+            "next_cursor": next_cursor,
             "items": [
                 {
                     "id": analysis.id,
