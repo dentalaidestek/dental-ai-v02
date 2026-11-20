@@ -280,7 +280,7 @@ def test_revision_15_push_device_bootstrap_keeps_release_guard_strict(tmp_path):
         ))
 
     migrate._ensure_mobile_push_device_table(engine)
-    with pytest.raises(RuntimeError, match="Expected schema revision 19"):
+    with pytest.raises(RuntimeError, match="Expected schema revision 20"):
         migrate.require_schema(engine)
 
     inspector = inspect(engine)
