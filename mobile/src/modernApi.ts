@@ -236,7 +236,7 @@ export const getMedia=async(t:string,p:number,before?:number):Promise<{items:Pat
   previousId=media.id;
  }
  if(cursor!==null&&(!items.length||cursor!==items[items.length-1].id))
-  throw Error("Klinik medya sunucusundan geçersiz sayfalama imleci alındı.");
+  throw Error("Klinik medya sunucusundan geçersiz liste alındı. Sayfalama imleci doğrulanamadı.");
  return {items:items.map(media=>({...media,filename:media.filename||media.original_filename||"",url:`${API_BASE}/patients/${p}/media/${media.id}/file`,thumbnail_url:`${API_BASE}/patients/${p}/media/${media.id}/thumbnail`})),next_before:cursor};
 };
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
