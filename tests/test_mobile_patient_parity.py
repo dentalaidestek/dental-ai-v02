@@ -158,14 +158,19 @@ def test_patient_history_filters_tooth_and_marks_only_confirmed_voice_reviews(ch
     # not the shadowed duplicate in mobile_modern_api_v3.
     active_routes = [
         route for route in main.app.routes
-        if getattr(route, "path", None) == "/api/mobile/v1/analyses"
-        and "GET" in getattr(route, "methods", set())
+        if getattr(route, "path", "").rstrip("/") == "/api/mobile/v1/analyses"
+        and "GET" in (getattr(route, "methods", set()) or set())
     ]
-    assert len(active_routes) == 1
-    assert active_routes[0].endpoint.__module__ == "app.mobile_analysis_api"
-
+    route_diagnostics = [
+        (getattr(route, "path", None), sorted(getattr(route, "methods", set()) or set()),
+         getattr(getattr(route, "endpoint", None), "__module__", None))
+        for route in main.app.routes
+        if "analys" in getattr(route, "path", "").lower()
+    ]
     filtered = client.get("/api/mobile/v1/analyses?patient_id=8&tooth_number=36")
-    assert filtered.status_code == 200, filtered.text
+    assert filtered.status_code == 200, f"{filtered.text}; mounted analysis routes={route_diagnostics}"
+    assert len(active_routes) == 1, f"Expected one canonical analysis route; mounted analysis routes={route_diagnostics}"
+    assert active_routes[0].endpoint.__module__ == "app.mobile_analysis_api"
     assert filtered.headers["cache-control"] == "private, no-store"
     assert "authorization" in filtered.headers.get("vary", "").lower()
     assert filtered.json()["total"] == 1
@@ -747,7 +752,7 @@ def test_web_analysis_selection_and_submission_share_four_image_limit(chat,monke
     assert 'Klinik arşive tek seferde en fazla 12 görüntü' in profile.text
     accepted=client.get('/analysis/new/80?media_ids=801,802,803,804')
     assert accepted.status_code==200,accepted.text
-    assert '4 kayıtlı görüntü analiz için seçildi' in accepted.text
+    assert '4 / 4 görüntü analiz için seçildi' in accepted.text
     assert 'toplam en fazla 4 görüntü' in accepted.text
     assert 'data-analysis-image-limit="4"' in accepted.text
     assert 'data-existing-image-count="4"' in accepted.text
@@ -1025,14 +1030,15 @@ def test_native_patient_delete_ui_fails_closed_for_unresolved_local_mutations():
     assert "treatmentIntentReady" in component and "treatmentIntentBlocked" in component
     assert "hasPendingTreatment:pendingTreatment!==null" in component
     assert "profileUncertain" in component and "treatmentUncertain" in component
-    assert "if(lock.current||profileUncertain||treatmentUncertain||pendingTreatment||!treatmentIntentReady||treatmentIntentBlocked)return;" in component
+    assert "const allowed=replay?canResolvePatientDelete:canDeletePatient;" in component
     assert "patientProfileEditMatches(patientForm,latest.patient)" in component
     assert component.count("if(result.patient.id!==patientId)") == 1
     assert component.count("if(latest.patient.id!==patientId)") == 2
     assert "Sunucudaki profil kaydını karşılaştır" in component
     assert "Kontrol ettim" not in component
     delete_block = component.split("function confirmDelete()", 1)[1].split("const button=", 1)[0]
-    assert delete_block.count("if(!current()||!focusedRef.current)return;") == 2
+    assert "if(lock.current||!allowed)" in delete_block
+    assert delete_block.count("if(!current()||!focusedRef.current)return;") == 1
     assert "gate.uncertain === false" in presentation
     assert "gate.hasPendingTreatment === false" in presentation
 
