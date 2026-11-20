@@ -1,4 +1,4 @@
-from test_mobile_chat_actions import chat
+from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from app import main
 from sqlmodel import Session,select
 
@@ -16,7 +16,7 @@ def test_native_public_expert_profile_has_web_identity_performance_and_intake(ch
     data=result.json();assert data['specialty']=='Endodonti' and data['institution']=='Synthetic institution' and data['support_available']
     assert data['consultation_price']==1200 and not data['owned'] and not data['can_publish']
     assert 'phone' not in data and 'PRIVATE-CREDENTIAL' not in str(data)
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     own=client.get('/api/mobile/v1/experts/2').json();assert own['owned'] and own['can_publish'] and not own['support_available']
 
 
@@ -36,7 +36,7 @@ def test_blocked_or_inactive_experts_are_not_exposed_by_native_profile(chat):
     with Session(engine) as s:
         s.add(main.UserBlock(blocker_user_id=2,blocked_user_id=1));s.commit()
     assert client.get('/api/mobile/v1/experts/2').status_code==404
-    client.headers['Authorization']='Bearer token3'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[3]
     assert client.get('/api/mobile/v1/experts/2').status_code==200
     with Session(engine) as s:
         owner=s.get(main.User,2);owner.is_active=False;s.add(owner);s.commit()
@@ -44,17 +44,17 @@ def test_blocked_or_inactive_experts_are_not_exposed_by_native_profile(chat):
 
 
 def test_native_bearer_publication_flow_keeps_duplicate_version_and_owner_guards(chat):
-    client,engine=chat;expert(engine);client.headers['Authorization']='Bearer token2';client.headers['X-Dental-Social']='1'
+    client,engine=chat;expert(engine);client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2];client.headers['X-Dental-Social']='1'
     values={'title':'Synthetic clinical publication','authors':'Synthetic Author','year':2025,'journal':'Synthetic Journal','doi':'10.1000/native-test','url':'https://doi.org/10.1000/native-test','description':'Synthetic abstract'}
     result=client.post('/api/expert-social/publications',json=values);assert result.status_code==200,result.text
     paper=result.json();assert client.post('/api/expert-social/publications',json=values).status_code==409
     path='/api/expert-social/publications/'+str(paper['id'])
     assert client.put(path,json={**values,'version':paper['version']+1}).status_code==409
     updated=client.put(path,json={**values,'version':paper['version'],'description':'Updated abstract'});assert updated.status_code==200,updated.text
-    client.headers['Authorization']='Bearer token1'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[1]
     assert client.delete(path).status_code==403
     visible=client.get('/api/expert-social/experts/2/publications');assert visible.status_code==200
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     assert client.delete(path).status_code==200
     assert client.get('/api/expert-social/experts/2/publications').json()['items']==[]
 
