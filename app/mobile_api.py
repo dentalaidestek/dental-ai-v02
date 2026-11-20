@@ -2160,155 +2160,53 @@ def mobile_academic_courses(user:User=Depends(_mobile_user), before:Optional[int
             "updated_at":getattr(c,"updated_at",c.created_at),"created_at":c.created_at,"material_count":counts.get(c.id,0)} for c in rows],"next_before":rows[-1].id if len(page)>50 else None}
 
 @router.get("/academic/courses/{course_id}/messages")
-def mobile_academic_messages(course_id:int,user:User=Depends(_mobile_user), before:Optional[int]=Query(None,ge=1)):
-    with Session(engine,expire_on_commit=False) as session:
-        course=session.get(StudyCourse,course_id)
-        if not course or course.owner_user_id!=user.id:
-            raise HTTPException(status_code=404,detail="Ders bulunamadı.")
-        query=select(StudyChatMessage).where(StudyChatMessage.course_id==course_id,StudyChatMessage.owner_user_id==user.id)
+def mobile_academic_messages(
+    course_id: int,
+    user: User = Depends(_mobile_user),
+    before: Optional[int] = None,
+):
+    if before is not None and before < 1:
+        raise HTTPException(status_code=422, detail="Geçersiz akademik mesaj imleci.")
+
+    with Session(engine, expire_on_commit=False) as session:
+        # Keep course ownership and message paging in one bounded SQL query.
+        # The outer join preserves the distinction between an owned empty course
+        # and a missing/foreign course without a second round trip.
+        join_condition = (
+            (StudyChatMessage.course_id == StudyCourse.id)
+            & (StudyChatMessage.owner_user_id == user.id)
+        )
         if before is not None:
-            query=query.where(StudyChatMessage.id<before)
-        page=session.exec(query.order_by(StudyChatMessage.id.desc()).limit(101)).all()
-        rows=page[:100]
-        return {"items":[{"id":m.id,"role":m.role,"content":m.content,"created_at":m.created_at} for m in reversed(rows)],"next_before":rows[-1].id if len(page)>100 else None}
+            join_condition = join_condition & (StudyChatMessage.id < before)
 
-_PATIENT_MEDIA_RECEIPT_KIND = "PATIENT_MEDIA_RECEIPT"
+        rows = session.exec(
+            select(StudyCourse.id, StudyChatMessage)
+            .outerjoin(StudyChatMessage, join_condition)
+            .where(
+                StudyCourse.id == course_id,
+                StudyCourse.owner_user_id == user.id,
+            )
+            .order_by(StudyChatMessage.id.desc())
+            .limit(101)
+        ).all()
+        if not rows:
+            raise HTTPException(status_code=404, detail="Ders bulunamadı.")
 
-
-def _patient_media_receipt_key(user_id: int, patient_id: int, request_key: str) -> str:
-    if not _PATIENT_MEDIA_REQUEST_KEY.fullmatch(request_key or ""):
-        raise HTTPException(status_code=422, detail="Geçersiz klinik görüntü işlem anahtarı.")
-    return hashlib.sha256(
-        f"mobile-patient-media:{user_id}:{patient_id}:{request_key}".encode()
-    ).hexdigest()
-
-
-def _patient_media_payload_hash(file_hash: str, media_type: str, tooth_number: Optional[str],
-                                note: Optional[str], original_name: str) -> str:
-    """Build the legacy canonical digest; callers must HMAC it before persistence."""
-    payload = [file_hash, media_type, tooth_number, note, original_name]
-    return hashlib.sha256(json.dumps(
-        payload, ensure_ascii=False, separators=(",", ":")
-    ).encode()).hexdigest()
-
-
-def _lock_patient_media_receipt(session: Session, receipt_key: Optional[str]) -> None:
-    if receipt_key and session.get_bind().dialect.name == "postgresql":
-        slot = int.from_bytes(
-            hashlib.sha256(("patient-media-receipt:" + receipt_key).encode()).digest()[:8],
-            "big", signed=True,
-        )
-        session.execute(text("SELECT pg_advisory_xact_lock(:slot)"), {"slot": slot})
-
-
-def _patient_media_result(media: PatientMedia, replayed: bool = False) -> dict:
-    return {
-        "media": {
-            "id": media.id,
-            "original_filename": media.original_filename,
-            "media_type": media.media_type,
-            "tooth_number": media.tooth_number,
-            "note": media.note,
-            "uploaded_at": media.uploaded_at.isoformat() if media.uploaded_at else None,
-        },
-        "replayed": replayed,
-    }
-
-
-def _find_patient_media_receipt(session: Session, user: User, patient_id: int,
-                                receipt_key: str, digest: Optional[str] = None,
-                                legacy_digest: Optional[str] = None, key: Optional[bytes] = None):
-    from app.patient_media_receipts import (
-        PatientMediaReceiptConflict, PatientMediaReceiptCorrupt, upgrade_legacy_receipt,
-    )
-
-    receipt = session.exec(select(WorkJob).where(
-        WorkJob.owner_user_id == user.id,
-        WorkJob.resource_id == patient_id,
-        WorkJob.resource_type == "PATIENT",
-        WorkJob.kind == _PATIENT_MEDIA_RECEIPT_KIND,
-        WorkJob.dedupe_key == receipt_key,
-    )).first()
-    if receipt is None:
-        return None
-    if key is None:
-        raise HTTPException(status_code=503, detail="Klinik görüntü yükleme kurtarma anahtarı yapılandırılmamış.")
-    try:
-        upgraded = upgrade_legacy_receipt(
-            receipt, digest=digest, legacy_digest=legacy_digest, key=key,
-            owner_id=user.id, patient_id=patient_id,
-        )
-    except PatientMediaReceiptConflict as exc:
-        raise HTTPException(status_code=409, detail="Bu klinik görüntü işlem anahtarı farklı bir dosya veya bilgilerle kullanılmış.") from exc
-    except PatientMediaReceiptCorrupt as exc:
-        raise HTTPException(status_code=409, detail="Klinik görüntü işlem fişi doğrulanamadı.") from exc
-    if upgraded:
-        session.add(receipt)
-    try:
-        saved = json.loads(receipt.payload_json or "{}")
-        media_id = int(saved["media_id"])
-        if int(saved.get("patient_id", 0)) != patient_id:
-            raise ValueError("receipt patient mismatch")
-    except (ValueError, TypeError, KeyError, json.JSONDecodeError):
-        raise HTTPException(status_code=409, detail="Klinik görüntü işlem fişi doğrulanamadı.")
-    media = session.get(PatientMedia, media_id)
-    if not media or media.patient_id != patient_id or media.owner_user_id != user.id:
-        raise HTTPException(status_code=409, detail="Önceki klinik görüntü kaydı artık galeride yok. Yeni bir işlem anahtarıyla yeniden seçin.")
-    return _patient_media_result(media, replayed=True)
-
-
-def _store_patient_media_receipt(session: Session, user: User, patient_id: int,
-                                 media: PatientMedia, receipt_key: str, digest: str,
-                                 batch_id: str, file_bytes: int) -> None:
-    session.add(WorkJob(
-        owner_user_id=user.id,
-        resource_id=patient_id,
-        resource_type="PATIENT",
-        kind=_PATIENT_MEDIA_RECEIPT_KIND,
-        source_hash=digest,
-        dedupe_key=receipt_key,
-        result_ref=batch_id,
-        payload_json=json.dumps({
-            "patient_id": patient_id, "media_id": media.id,
-            "batch_id": batch_id, "file_bytes": file_bytes,
-            "fingerprint_version": 1,
-        }, sort_keys=True),
-        status="DONE",
-    ))
-
-
-def _patient_media_batch_usage(session: Session, user: User, patient_id: int,
-                               batch_id: str) -> tuple[int, int]:
-    """Read persisted per-file receipts for this patient-scoped upload batch.
-
-    The caller holds the patient row lock, serializing quota admission across
-    concurrent uploads for the same patient on PostgreSQL. Replayed receipts
-    are returned before this function and therefore never count twice.
-    """
-    receipts = session.exec(select(WorkJob).where(
-        WorkJob.owner_user_id == user.id,
-        WorkJob.resource_id == patient_id,
-        WorkJob.resource_type == "PATIENT",
-        WorkJob.kind == _PATIENT_MEDIA_RECEIPT_KIND,
-        WorkJob.result_ref == batch_id,
-    )).all()
-    total_bytes = 0
-    for receipt in receipts:
-        try:
-            payload = json.loads(receipt.payload_json or "{}")
-            if not isinstance(payload, dict):
-                raise ValueError("invalid patient media batch payload")
-            file_bytes = payload.get("file_bytes")
-            if (payload.get("batch_id") != batch_id or
-                    payload.get("patient_id") != patient_id or
-                    not isinstance(file_bytes, int) or isinstance(file_bytes, bool) or
-                    file_bytes < 1 or file_bytes > MAX_PATIENT_MEDIA_FILE_BYTES):
-                raise ValueError("invalid patient media batch receipt")
-        except (TypeError, ValueError, json.JSONDecodeError):
-            raise HTTPException(status_code=409, detail="Klinik görüntü yükleme grubu fişi doğrulanamadı.")
-        total_bytes += file_bytes
-    return len(receipts), total_bytes
-
+        page = [message for _course_id, message in rows if message is not None]
+        has_more = len(page) > 100
+        page = page[:100]
+        return {
+            "items": [
+                {
+                    "id": message.id,
+                    "role": message.role,
+                    "content": message.content,
+                    "created_at": message.created_at,
+                }
+                for message in reversed(page)
+            ],
+            "next_before": page[-1].id if has_more and page else None,
+        }
 
 @router.post("/patients/{patient_id}/media")
 async def mobile_patient_media_upload(
