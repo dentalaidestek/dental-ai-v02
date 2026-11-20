@@ -530,7 +530,7 @@ async def mobile_analysis_image(
 def mobile_analysis_history(
     response: Response,
     user: User = Depends(_mobile_user),
-    patient_id: Optional[int] = None,
+    patient_id: Optional[int] = Query(None, ge=1),
     before: int | None = None,
     before_cursor: Optional[str] = Query(None, max_length=192),
     stable_order: bool = False,
