@@ -57,3 +57,12 @@ The new Node regressions are registered through the existing `mobile/package.jso
 At the previously confirmed PR head `cb68dbe`, GitHub returned zero commit statuses and no PR-triggered workflow runs. The issue/PR evidence from 2026-11-19 records earlier current-head Actions jobs failing before step 1 with `runner_id=0`, empty runner names/steps and `BlobNotFound 404` job logs; npm/tsc, Gradle and pytest did not start. The exact hosted-runner/account/billing cause is not exposed by the available GitHub records. The newly created commits must receive a real runner-backed check before source validation can be called green.
 
 No patient records, clinical audio, production database or live service were modified. No main merge, production deploy, migration, APK/IPA publication or store release was performed.
+
+
+## CI trigger inspection — 2026-11-21
+
+- `.github/workflows/mobile-android.yml` and `.github/workflows/security-recovery.yml` both declare `pull_request` triggers targeting `feature/mobile-beta-20261110` and include `mobile/**`, `app/**` and `tests/**` paths. The PR base and this run's changed paths match those filters.
+- The last confirmed pre-change PR head `cb68dbe` had no workflow runs and no combined status. The new code head `58d4839d35fa793ba9ad0e88d41e3a89d3791f62` also has no associated workflow runs and no combined status.
+- Rechecked the latest recorded pre-change Android run `43772807470`: `typecheck` job `132992268544` and `beta-apk` job `132992268816` are marked failed, but both have zero steps. The job-log endpoint returns `BlobNotFound 404`. Security run `43772807464`, job `132992268677`, likewise has zero steps and its log returns `BlobNotFound 404`. These failures occurred before npm/tsc, Gradle or pytest and therefore do not expose a source-level compiler or security-test failure.
+- `.github/workflows/voice-regression.yml` is deliberately `workflow_dispatch`-only while hosted jobs fail before step 1. I could not initiate a manual dispatch from the available GitHub controls, and no run is claimed.
+- The exact hosted-runner, repository Actions-permission, or billing cause remains unverified. Owner-side Actions availability inspection is required; no speculative workflow edits were made.
