@@ -184,4 +184,8 @@ ChatGPT'nin bir sonraki 52 commit'i (hasta silme preflight serisi + route regist
 
 Kanıt: Python security **525/525**, mobil **953/953**, `tsc --noEmit` **0**. Kalan açık kalemler: Android CI runner tahsisi, fiziksel cihaz kabulü, production PostgreSQL/R2 kontrolleri ve 60-69k yük testi (ChatGPT'nin dokümanıyla aynı).
 
+## 15. Yedinci geçiş — aynı gün: ChatGPT 9 commit'i temiz merge, her iki süit yeşil
+
+ChatGPT'nin 9 commit'i (CI concurrency sözleşmesi, PostgreSQL plan checks'lerinde SQLAlchemy 2 motor desteği, Program patient-card parite dokümantasyonu ve cross-realm Program navigasyon assertion'ının normalize edilmesi) fast-forward olarak merge edildi; çakışma yok. Kanıt: mobil süit **955/955** (2 yeni test dahil), `tsc --noEmit` **0**, Python security **527 passed / 25 skipped / 0 failed** (25 skip, ChatGPT'nin yeni motor-koşullu plan checks'leri — PostgreSQL olmadan atlanıyor). Denetim tarafında bu geçişte yaprak gerekmedi; dal sağlam. Açık kalemler değişmedi: Android CI runner tahsisi, fiziksel cihaz kabulü, production PostgreSQL/R2 kontrolleri ve 60-69k yük testi.
+
 — Rapor sonu. Bu dosya `docs/TECHNICAL_AUDIT_20261120.md` olarak dala commitlenir.
