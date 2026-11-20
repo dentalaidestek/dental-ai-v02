@@ -350,7 +350,7 @@ def test_account_asset_cleanup_allowlist_is_strict():
     assert all(not work_jobs.is_account_asset_reference(reference) for reference in invalid)
 
 
-def test_account_asset_cleanup_retries_r2_failure_and_survives_worker_restart(
+def test_account_asset_cleanup_retries_r2_failure_with_backoff_across_worker_restarts(
     erasure_engine, monkeypatch
 ):
     reference = "uploads/profile_photos/user_8_" + "f" * 16 + ".jpg"
@@ -359,27 +359,39 @@ def test_account_asset_cleanup_retries_r2_failure_and_survives_worker_restart(
         session.commit()
 
     calls = []
-    def delete_once_fails(path):
+    def delete_twice_fails(path):
         calls.append(path)
-        if len(calls) == 1:
+        if len(calls) <= 2:
             raise object_storage.ObjectStorageError("synthetic R2 timeout")
 
-    monkeypatch.setattr(object_storage, "delete", delete_once_fails)
+    monkeypatch.setattr(object_storage, "delete", delete_twice_fails)
     work_jobs.collect_garbage(erasure_engine)
     with Session(erasure_engine) as session:
         receipt = session.exec(
             select(work_jobs.WorkGarbage).where(work_jobs.WorkGarbage.reference == reference)
         ).one()
         assert receipt.attempts == 1
-        assert receipt.available_at > work_jobs.now()
+        first_retry_at = receipt.available_at
+        assert first_retry_at > work_jobs.now()
         receipt.available_at = work_jobs.now() - timedelta(seconds=1)
         session.add(receipt)
         session.commit()
 
-    # A fresh collector invocation uses only the durable row, not process memory.
+    # A second worker invocation still uses only the durable receipt.
+    work_jobs.collect_garbage(erasure_engine)
+    with Session(erasure_engine) as session:
+        receipt = session.exec(
+            select(work_jobs.WorkGarbage).where(work_jobs.WorkGarbage.reference == reference)
+        ).one()
+        assert receipt.attempts == 2
+        assert receipt.available_at > first_retry_at
+        receipt.available_at = work_jobs.now() - timedelta(seconds=1)
+        session.add(receipt)
+        session.commit()
+
     monkeypatch.setattr(object_storage, "delete", lambda path: calls.append(path))
     work_jobs.collect_garbage(erasure_engine)
-    assert calls == [reference, reference]
+    assert calls == [reference, reference, reference]
     with Session(erasure_engine) as session:
         assert session.exec(
             select(work_jobs.WorkGarbage).where(work_jobs.WorkGarbage.reference == reference)
