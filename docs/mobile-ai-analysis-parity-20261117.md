@@ -40,3 +40,22 @@ Tests are committed but require a runner to execute. No test pass is claimed in 
 At `2b9875076decf4e636f7baeacdcba22ec6c5d173`, Android run `44133525110` had typecheck job `134217312303` and APK job `134217311837`; Security run `44133525334` had job `134217338763`. All jobs returned no steps and no log URL; log retrieval returned `BlobNotFound 404`. Workflow definitions use `ubuntu-latest` and contain normal checkout/install/typecheck or pytest steps. The jobs therefore failed before those steps ran; this is not evidence of a TypeScript or pytest source failure. The exact GitHub hosted-runner/account cause is not exposed by the available records.
 
 No main merge, production deploy, migration, APK/IPA publication or clinical record mutation.
+
+
+## 2026-11-21 — CI root causes and private image refresh
+
+Web-first recheck: app/templates/analysis_viewer.html, vision_service/templates/radiograph_viewer.js and vision_service/templates/intraoral_viewer.js were inspected before the native viewer change. The web viewer loads the owned image and vision snapshot with cache: no-store; its parent frame is analysis/asset scoped and the native clinical image endpoint already emits private no-store headers.
+
+At starting HEAD dda4cfd52c6a82f25985349e78b6d91840deda52:
+- Android CI 44808024759: TypeScript typecheck, session/auth, realtime/pagination and the independent ARM64 APK job passed. The beta suite ran 897 tests: 874 passed, 23 failed. All 23 failures shared one harness error: unexpected import ./toothChartHistoryPresentation. toothChartLifecycle.cjs had not registered the newly added pure presentation module in its VM require map.
+- Security Recovery 44808024767: five native security jobs passed. Python security had 561 passed and one failed. The route assertion counted both /patients/.../file (web) and /api/mobile/v1/patients/.../file (mobile) because it matched only a suffix; it did not identify two mobile handlers. PostgreSQL checks were skipped after that test failure.
+- The failed Android workflow was not a TypeScript failure: the typecheck step was green. The Android/iOS Hermes exports also completed. The beta suite failure and the Python route-test failure are separate test-harness defects; no production authorization rule was weakened.
+
+Corrections:
+1. Registered toothChartHistoryPresentation.ts in the tooth-chart lifecycle VM harness.
+2. Restricted the canonical-route assertion to the exact /api/mobile/v1 path while retaining the separate web route.
+3. Exported the one canonical mobile API base and reused it for clinical image requests.
+4. Added cache: reload to private clinical image sources and an account-scoped React key for profile thumbnails, so an account change remounts the image instead of reusing the previous account's rendered component.
+5. Added a renderer regression for API base, forced reload, Authorization replacement and account-scoped remount.
+
+These changes are committed; the new HEAD still requires hosted CI execution. No claim of green post-fix tests is made here. No main merge, production deploy, clinical record mutation or store publication.
