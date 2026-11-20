@@ -397,7 +397,7 @@ def enqueue_account_asset_cleanup(session: Session, reference: str) -> bool:
 
 def collect_garbage(engine):
     from app.object_storage import delete
-    from app.main import Analysis, GuestAnalysis, GuestImageAsset, PatientMedia
+    from app.main import Analysis, ExpertProfile, ExpertTitleChange, GuestAnalysis, GuestImageAsset, PatientMedia, User
 
     with Session(engine, expire_on_commit=False) as session:
         query = select(WorkGarbage).where(WorkGarbage.available_at <= now()).order_by(WorkGarbage.id).limit(1)
@@ -417,7 +417,8 @@ def collect_garbage(engine):
         patient_media = is_patient_media_reference(reference)
         guest_asset = is_guest_analysis_reference(reference)
         ai_result = is_ai_result_reference(reference)
-        if not ai_result and not patient_media and not guest_asset:
+        account_asset = is_account_asset_reference(reference)
+        if not ai_result and not patient_media and not guest_asset and not account_asset:
             return
 
         # A cleanup receipt is visible only after metadata deletion commits.
@@ -431,6 +432,16 @@ def collect_garbage(engine):
             in_use = session.exec(
                 select(GuestImageAsset.id).where(GuestImageAsset.file_path == reference).limit(1)
             ).first()
+        elif account_asset:
+            # A path can be shared by a retained/other account record. Re-check
+            # every private identity-document owner before deleting the object.
+            from app.membership_verification import MembershipVerification
+            in_use = any(session.exec(statement).first() for statement in (
+                select(User.id).where(User.profile_photo_path == reference).limit(1),
+                select(ExpertProfile.id).where(ExpertProfile.credential_document_path == reference).limit(1),
+                select(ExpertTitleChange.id).where(ExpertTitleChange.credential_document_path == reference).limit(1),
+                select(MembershipVerification.id).where(MembershipVerification.document_path == reference).limit(1),
+            ))
         else:
             in_use = session.exec(
                 text("SELECT 1 FROM analysis WHERE result_path=:ref UNION ALL SELECT 1 FROM guestanalysis WHERE result_path=:ref LIMIT 1"),
