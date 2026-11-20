@@ -154,8 +154,11 @@ def test_patient_history_filters_tooth_and_marks_only_confirmed_voice_reviews(ch
         ])
         session.commit()
 
-    # The route actually mounted by app.main must be the canonical analysis API,
-    # not the shadowed duplicate in mobile_modern_api_v3.
+    # Trigger the app lifespan before inspecting the effective route table.
+    # Some startup hooks finish router registration only when TestClient enters
+    # its context; inspecting before the first request produces a false empty list.
+    filtered = client.get("/api/mobile/v1/analyses?patient_id=8&tooth_number=36")
+    assert filtered.status_code == 200, filtered.text
     active_routes = [
         route for route in main.app.routes
         if getattr(route, "path", "").rstrip("/") == "/api/mobile/v1/analyses"
@@ -167,8 +170,6 @@ def test_patient_history_filters_tooth_and_marks_only_confirmed_voice_reviews(ch
         for route in main.app.routes
         if "analys" in getattr(route, "path", "").lower()
     ]
-    filtered = client.get("/api/mobile/v1/analyses?patient_id=8&tooth_number=36")
-    assert filtered.status_code == 200, f"{filtered.text}; mounted analysis routes={route_diagnostics}"
     assert len(active_routes) == 1, f"Expected one canonical analysis route; mounted analysis routes={route_diagnostics}"
     assert active_routes[0].endpoint.__module__ == "app.mobile_analysis_api"
     assert filtered.headers["cache-control"] == "private, no-store"
@@ -770,7 +771,7 @@ def test_web_analysis_selection_and_submission_share_four_image_limit(chat,monke
         files=[('images',('extra.png',raw.getvalue(),'image/png'))],
     )
     assert submitted.status_code==400
-    assert 'toplam en fazla 4' in submitted.text
+    assert 'kayıtlı ve yeni görüntülerin toplamı en fazla 4 olabilir' in submitted.text.lower()
     with Session(engine) as session:
         assert not session.exec(select(main.Analysis).where(main.Analysis.patient_id==80)).all()
 
@@ -1031,15 +1032,17 @@ def test_native_patient_delete_ui_fails_closed_for_unresolved_local_mutations():
     assert "hasPendingTreatment:pendingTreatment!==null" in component
     assert "profileUncertain" in component and "treatmentUncertain" in component
     assert "const allowed=replay?canResolvePatientDelete:canDeletePatient;" in component
-    assert "patientProfileEditMatches(patientForm,latest.patient)" in component
+    assert "profileEditReady:!editDraftDirty&&profileConflicts.length===0&&!revisionConflict" in component
+    assert "patientProfileEditMatches(patientForm,latestForm)" in component
     assert component.count("if(result.patient.id!==patientId)") == 1
-    assert component.count("if(latest.patient.id!==patientId)") == 2
+    assert component.count("if(latest.patient.id!==patientId)") == 3
     assert "Sunucudaki profil kaydını karşılaştır" in component
     assert "Kontrol ettim" not in component
     delete_block = component.split("function confirmDelete()", 1)[1].split("const button=", 1)[0]
     assert "if(lock.current||!allowed)" in delete_block
     assert delete_block.count("if(!current()||!focusedRef.current)return;") == 1
     assert "gate.uncertain === false" in presentation
+    assert "gate.profileEditReady === true" in presentation
     assert "gate.hasPendingTreatment === false" in presentation
 
 def test_native_tooth_chart_blocks_all_clinical_writes_until_treatment_intent_recovery():
