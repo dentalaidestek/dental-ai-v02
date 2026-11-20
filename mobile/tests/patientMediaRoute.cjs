@@ -77,7 +77,7 @@ test('native clinical media paging is owner-scoped, bounded and private',()=>{
   assert.match(block,/_mobile_private_no_store\(response\)/);
   assert.match(block,/not patient or patient\.owner_user_id != user\.id/);
   assert.match(block,/PatientMedia\.owner_user_id\s*==\s*user\.id/);
-  assert.match(block,/PatientMedia\.id\.desc\(\)\.limit\(limit\s*\+\s*1\)/);
+  assert.match(block,/order_by\(PatientMedia\.id\.desc\(\)\)\.limit\(limit\s*\+\s*1\)/);
   assert.match(block,/PatientMedia\.id\s*<\s*before/);
   assert.doesNotMatch(block,/\.offset\(/);
 });
