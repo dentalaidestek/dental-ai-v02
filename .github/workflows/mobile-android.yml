@@ -3,15 +3,6 @@ name: Mobile Android CI
 # Scope automatic checks to the mobile parity branch and its PR target.
 # The workflow-file path ensures this change itself produces a fresh runner result.
 on:
-  push:
-    branches:
-      - feature/mobile-web-parity-20261110
-    paths:
-      - ".github/workflows/mobile-android.yml"
-      - "mobile/**"
-      - "docs/account-erasure-guest-cleanup-20261120.md"
-      - "app/**"
-      - "tests/**"
   pull_request:
     branches:
       - feature/mobile-beta-20261110
@@ -22,6 +13,9 @@ on:
       - "app/**"
       - "tests/**"
   workflow_dispatch:
+concurrency:
+  group: mobile-android-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
 jobs:
   typecheck:
     runs-on: ubuntu-latest
