@@ -68,3 +68,31 @@ test('native archive retains web-matched metadata, batch limits, receipts and re
   assert.match(web,/patientMediaAnalyzeSelected/);
   assert.match(web,/media\/delete-all/);
 });
+
+ 
+test('native clinical media paging is owner-scoped, bounded and private',()=>{
+  const mobile=fs.readFileSync(require.resolve('../../app/mobile_api.py'),'utf8');
+  const block=mobile.split('@router.get("/patients/{patient_id}/media")')[1]?.split('@router.delete("/patients/{patient_id}/media/{media_id}")')[0]||'';
+  assert.ok(block,'canonical mobile media page route must remain mounted');
+  assert.match(block,/_mobile_private_no_store\(response\)/);
+  assert.match(block,/Patient\.owner_user_id\s*==\s*user\.id/);
+  assert.match(block,/PatientMedia\.owner_user_id\s*==\s*user\.id/);
+  assert.match(block,/PatientMedia\.id\.desc\(\)\.limit\(limit\s*\+\s*1\)/);
+  assert.match(block,/PatientMedia\.id\s*<\s*before/);
+  assert.doesNotMatch(block,/\.offset\(/);
+});
+
+test('native thumbnails recheck ownership after lazy R2 generation and stay private',()=>{
+  const modern=fs.readFileSync(require.resolve('../../app/mobile_modern_api_v3.py'),'utf8');
+  const main=fs.readFileSync(require.resolve('../../app/main.py'),'utf8');
+  const block=modern.split('@router.get("/patients/{patient_id}/media/{media_id}/thumbnail")')[1]?.split('@router.get("/patients/{patient_id}/media/{media_id}")')[0]||'';
+  assert.ok(block,'native thumbnail route must be mounted');
+  assert.match(block,/_user_owned_patient\(s,user,patient_id\)/);
+  assert.match(block,/row\.patient_id==patient_id and row\.owner_user_id==user\.id/);
+  assert.match(block,/ensure_thumbnail\(file_path\)/);
+  assert.match(block,/delete_thumbnail\(file_path\)/);
+  assert.match(block,/Cache-Control.*private, no-store/);
+  assert.match(block,/Vary.*Authorization/);
+  assert.match(main,/app\.include_router\(mobile_router\)[\s\S]*app\.include_router\(mobile_modern_router\)/);
+  assert.match(main,/mobile_modern_router\.routes\[:\]\s*=\s*\[route for route in mobile_modern_router\.routes/);
+});
