@@ -19,9 +19,10 @@ const json=(body,status=200)=>new Response(JSON.stringify(body),{
 
 test('native patient history requests web-order cursor pages and continues with the opaque cursor',async()=>{
  const original=global.fetch,calls=[];
+ const firstItems=Array.from({length:50},(_,index)=>item(100-index,8,'36','2026-11-20T10:00:00'));
  global.fetch=async(url,init)=>{calls.push({url:String(url),init});return calls.length===1
-  ?json({items:[item(42,8,'36','2026-11-20T10:00:00'),item(41,8,'36','2026-11-20T09:00:00')],total:3,next_cursor:stableCursor,next_before:null})
-  :json({items:[item(40,8,'36','2026-11-20T08:00:00')],total:3,next_cursor:null,next_before:null});};
+  ?json({items:firstItems,total:51,next_cursor:stableCursor,next_before:null})
+  :json({items:[item(50,8,'36','2026-11-20T08:00:00')],total:51,next_cursor:null,next_before:null});};
  try{
   const first=await api.getPatientAnalysisHistoryPage('token',8,'36');
   assert.deepEqual(first.next,{kind:'stable',value:stableCursor});
