@@ -877,6 +877,39 @@ def test_program_pending_reminder_index_sqlite_migration_is_idempotent(tmp_path)
         assert "failed" not in normalized
     engine.dispose()
 
+def test_program_pending_reminder_migration_refuses_unversioned_sqlite_schema(tmp_path):
+    from types import SimpleNamespace
+    from app import migrate
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'unversioned-reminders.db'}")
+    with engine.begin() as connection:
+        connection.execute(text(
+            'CREATE TABLE programreminderjob '
+            '(id INTEGER PRIMARY KEY, status VARCHAR NOT NULL, run_at TIMESTAMP NOT NULL)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX ix_programreminderjob_run_at '
+            'ON programreminderjob (run_at)'
+        ))
+
+    target = SimpleNamespace(engine=engine)
+    assert migrate._upgrade_program_reminder_pending_index(target) is False
+    with engine.connect() as connection:
+        assert connection.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='dental_schema_revision'"
+        )).scalar_one_or_none() is None
+        assert connection.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='index' "
+            "AND name='ix_programreminderjob_run_at'"
+        )).scalar_one_or_none() == 1
+        assert connection.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='index' "
+            "AND name='ix_programreminderjob_pending_run_at'"
+        )).scalar_one_or_none() is None
+    engine.dispose()
+
+
 def _explain_analyze_index_names(connection, statement, params=None):
     # SQLAlchemy 2.x removed Engine.execute(); accept the Engine used by the
     # caller, open a short-lived Connection, and keep the helper reusable with
