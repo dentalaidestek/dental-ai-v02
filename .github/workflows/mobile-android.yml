@@ -3,6 +3,14 @@ name: Mobile Android CI
 # Scope automatic checks to the mobile parity branch and its PR target.
 # The workflow-file path ensures this change itself produces a fresh runner result.
 on:
+  push:
+    branches:
+      - feature/mobile-web-parity-20261110
+    paths:
+      - ".github/workflows/mobile-android.yml"
+      - "mobile/**"
+      - "app/**"
+      - "tests/**"
   pull_request:
     branches:
       - feature/mobile-beta-20261110
