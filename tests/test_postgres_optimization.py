@@ -775,6 +775,52 @@ def test_program_pending_reminder_index_migration_upgrades_revision19_and_is_ide
         ).scalar_one() == 20
 
 
+def test_program_pending_reminder_index_rebuilds_broader_postgres_predicate(pg):
+    from app import main, migrate
+
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        connection.execute(text(
+            'CREATE TABLE IF NOT EXISTS dental_schema_revision '
+            '(id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'
+        ))
+        connection.execute(text(
+            'INSERT INTO dental_schema_revision VALUES (1,20) '
+            'ON CONFLICT(id) DO UPDATE SET version=20'
+        ))
+        connection.execute(text('DROP INDEX IF EXISTS ix_programreminderjob_pending_run_at'))
+        connection.execute(text(
+            "CREATE INDEX ix_programreminderjob_pending_run_at "
+            "ON programreminderjob (run_at) "
+            "WHERE status IN ('PENDING','FAILED')"
+        ))
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_programreminderjob_status_run_at '
+            'ON programreminderjob (status, run_at)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_programreminderjob_run_at '
+            'ON programreminderjob (run_at)'
+        ))
+
+    # A broad predicate is not a valid revision-20 index even though it
+    # contains both words "status" and "pending".
+    assert migrate._upgrade_program_reminder_pending_index(main) is True
+    with engine.connect() as connection:
+        predicate = connection.execute(text(
+            "SELECT pg_get_expr(indpred, indrelid) FROM pg_index "
+            "WHERE indexrelid=to_regclass('ix_programreminderjob_pending_run_at')"
+        )).scalar_one()
+        normalized = "".join(predicate.lower().split()).replace("(", "").replace(")", "")
+        for cast in ("::character varying", "::varchar", "::text"):
+            normalized = normalized.replace(cast, "")
+        assert normalized == "status='pending'"
+        for name in ('ix_programreminderjob_status_run_at', 'ix_programreminderjob_run_at'):
+            assert connection.execute(
+                text('SELECT to_regclass(:name)'), {'name': name}
+            ).scalar_one() is None
+
+
 def test_program_pending_reminder_index_sqlite_migration_is_idempotent(tmp_path):
     from types import SimpleNamespace
     from app import migrate
