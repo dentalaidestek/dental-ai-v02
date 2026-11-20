@@ -13,7 +13,7 @@ import time
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from sqlalchemy import Index, text, func, update, or_, and_
 from sqlalchemy.orm import aliased
 from sqlalchemy.exc import IntegrityError
@@ -277,11 +277,79 @@ _PATIENT_MEDIA_OBJECT = re.compile(
     r"uploads/(?:patient_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)|"
     r"patient-media/patient_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp))"
 )
+_GUEST_ANALYSIS_OBJECT = re.compile(
+    r"uploads/guest_analysis_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)"
+)
 
 
 def is_patient_media_reference(reference: str) -> bool:
     """Accept only the two server-generated patient-media object-key layouts."""
     return isinstance(reference, str) and _PATIENT_MEDIA_OBJECT.fullmatch(reference) is not None
+
+
+def is_guest_analysis_reference(reference: str) -> bool:
+    """Accept only server-generated guest-analysis upload object keys."""
+    return isinstance(reference, str) and _GUEST_ANALYSIS_OBJECT.fullmatch(reference) is not None
+
+
+def is_ai_result_reference(reference: str) -> bool:
+    """Accept safe relative result keys under the private AI-result prefix."""
+    if not isinstance(reference, str) or "\\" in reference:
+        return False
+    path = PurePosixPath(reference)
+    return (
+        reference.startswith("uploads/ai_results/")
+        and not path.is_absolute()
+        and path.parts[:2] == ("uploads", "ai_results")
+        and all(part not in {"", ".", ".."} for part in path.parts)
+    )
+
+
+def _enqueue_cleanup_reference(session: Session, reference: str, *, delay_seconds: int = 30) -> bool:
+    """Insert or re-arm a durable cleanup receipt without storing clinical content.
+
+    The attempts counter also fences a collector that claimed an older receipt
+    just before account erasure re-queued the same object.
+    """
+    stamp = now() + timedelta(seconds=max(0, delay_seconds))
+    existing = session.exec(
+        select(WorkGarbage).where(WorkGarbage.reference == reference)
+    ).first()
+    if existing is not None:
+        existing.attempts = int(existing.attempts or 0) + 1
+        existing.available_at = stamp
+        session.add(existing)
+        return True
+
+    row = WorkGarbage(reference=reference, available_at=stamp)
+    try:
+        with session.begin_nested():
+            session.add(row)
+            session.flush()
+    except IntegrityError:
+        existing = session.exec(
+            select(WorkGarbage).where(WorkGarbage.reference == reference)
+        ).first()
+        if existing is None:
+            raise
+        existing.attempts = int(existing.attempts or 0) + 1
+        existing.available_at = stamp
+        session.add(existing)
+    return True
+
+
+def enqueue_guest_analysis_cleanup(session: Session, reference: str) -> bool:
+    """Queue a server-generated guest upload for deletion after metadata removal."""
+    if not is_guest_analysis_reference(reference):
+        return False
+    return _enqueue_cleanup_reference(session, reference, delay_seconds=30)
+
+
+def enqueue_ai_result_cleanup(session: Session, reference: str) -> bool:
+    """Queue a private generated result for deletion after its parent row is removed."""
+    if not is_ai_result_reference(reference):
+        return False
+    return _enqueue_cleanup_reference(session, reference, delay_seconds=30)
 
 
 def enqueue_patient_media_cleanup(session: Session, reference: str) -> bool:
@@ -321,7 +389,7 @@ def enqueue_patient_media_cleanup(session: Session, reference: str) -> bool:
 
 def collect_garbage(engine):
     from app.object_storage import delete
-    from app.main import Analysis, GuestAnalysis, PatientMedia
+    from app.main import Analysis, GuestAnalysis, GuestImageAsset, PatientMedia
 
     with Session(engine, expire_on_commit=False) as session:
         query = select(WorkGarbage).where(WorkGarbage.available_at <= now()).order_by(WorkGarbage.id).limit(1)
@@ -332,20 +400,28 @@ def collect_garbage(engine):
             return
         garbage.available_at = now() + timedelta(minutes=5)
         garbage.attempts += 1
+        claim_attempts = garbage.attempts
         session.add(garbage)
         session.commit()
         session.close()
 
         reference = str(garbage.reference)
         patient_media = is_patient_media_reference(reference)
-        if not reference.startswith('uploads/ai_results/') and not patient_media:
+        guest_asset = is_guest_analysis_reference(reference)
+        ai_result = is_ai_result_reference(reference)
+        if not ai_result and not patient_media and not guest_asset:
             return
 
-        # Never erase a published result or an object still referenced by a live
-        # patient-media row. A later delete creates a fresh cleanup receipt.
+        # A cleanup receipt is visible only after metadata deletion commits.
+        # Re-check references before touching the object. The attempt counter
+        # fences an older collector if erasure re-armed this same receipt.
         if patient_media:
             in_use = session.exec(
                 select(PatientMedia.id).where(PatientMedia.file_path == reference).limit(1)
+            ).first()
+        elif guest_asset:
+            in_use = session.exec(
+                select(GuestImageAsset.id).where(GuestImageAsset.file_path == reference).limit(1)
             ).first()
         else:
             in_use = session.exec(
@@ -355,7 +431,10 @@ def collect_garbage(engine):
         session.close()
 
         if in_use:
-            session.exec(__import__('sqlalchemy').delete(WorkGarbage).where(WorkGarbage.id == garbage.id))
+            session.exec(__import__('sqlalchemy').delete(WorkGarbage).where(
+                WorkGarbage.id == garbage.id,
+                WorkGarbage.attempts == claim_attempts,
+            ))
             session.commit()
             return
         try:
@@ -369,7 +448,10 @@ def collect_garbage(engine):
                 exc_info=True,
             )
             return
-        session.exec(__import__('sqlalchemy').delete(WorkGarbage).where(WorkGarbage.id == garbage.id))
+        session.exec(__import__('sqlalchemy').delete(WorkGarbage).where(
+            WorkGarbage.id == garbage.id,
+            WorkGarbage.attempts == claim_attempts,
+        ))
         session.commit()
 
 
