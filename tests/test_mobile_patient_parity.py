@@ -1530,6 +1530,81 @@ def test_mobile_thumbnail_rechecks_owner_and_exact_source_after_generation(
     assert deleted == [source], "a stale derivative must be deleted using its original source key"
 
 
+
+def test_mobile_thumbnail_success_is_private_and_owner_scoped(chat, monkeypatch, tmp_path):
+    client, engine = chat
+    monkeypatch.setattr(mobile_modern_api_v3, "engine", engine)
+    import app.clinical_media_thumbnail as thumbnails
+
+    thumbnail_path = tmp_path / "owner-thumbnail.jpg"
+    Image.new("RGB", (16, 12), "green").save(thumbnail_path, format="JPEG")
+    monkeypatch.setattr(thumbnails, "ensure_thumbnail", lambda _reference: thumbnail_path)
+
+    with Session(engine) as session:
+        session.add(main.Patient(id=811, anonymous_id="SYNTHETIC-THUMBNAIL-OWNER", owner_user_id=1))
+        session.add(main.PatientMedia(
+            id=8111,
+            patient_id=811,
+            owner_user_id=1,
+            original_filename="synthetic.png",
+            stored_filename="synthetic.png",
+            file_path="r2://synthetic-private/patient-811/source.png",
+            media_type="PHOTO",
+        ))
+        session.commit()
+
+    response = client.get("/api/mobile/v1/patients/811/media/8111/thumbnail")
+    assert response.status_code == 200, response.text
+    _assert_clinical_private_response(response)
+    assert response.headers.get("content-type") == "image/jpeg"
+    assert response.headers.get("content-disposition", "").startswith("inline")
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    assert response.headers.get("content-security-policy") == "default-src 'none'; sandbox"
+    assert response.content == thumbnail_path.read_bytes()
+
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
+    denied = client.get("/api/mobile/v1/patients/811/media/8111/thumbnail")
+    assert denied.status_code == 404
+    _assert_clinical_private_response(denied)
+    assert denied.headers.get("content-type", "").startswith("application/json")
+
+
+@pytest.mark.parametrize(
+    ("failure", "status"),
+    [(FileNotFoundError, 404), (ValueError, 415), (RuntimeError, 503)],
+)
+def test_mobile_thumbnail_generation_errors_are_private_and_do_not_leak_storage_details(
+    chat, monkeypatch, failure, status
+):
+    client, engine = chat
+    monkeypatch.setattr(mobile_modern_api_v3, "engine", engine)
+    import app.clinical_media_thumbnail as thumbnails
+
+    def fail(_reference):
+        raise failure("synthetic-private-r2-object-key")
+
+    monkeypatch.setattr(thumbnails, "ensure_thumbnail", fail)
+    with Session(engine) as session:
+        session.add(main.Patient(id=812, anonymous_id="SYNTHETIC-THUMBNAIL-ERROR", owner_user_id=1))
+        session.add(main.PatientMedia(
+            id=8121,
+            patient_id=812,
+            owner_user_id=1,
+            original_filename="synthetic.png",
+            stored_filename="synthetic.png",
+            file_path="r2://synthetic-private/patient-812/source.png",
+            media_type="PHOTO",
+        ))
+        session.commit()
+
+    response = client.get("/api/mobile/v1/patients/812/media/8121/thumbnail")
+    assert response.status_code == status, response.text
+    _assert_clinical_private_response(response)
+    assert "synthetic-private-r2-object-key" not in response.text
+    if status == 503:
+        assert response.headers.get("retry-after") == "2"
+
+
 def test_mobile_patient_directory_search_matches_web_tckn_owner_scope_and_no_store(chat):
     client, engine = chat
     base = datetime(2026, 11, 19, 1, 0, 0)
