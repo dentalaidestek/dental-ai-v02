@@ -66,9 +66,12 @@ export async function getPatients(token:string,q="",offset=0){
  return result;
 }
 const validTreatmentHistoryCursor=(value:unknown):value is string=>typeof value==="string"&&/^[A-Za-z0-9_-]{24,512}$/.test(value);
-export async function getPatient(token:string,id:number){
+export async function getPatient(token:string,id:number,includeChart=false){
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz hasta kimliği.");
- const result=await request<PatientDetail>("/patients/"+id,token);
+ // Profile reads stay lean; only the dedicated tooth-chart screen opts into
+ // the bounded FDI status/surface collections.
+ const path="/patients/"+id+(includeChart?"?include_chart=true":"");
+ const result=await request<PatientDetail>(path,token);
  if(!result?.patient||result.patient.id!==id||
     (result.edit_revision!==undefined&&(typeof result.edit_revision!=="string"||!/^[a-f0-9]{64}$/.test(result.edit_revision)))||
     !Array.isArray(result.teeth)||!Array.isArray(result.surfaces)||!Array.isArray(result.treatments)||result.treatments.length>3||!Array.isArray(result.media)||
