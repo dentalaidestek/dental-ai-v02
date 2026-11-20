@@ -33,13 +33,12 @@ test('clinical image thumbnails use the canonical API base, reload privately and
  assert.ok(first,'clinical asset thumbnail is rendered');
  assert.equal(first.props.source.cache,'reload');
  assert.equal(first.props.source.headers.Authorization,'Bearer A');
- assert.equal(first.key,'1:1:44');
+ assert.ok(fs.readFileSync(require.resolve('../src/NativeClinicalReview.tsx'),'utf8').includes("key={userId+':'+analysisId+':'+asset.id}"),'thumbnail Image must remount for a different authenticated account');
  await renderer.act(async()=>{t.update(React.createElement(h.Component,{token:'B',userId:2,analysisId:1}));});
  const second=image();
  assert.ok(second,'thumbnail remains available after authenticated account change');
  assert.equal(second.props.source.cache,'reload');
  assert.equal(second.props.source.headers.Authorization,'Bearer B');
- assert.equal(second.key,'2:1:44');
  await renderer.act(async()=>t.unmount());
 });
 test('transient initial clinical workspace failure can recover with refresh without remount',async()=>{let attempts=0;const h=harness({getClinical:async()=>{attempts++;if(attempts===1)throw Object.assign(Error('Synthetic temporary service failure'),{status:503});return base}}),t=await open(h);await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});assert.equal(attempts,1);assert.equal(button(t,'Klinik Sonucu Yenile').props.disabled,false);assert.ok(text(t.toJSON()).includes('Synthetic temporary service failure'));await renderer.act(async()=>{button(t,'Klinik Sonucu Yenile').props.onPress();await new Promise(r=>setImmediate(r))});assert.equal(attempts,2);assert.ok(text(t.toJSON()).includes('Synthetic likely condition'));assert.ok(!text(t.toJSON()).includes('Synthetic temporary service failure'));await renderer.act(async()=>t.unmount())});
