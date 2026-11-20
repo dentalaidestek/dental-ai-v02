@@ -15,7 +15,9 @@ on:
   workflow_dispatch:
 concurrency:
   group: mobile-android-${{ github.event.pull_request.head.ref || github.ref }}
-  cancel-in-progress: true
+  # Do not cancel an in-flight typecheck/export/APK build when the next commit lands.
+  # GitHub keeps only the latest pending run for this PR group.
+  cancel-in-progress: false
 jobs:
   typecheck:
     runs-on: ubuntu-latest
