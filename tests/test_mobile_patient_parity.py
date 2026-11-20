@@ -1974,3 +1974,40 @@ def test_mobile_patient_media_file_storage_errors_are_private_and_generic(
         assert response.headers.get("retry-after") == retry_after
     assert "private storage detail" not in response.text
 
+def test_mobile_original_media_file_route_is_the_single_mounted_hardened_handler():
+    route_path = "/api/mobile/v1/patients/{patient_id}/media/{media_id}/file"
+    matches = [
+        route for route in main.app.routes
+        if getattr(route, "path", None) == route_path
+        and "GET" in getattr(route, "methods", set())
+    ]
+    assert len(matches) == 1
+    assert matches[0].endpoint is mobile_api.mobile_patient_media_file
+    source = inspect.getsource(matches[0].endpoint)
+    assert "current_media.file_path == file_path" in source
+    assert "_mobile_private_no_store(result)" in source
+
+
+def test_mobile_original_media_file_initial_cross_account_denial_is_private(chat):
+    client, engine = chat
+    with Session(engine) as session:
+        session.add(main.Patient(
+            id=994, anonymous_id="SYNTHETIC-MEDIA-FILE-CROSS-ACCOUNT", owner_user_id=1,
+        ))
+        session.add(main.PatientMedia(
+            id=9941, patient_id=994, owner_user_id=1,
+            original_filename="private.png", stored_filename="private.png",
+            file_path="r2://private/patient-994/private.png", media_type="PHOTO",
+        ))
+        session.commit()
+
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
+    response = client.get("/api/mobile/v1/patients/994/media/9941/file")
+
+    assert response.status_code == 404
+    assert response.headers.get("cache-control") == "private, no-store"
+    assert response.headers.get("pragma") == "no-cache"
+    assert "authorization" in response.headers.get("vary", "").lower()
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    assert "private.png" not in response.text
+
