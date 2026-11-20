@@ -1066,3 +1066,27 @@ Commits added in this pass:
 - `8d13ecc` web/native profile field parity regression
 
 The source changes and new tests are committed. A fresh CI run for the final head is still required; no new test pass is claimed until the hosted jobs execute. No main merge, production deploy, patient-data mutation or production migration was performed.
+
+
+## 2026-11-20 — latest-head CI root causes and tooth-history parity
+
+Starting head: `887c35a794ca0ab3584ab4e159c643084319495e`.
+
+The actual job logs for Android CI #4346 and Security Recovery #2045 were inspected:
+
+- Android TypeScript typecheck passed; session/auth and realtime/pagination passed; Android/iOS Expo export passed; the ARM64 internal APK job passed.
+- The beta regression suite had 249/250 passing. Its only failure was `native patient edit controls match the web patient_detail field contract`: the test's regular expression used a double-escaped word boundary and therefore parsed zero web input names. The native field contract itself returned the expected seven ordered fields.
+- Python security had 561 passing and one failing. The failing assertion searched `main.app.routes` for a flattened endpoint. FastAPI's included-router representation did not expose the route as a direct endpoint item even though `app.include_router(mobile_router)` is present. The assertion now uses the public OpenAPI path surface, retains the canonical APIRouter endpoint identity check, and still rejects a duplicate modern-router shadow.
+- The native clinical-security job repeated the same beta-suite profile parser failure (249/250); it was not a separate clinical authorization regression. Native Program, Voice, Social and Academic security jobs passed.
+
+Web-first tooth-history comparison re-read `app/templates/tooth_chart.html` and the mounted native `NativeToothChart.tsx` flow. Both sides expose the selected tooth's surface observations, analysis history and separately persisted treatment records. Native treatment history has cursor continuation; selected-tooth analysis history receives the current FDI tooth. A new pure presentation helper centralizes Turkish labels for persisted surface/status codes while preserving unknown future values. New Node regressions cover all supported codes, forward-compatible unknown codes, the three web history sources and rendered selected-tooth cursor scoping.
+
+Commits in this pass:
+- fix the profile test's escaped word boundary
+- verify the mounted original-media route through FastAPI OpenAPI
+- centralize native tooth-history labels
+- add the web/native tooth-history presentation contract tests
+- add rendered selected-tooth history cursor coverage
+- record this CI and parity evidence
+
+The new tests are committed but their post-fix workflow result is still required. No clinical records, owner predicates, database schema, provider, dependency, main branch or production environment were changed. No merge, deploy, migration or APK/IPA publication.
