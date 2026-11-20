@@ -510,3 +510,10 @@ test('a late tooth-history response cannot appear after switching to another FDI
  await renderer.act(async()=>tree.unmount());
 });
 
+
+test('every tooth-chart patient refresh explicitly requests FDI chart collections',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativeToothChart.tsx'),'utf8');
+ const chartReads=source.match(/getPatient\(token,patientId,true\)/g)||[];
+ assert.equal(chartReads.length,6,'initial, foreground, realtime and post-mutation chart reads must opt in');
+ assert.doesNotMatch(source,/getPatient\(token,patientId\)(?!,true)/,'no chart refresh may silently receive the profile-only payload');
+});
