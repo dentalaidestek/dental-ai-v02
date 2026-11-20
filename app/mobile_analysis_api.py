@@ -12,7 +12,7 @@ import tempfile
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
@@ -32,7 +32,7 @@ from app.analysis_upload_receipts import (
     verify_or_upgrade_analysis_upload_receipt,
 )
 from app.patient_media_receipts import PatientMediaReceiptKeyUnavailable
-from sqlalchemy import text
+from sqlalchemy import func, text
 from starlette.concurrency import run_in_threadpool
 
 def _voice_review_ids(session, user_id, analysis_ids):
@@ -526,29 +526,89 @@ async def mobile_analysis_image(
 
 
 @router.get("/analyses")
-def mobile_analysis_history(user: User = Depends(_mobile_user), patient_id: Optional[int] = None, before: Optional[int] = Query(None, ge=1), limit: int = Query(50, ge=1, le=100), tooth_number: Optional[str] = None):
+def mobile_analysis_history(
+    response: Response,
+    user: User = Depends(_mobile_user),
+    patient_id: Optional[int] = None,
+    before: Optional[int] = Query(None, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    tooth_number: Optional[str] = None,
+):
+    # Analysis history contains clinical notes and must never be cached by a
+    # shared or persistent HTTP cache.
+    _mobile_private_no_store(response)
     with Session(engine, expire_on_commit=False) as session:
-        q = select(Analysis, Patient).join(Patient, Patient.id == Analysis.patient_id).where(
-            Patient.owner_user_id == user.id
+        q = select(Analysis, Patient).join(Patient, Patient.id == Analysis.patient_id)
+        count_query = (
+            select(func.count(Analysis.id))
+            .select_from(Analysis)
+            .join(Patient, Patient.id == Analysis.patient_id)
         )
+
+        patient = None
         if patient_id is not None:
             patient = session.get(Patient, patient_id)
-            if not patient or patient.owner_user_id != user.id:
+            if not patient or (user.role != "ADMIN" and patient.owner_user_id != user.id):
                 raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
-            q = q.where(Analysis.patient_id == patient_id)
+            q = q.where(Analysis.patient_id == patient.id)
+            count_query = count_query.where(Analysis.patient_id == patient.id)
+            # Repeat the owner predicate in the data query. The initial lookup
+            # is the user-facing 404 check; this predicate also fails closed if
+            # ownership changes between validation and the history SELECT.
+            if user.role != "ADMIN":
+                q = q.where(Patient.owner_user_id == user.id)
+                count_query = count_query.where(Patient.owner_user_id == user.id)
+        else:
+            # Keep the established owner-wide contract for callers without an
+            # explicit patient. Admin access to another patient's history is
+            # available only through an explicitly selected patient ID.
+            q = q.where(Patient.owner_user_id == user.id)
+            count_query = count_query.where(Patient.owner_user_id == user.id)
+
         if tooth_number is not None:
             import re
             if not re.fullmatch(r"(?:[1-4][1-8]|[5-8][1-5])", tooth_number):
                 raise HTTPException(status_code=422, detail="Geçersiz FDI diş numarası.")
             q = q.where(Analysis.tooth_number == tooth_number)
+            count_query = count_query.where(Analysis.tooth_number == tooth_number)
+
         if before is not None:
             q = q.where(Analysis.id < before)
-        rows = session.exec(q.order_by(Analysis.id.desc()).limit(limit + 1)).all()
+
+        rows = session.exec(
+            q.order_by(Analysis.id.desc()).limit(limit + 1)
+        ).all()
         has_more = len(rows) > limit
         rows = rows[:limit]
-        voice_ids = _voice_review_ids(session, user.id, [a.id for a, _ in rows])
-        return {"total": len(rows), "next_before": rows[-1][0].id if has_more and rows else None, "items": [{
-            "id": a.id, "patient_id": a.patient_id, "patient_name": f"{p.first_name or ''} {p.last_name or ''}".strip(),
-            "tooth_number": a.tooth_number, "clinical_notes": a.clinical_notes,
-            "status": a.status, "created_at": a.created_at, "is_voice_review": a.id in voice_ids
-        } for a, p in rows]}
+
+        # The web profile derives this flag from the completed voice-review
+        # WorkJob belonging to the patient's owner, not merely the signed-in
+        # administrator. A patient-scoped page has exactly one owner; the
+        # owner-wide page is already filtered to the signed-in owner.
+        voice_owner_id = (
+            patient.owner_user_id if patient_id is not None and patient is not None
+            else rows[0][1].owner_user_id if rows
+            else user.id
+        ) or user.id
+        voice_ids = _voice_review_ids(
+            session, voice_owner_id, [analysis.id for analysis, _ in rows]
+        )
+        total = int(session.exec(count_query).one() or 0)
+
+        return {
+            "total": total,
+            "next_before": rows[-1][0].id if has_more and rows else None,
+            "items": [
+                {
+                    "id": analysis.id,
+                    "patient_id": patient.id,
+                    "patient_name": f"{patient.first_name or ''} {patient.last_name or ''}".strip(),
+                    "tooth_number": analysis.tooth_number,
+                    "clinical_notes": analysis.clinical_notes,
+                    "status": analysis.status,
+                    "created_at": analysis.created_at,
+                    "is_voice_review": analysis.id in voice_ids,
+                }
+                for analysis, patient in rows
+            ],
+        }

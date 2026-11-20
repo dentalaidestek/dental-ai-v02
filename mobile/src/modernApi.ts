@@ -107,7 +107,7 @@ export const getAnalysisHistory=async(t:string,before?:number,patientId?:number,
  // Older deployed servers omit next_before; treat this as the final page.
  const next_before=r?.next_before??null;
  if(!Array.isArray(r?.items)||r.items.length>50||
-    r.items.some(n=>!n||!Number.isSafeInteger(n.id)||n.id<=0||!Number.isSafeInteger(n.patient_id)||typeof n.status!=="string"||(patientId!==undefined&&n.patient_id!==patientId)||(toothNumber!==undefined&&n.tooth_number!==toothNumber))||
+    r.items.some(n=>!n||!Number.isSafeInteger(n.id)||n.id<=0||!Number.isSafeInteger(n.patient_id)||typeof n.status!=="string"||(n.is_voice_review!==undefined&&typeof n.is_voice_review!=="boolean")||(patientId!==undefined&&n.patient_id!==patientId)||(toothNumber!==undefined&&n.tooth_number!==toothNumber))||
     (r.items.length===0&&next_before!==null)||
     (before!==undefined&&(r.items.some(n=>n.id>=before)||(next_before!==null&&next_before>=before)))||
     (next_before!==null&&(!Number.isSafeInteger(next_before)||next_before<=0))||

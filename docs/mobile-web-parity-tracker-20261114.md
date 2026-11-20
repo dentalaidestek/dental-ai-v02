@@ -998,3 +998,33 @@ Latest code/test head for this work: `fe6efde6d214d05d54fa3e1c67e14ac9d23af021`.
 - Added `app/clinical_media_gallery.py`, `tests/test_clinical_media_gallery_pagination.py`, web route assertions in `tests/test_clinical_media_thumbnail.py`, and `mobile/tests/patientMediaWebGallery.cjs` (registered in `npm run test:beta`).
 - Validation in this run: 17/17 GitHub read-back source-contract assertions passed. The committed Python/Node suites were not executed because this environment has no repository checkout/dependency runner. Full pytest, mobile typecheck, Android build/device, browser interaction, PostgreSQL query-plan, and multi-instance R2 concurrency checks remain open.
 - Follow-up test-harness review moved the bounded-query assertion from the template fixture to `app/main.py` (commit `8913e7b`). Read-back confirms the test now checks the backend query. Query PR metadata for the live HEAD; this tracker is not a branch-head source. PR remains Draft/open. No merge, deploy, migration, APK/IPA publication or patient-data mutation.
+
+
+## 2026-11-20 — Mounted patient analysis history parity
+
+Web reference checked first: `app/templates/patient_detail.html` and `app/main.py::patient_detail`. The web profile marks an analysis as a voice review only when the patient's owner has a `VOICE_REVIEW` WorkJob in `DONE` state; it also allows an administrator to open an explicitly selected patient.
+
+A route-order inspection found two GET handlers registered for `/api/mobile/v1/analyses`. `app.main` mounts `mobile_analysis_api.router` first and filters duplicate method/path pairs from `mobile_modern_api_v3.router`; therefore the latter handler was shadowed and its pagination/count changes were not active. The duplicate was removed to prevent future fixes from targeting dead code.
+
+The mounted `mobile_analysis_api.mobile_analysis_history` now:
+- returns the total matching patient/tooth count across cursor pages, not only the current page size;
+- applies a repeated owner predicate to non-admin patient-scoped reads after the 404 ownership check;
+- permits admin access only when an explicit patient ID is supplied, matching the web patient-detail permission boundary;
+- derives `is_voice_review` from the completed WorkJob under the selected patient's owner, including admin-selected patients;
+- marks the clinical-history response `private, no-store` with `Vary: Authorization`.
+
+Native response validation now rejects a non-boolean optional `is_voice_review` value but continues to accept older servers that omit the field. Regressions cover cursor totals, only-DONE voice markers, owner isolation, explicit admin selection, cache headers, mounted route identity, malformed client values and legacy omission.
+
+The Python integration tests are committed but were not run in this runtime because SQLModel and the project test dependencies are not installed here. The focused Node test is run separately against the exact extracted `getAnalysisHistory` helper; it is not a substitute for the full Expo typecheck or backend integration suite.
+
+CI at starting head `b36ee8e62951ab39f13f00304b2123b4ba1608d6`: 0 check runs, 0 commit statuses and 0 workflow runs associated with that exact SHA. The latest branch-listed Android run `44273348890` points to older code SHA `5b692f7637d60136446f1efaa09178009ba1d209`; its job has `runner_id=0`, `steps=null`, and the step lookup is empty. It is not evidence of a typecheck or Gradle failure on the current head. Android typecheck, Gradle/APK, full Python security tests, real-device and 60,000-user load acceptance remain open.
+
+No main merge, production deployment, migration, APK/IPA publication or clinical record mutation.
+
+
+## 2026-11-20 — Web patient analysis and treatment history paging
+
+Web-first review found that `patient_detail` loaded every analysis and treatment, then loaded all image assets and completed voice-review jobs for the full history. The web profile now uses a 20-row plus one look-ahead cursor page for both histories, deterministic `(created_at DESC, id DESC)` ordering, and page-scoped assets/voice markers. Cookie-session continuation routes re-check patient access and return private/no-store JSON with Jinja-rendered, autoescaped history fragments. The existing analysis modal/image groups/voice labels and treatment first-three collapse interaction are preserved across pages. New Python integration and Node source-contract regressions are registered in the manual Security Recovery workflow and beta suite. Read-back source checks 15/15, isolated cursor checks 8/8, Jinja partial syntax 2/2; full FastAPI/SQLModel integration, Node suite, Expo typecheck, Android build/device, browser and load tests remain unexecuted. Both Android and Security Recovery workflows remain manual-only while hosted jobs fail before step 1; no CI pass is claimed. No schema/migration, main merge, production deploy, APK/IPA publication or clinical record mutation. Details: `docs/web-patient-history-pagination-20261120.md`.
+
+
+The patient-history integration fixture also places all 25 records at the same timestamp, exercising the descending ID tie-break at the page boundary; the newer concurrent insert remains outside the cursor walk.

@@ -11177,17 +11177,23 @@ def patient_detail(request: Request, patient_id: int):
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
 
-        analyses = s.exec(
+        from app.patient_history_pagination import HISTORY_PAGE_SIZE, history_page_slice
+
+        analysis_rows = s.exec(
             select(Analysis).where(
                 Analysis.patient_id == patient_id
-            ).order_by(Analysis.created_at.desc())
+            ).order_by(Analysis.created_at.desc(), Analysis.id.desc())
+            .limit(HISTORY_PAGE_SIZE + 1)
         ).all()
+        analyses, analyses_next_cursor = history_page_slice(analysis_rows)
 
-        treatments = s.exec(
+        treatment_rows = s.exec(
             select(Treatment).where(
                 Treatment.patient_id == patient_id
-            ).order_by(Treatment.created_at.desc())
+            ).order_by(Treatment.created_at.desc(), Treatment.id.desc())
+            .limit(HISTORY_PAGE_SIZE + 1)
         ).all()
+        treatments, treatments_next_cursor = history_page_slice(treatment_rows)
 
         patient_profile = s.exec(
             select(PatientProfile).where(
@@ -11253,9 +11259,13 @@ def patient_detail(request: Request, patient_id: int):
                 "patient_profile": patient_profile,
                 "patient_edit_revision": _patient_edit_revision(patient, patient_profile),
                 "analyses": analyses,
+                "analyses_next_cursor": analyses_next_cursor,
+                "analyses_has_more": analyses_next_cursor is not None,
                 "voice_review_ids": voice_review_ids,
                 "voice_history": voice_history,
                 "treatments": treatments,
+                "treatments_next_cursor": treatments_next_cursor,
+                "treatments_has_more": treatments_next_cursor is not None,
                 "analysis_assets": analysis_assets,
                 "patient_media": patient_media,
                 "patient_media_total": patient_media_total,
@@ -15206,3 +15216,7 @@ templates.env.globals['voice_exam_enabled'] = voice_exam_enabled
 # Member-only expert posts and structured publications.
 from app.expert_social_api import register as register_expert_social
 register_expert_social(app, _study_trace_sys.modules[__name__])
+
+# Cookie-session patient history pages share the same server-rendered cards as the first page.
+from app.patient_history_web import router as patient_history_web_router
+app.include_router(patient_history_web_router)
