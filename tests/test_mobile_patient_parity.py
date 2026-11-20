@@ -1456,3 +1456,42 @@ def test_mobile_patient_directory_search_matches_web_tckn_owner_scope_and_no_sto
     ordered = client.get("/api/mobile/v1/patients?q=Directory")
     assert ordered.status_code == 200
     assert [item["id"] for item in ordered.json()["items"]] == [904, 903]
+
+
+def test_patient_detail_keeps_chart_and_media_queries_out_of_profile_reads(chat, monkeypatch):
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    with Session(engine) as session:
+        session.add(main.Patient(id=880, anonymous_id="SYNTHETIC-LAZY-PROFILE-880", owner_user_id=1))
+        session.add(main.ToothStatus(id=8801, patient_id=880, tooth_number="36", status="CARIES"))
+        session.add(main.ToothSurfaceStatus(
+            id=8802, patient_id=880, tooth_number="36", surface="MESIAL", status="FILLING",
+        ))
+        session.add(main.PatientMedia(
+            id=8803, patient_id=880, owner_user_id=1,
+            original_filename="synthetic.png", stored_filename="synthetic.png",
+            file_path="/private/synthetic.png", media_type="PHOTO",
+        ))
+        session.commit()
+
+    profile = client.get("/api/mobile/v1/patients/880")
+    assert profile.status_code == 200, profile.text
+    assert profile.headers["cache-control"] == "private, no-store"
+    assert profile.json()["teeth"] == []
+    assert profile.json()["surfaces"] == []
+    assert profile.json()["media"] == []
+
+    chart = client.get("/api/mobile/v1/patients/880", params={"include_chart": "true"})
+    assert chart.status_code == 200, chart.text
+    assert [item["tooth_number"] for item in chart.json()["teeth"]] == ["36"]
+    assert [(item["tooth_number"], item["surface"]) for item in chart.json()["surfaces"]] == [("36", "MESIAL")]
+    assert chart.json()["media"] == []
+
+    # The profile's gallery remains available through its separate bounded endpoint.
+    gallery = client.get("/api/mobile/v1/patients/880/media")
+    assert gallery.status_code == 200, gallery.text
+    assert [item["id"] for item in gallery.json()["items"]] == [8803]
+
+    client.headers["Authorization"] = "Bearer token2"
+    assert client.get("/api/mobile/v1/patients/880").status_code == 404
+    assert client.get("/api/mobile/v1/patients/880", params={"include_chart": "true"}).status_code == 404
