@@ -154,9 +154,8 @@ def test_patient_history_filters_tooth_and_marks_only_confirmed_voice_reviews(ch
         ])
         session.commit()
 
-    # Trigger the app lifespan before inspecting the effective route table.
-    # Some startup hooks finish router registration only when TestClient enters
-    # its context; inspecting before the first request produces a false empty list.
+    # Inspect the effective route table after the successful request. The
+    # previous pre-request snapshot did not reflect the route serving this call.
     filtered = client.get("/api/mobile/v1/analyses?patient_id=8&tooth_number=36")
     assert filtered.status_code == 200, filtered.text
     active_routes = [
