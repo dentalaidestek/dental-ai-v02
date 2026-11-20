@@ -839,7 +839,11 @@ test('native patient edit controls match the web patient_detail field contract',
  const nativeKeys=fields.map(field=>field.key);
  const web=fs.readFileSync(require.resolve('../../app/templates/patient_detail.html'),'utf8');
  const form=web.split('<form class="patient-info-edit-form"',2)[1]?.split('</form>',1)[0]||'';
- const webKeys=[...form.matchAll(/<(?:input|textarea)[^>]*\bname="([^"]+)"/g)].map(match=>match[1]);
+ const webKeys=[...form.matchAll(/<(input|textarea)\b([^>]*)>/gi)]
+  .filter(([,tag,attributes])=>tag.toLowerCase()==='textarea'||! /\btype\s*=\s*["']hidden["']/i.test(attributes))
+  .map(([,tag,attributes])=>attributes.match(/\bname\s*=\s*["']([^"']+)["']/i)?.[1])
+  .filter(Boolean);
+ assert.ok(!webKeys.includes('expected_revision'),'hidden optimistic revision is not an editable profile field');
  assert.deepEqual(nativeKeys,webKeys,'native editable fields and ordering must match the canonical web form');
  assert.deepEqual(fields.map(field=>field.label),['Ad','Soyad','Telefon','TC Kimlik No','Doğum Tarihi','Adres','Başvuru şikâyeti']);
  assert.equal(fields.find(field=>field.key==='phone').keyboardType,'phone-pad');
