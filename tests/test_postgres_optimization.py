@@ -812,7 +812,7 @@ def test_program_pending_reminder_index_rebuilds_broader_postgres_predicate(pg):
             "WHERE indexrelid=to_regclass('ix_programreminderjob_pending_run_at')"
         )).scalar_one()
         normalized = "".join(predicate.lower().split()).replace("(", "").replace(")", "")
-        for cast in ("::character varying", "::varchar", "::text"):
+        for cast in ("::character varying", "::charactervarying", "::varchar", "::text"):
             normalized = normalized.replace(cast, "")
         assert normalized == "status='pending'"
         for name in ('ix_programreminderjob_status_run_at', 'ix_programreminderjob_run_at'):
