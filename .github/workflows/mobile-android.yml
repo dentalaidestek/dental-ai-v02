@@ -1,8 +1,24 @@
 name: Mobile Android CI
 
-# Temporarily manual-only while hosted CI jobs fail before their first step.
-# Restore automatic push/pull_request triggers after runner availability is confirmed.
+# Scope automatic checks to the mobile parity branch and its PR target.
+# The workflow-file path ensures this change itself produces a fresh runner result.
 on:
+  push:
+    branches:
+      - feature/mobile-web-parity-20261110
+    paths:
+      - ".github/workflows/mobile-android.yml"
+      - "mobile/**"
+      - "app/**"
+      - "tests/**"
+  pull_request:
+    branches:
+      - feature/mobile-beta-20261110
+    paths:
+      - ".github/workflows/mobile-android.yml"
+      - "mobile/**"
+      - "app/**"
+      - "tests/**"
   workflow_dispatch:
 jobs:
   typecheck:
