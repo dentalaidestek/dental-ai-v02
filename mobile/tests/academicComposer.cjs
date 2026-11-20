@@ -2,10 +2,10 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=r
 global.IS_REACT_ACT_ENVIRONMENT=true;
 const source=fs.readFileSync(path.join(__dirname,'../src/NativeAcademicComposer.tsx'),'utf8');
 const compiled=ts.transpileModule(source,{fileName:'NativeAcademicComposer.tsx',compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.React}}).outputText;
-const exports={};
+const composerExports={};
 const native={Pressable:'Pressable',Text:'Text',TextInput:'TextInput',View:'View',StyleSheet:{create:value=>value}};
-vm.runInNewContext(compiled,{exports,require:name=>name==='react'?{...React,default:React}:native});
-const Composer=exports.default;
+vm.runInNewContext(compiled,{exports:composerExports,require:name=>name==='react'?{...React,default:React}:native});
+const Composer=composerExports.default;
 
 test('Academic composer enforces the web 8000-character limit and exposes accessible send controls',async()=>{
  let value='';const changes=[];

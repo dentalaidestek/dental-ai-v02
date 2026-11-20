@@ -158,6 +158,13 @@ test('optional learning and quiz outages do not block the core Academic workspac
   quizzes:async()=>{throw Error('Synthetic quiz endpoint outage')}
  });
  const tree=await open(h);
+ // Optional learning/quiz outages must not lock the core ask flow. The send
+ // control stays mounted; it is only passive while the question is empty
+ // (component-level a11y contract in academicComposer.cjs), and it becomes
+ // active as soon as the clinician types.
+ assert.ok(button(tree,'Gönder'),'core send control must stay mounted during outages');
+ assert.equal(button(tree,'Gönder').props.disabled,true);
+ await renderer.act(async()=>{tree.root.findAllByType('TextInput')[0].props.onChangeText('Synthetic outage question')});
  assert.equal(button(tree,'Gönder').props.disabled,false);
  assert.ok(button(tree,'Derslerime Dön'));
  assert.ok(text(tree.toJSON()).includes('Synthetic learning endpoint outage'));
