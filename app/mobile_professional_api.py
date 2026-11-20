@@ -156,6 +156,6 @@ def expert_performance(response:Response,user=Depends(_account_user)):
         performance=web._expert_performance(s,user.id)
         policy=web._expert_policy_state(s,user.id)
         events=s.exec(select(web.ConsultationEvent).where(web.ConsultationEvent.actor_user_id==user.id,web.ConsultationEvent.event_type.in_(['EXPERT_TIMEOUT','MISSED_REQUEST_COUNTED','NEW_CASE_BLOCKED_24H','START_DEADLINE_MISSED'])).order_by(web.ConsultationEvent.created_at.desc(),web.ConsultationEvent.id.desc()).limit(30)).all()
-        result={'owner_id':user.id,'availability':profile.availability,'capacity':web.consultation_capacity_limit(profile),'open_cases':web._expert_open_case_count(s,user.id),'performance':performance,'policy':{'blocked':web._expert_is_blocked(policy),'blocked_until':policy.new_case_blocked_until,'reason':policy.block_reason,'rules_accepted':bool(policy.rules_version==web.EXPERT_RULES_VERSION and policy.rules_accepted_at)},'events':[{'id':e.id,'event_type':e.event_type,'created_at':e.created_at} for e in events]}
+        result={'availability':profile.availability,'capacity':web.consultation_capacity_limit(profile),'open_cases':web._expert_open_case_count(s,user.id),'performance':performance,'policy':{'blocked':web._expert_is_blocked(policy),'blocked_until':policy.new_case_blocked_until,'reason':policy.block_reason,'rules_accepted':bool(policy.rules_version==web.EXPERT_RULES_VERSION and policy.rules_accepted_at)},'events':[{'id':e.id,'event_type':e.event_type,'created_at':e.created_at} for e in events]}
         s.commit()
         return result
