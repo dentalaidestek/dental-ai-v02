@@ -28,6 +28,6 @@ This reduces the work performed by ordinary native profile opens without weakeni
 
 ## Validation limits
 
-Read-back source-contract checks: 8/8 passed. The Node and Python regression tests were added but not executed in this environment. The current PR head had no check runs/statuses when inspected; older Android/security jobs ended before their first step with empty step lists and unavailable job logs. These records do not establish a source-level test failure or a pass. Full Expo typecheck, Android build/device validation, Python security suite and real concurrency/load tests remain open.
+Read-back source-contract checks: 11/11 passed. The Node and Python regression tests were added but not executed in this environment. The current PR head had no check runs/statuses when inspected; older Android/security jobs ended before their first step with empty step lists and unavailable job logs. These records do not establish a source-level test failure or a pass. Full Expo typecheck, Android build/device validation, Python security suite and real concurrency/load tests remain open.
 
 No main merge, production deploy, migration, APK/IPA publication or patient-record mutation was performed.
