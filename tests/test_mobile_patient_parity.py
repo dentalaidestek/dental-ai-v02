@@ -1860,3 +1860,117 @@ def test_native_analysis_history_stable_cursor_matches_web_order_and_snapshot(ch
             "before_cursor": cursor,
         },
     ).status_code == 422
+
+@pytest.mark.parametrize("mutation", ["owner", "source", "filename"])
+def test_mobile_patient_media_file_rechecks_current_owner_and_source_after_r2_hydration(
+    chat, monkeypatch, tmp_path, mutation,
+):
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    image = tmp_path / "synthetic-clinical-original.png"
+    image.write_bytes(b"synthetic-clinical-original")
+    original_reference = "r2://private/patient-991/clinical.png"
+
+    with Session(engine) as session:
+        session.add(main.Patient(
+            id=991, anonymous_id="SYNTHETIC-MEDIA-FILE-RACE", owner_user_id=1,
+        ))
+        session.add(main.PatientMedia(
+            id=9911, patient_id=991, owner_user_id=1,
+            original_filename="clinical.png", stored_filename="clinical.png",
+            file_path=original_reference, media_type="RADIOGRAPH",
+        ))
+        session.commit()
+
+    def hydrate(_reference):
+        assert _reference == original_reference
+        with Session(engine) as session:
+            patient = session.get(main.Patient, 991)
+            media = session.get(main.PatientMedia, 9911)
+            if mutation == "owner":
+                patient.owner_user_id = 2
+                session.add(patient)
+            elif mutation == "source":
+                media.file_path = "r2://private/patient-991/replacement.png"
+                session.add(media)
+            else:
+                media.original_filename = "replacement.png"
+                session.add(media)
+            session.commit()
+        return image
+
+    monkeypatch.setattr(mobile_api, "storage_ensure_local", hydrate)
+    response = client.get("/api/mobile/v1/patients/991/media/9911/file")
+
+    assert response.status_code == 404, response.text
+    assert response.headers.get("cache-control") == "private, no-store"
+    assert response.headers.get("pragma") == "no-cache"
+    assert "authorization" in response.headers.get("vary", "").lower()
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    assert b"r2://" not in response.content
+
+
+def test_mobile_patient_media_file_success_is_private_and_returns_original_bytes(
+    chat, monkeypatch, tmp_path,
+):
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    image = tmp_path / "synthetic-clinical-original.png"
+    image.write_bytes(b"synthetic-clinical-original")
+    with Session(engine) as session:
+        session.add(main.Patient(
+            id=992, anonymous_id="SYNTHETIC-MEDIA-FILE-OK", owner_user_id=1,
+        ))
+        session.add(main.PatientMedia(
+            id=9921, patient_id=992, owner_user_id=1,
+            original_filename="original.png", stored_filename="original.png",
+            file_path="r2://private/patient-992/original.png", media_type="PHOTO",
+        ))
+        session.commit()
+
+    monkeypatch.setattr(mobile_api, "storage_ensure_local", lambda _reference: image)
+    response = client.get("/api/mobile/v1/patients/992/media/9921/file")
+
+    assert response.status_code == 200, response.text
+    assert response.content == b"synthetic-clinical-original"
+    assert response.headers.get("cache-control") == "private, no-store"
+    assert response.headers.get("pragma") == "no-cache"
+    assert "authorization" in response.headers.get("vary", "").lower()
+    assert response.headers.get("x-content-type-options") == "nosniff"
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status", "retry_after"),
+    [(FileNotFoundError("missing"), 404, None), (RuntimeError("private storage detail"), 503, "2")],
+)
+def test_mobile_patient_media_file_storage_errors_are_private_and_generic(
+    chat, monkeypatch, tmp_path, error, expected_status, retry_after,
+):
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    with Session(engine) as session:
+        session.add(main.Patient(
+            id=993, anonymous_id="SYNTHETIC-MEDIA-FILE-ERROR", owner_user_id=1,
+        ))
+        session.add(main.PatientMedia(
+            id=9931, patient_id=993, owner_user_id=1,
+            original_filename="error.png", stored_filename="error.png",
+            file_path="r2://private/patient-993/error.png", media_type="PHOTO",
+        ))
+        session.commit()
+
+    def fail(_reference):
+        raise error
+
+    monkeypatch.setattr(mobile_api, "storage_ensure_local", fail)
+    response = client.get("/api/mobile/v1/patients/993/media/9931/file")
+
+    assert response.status_code == expected_status, response.text
+    assert response.headers.get("cache-control") == "private, no-store"
+    assert response.headers.get("pragma") == "no-cache"
+    assert "authorization" in response.headers.get("vary", "").lower()
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    if retry_after:
+        assert response.headers.get("retry-after") == retry_after
+    assert "private storage detail" not in response.text
+
