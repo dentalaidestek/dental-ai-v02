@@ -712,6 +712,12 @@ def test_program_query_index_migration_upgrades_revision15_online(pg):
 
 
 def _explain_analyze_index_names(connection, statement, params=None):
+    # SQLAlchemy 2.x removed Engine.execute(); accept the Engine used by the
+    # caller, open a short-lived Connection, and keep the helper reusable with
+    # an already-open Connection in focused tests.
+    if not hasattr(connection, "execute") and hasattr(connection, "connect"):
+        with connection.connect() as opened:
+            return _explain_analyze_index_names(opened, statement, params)
     result = connection.execute(
         text('EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ' + statement),
         params or {},
