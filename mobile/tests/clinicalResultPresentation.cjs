@@ -9,9 +9,9 @@ const compiled = ts.transpileModule(source, {
   fileName: 'clinicalResultPresentation.ts',
   compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
 }).outputText;
-const exports = {};
-vm.runInNewContext(compiled, {exports});
-const {CLINICAL_QUESTION_GUIDANCE, clinicalResultSections, clinicalResultTitle} = exports;
+const moduleExports = {};
+vm.runInNewContext(compiled, {exports: moduleExports});
+const {CLINICAL_QUESTION_GUIDANCE, clinicalResultSections, clinicalResultTitle} = moduleExports;
 
 const webOrder = [
   'En Olası Durum',
