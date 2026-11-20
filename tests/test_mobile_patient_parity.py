@@ -2011,3 +2011,30 @@ def test_mobile_original_media_file_initial_cross_account_denial_is_private(chat
     assert response.headers.get("x-content-type-options") == "nosniff"
     assert "private.png" not in response.text
 
+def test_mobile_original_media_authorization_database_failure_is_private_retryable(
+    chat, monkeypatch,
+):
+    client, _engine = chat
+    real_session = mobile_api.Session
+    calls = 0
+
+    def fail_on_route_lookup(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        # The bearer dependency resolves the session token first. The next
+        # Session is the route's patient/media authorization lookup.
+        if calls == 2:
+            raise RuntimeError("private database connection detail")
+        return real_session(*args, **kwargs)
+
+    monkeypatch.setattr(mobile_api, "Session", fail_on_route_lookup)
+    response = client.get("/api/mobile/v1/patients/995/media/9951/file")
+
+    assert response.status_code == 503, response.text
+    assert response.headers.get("cache-control") == "private, no-store"
+    assert response.headers.get("pragma") == "no-cache"
+    assert "authorization" in response.headers.get("vary", "").lower()
+    assert response.headers.get("x-content-type-options") == "nosniff"
+    assert response.headers.get("retry-after") == "2"
+    assert "private database connection detail" not in response.text
+
