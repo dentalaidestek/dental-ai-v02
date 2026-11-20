@@ -165,3 +165,36 @@ def test_thumbnail_endpoint_rechecks_owner_after_generation():
     block = api[start:end]
     assert "still_owned=bool(media" in block
     assert "delete_thumbnail(file_path)" in block
+
+
+def test_web_patient_gallery_uses_private_thumbnail_route_and_bounded_cursor_pages():
+    from pathlib import Path
+
+    main = Path("app/main.py").read_text(encoding="utf-8")
+    template = Path("app/templates/patient_detail.html").read_text(encoding="utf-8")
+    detail = main[main.index('def patient_detail('):main.index('MAX_PATIENT_MEDIA_UPLOAD_FILES')]
+    page = main[main.index('def patient_media_gallery_page'):main.index('@app.get("/patients/{patient_id}/media/{media_id}/thumbnail")')]
+    thumbnail = main[main.index('def patient_media_thumbnail'):main.index('@app.post("/patients/{patient_id}/media/{media_id}/delete")')]
+
+    assert "CLINICAL_MEDIA_GALLERY_PAGE_SIZE + 1" in detail
+    assert "patient_media_total" in detail
+    assert "patient_media_next_before" in detail
+    assert "get_current_user(request)" in page
+    assert "PatientMedia.owner_user_id == media_owner_id" in page
+    assert "PatientMedia.id < before_id" in page
+    assert "order_by(PatientMedia.id.desc())" in page
+    assert "serialize_media_page(rows, patient_id" in page
+    assert '"Cache-Control": "private, no-store"' in page
+    assert '"Vary": "Cookie"' in page
+
+    assert "get_current_user(request)" in thumbnail
+    assert "ensure_thumbnail(reference)" in thumbnail
+    assert "current_media.file_path == reference" in thumbnail
+    assert "delete_thumbnail(reference)" in thumbnail
+    assert '"Cache-Control": "private, no-store"' in thumbnail
+    assert '"Vary": "Cookie"' in thumbnail
+
+    assert 'data-src="/patients/{{ patient.id }}/media/{{ media.id }}/file"' in template
+    assert 'src="/patients/{{ patient.id }}/media/{{ media.id }}/thumbnail"' in template
+    assert 'data-url="/patients/{{ patient.id }}/media/page"' in template
+    assert 'patient_media_total - 3' in template

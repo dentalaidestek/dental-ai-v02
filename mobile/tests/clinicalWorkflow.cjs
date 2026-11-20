@@ -7,8 +7,8 @@ const revision='a'.repeat(64),base={analysis_id:1,patient_id:8,patient_anonymous
 function api(request=async()=>({})){const exports={};vm.runInNewContext(compile('../src/clinicalApi.ts'),{exports,Error,require:()=>({request})});return exports}
 function harness(overrides={},saved,initialFocused=true){const exports={},storage=new Map(),calls=[],a=api(),focus={current:initialFocused};if(saved)storage.set('dai.clinical.final.1.1',JSON.stringify(saved));const secure={getItemAsync:async k=>storage.get(k)||null,setItemAsync:async(k,v)=>storage.set(k,v),deleteItemAsync:async k=>storage.delete(k)},native={StyleSheet:{create:x=>x},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
  const endpoint={...a,getClinical:async()=>base,submitClinical:async(_t,intent)=>{calls.push(intent);return{ok:true,job:{id:7,kind:'FINAL',status:'QUEUED'}}},saveClinicalNote:async()=>({ok:true}),...overrides};
- const finding={};vm.runInNewContext(compile('../src/findings.ts'),{exports:finding});
- vm.runInNewContext(compile('../src/NativeClinicalReview.tsx'),{exports,setTimeout,clearTimeout,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{useIsFocused:()=>focus.current}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=> 'synthetic-key'}:n==='./socialDraft'?{chunkedDraftStore:()=>secure}:n==='./clinicalApi'?endpoint:n==='./findings'?finding:{default:props=>React.createElement('Text',null,props.value)}});return{Component:exports.default,calls,storage,endpoint,focus};}
+ const finding={};vm.runInNewContext(compile('../src/findings.ts'),{exports:finding});const presentation={};vm.runInNewContext(compile('../src/clinicalResultPresentation.ts'),{exports:presentation});
+ vm.runInNewContext(compile('../src/NativeClinicalReview.tsx'),{exports,setTimeout,clearTimeout,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{useIsFocused:()=>focus.current}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=> 'synthetic-key'}:n==='./socialDraft'?{chunkedDraftStore:()=>secure}:n==='./clinicalApi'?endpoint:n==='./findings'?finding:n==='./clinicalResultPresentation'?presentation:{default:props=>React.createElement('Text',null,props.value)}});return{Component:exports.default,calls,storage,endpoint,focus};}
 async function open(h,props={}){let t;await renderer.act(async()=>t=renderer.create(React.createElement(h.Component,{token:'A',userId:1,analysisId:1,...props})));return t}
 test('transient initial clinical workspace failure can recover with refresh without remount',async()=>{let attempts=0;const h=harness({getClinical:async()=>{attempts++;if(attempts===1)throw Object.assign(Error('Synthetic temporary service failure'),{status:503});return base}}),t=await open(h);await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});assert.equal(attempts,1);assert.equal(button(t,'Klinik Sonucu Yenile').props.disabled,false);assert.ok(text(t.toJSON()).includes('Synthetic temporary service failure'));await renderer.act(async()=>{button(t,'Klinik Sonucu Yenile').props.onPress();await new Promise(r=>setImmediate(r))});assert.equal(attempts,2);assert.ok(text(t.toJSON()).includes('Synthetic likely condition'));assert.ok(!text(t.toJSON()).includes('Synthetic temporary service failure'));await renderer.act(async()=>t.unmount())});
 test('clinical workspace refresh key publishes the latest durable job snapshot to its parent',async()=>{
@@ -188,5 +188,36 @@ test('legacy ANALYSIS_COMPLETE preliminary results keep their web question and c
  assert.ok(rendered.includes('Hekime Sorular'));
  assert.ok(rendered.includes('Synthetic question?'));
  assert.ok(button(t,'Yeni Bilgilerle Tekrar Analiz Et'));
+ await renderer.act(async()=>t.unmount());
+});
+
+
+test('native initial clinical result follows web section order and question guidance',async()=>{
+ const h=harness({getClinical:async()=>base}),t=await open(h);
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ const rendered=text(t.toJSON());
+ const labels=['En Olası Durum','Önemli Bulgular','Tedavi Seçenekleri','Tedaviye Bağlı Dikkat Edilecekler','Önerilen Yaklaşım','Diğer Olası Tanılar','Hekime Sorular'];
+ let previous=-1;
+ for(const label of labels){const index=rendered.indexOf(label);assert.ok(index>previous,'missing or out-of-order web section: '+label);previous=index;}
+ assert.ok(rendered.includes('Yalnız tedavi sırasını, uygulanabilirliği veya vaka-özel komplikasyon riskini değiştirebilecek eksik bilgiler sorulur.'));
+ assert.equal(rendered.includes('Ön Klinik Değerlendirme'),false);
+ const question=t.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Klinik cevap 1');
+ assert.equal(question.props.placeholder,'Kısa klinik cevap yazın...');
+ await renderer.act(async()=>t.unmount());
+});
+
+test('native final clinical result matches web order and hides preliminary-only fields',async()=>{
+ const finalResult={status:'FINAL',most_likely:'Synthetic final likely condition',findings:['Synthetic final finding'],treatment_options:['Synthetic final treatment'],treatment_cautions:['Synthetic final caution'],preferred_approach:'Synthetic final approach',differential:['Synthetic final differential'],recommended_evaluation:['SHOULD NOT SHOW evaluation'],uncertainty:'SHOULD NOT SHOW uncertainty',preliminary_assessment:'SHOULD NOT SHOW preliminary',questions:[{question:'SHOULD NOT SHOW question',type:'TEXT'}]};
+ const h=harness({getClinical:async()=>({...base,result:finalResult})}),t=await open(h);
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ const rendered=text(t.toJSON());
+ const labels=['En Olası Durum','Önemli Bulgular','Tedavi Seçenekleri','Tedaviye Bağlı Dikkat Edilecekler','Önerilen Yaklaşım','Diğer Olası Tanılar'];
+ let previous=-1;
+ for(const label of labels){const index=rendered.indexOf(label);assert.ok(index>previous,'missing or out-of-order final section: '+label);previous=index;}
+ assert.ok(rendered.includes('Nihai Klinik Değerlendirme'));
+ for(const privateOnly of ['SHOULD NOT SHOW','Belirsizlik','Ön Değerlendirme','Önerilen Klinik Değerlendirmeler','Hekime Sorular'])assert.equal(rendered.includes(privateOnly),false);
+ const finalBox=t.root.findAllByType('View').find(node=>node.props.style&&node.props.style.backgroundColor==='#F5F8FF');
+ assert.ok(finalBox,'web final-box visual treatment should be present');
+ assert.ok(rendered.includes('1.'));
  await renderer.act(async()=>t.unmount());
 });

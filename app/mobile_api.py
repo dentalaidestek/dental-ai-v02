@@ -1358,6 +1358,8 @@ def mobile_update_treatment(patient_id: int, treatment_id: int, payload: MobileT
 def mobile_patient_detail(
     patient_id: int,
     response: Response,
+    include_chart: bool = Query(default=True),
+    include_media: bool = Query(default=True),
     user: User = Depends(_mobile_user),
 ):
     _mobile_private_no_store(response)
@@ -1366,16 +1368,23 @@ def mobile_patient_detail(
         if not patient or patient.owner_user_id != user.id:
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
 
-        teeth = session.exec(
-            select(ToothStatus)
-            .where(ToothStatus.patient_id == patient_id)
-            .order_by(ToothStatus.tooth_number)
-        ).all()
-        surfaces = session.exec(
-            select(ToothSurfaceStatus)
-            .where(ToothSurfaceStatus.patient_id == patient_id)
-            .order_by(ToothSurfaceStatus.tooth_number, ToothSurfaceStatus.surface)
-        ).all()
+        # The patient profile does not render the tooth chart. Keep these two
+        # clinical collections opt-in so opening a profile avoids duplicate chart
+        # reads; the dedicated native tooth-chart screen explicitly requests them.
+        if include_chart:
+            teeth = session.exec(
+                select(ToothStatus)
+                .where(ToothStatus.patient_id == patient_id)
+                .order_by(ToothStatus.tooth_number)
+            ).all()
+            surfaces = session.exec(
+                select(ToothSurfaceStatus)
+                .where(ToothSurfaceStatus.patient_id == patient_id)
+                .order_by(ToothSurfaceStatus.tooth_number, ToothSurfaceStatus.surface)
+            ).all()
+        else:
+            teeth = []
+            surfaces = []
         snapshot_id = session.exec(
             select(func.max(Treatment.id)).where(Treatment.patient_id == patient_id)
         ).one() or 0
@@ -1393,15 +1402,21 @@ def mobile_patient_detail(
             )
             if len(treatment_page) > _TREATMENT_HISTORY_INITIAL_LIMIT else None
         )
-        media = session.exec(
-            select(PatientMedia)
-            .where(
-                (PatientMedia.patient_id == patient_id)
-                & (PatientMedia.owner_user_id == user.id)
-            )
-            .order_by(PatientMedia.id.desc())
-            .limit(20)
-        ).all()
+        # Current native screens load the gallery from its bounded cursor
+        # endpoint. Keep the original preview page for legacy clients that omit
+        # include_media, while allowing current profile/chart reads to skip it.
+        if include_media:
+            media = session.exec(
+                select(PatientMedia)
+                .where(
+                    (PatientMedia.patient_id == patient_id)
+                    & (PatientMedia.owner_user_id == user.id)
+                )
+                .order_by(PatientMedia.id.desc())
+                .limit(20)
+            ).all()
+        else:
+            media = []
 
         profile = session.exec(select(PatientProfile).where(PatientProfile.patient_id == patient_id)).first()
         return {

@@ -373,3 +373,19 @@ test('tooth treatment history rejects invalid ids, FDI values and cross-tooth re
  }finally{global.fetch=original}
 });
 
+
+test('patient profile keeps tooth-chart data opt-in while chart reads request it explicitly',async()=>{
+ const original=global.fetch,urls=[];
+ const body={patient:{id:8},edit_revision:'a'.repeat(64),teeth:[],surfaces:[],treatments:[],media:[]};
+ global.fetch=async url=>{urls.push(String(url));return reply(body)};
+ try{
+  const profile=await getPatient('token',8);
+  assert.deepEqual(profile.teeth,[]);
+  await getPatient('token',8,true);
+  await getPatient('token',8,false,true);
+  assert.equal(urls.length,3);
+  assert.match(urls[0],/\/patients\/8\?include_chart=false&include_media=false$/,'ordinary profile reads must omit unused chart and media collections');
+  assert.match(urls[1],/\/patients\/8\?include_chart=true&include_media=false$/,'tooth-chart reads must request FDI data without a duplicate gallery page');
+  assert.match(urls[2],/\/patients\/8\?include_chart=false&include_media=true$/,'a future screen can explicitly request the legacy media preview');
+ }finally{global.fetch=original}
+});

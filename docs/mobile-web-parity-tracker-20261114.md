@@ -929,3 +929,72 @@ New tests: six file-hash boundary tests, a mismatched upload-acknowledgement tes
 Web-first review compared `analysis_viewer.html` / `main.py::analysis_asset` with native `mobile_analysis_api.py` and the already-hardened patient-media download route. Native analysis asset and legacy-radiograph downloads previously hydrated R2 while a SQLAlchemy Session remained open. Both now copy the authorized storage reference, close the session, and offload `storage_ensure_local` through the Starlette threadpool. The shared private/no-store policy now also adds `Pragma: no-cache` and `Vary: Authorization`.
 
 Three integration regressions cover analysis asset hydration, legacy-radiograph hydration and owner rejection before storage access. A security source-contract test protects the offload/cache behavior. Tests are committed but were not executed here; full pytest, Android typecheck, beta suite, Expo/Gradle and device acceptance remain open. Evidence: `docs/mobile-analysis-download-pool-safety-20261119.md`. No schema, dependency, main merge or production deployment.
+
+## 2026-11-20 — Native AI analysis composer web parity and Android symbol fix
+
+Web-first inspection re-read `analysis_new.html`, its `analysis-step-title` / `analysis-field-help` / `analysis-safety-note` CSS, the authenticated web GET/POST handlers, the mobile analysis API, and the native upload/gallery components before changing UI.
+
+New visual gap: native already supported camera/gallery, encrypted upload drafts, receipt-first recovery, same-key retry, saved + new media and byte progress, but flattened the web's three numbered sections into one panel. It omitted the saved-media-specific “Ek görünt” title, the clinical-only helper and the clinical safety note; its 15/48 MiB display copy was hard-coded.
+
+Changes:
+- Added `analysisComposerPresentation.ts` to model the web's three steps and derive saved/new image copy from the canonical `uploadLimits.ts` values.
+- Reworked `NativeAnalysisUpload` into numbered native sections, preserving camera/gallery, previews/removal, encrypted intent, receipt recovery, transfer progress and cancellation.
+- Added the web clinical-only helper, safety note and full-width navy submit action.
+- Found and fixed a real missing-symbol source defect: `analysisApi.ts` used `ANALYSIS_MAX_IMAGES` without importing it, while `NativeAnalysisUpload` and `NativePatientMedia` imported it from `analysisApi` even though it was not exported. The API now imports and re-exports the canonical shared constant.
+- Added `analysisImageLimitContract.cjs` and `analysisComposerPresentation.cjs` to `npm run test:beta`; the composer suite also transpiles the actual TSX source and fails on syntax diagnostics. A non-native `fontWeight: '850'` value introduced during styling was corrected to React Native's supported `800` before the final component update.
+
+Privacy review confirmed that web/mobile owner checks and saved-media ownership checks remain unchanged, the patient summary remains anonymous ID/age/complaint only, and native upload components remain keyed by account/patient scope. No schema, endpoint, provider, migration or patient record changed.
+
+Isolated verification: 3/3 image-limit contract fixture tests, 6/6 composer presentation/TSX-syntax fixture tests, and a strict TypeScript shared-limit/import-export fixture passed. The TSX parser check used a minimal component fixture; the committed guard still needs to run against the actual repository component in CI. These fixtures are not the full repository checkout. Full `npm test`, Expo typecheck/export, Android Gradle/device tests and Python security pytest remain unexecuted because this runtime could not clone GitHub and the current workflows are manual-only. The current HEAD has no check runs or commit statuses; previously retrieved 18 November jobs failed before their first step with empty steps and unavailable log blobs, so they did not run the compiler or tests. No green CI is claimed.
+
+No main merge, live deploy, migration, APK/IPA publication or clinical record mutation.
+
+
+## 2026-11-20 — Native clinical result parity with the web result page
+
+Web-first inspection completed before native edits:
+- `app/templates/result.html` initial result order: likely condition, important findings, treatment options, treatment cautions, preferred approach, differential, then clinician questions and the web's question guidance.
+- The FINAL branch uses the same six clinical sections in the same order inside the pale `#f5f8ff` final box; it does not show preliminary-only uncertainty, evaluation, or preliminary-assessment sections.
+- `app/templates/analysis_viewer.html` and the authenticated web handlers were checked alongside `NativeVisionViewer` and `clinicalApi.ts`. The native manual-finding request is already routed through the owner-scoped web finding handler; no duplicate endpoint or persistence path was added.
+
+New native parity gaps found and corrected:
+- INITIAL / ANALYSIS_COMPLETE was labelled “Ön Klinik Değerlendirme” instead of the web’s “Klinik Değerlendirme”.
+- Findings were rendered after all other sections instead of second, and treatment options had no ordered-list markers.
+- Native rendered uncertainty, preliminary assessment and recommended-evaluation fields that the web result page does not render.
+- The native clinician-question form omitted the web's explanation and “Kısa klinik cevap yazın...” placeholder.
+- FINAL did not use the web's pale final-result container.
+
+Implementation:
+- Added `mobile/src/clinicalResultPresentation.ts` as a small, pure web-order/title contract.
+- Updated `NativeClinicalReview.tsx` to render the six sections in web order, use bullet/ordered markers, apply the final-result background, and restore question guidance and placeholder copy.
+- Added three presentation-contract tests and two component-level regressions in `clinicalResultPresentation.cjs` and `clinicalWorkflow.cjs`; registered the new suite in `npm run test:beta`.
+
+CI/typecheck/security boundary:
+- The previous Android typecheck import/export defect in `analysisApi.ts` remains corrected: the canonical image limit is imported from and re-exported from `uploadLimits.ts`.
+- At the inspected starting head `c577998`, no workflow run or commit status existed for the current head. Android and Security Recovery workflows remain `workflow_dispatch`-only, consistent with the user's request to stop repeated CI notifications.
+- Rechecked the last available Android typecheck and Security Recovery jobs (run 43772807470 / 43772807464): both reported completed/failure but returned zero steps; all three job-log downloads returned `BlobNotFound` 404. The compiler, Gradle and pytest did not start. This is an Actions log/runner availability failure, not evidence of a source-level test failure; the exact hosted-runner/account cause remains unverified.
+- The new committed Node regressions, full Expo `tsc --noEmit`, Android Gradle build, and Python security suite have not been executed in this runtime. No green CI is claimed.
+
+Commits in this run: `8158d10`, `d37a5ed`, `5627818`, `07d231c`, `de6d6d7`, and this tracker update. No auth, owner-scope, patient-data, database, provider, workflow-trigger or production code was changed. No main merge, deploy, migration, APK/IPA publication or clinical record mutation.
+
+
+### Verification addendum — 2026-11-20
+
+- The first isolated run exposed a CommonJS test-harness mistake: a top-level `const exports` redeclared Node's wrapper binding. The new unit test now uses `moduleExports`; this was fixed in commit `fe6efde`.
+- Ran the committed presentation helper and corresponding test logic in an isolated Node 22 fixture: **3/3 passed**.
+- Ran strict TypeScript compilation of the standalone presentation helper: passed.
+- Ran a TypeScript TSX syntax fixture for the new ordered-result JSX: **0 syntax diagnostics**.
+- These checks do not replace the full mobile test suite or full `NativeClinicalReview.tsx` typecheck. Component integration tests are committed but remain unexecuted because this runtime has no repository checkout or React Native test dependencies, and GitHub Actions remains manual-only.
+
+Latest code/test head for this work: `fe6efde6d214d05d54fa3e1c67e14ac9d23af021`. No CI pass is claimed.
+
+
+## 2026-11-20 — Web clinical media gallery paging and thumbnails
+
+- Web-first comparison: `patient_detail.html` previously rendered every `PatientMedia` row and loaded the original full-resolution file for each small gallery card. Native already used 40-item descending-ID pagination and the private thumbnail derivative.
+- The web profile now loads 40 media rows plus one look-ahead row and separately displays the total count. The authenticated cookie-session page endpoint returns only display metadata, uses an owner-scoped descending-ID cursor, and sets private/no-store + Cookie variance headers.
+- Added a web-session thumbnail endpoint backed by the existing deterministic derivative helper. It releases the first DB session before storage hydration, then rechecks patient/media ownership and the unchanged file reference before serving. Orphan derivatives are removed when the record disappears during generation.
+- Gallery cards use private JPEG thumbnails; the modal still opens the original. “Daha fazla görsel yükle” fetches 40-row pages without losing selected IDs. The four-image AI limit is enforced across pages. Dynamic cards use DOM APIs/textContent and exact same-origin path validation.
+- Added `app/clinical_media_gallery.py`, `tests/test_clinical_media_gallery_pagination.py`, web route assertions in `tests/test_clinical_media_thumbnail.py`, and `mobile/tests/patientMediaWebGallery.cjs` (registered in `npm run test:beta`).
+- Validation in this run: 17/17 GitHub read-back source-contract assertions passed. The committed Python/Node suites were not executed because this environment has no repository checkout/dependency runner. Full pytest, mobile typecheck, Android build/device, browser interaction, PostgreSQL query-plan, and multi-instance R2 concurrency checks remain open.
+- Follow-up test-harness review moved the bounded-query assertion from the template fixture to `app/main.py` (commit `8913e7b`). Read-back confirms the test now checks the backend query. Query PR metadata for the live HEAD; this tracker is not a branch-head source. PR remains Draft/open. No merge, deploy, migration, APK/IPA publication or patient-data mutation.

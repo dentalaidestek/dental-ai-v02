@@ -1,5 +1,5 @@
 from test_mobile_chat_actions import chat
-from app import main, mobile_analysis_api, mobile_api
+from app import main, mobile_analysis_api, mobile_api, mobile_modern_api_v3
 from app.work_jobs import WorkJob, prune_history
 from sqlmodel import Session, select
 from datetime import datetime, timedelta
@@ -1456,3 +1456,118 @@ def test_mobile_patient_directory_search_matches_web_tckn_owner_scope_and_no_sto
     ordered = client.get("/api/mobile/v1/patients?q=Directory")
     assert ordered.status_code == 200
     assert [item["id"] for item in ordered.json()["items"]] == [904, 903]
+
+
+def test_patient_detail_keeps_chart_and_media_queries_out_of_profile_reads(chat, monkeypatch):
+    client, engine = chat
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    with Session(engine) as session:
+        session.add(main.Patient(id=880, anonymous_id="SYNTHETIC-LAZY-PROFILE-880", owner_user_id=1))
+        session.add(main.ToothStatus(id=8801, patient_id=880, tooth_number="36", status="CARIES"))
+        session.add(main.ToothSurfaceStatus(
+            id=8802, patient_id=880, tooth_number="36", surface="MESIAL", status="FILLING",
+        ))
+        session.add(main.PatientMedia(
+            id=8803, patient_id=880, owner_user_id=1,
+            original_filename="synthetic.png", stored_filename="synthetic.png",
+            file_path="/private/synthetic.png", media_type="PHOTO",
+        ))
+        session.commit()
+
+    profile = client.get("/api/mobile/v1/patients/880", params={"include_chart": "false", "include_media": "false"})
+    assert profile.status_code == 200, profile.text
+    assert profile.headers["cache-control"] == "private, no-store"
+    assert profile.json()["teeth"] == []
+    assert profile.json()["surfaces"] == []
+    assert profile.json()["media"] == []
+
+    chart = client.get("/api/mobile/v1/patients/880", params={"include_chart": "true", "include_media": "false"})
+    assert chart.status_code == 200, chart.text
+    assert [item["tooth_number"] for item in chart.json()["teeth"]] == ["36"]
+    assert [(item["tooth_number"], item["surface"]) for item in chart.json()["surfaces"]] == [("36", "MESIAL")]
+    assert chart.json()["media"] == []
+
+    # Omitting the new query keeps the original response for older native clients.
+    legacy = client.get("/api/mobile/v1/patients/880")
+    assert legacy.status_code == 200, legacy.text
+    assert [item["tooth_number"] for item in legacy.json()["teeth"]] == ["36"]
+    assert [(item["tooth_number"], item["surface"]) for item in legacy.json()["surfaces"]] == [("36", "MESIAL")]
+    assert [item["id"] for item in legacy.json()["media"]] == [8803]
+
+    media_only = client.get(
+        "/api/mobile/v1/patients/880",
+        params={"include_chart": "false", "include_media": "true"},
+    )
+    assert media_only.status_code == 200, media_only.text
+    assert media_only.json()["teeth"] == []
+    assert media_only.json()["surfaces"] == []
+    assert [item["id"] for item in media_only.json()["media"]] == [8803]
+
+    # The profile's gallery remains available through its separate bounded endpoint.
+    gallery = client.get("/api/mobile/v1/patients/880/media")
+    assert gallery.status_code == 200, gallery.text
+    assert [item["id"] for item in gallery.json()["items"]] == [8803]
+
+    client.headers["Authorization"] = "Bearer token2"
+    assert client.get("/api/mobile/v1/patients/880").status_code == 404
+    assert client.get("/api/mobile/v1/patients/880", params={"include_chart": "true"}).status_code == 404
+
+
+
+def test_native_analysis_history_is_patient_tooth_and_cursor_scoped(chat, monkeypatch):
+    client, engine = chat
+    monkeypatch.setattr(mobile_modern_api_v3, "engine", engine)
+    base = datetime(2026, 11, 20, 8, 0, 0)
+    with Session(engine) as session:
+        session.add_all([
+            main.Patient(id=810, anonymous_id="SYNTHETIC-HISTORY-810", owner_user_id=1),
+            main.Patient(id=820, anonymous_id="SYNTHETIC-HISTORY-820", owner_user_id=1),
+            main.Patient(id=910, anonymous_id="SYNTHETIC-HISTORY-910", owner_user_id=2),
+        ])
+        session.add_all([
+            main.Analysis(id=101, patient_id=810, tooth_number="36", status="FINAL", created_at=base),
+            main.Analysis(id=102, patient_id=810, tooth_number="36", status="AI_ANALYZED", created_at=base + timedelta(minutes=1)),
+            main.Analysis(id=103, patient_id=810, tooth_number="37", status="DRAFT", created_at=base + timedelta(minutes=2)),
+            main.Analysis(id=201, patient_id=820, tooth_number="11", status="FINAL", created_at=base + timedelta(minutes=3)),
+            main.Analysis(id=301, patient_id=910, tooth_number="21", status="FINAL", created_at=base + timedelta(minutes=4)),
+        ])
+        session.commit()
+
+    first = client.get("/api/mobile/v1/analyses", params={"patient_id": 810, "limit": 2})
+    assert first.status_code == 200, first.text
+    assert first.headers["cache-control"] == "private, no-store"
+    assert [item["id"] for item in first.json()["items"]] == [103, 102]
+    assert first.json()["total"] == 3
+    assert first.json()["next_before"] == 102
+
+    second = client.get(
+        "/api/mobile/v1/analyses",
+        params={"patient_id": 810, "limit": 2, "before": first.json()["next_before"]},
+    )
+    assert second.status_code == 200, second.text
+    assert [item["id"] for item in second.json()["items"]] == [101]
+    assert second.json()["total"] == 3
+    assert second.json()["next_before"] is None
+
+    tooth = client.get(
+        "/api/mobile/v1/analyses",
+        params={"patient_id": 810, "tooth_number": "36"},
+    )
+    assert tooth.status_code == 200, tooth.text
+    assert [item["id"] for item in tooth.json()["items"]] == [102, 101]
+    assert tooth.json()["total"] == 2
+    assert all(item["patient_id"] == 810 for item in tooth.json()["items"])
+
+    # A caller cannot use a patient filter to discover another owner's history.
+    assert client.get("/api/mobile/v1/analyses", params={"patient_id": 910}).status_code == 404
+    assert client.get(
+        "/api/mobile/v1/analyses",
+        params={"patient_id": 810, "tooth_number": "99"},
+    ).status_code == 422
+    assert client.get("/api/mobile/v1/analyses", params={"patient_id": -1}).status_code == 422
+
+    # Existing owner-wide callers without patient_id retain their prior contract.
+    owner_wide = client.get("/api/mobile/v1/analyses", params={"limit": 50})
+    assert owner_wide.status_code == 200, owner_wide.text
+    assert [item["id"] for item in owner_wide.json()["items"]] == [201, 103, 102, 101]
+    assert owner_wide.json()["total"] == 4

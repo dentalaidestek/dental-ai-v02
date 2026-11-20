@@ -11214,12 +11214,22 @@ def patient_detail(request: Request, patient_id: int):
             ).all():
                 analysis_assets.setdefault(asset.analysis_id, []).append(asset)
 
-        patient_media = s.exec(
-            select(PatientMedia).where(
+        from app.clinical_media_gallery import (
+            CLINICAL_MEDIA_GALLERY_PAGE_SIZE,
+            media_page_slice,
+        )
+        media_query = select(PatientMedia).where(
+            PatientMedia.patient_id == patient_id,
+            PatientMedia.owner_user_id == media_owner_id,
+        ).order_by(PatientMedia.id.desc()).limit(CLINICAL_MEDIA_GALLERY_PAGE_SIZE + 1)
+        media_rows = s.exec(media_query).all()
+        patient_media, patient_media_next_before = media_page_slice(media_rows)
+        patient_media_total = int(s.exec(
+            select(func.count(PatientMedia.id)).where(
                 PatientMedia.patient_id == patient_id,
                 PatientMedia.owner_user_id == media_owner_id,
-            ).order_by(PatientMedia.uploaded_at.desc())
-        ).all()
+            )
+        ).one() or 0)
 
         # Surface only explicitly saved voice-review fields on the owning clinician's
         # patient profile. Never derive anamnesis from arbitrary analysis notes.
@@ -11248,6 +11258,9 @@ def patient_detail(request: Request, patient_id: int):
                 "treatments": treatments,
                 "analysis_assets": analysis_assets,
                 "patient_media": patient_media,
+                "patient_media_total": patient_media_total,
+                "patient_media_next_before": patient_media_next_before,
+                "patient_media_has_more": patient_media_next_before is not None,
             },
         )
 
@@ -11411,6 +11424,127 @@ def patient_media_file(request: Request, patient_id: int, media_id: int):
     except FileNotFoundError:
         return HTMLResponse("Klinik görüntü dosyası bulunamadı.", status_code=404)
     return FileResponse(path, headers={"Cache-Control":"private, no-store"})
+
+
+@app.get("/patients/{patient_id}/media/page")
+def patient_media_gallery_page(request: Request, patient_id: int, before: Optional[int] = None):
+    """Cookie-authenticated, bounded gallery paging for the web patient profile."""
+    from app.clinical_media_gallery import (
+        CLINICAL_MEDIA_GALLERY_PAGE_SIZE,
+        normalize_media_page_cursor,
+        serialize_media_page,
+    )
+
+    def private_json(payload, status_code=200):
+        result = JSONResponse(payload, status_code=status_code)
+        result.headers.update({
+            "Cache-Control": "private, no-store",
+            "Pragma": "no-cache",
+            "Vary": "Cookie",
+            "X-Content-Type-Options": "nosniff",
+        })
+        return result
+
+    user = get_current_user(request)
+    if not user:
+        return private_json({"ok": False, "error": "Oturum gerekli."}, 401)
+    try:
+        before_id = normalize_media_page_cursor(before)
+    except ValueError:
+        return private_json({"ok": False, "error": "Geçersiz galeri imleci."}, 400)
+
+    with Session(engine, expire_on_commit=False) as s:
+        patient = s.get(Patient, patient_id)
+        if not patient:
+            return private_json({"ok": False, "error": "Hasta bulunamadı."}, 404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return private_json({"ok": False, "error": "Bu hastaya erişim yetkiniz yok."}, 403)
+        media_owner_id = patient.owner_user_id if patient.owner_user_id is not None else user.id
+        query = select(PatientMedia).where(
+            PatientMedia.patient_id == patient_id,
+            PatientMedia.owner_user_id == media_owner_id,
+        )
+        if before_id is not None:
+            query = query.where(PatientMedia.id < before_id)
+        rows = s.exec(
+            query.order_by(PatientMedia.id.desc()).limit(CLINICAL_MEDIA_GALLERY_PAGE_SIZE + 1)
+        ).all()
+        payload = serialize_media_page(rows, patient_id, CLINICAL_MEDIA_GALLERY_PAGE_SIZE)
+    return private_json(payload)
+
+
+@app.get("/patients/{patient_id}/media/{media_id}/thumbnail")
+def patient_media_thumbnail(request: Request, patient_id: int, media_id: int):
+    """Serve a private, lazily generated derivative without exposing storage keys."""
+    user = get_current_user(request)
+    if not user:
+        return HTMLResponse("Yetkisiz erişim.", status_code=401)
+
+    with Session(engine, expire_on_commit=False) as s:
+        patient = s.get(Patient, patient_id)
+        media = s.get(PatientMedia, media_id)
+        if not patient or not media or media.patient_id != patient_id:
+            return HTMLResponse("Klinik görüntü bulunamadı.", status_code=404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+        if user.role != "ADMIN" and media.owner_user_id != user.id:
+            return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
+        reference = media.file_path
+        if not reference:
+            return HTMLResponse("Klinik görüntü dosyası bulunamadı.", status_code=404)
+
+    from app.clinical_media_thumbnail import ensure_thumbnail, delete_thumbnail
+    try:
+        path = ensure_thumbnail(reference)
+        # The row can be deleted or reassigned while R2 hydration/generation runs.
+        # Recheck patient + media ownership before serving the derivative.
+        with Session(engine, expire_on_commit=False) as verify:
+            current_patient = verify.get(Patient, patient_id)
+            current_media = verify.get(PatientMedia, media_id)
+            still_owned = bool(
+                current_patient
+                and current_media
+                and current_media.patient_id == patient_id
+                and current_media.file_path == reference
+                and (
+                    user.role == "ADMIN"
+                    or (
+                        current_patient.owner_user_id == user.id
+                        and current_media.owner_user_id == user.id
+                    )
+                )
+            )
+        if not still_owned:
+            try:
+                delete_thumbnail(reference)
+            except Exception:
+                logger.exception("Failed to clean orphan clinical thumbnail for media_id=%s", media_id)
+            return HTMLResponse("Klinik görüntü bulunamadı.", status_code=404)
+    except FileNotFoundError:
+        return HTMLResponse("Klinik görüntü dosyası bulunamadı.", status_code=404)
+    except ValueError:
+        return HTMLResponse("Klinik görüntü önizlemesi oluşturulamadı.", status_code=415)
+    except Exception:
+        logger.exception("Clinical media thumbnail generation failed for media_id=%s", media_id)
+        return HTMLResponse(
+            "Önizleme deposuna şu anda erişilemiyor.",
+            status_code=503,
+            headers={"Retry-After": "2", "Cache-Control": "private, no-store"},
+        )
+
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        filename=f"clinical-{media_id}-thumbnail.jpg",
+        content_disposition_type="inline",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Pragma": "no-cache",
+            "Vary": "Cookie",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        },
+    )
 
 
 @app.post("/patients/{patient_id}/media/{media_id}/delete")
