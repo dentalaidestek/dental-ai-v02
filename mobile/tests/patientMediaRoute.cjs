@@ -82,17 +82,27 @@ test('native clinical media paging is owner-scoped, bounded and private',()=>{
   assert.doesNotMatch(block,/\.offset\(/);
 });
 
-test('native thumbnails recheck ownership after lazy R2 generation and stay private',()=>{
+test('native thumbnails recheck exact ownership and source identity after R2 generation',()=>{
   const modern=fs.readFileSync(require.resolve('../../app/mobile_modern_api_v3.py'),'utf8');
   const main=fs.readFileSync(require.resolve('../../app/main.py'),'utf8');
+  const api=fs.readFileSync(require.resolve('../src/modernApi.ts'),'utf8');
+  const native=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
   const block=modern.split('@router.get("/patients/{patient_id}/media/{media_id}/thumbnail")')[1]?.split('@router.get("/patients/{patient_id}/media/{media_id}")')[0]||'';
   assert.ok(block,'native thumbnail route must be mounted');
-  assert.match(block,/_user_owned_patient\(s,user,patient_id\)/);
-  assert.match(block,/if not row or row\.patient_id!=patient_id or row\.owner_user_id!=user\.id/);
+  assert.match(block,/patient\.owner_user_id\s*!=\s*user\.id/);
+  assert.match(block,/current_patient\.owner_user_id\s*==\s*user\.id/);
+  assert.match(block,/current_media\.file_path\s*==\s*file_path/);
+  assert.match(block,/current_media\.owner_user_id\s*==\s*user\.id/);
   assert.match(block,/ensure_thumbnail\(file_path\)/);
-  assert.match(block,/delete_thumbnail\(file_path\)/);
-  assert.match(block,/Cache-Control.*private, no-store/);
-  assert.match(block,/Vary.*Authorization/);
+  assert.match(block,/_cleanup_orphan_thumbnail\(delete_thumbnail,\s*file_path,\s*media_id\)/);
+  assert.match(modern,/def _private_clinical_media_error/);
+  assert.match(modern,/"Cache-Control":\s*"private, no-store"/);
+  assert.match(modern,/"Pragma":\s*"no-cache"/);
+  assert.match(modern,/"Vary":\s*"Authorization"/);
+  const tick=String.fromCharCode(96);
+  assert.ok(api.includes('thumbnail_url:'+tick+'${API_BASE}/patients/${p}/media/${media.id}/thumbnail'+tick));
+  assert.match(native,/item\.thumbnail_url\|\|item\.url/);
+  assert.match(native,/source=\{\{uri:preview\.url/);
   assert.match(main,/app\.include_router\(mobile_router\)[\s\S]*app\.include_router\(mobile_modern_router\)/);
   assert.match(main,/mobile_modern_router\.routes\[:\]\s*=\s*\[route for route in mobile_modern_router\.routes/);
 });
