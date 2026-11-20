@@ -33,8 +33,8 @@ export default function NativePatientProfile({token,userId,patientId,actions}:{t
  const mutationUncertain=profileUncertain||treatmentUncertain;
  const focusedRef=useRef(focused);focusedRef.current=focused;
  const actionsRef=useRef(actions);actionsRef.current=actions;
- const deleteGate=useRef({busy,uncertain:mutationUncertain,treatmentIntentReady,treatmentIntentBlocked,hasPendingTreatment:pendingTreatment!==null,deleteIntentReady,deleteIntentBlocked,hasPendingDelete:pendingDelete!==null});
- deleteGate.current={busy,uncertain:mutationUncertain,treatmentIntentReady,treatmentIntentBlocked,hasPendingTreatment:pendingTreatment!==null,deleteIntentReady,deleteIntentBlocked,hasPendingDelete:pendingDelete!==null};
+ const deleteGate=useRef({busy,uncertain:mutationUncertain,profileEditReady:!editDraftDirty&&profileConflicts.length===0&&!revisionConflict,treatmentIntentReady,treatmentIntentBlocked,hasPendingTreatment:pendingTreatment!==null,deleteIntentReady,deleteIntentBlocked,hasPendingDelete:pendingDelete!==null});
+ deleteGate.current={busy,uncertain:mutationUncertain,profileEditReady:!editDraftDirty&&profileConflicts.length===0&&!revisionConflict,treatmentIntentReady,treatmentIntentBlocked,hasPendingTreatment:pendingTreatment!==null,deleteIntentReady,deleteIntentBlocked,hasPendingDelete:pendingDelete!==null};
  const canDeletePatient=patientProfileCanDeletePatient(deleteGate.current);
  const canResolvePatientDelete=!busy&&!mutationUncertain&&treatmentIntentReady&&!treatmentIntentBlocked&&!pendingTreatment&&deleteIntentReady&&!deleteIntentBlocked&&pendingDelete!==null;
  const patientMutationBlocked=!deleteIntentReady||deleteIntentBlocked||pendingDelete!==null;
@@ -204,6 +204,27 @@ export default function NativePatientProfile({token,userId,patientId,actions}:{t
   lock.current=true;setBusy(true);setMutationError('');
   let intent=pendingDelete;
   try{
+   // The web delete form is an explicit destructive action. Native also owns
+   // an editable local draft, so when that form is open we re-read the server
+   // snapshot immediately before creating a delete intent. A stale snapshot
+   // must be reconciled instead of silently discarding local/profile changes.
+   if(!intent&&infoOpen){
+    let latest:PatientDetail;
+    try{latest=await getPatient(token,patientId)}
+    catch(e){
+     if(current())setMutationError((e instanceof Error?e.message:'Güncel hasta bilgileri alınamadı.')+' Hasta silme isteği gönderilmedi.');
+     return;
+    }
+    if(!current())return;
+    if(latest.patient.id!==patientId){setMutationError('Sunucu farklı bir hasta kaydı döndürdü. Hasta silme isteği gönderilmedi.');return}
+    const p=latest.patient;
+    const latestForm={first_name:p.first_name||'',last_name:p.last_name||'',phone:p.phone||'',birth_date:p.birth_date||'',tc_kimlik_no:p.tc_kimlik_no||'',address:p.address||'',chief_complaint:p.chief_complaint||''};
+    if(!patientProfileEditMatches(patientForm,latestForm)){
+     setDetail(latest);setLoadedScope(scope);setRevisionConflict(true);
+     setMutationError('Hasta bilgileri başka bir oturumda değişti. Silme durduruldu; önce güncel kayıtla karşılaştırın.');
+     return;
+    }
+   }
    if(!intent){
     intent=createPatientDeleteIntent(userId,patientId,Crypto.randomUUID());
     try{await patientDeleteStore.setItemAsync(deleteKey,JSON.stringify(intent))}
