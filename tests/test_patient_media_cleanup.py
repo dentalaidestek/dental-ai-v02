@@ -75,18 +75,23 @@ def test_requeue_advances_cleanup_fence_and_makes_receipt_due(media_engine):
 def test_media_row_delete_and_cleanup_receipt_share_one_transaction(media_engine):
     reference = media_path()
     with Session(media_engine) as session:
-        media = main.PatientMedia(
+        session.add(main.PatientMedia(
             id=42,
             patient_id=7,
             owner_user_id=9,
             original_filename="synthetic.png",
             stored_filename=reference.rsplit("/", 1)[-1],
             file_path=reference,
-        )
-        session.add(media)
-        session.flush()
+        ))
+        session.commit()
+
+    # Roll back only the delete + cleanup receipt transaction, not the fixture insert.
+    with Session(media_engine) as session:
+        media = session.get(main.PatientMedia, 42)
+        assert media is not None
         assert work_jobs.enqueue_patient_media_cleanup(session, reference)
         session.delete(media)
+        session.flush()
         session.rollback()
 
     with Session(media_engine) as session:
