@@ -395,7 +395,7 @@ test('voice finalization rejects unsupported coaching keys and response types',a
 test('voice review undo state is invalidated on transcript edit and consent withdrawal',()=>{
  const source=fs.readFileSync(require.resolve('../src/VoiceExamEntry.tsx'),'utf8');
  assert.match(source,/setTranscript\(v\);setReview\(null\);setLastRemoved\(null\);setFinalResult\(null\)/);
- assert.match(source,/setReview\(null\);setLastRemoved\(null\);setFinalResult\(null\);setClinicalError\(""\)/);
+ assert.match(source,/if\(consent\)\{[^}]*invalidateSourceReview\(\);setClinicalError\(""\)\}setConsent\(v=>!v\)/);
  assert.match(source,/if\(processingLock\.current\|\|!lastRemoved\|\|!review\)return/);
 });
 
