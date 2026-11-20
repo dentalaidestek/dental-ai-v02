@@ -16,6 +16,9 @@ vm.runInNewContext(compile('src/patientAnalysisPresentation.ts'),{exports:presen
 const historyPresentation={};
 vm.runInNewContext(compile('src/patientHistoryPresentation.ts'),{exports:historyPresentation,Date,Math,Number,String,Error,Promise,Array,Object});
 
+const appResumeRefresh={};
+vm.runInNewContext(compile('src/appResumeRefresh.ts'),{exports:appResumeRefresh,Date,Math,Number,String,Error,Promise,Array,Object});
+
 function loadHistory(getPatientAnalysisHistoryPage){
  const exports={};
  const native={AppState:{currentState:'active',addEventListener:()=>({remove(){}})},ActivityIndicator:'ActivityIndicator',Image:'Image',Modal:'Modal',Pressable:'Pressable',ScrollView:'ScrollView',Text:'Text',View:'View'};
@@ -31,7 +34,7 @@ function loadHistory(getPatientAnalysisHistoryPage){
    if(name==='./realtime')return {useRealtime:()=>({lastEvent:null})};
    if(name==='./patientAnalysisPresentation')return presentation;
    if(name==='./patientHistoryPresentation')return historyPresentation;
-   if(name==='./appResumeRefresh')return require('../src/appResumeRefresh.ts');
+   if(name==='./appResumeRefresh')return appResumeRefresh;
    throw new Error('Unexpected import '+name);
   },
   Date,Math,Number,String,Error,Promise,Array,Object,Set
