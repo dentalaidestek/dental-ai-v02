@@ -77,7 +77,8 @@ def test_protected_clinical_media_is_not_browser_cached():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
     start = source.index("def patient_media_file")
     block = source[start:source.index("def delete_patient_media", start)]
-    assert 'Cache-Control":"private, no-store' in block
+    assert '_mobile_private_no_store(result)' in block
+    assert 'FileResponse(path,media_type=mime,filename=original_filename)' in block
 
 
 def test_admin_login_uses_same_brute_force_throttle():
@@ -389,6 +390,6 @@ def test_native_legacy_radiograph_fallback_is_owner_scoped_and_private():
         '@router.get("/analyses/{analysis_id}/assets/{asset_id}")', 1
     )[0]
     assert "_access(session, user, analysis_id)" in route
-    assert "storage_ensure_local(analysis.radiograph_path)" in route
-    assert 'Cache-Control": "private, no-store' in route
+    assert "run_in_threadpool(storage_ensure_local, file_path)" in route
+    assert "_mobile_private_no_store(response)" in route
     assert "FileResponse(" in route
