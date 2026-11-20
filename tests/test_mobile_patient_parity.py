@@ -123,21 +123,85 @@ def test_tooth_chart_initial_focus_matches_web_latest_analysis_and_is_owner_scop
     assert client.get("/api/mobile/v1/patients/999/tooth-chart/focus").status_code == 404
 
 
-def test_patient_history_filters_tooth_and_marks_only_confirmed_voice_reviews(chat,monkeypatch):
-    client,engine=chat;monkeypatch.setattr(mobile_analysis_api,'engine',engine)
-    with Session(engine) as s:
-        s.add(main.Patient(id=8,anonymous_id='SYNTHETIC-8',owner_user_id=1))
-        s.add(main.Patient(id=9,anonymous_id='SYNTHETIC-9',owner_user_id=2))
-        for ident,patient,tooth in [(11,8,'36'),(12,8,'35'),(13,9,'36')]:
-            s.add(main.Analysis(id=ident,patient_id=patient,tooth_number=tooth,status='DRAFT'))
-        s.add(WorkJob(owner_user_id=1,resource_id=11,resource_type='ANALYSIS',kind='VOICE_REVIEW',status='DONE',source_hash='synthetic-hash',dedupe_key='synthetic-parity',payload_json='{}'))
-        s.commit()
-    response=client.get('/api/mobile/v1/analyses?patient_id=8&tooth_number=36')
-    assert response.status_code==200,response.text
-    assert [(r['id'],r['is_voice_review']) for r in response.json()['items']]==[(11,True)]
-    assert client.get('/api/mobile/v1/analyses?patient_id=9').status_code==404
-    assert client.get('/api/mobile/v1/analyses?patient_id=8&tooth_number=56').status_code==422
-    assert client.get('/api/mobile/v1/analyses/11').json()['analysis']['is_voice_review'] is True
+def test_patient_history_filters_tooth_and_marks_only_confirmed_voice_reviews(chat, monkeypatch):
+    client, engine = chat
+    monkeypatch.setattr(mobile_analysis_api, "engine", engine)
+    with Session(engine) as session:
+        session.add(main.Patient(id=8, anonymous_id="SYNTHETIC-8", owner_user_id=1))
+        session.add(main.Patient(id=9, anonymous_id="SYNTHETIC-9", owner_user_id=2))
+        session.add_all([
+            main.Analysis(id=11, patient_id=8, tooth_number="36", status="DRAFT"),
+            main.Analysis(id=12, patient_id=8, tooth_number="35", status="DRAFT"),
+            main.Analysis(id=13, patient_id=9, tooth_number="36", status="DRAFT"),
+        ])
+        session.add_all([
+            WorkJob(
+                owner_user_id=1, resource_id=11, resource_type="ANALYSIS",
+                kind="VOICE_REVIEW", status="DONE", source_hash="synthetic-hash",
+                dedupe_key="synthetic-parity-done", payload_json="{}",
+            ),
+            WorkJob(
+                owner_user_id=1, resource_id=12, resource_type="ANALYSIS",
+                kind="VOICE_REVIEW", status="RUNNING", source_hash="synthetic-hash",
+                dedupe_key="synthetic-parity-running", payload_json="{}",
+            ),
+            WorkJob(
+                owner_user_id=2, resource_id=13, resource_type="ANALYSIS",
+                kind="VOICE_REVIEW", status="DONE", source_hash="synthetic-hash",
+                dedupe_key="synthetic-parity-admin", payload_json="{}",
+            ),
+        ])
+        session.commit()
+
+    # The route actually mounted by app.main must be the canonical analysis API,
+    # not the shadowed duplicate in mobile_modern_api_v3.
+    active_routes = [
+        route for route in main.app.routes
+        if getattr(route, "path", None) == "/api/mobile/v1/analyses"
+        and "GET" in getattr(route, "methods", set())
+    ]
+    assert len(active_routes) == 1
+    assert active_routes[0].endpoint.__module__ == "app.mobile_analysis_api"
+
+    filtered = client.get("/api/mobile/v1/analyses?patient_id=8&tooth_number=36")
+    assert filtered.status_code == 200, filtered.text
+    assert filtered.headers["cache-control"] == "private, no-store"
+    assert "authorization" in filtered.headers.get("vary", "").lower()
+    assert filtered.json()["total"] == 1
+    assert [(item["id"], item["is_voice_review"]) for item in filtered.json()["items"]] == [(11, True)]
+
+    first = client.get("/api/mobile/v1/analyses?patient_id=8&limit=1")
+    assert first.status_code == 200, first.text
+    assert first.json()["total"] == 2
+    assert [(item["id"], item["is_voice_review"]) for item in first.json()["items"]] == [(12, False)]
+    assert first.json()["next_before"] == 12
+
+    second = client.get(
+        "/api/mobile/v1/analyses",
+        params={"patient_id": 8, "limit": 1, "before": first.json()["next_before"]},
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["total"] == 2
+    assert [(item["id"], item["is_voice_review"]) for item in second.json()["items"]] == [(11, True)]
+    assert second.json()["next_before"] is None
+
+    # Another clinician cannot enumerate this patient's history.
+    assert client.get("/api/mobile/v1/analyses?patient_id=9").status_code == 404
+    assert client.get("/api/mobile/v1/analyses?patient_id=8&tooth_number=56").status_code == 422
+    assert client.get("/api/mobile/v1/analyses/11").json()["analysis"]["is_voice_review"] is True
+
+    # Web patient_detail permits an admin to inspect an explicitly selected
+    # patient. The voice marker must use that patient's owner receipt.
+    with Session(engine) as session:
+        admin = session.get(main.User, 1)
+        admin.role = "ADMIN"
+        session.add(admin)
+        session.commit()
+    admin_response = client.get("/api/mobile/v1/analyses?patient_id=9")
+    assert admin_response.status_code == 200, admin_response.text
+    assert [(item["id"], item["is_voice_review"]) for item in admin_response.json()["items"]] == [(13, True)]
+
+
 
 def test_selected_media_analysis_uses_web_creation_and_rejects_other_owner(chat,monkeypatch,tmp_path):
     client,engine=chat
