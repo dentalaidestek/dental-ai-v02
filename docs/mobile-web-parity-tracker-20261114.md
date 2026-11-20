@@ -1042,3 +1042,27 @@ Web-first review re-read `patient_detail.html`, `patient_treatment_history_items
 - Current head `754d2be90ac0576b3f639b40db5e57e5f580b822` had zero status checks and zero PR workflow runs. Historical Android/Security jobs still have null/empty steps; no compiler, Gradle or pytest execution is evidenced. The independent audit's 13 Python patient-history failures remain unverified because the pytest trace and checkout environment are unavailable.
 
 Details and safety limits: `docs/mobile-patient-history-treatment-parity-20261120.md`. A concurrent manual `app/mobile_analysis_api.py` cursor-validation change made after the initial read was preserved; the native work did not overwrite that file. No merge, deployment, migration or patient-data mutation.
+
+
+## 2026-11-20 — media CI regression repair and patient-profile field parity
+
+Starting head: `1b41c7f621b64efd5b74e0b613c922e8d036751d`.
+
+The Android workflow at run `44790786839` completed successfully: TypeScript typecheck, session/auth, realtime/pagination, beta regression, Expo Android/iOS export and ARM64 internal APK all passed. The Security Recovery workflow `44790786710` ran its Python suite and reported `560 passed, 2 failed`; five native security jobs passed.
+
+The two Python failures were test-contract defects, not a demonstrated authorization bypass:
+- The original-media route test compared one formatted path in `main.app.routes` and found zero matches, despite the canonical router endpoint and request-level media tests being present. It now verifies the canonical endpoint identity in the source router and mounted application, and rejects a duplicate modern-router shadow.
+- The media-owner security source assertion searched for whitespace-free text while the implementation uses normal Python spacing. It now normalizes whitespace before checking the patient/media owner predicates and private response helper.
+
+The active original-file handler was inspected before editing. It checks both patient and media ownership, verifies `media.patient_id`, hydrates R2 outside the database session, then rechecks patient ownership, media ownership, patient relation, file path and original filename before returning a private/no-store response. No authorization condition was removed or weakened.
+
+Patient profile web references were re-read first: `app/templates/patient_detail.html` defines the ordered editable fields `first_name`, `last_name`, `phone`, `tc_kimlik_no`, `birth_date`, `address`, and `chief_complaint`. The native screen already exposed these fields, but duplicated their metadata inline. The order, labels, date/text control choice, keyboard type, length limit and multiline behavior are now centralized in `patientProfilePresentation.ts`, consumed by `NativePatientProfile.tsx`, and compared directly with the web template by `patientProfileUI.cjs`.
+
+Commits added in this pass:
+- `6532440` canonical original-media route test by endpoint identity
+- `d2a8496` whitespace-normalized media-owner assertion
+- `66da0ea` centralized patient-profile edit field contract
+- `23663b0` native profile renders the shared field contract
+- `8d13ecc` web/native profile field parity regression
+
+The source changes and new tests are committed. A fresh CI run for the final head is still required; no new test pass is claimed until the hosted jobs execute. No main merge, production deploy, patient-data mutation or production migration was performed.
