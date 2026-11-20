@@ -1,5 +1,5 @@
 import pytest
-from test_mobile_chat_actions import chat
+from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from app import main
 from sqlmodel import Session,select
 import io,json,hashlib
@@ -48,10 +48,10 @@ def test_native_academic_course_crud_and_ownership(chat):
     ident=result.json()['course']['id']
     assert client.put(f'/api/mobile/v1/academic/courses/{ident}',json={'title':'Renamed synthetic course'}).status_code==200
     assert client.get('/api/mobile/v1/academic/library?q=Renamed').json()['items'][0]['id']==ident
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     assert client.get(f'/api/mobile/v1/academic/courses/{ident}/workspace').status_code==404
     assert client.delete(f'/api/mobile/v1/academic/courses/{ident}').status_code==404
-    client.headers['Authorization']='Bearer token1'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[1]
     assert client.delete(f'/api/mobile/v1/academic/courses/{ident}').status_code==200
 
 
@@ -68,7 +68,7 @@ def test_native_study_run_is_durable_owned_and_reuses_request_key(chat,monkeypat
     assert client.post(path,json={**values,'message':'Different question'}).status_code==409
     receipt=client.get(path+'/receipt',params={'request_key':values['request_key']});assert receipt.status_code==200 and receipt.json()['run']['id']==ident
     assert client.get(path+'/active').json()['run']['id']==ident
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     assert client.get(path+f'/{ident}').status_code==404
     assert client.get(path+'/receipt',params={'request_key':values['request_key']}).status_code==404
 
@@ -85,7 +85,7 @@ def test_native_academic_upload_keeps_web_validation_and_durable_index_job(chat,
     assert data['max_file_bytes']==150*1024*1024 and data['materials'][0]['name']=='Synthetic.png'
     assert 'file_path' not in str(data)
     ident=data['materials'][0]['id'];assert client.get(path+f'/{ident}/file').status_code==200
-    client.headers['Authorization']='Bearer token2';assert client.get(path+f'/{ident}/file').status_code==404
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2];assert client.get(path+f'/{ident}/file').status_code==404
     assert client.delete(path+f'/{ident}').status_code==404
 
 
@@ -107,7 +107,7 @@ def test_native_quiz_keeps_key_hidden_until_first_choice_and_shows_grounded_expl
     assert after['rationale']=='Synthetic source explanation'
     assert client.post(path+'/quizzes/11/answers',json={'number':1,'choice':'B'}).json()['result']['selected']=='C'
     timeline=client.get(path+'/timeline').json()['items'];assert timeline[0]['content']=='' and timeline[0]['quiz']
-    client.headers['Authorization']='Bearer token2';assert client.get(path+'/quizzes').status_code==404
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2];assert client.get(path+'/quizzes').status_code==404
 
 
 def test_native_academic_feedback_is_persisted_and_owner_scoped(chat):
@@ -116,7 +116,7 @@ def test_native_academic_feedback_is_persisted_and_owner_scoped(chat):
     path='/api/mobile/v1/academic/courses/1/messages/11/feedback'
     assert client.post(path,json={'vote':'like'}).status_code==200
     assert client.get('/api/mobile/v1/academic/courses/1/timeline').json()['items'][0]['vote']=='like'
-    client.headers['Authorization']='Bearer token2';assert client.post(path,json={'vote':'dislike'}).status_code==404
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2];assert client.post(path,json={'vote':'dislike'}).status_code==404
 
 
 def test_native_academic_learning_and_clear_preserve_web_ownership(chat):
@@ -125,11 +125,11 @@ def test_native_academic_learning_and_clear_preserve_web_ownership(chat):
     path='/api/mobile/v1/academic/courses/1'
     response=client.get(path+'/learning');assert response.status_code==200 and 'practiced_facts' in response.json()['learning']
     assert response.headers['cache-control']=='private, no-store'
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     assert client.delete(path+'/timeline').status_code==404
     assert client.get(path+'/learning').status_code==404
     assert client.get(path+'/materials/1/pages/1/text').status_code==404
-    client.headers['Authorization']='Bearer token1'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[1]
     assert client.delete(path+'/timeline').status_code==200
     assert client.get(path+'/timeline').json()['items']==[]
 
@@ -145,11 +145,11 @@ def test_native_academic_run_cancel_is_owner_course_scoped_and_idempotent(chat,m
     assert created.status_code==202,created.text
     ident=created.json()['run']['id'];cancel_path=path+f'/{ident}/cancel'
 
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     foreign=client.post(cancel_path)
     assert foreign.status_code==404
 
-    client.headers['Authorization']='Bearer token1'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[1]
     cross_course=client.post(f'/api/mobile/v1/academic/courses/2/runs/{ident}/cancel')
     assert cross_course.status_code==404
     still_queued=client.get(path+f'/{ident}')
@@ -209,14 +209,14 @@ def test_native_academic_course_create_receipt_is_idempotent_and_owner_scoped(ch
         )).all()
         assert len(owned)==1
 
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     hidden=client.get(receipt_path,params={'request_key':payload['request_key']})
     assert hidden.status_code==200 and hidden.json()['workspace'] is None
     other=client.post(path,json=payload)
     assert other.status_code==200,other.text
     assert other.json()['course']['id']!=course_id
 
-    client.headers['Authorization']='Bearer token1'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[1]
     assert client.delete(f"/api/mobile/v1/academic/courses/{course_id}").status_code==200
     deleted=client.get(receipt_path,params={'request_key':payload['request_key']})
     assert deleted.status_code==410
@@ -275,9 +275,9 @@ def test_native_academic_upload_receipt_is_content_bound_idempotent_and_owner_sc
 
     lookup=client.get(receipt_path,params={'request_key':request_key})
     assert lookup.status_code==200 and lookup.json()['receipt']==first_receipt
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     assert client.get(receipt_path,params={'request_key':request_key}).status_code==404
-    client.headers['Authorization']='Bearer token1'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[1]
     assert client.delete(path+f'/{material_id}').status_code==200
     assert client.get(receipt_path,params={'request_key':request_key}).status_code==410
 
