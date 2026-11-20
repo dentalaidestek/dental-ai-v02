@@ -138,7 +138,7 @@ def begin_account_erasure(
     # Import here to avoid a module cycle while main.py still owns legacy models.
     from app.main import (
         AdminAuditLog, DeletedAccountEmail, ExpertDeviceChallenge,
-        ExpertProfile, ExpertTrustedDevice, PasswordResetToken,
+        ExpertProfile, ExpertTitleChange, ExpertTrustedDevice, PasswordResetToken,
         SessionToken, StudyChatMessage, StudyCourse, StudyMaterial, User, EmailVerificationChallenge, EmailChangeChallenge,
         WebPushDelivery, WebPushMessageDelivery, WebPushSubscription, RealtimeEvent, E2EEDeviceKey,
     )
@@ -185,6 +185,18 @@ def begin_account_erasure(
         profile.verified_at = None
         profile.updated_at = utcnow_naive()
         session.add(profile)
+
+    # Keep title-change audit rows, but remove their private source documents too.
+    title_changes = session.exec(
+        select(ExpertTitleChange).where(ExpertTitleChange.user_id == user_id)
+    ).all()
+    for change in title_changes:
+        if change.credential_document_path:
+            extra_storage.append(change.credential_document_path)
+        change.credential_document_path = None
+        change.credential_document_name = None
+        change.credential_document_mime = None
+        session.add(change)
 
     for model in (SessionToken, PasswordResetToken, ExpertTrustedDevice, ExpertDeviceChallenge, EmailVerificationChallenge, EmailChangeChallenge):
         for row in session.exec(select(model).where(model.user_id == user_id)).all():
@@ -274,6 +286,14 @@ def begin_account_erasure(
         target_user_id=user_id,
         detail=f"actor={actor}; registration_block={int(block_registration)}",
     ))
-    return extra_storage
+    # Queue only known server-generated profile/identity assets in the same
+    # transaction that clears their metadata. Keep unknown legacy references on
+    # the existing caller fallback; never broaden the worker's accepted paths.
+    from app.work_jobs import enqueue_account_asset_cleanup
+    fallback_storage = []
+    for reference in sorted({str(item) for item in extra_storage if item}):
+        if not enqueue_account_asset_cleanup(session, reference):
+            fallback_storage.append(reference)
+    return fallback_storage
 
 
