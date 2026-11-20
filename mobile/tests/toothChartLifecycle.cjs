@@ -25,6 +25,7 @@ function chartComponent(api,storage=new Map()){
   if(name==='./treatmentMutation')return require('../src/treatmentMutation.ts');
   if(name==='./realtime')return{useRealtime:()=>({lastEvent})};
   if(name==='./toothChartPresentation')return require('../src/toothChartPresentation.ts');
+  if(name==='./toothChartHistoryPresentation')return require('../src/toothChartHistoryPresentation.ts');
   if(name==='./toothSurfaceOptions')return require('../src/toothSurfaceOptions.ts');
   if(name==='./appResumeRefresh')return require('../src/appResumeRefresh.ts');
   if(name==='./NativeToothVisual'||name==='./NativeDateField'||name==='./NativePatientHistory')return{default:'Child'};
