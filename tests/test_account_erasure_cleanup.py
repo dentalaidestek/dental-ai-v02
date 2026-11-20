@@ -564,7 +564,8 @@ def test_web_account_asset_replacements_use_transactional_cleanup_and_validate_b
     assert "_queue_uncommitted_account_asset_cleanup(new_credential_path)" in expert
 
 def test_profile_photo_keys_are_unique_for_identical_uploads(monkeypatch, tmp_path):
-    monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path / "uploads")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main, "UPLOAD_DIR", Path("uploads"))
     monkeypatch.setattr(main, "storage_persist_file", lambda *args, **kwargs: None)
     image_bytes = io.BytesIO()
     Image.new("RGB", (16, 16), (30, 60, 90)).save(image_bytes, format="JPEG")
@@ -580,7 +581,8 @@ def test_profile_photo_keys_are_unique_for_identical_uploads(monkeypatch, tmp_pa
 def test_profile_photo_storage_failure_creates_durable_cleanup_receipt(
     monkeypatch, tmp_path, erasure_engine
 ):
-    monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path / "uploads")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main, "UPLOAD_DIR", Path("uploads"))
     monkeypatch.setattr(main, "engine", erasure_engine)
 
     def fail_persist(*args, **kwargs):
