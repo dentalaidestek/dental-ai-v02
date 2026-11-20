@@ -215,13 +215,14 @@ export const getMedia=async(t:string,p:number,before?:number):Promise<{items:Pat
  if(!Number.isSafeInteger(p)||p<=0||(before!==undefined&&(!Number.isSafeInteger(before)||before<=0)))
   throw Error("Geçersiz hasta veya sayfa kimliği.");
  const r=await req<{items:any[];next_before:number|null}>(`/patients/${p}/media?limit=40`+(before!==undefined?`&before=${encodeURIComponent(before)}`:""),t);
- const cursor=r?.next_before;
+ const rawCursor=r?.next_before;
  const items=r?.items;
  if(!r||!Object.prototype.hasOwnProperty.call(r,"next_before")||
-   !(cursor===null||(Number.isSafeInteger(cursor)&&cursor>0))||
+   !(rawCursor===null||(typeof rawCursor==="number"&&Number.isSafeInteger(rawCursor)&&rawCursor>0))||
    !Array.isArray(items)||items.length>40||
    new Set(items.map(m=>m?.id)).size!==items.length)
   throw Error("Klinik medya sunucusundan geçersiz liste alındı.");
+ const cursor:number|null=rawCursor;
  let previousId=before??Number.MAX_SAFE_INTEGER;
  for(const media of items){
   if(!media||!Number.isSafeInteger(media.id)||media.id<=0||media.id>=previousId||
