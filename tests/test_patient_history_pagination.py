@@ -60,7 +60,7 @@ def test_web_patient_analysis_and_treatment_history_are_bounded_and_owner_scoped
         session.add_all([
             main.Analysis(
                 id=1000 + index, patient_id=8801, tooth_number="36",
-                status="DRAFT", created_at=base + timedelta(minutes=index),
+                status="DRAFT", created_at=base,
             )
             for index in range(25)
         ])
@@ -69,7 +69,7 @@ def test_web_patient_analysis_and_treatment_history_are_bounded_and_owner_scoped
                 id=2000 + index, patient_id=8801, tooth_number="36",
                 treatment_name=f"Synthetic treatment {index}",
                 treatment_date="20.11.2026",
-                created_at=base + timedelta(minutes=index),
+                created_at=base,
             )
             for index in range(25)
         ])
