@@ -132,6 +132,33 @@ export function patientProfileEditMatches(
 
 export type PatientProfileEditField = keyof PatientProfileEditValues;
 
+export type PatientProfileEditFieldDefinition = Readonly<{
+  key: PatientProfileEditField;
+  label: string;
+  control: 'text' | 'date';
+  keyboardType?: 'phone-pad' | 'number-pad';
+  maxLength?: number;
+  multiline?: boolean;
+}>;
+
+/**
+ * Ordered native edit controls mirror the fields in patient_detail.html.
+ * Keep labels, order and input constraints in one testable contract.
+ */
+const PATIENT_PROFILE_EDIT_FIELDS: readonly PatientProfileEditFieldDefinition[] = Object.freeze([
+  { key: 'first_name', label: 'Ad', control: 'text' },
+  { key: 'last_name', label: 'Soyad', control: 'text' },
+  { key: 'phone', label: 'Telefon', control: 'text', keyboardType: 'phone-pad', maxLength: 11 },
+  { key: 'tc_kimlik_no', label: 'TC Kimlik No', control: 'text', keyboardType: 'number-pad', maxLength: 11 },
+  { key: 'birth_date', label: 'Doğum Tarihi', control: 'date' },
+  { key: 'address', label: 'Adres', control: 'text', multiline: true },
+  { key: 'chief_complaint', label: 'Başvuru şikâyeti', control: 'text', multiline: true },
+]);
+
+export function patientProfileEditFields(): readonly PatientProfileEditFieldDefinition[] {
+  return PATIENT_PROFILE_EDIT_FIELDS;
+}
+
 export type PatientProfileEditConflict = Readonly<{
   field: PatientProfileEditField;
   label: string;
