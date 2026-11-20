@@ -835,8 +835,8 @@ def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
     engine, _, _ = pg
     # Synthetic only: 60k distinct accounts plus a deliberately busy account.
     # The due scan sees terminal past jobs, pending future jobs and a small due
-    # subset; both single-column indexes are costly, so (status, run_at) is the
-    # selective ordered path rather than relying on a fragile tiny-table plan.
+    # subset. A pending-only partial run_at index keeps terminal history out of
+    # the ordered LIMIT scan rather than relying on a tiny-table planner choice.
     with engine.begin() as connection:
         connection.execute(text("SET LOCAL TIME ZONE 'UTC'"))
         connection.execute(text("""
