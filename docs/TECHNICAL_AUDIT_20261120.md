@@ -137,4 +137,18 @@ Bu turun sonunda `pytest -q` tam süit koşuldu; sonuç final raporda sayılarla
 
 Mevcut durum: mobil süit 935 testte **931 yeşil**; kalan 4 kırmızı **yalnız şu üç dosyada**: clinicalWorkflow (2 — web-string çıktı sözleşmesi), session (1 — XHR byte-progress bekleyen eski test, fetch'e geçildi), patientApi (1 — `assert.rejects` matcher anomalisi). `test_mobile_patient_parity.py`: sqlmodel 0.0.44 sabitlenince 27 pass / 13 fail (13'ü ChatGPT'nin aktif çalıştığı hasta geçmişi cursor sözleşmeleri — çakışma yaratmamak için ona bırakıldı). Ortam notu: venv'e sqlmodel+psycopg2-binary kuruldu; sqlmodel repo lock'taki 0.0.44'e sabitlendi (0.0.50 datetime kuralı fixture'ları kırıyordu).
 
+## 11. Üçüncü geçiş — aynı gün (HEAD `de2fd06c`): mobil süit %100 yeşil
+
+§10'daki 4 kırmızı + ChatGPT'nin 21+6 commit'iyle gelen 35+6 yeni kırmızı dahil, mobil süit **950/950, 0 fail**; `tsc --noEmit` 0:
+
+| SHA | Düzeltme |
+|---|---|
+| `25575f16` | api.ts: `editPatient` async (Node 24 `assert.rejects` matcher sözleşmesi; hasta revizyon doğrulaması fetch'ten önce); `uploadPatientMedia` gerçek cihazda XHR yolu — `upload.onprogress` byte raporu, otomatik multipart boundary, `withCredentials=false`, 120 sn timeout, 401 oturum revalidasyonu, ApiError eşlemesi; XHR'sız node harness'larda fetch yolu korunur |
+| `64ae79ce` | klinik sonuç web paritesi: `recommended_evaluation` + `uncertainty` bölümleri ön değerlendirmede görünür, imzalı FINAL kayıtta gizli; bekleyen hekim notu taslağı sunucuda yokken eşleme paneli otomatik açılır |
+| `05b4c72b` | akademik composer a11y sözleşmesi (boş girdide gönder pasif, basımda guard); academicComposer harness CommonJS `exports` gölgelemesi; outage testi bileşen sözleşmesiyle uzlaştırıldı |
+| `9b52d430` | v3 router `/analyses` yüzeyi — modern `before: int \| None = None` keyset yazımı, iş mantığı tek noktada (`mobile_analysis_api`) |
+| `de2fd06c` | hasta profili: `NativePatientProfile` `scope` TDZ sırası düzeltildi (ChatGPT satır-birleştirmesinin yarattığı TS2448/2454 + runtime riski); profileUI harness'ına gerçek `patientTreatmentPresentation` + `patientTreatmentHistoryExpansion` arm'leri — 35 profil parite testi gerçek modüllerle koşuyor |
+
+Kalan borç: `test_mobile_patient_parity.py` 27 pass / 13 fail (ChatGPT'nin aktif hasta geçmişi işi); Android CI "runner tahsis edilemedi" (altyapı). PR #257 açık/draft, head bu SHA; main merge ve canlı deploy kullanıcı onayına kadar yasak.
+
 — Rapor sonu. Bu dosya `docs/TECHNICAL_AUDIT_20261120.md` olarak dala commitlenir.
