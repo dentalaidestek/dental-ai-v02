@@ -15341,29 +15341,7 @@ app.include_router(mobile_router)
 from app.mobile_analysis_api import router as mobile_analysis_router
 app.include_router(mobile_analysis_router)
 from app.mobile_modern_api_v3 import router as mobile_modern_router
-def _remove_shadowed_mobile_routes(primary_routers, candidate_router):
-    """Remove candidate routes already owned by an earlier mobile router.
-
-    Use the source APIRouter definitions, not app.routes: recent FastAPI
-    versions may expose included routers lazily instead of flattening their
-    APIRoute objects into the application route list.
-    """
-    mounted = {
-        (method, route.path)
-        for primary_router in primary_routers
-        for route in primary_router.routes
-        for method in getattr(route, "methods", ())
-    }
-    candidate_router.routes[:] = [
-        route for route in candidate_router.routes
-        if not any(
-            (method, route.path) in mounted
-            for method in getattr(route, "methods", ())
-        )
-    ]
-    return candidate_router
-
-
+from app.mobile_route_registry import remove_shadowed_routes as _remove_shadowed_mobile_routes
 _remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)
 app.include_router(mobile_modern_router)
 
