@@ -142,10 +142,10 @@ def complete_mobile_push_deliveries(engine, reserved, result) -> int:
             ):
                 continue
             ticket = ticket_map.get(item["token_fingerprint"])
-            if not enabled:
-                row.status = "SEND_DISABLED"
-                row.error_code = "PUSH_DISABLED"
-            elif ticket and ticket.get("status") == "ok" and ticket.get("ticket_id"):
+            # A provider ticket is authoritative even if push sending was
+            # disabled after the request began. Persist accepted tickets for
+            # receipt reconciliation and retire only the exact dead token.
+            if ticket and ticket.get("status") == "ok" and ticket.get("ticket_id"):
                 row.ticket_id = ticket["ticket_id"]
                 row.status = "PENDING_RECEIPT"
                 row.next_check_at = stamp + RECEIPT_FIRST_CHECK
@@ -154,6 +154,9 @@ def complete_mobile_push_deliveries(engine, reserved, result) -> int:
                 row.status = "DEVICE_NOT_REGISTERED"
                 row.error_code = "DeviceNotRegistered"
                 _disable_device_if_current(session, row)
+            elif not enabled:
+                row.status = "SEND_DISABLED"
+                row.error_code = "PUSH_DISABLED"
             elif ticket:
                 row.status = "TICKET_ERROR"
                 row.error_code = _safe_error_code(ticket.get("error_code"))
