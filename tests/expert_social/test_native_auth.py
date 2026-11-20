@@ -109,7 +109,9 @@ def test_web_admin_moderation_still_requires_verified_session(env):
         admin.email_verified_at = main._utcnow_naive()
         session.add(admin)
         session.commit()
-    assert c.get("/api/expert-social/moderation").status_code == 403
+    # get_current_user deliberately treats an admin cookie without a live
+    # step-up session as unauthenticated, so the protected route returns 401.
+    assert c.get("/api/expert-social/moderation").status_code == 401
     with Session(engine) as session:
         admin = session.get(main.User, 4)
         session.add(main.AdminVerifiedSession(token_hash=token_hash, user_id=admin.id))
