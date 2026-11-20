@@ -25,6 +25,8 @@ function chartComponent(api,storage=new Map()){
   if(name==='./treatmentMutation')return require('../src/treatmentMutation.ts');
   if(name==='./realtime')return{useRealtime:()=>({lastEvent})};
   if(name==='./toothChartPresentation')return require('../src/toothChartPresentation.ts');
+  if(name==='./toothSurfaceOptions')return require('../src/toothSurfaceOptions.ts');
+  if(name==='./appResumeRefresh')return require('../src/appResumeRefresh.ts');
   if(name==='./NativeToothVisual'||name==='./NativeDateField'||name==='./NativePatientHistory')return{default:'Child'};
   throw Error('unexpected import '+name);
  }});
@@ -89,7 +91,7 @@ test('a manual dentition toggle is not overridden by a late initial-focus respon
  await renderer.act(async()=>{focus.resolve('36');await flush()});
  const currentPrimaryToggle=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children)==='Süt Dişleri'));
  assert.equal(currentPrimaryToggle.props.accessibilityState.selected,true);
- const selectedTeeth=tree.root.findAllByType('Pressable').filter(node=>node.props.accessibilityState?.selected===true&&String(node.props.accessibilityLabel||'').startsWith('Diş '));
+ const selectedTeeth=tree.root.findAllByType('Pressable').filter(node=>node.props.accessibilityState?.selected===true&&String(node.props.accessibilityLabel||'').match(/^Diş \d/)&&String(node.props.accessibilityLabel||'').startsWith('Diş '));
  assert.equal(selectedTeeth.length,0,'manual dentition choice must win over the delayed web focus');
  await renderer.act(async()=>tree.unmount());
 });
@@ -103,7 +105,7 @@ test('a delayed initial-focus response never overrides a tooth selected by the c
  assert.ok(tooth);
  await renderer.act(async()=>tooth.props.onPress());
  await renderer.act(async()=>{focus.resolve('36');await flush()});
- const selected=tree.root.findAllByType('Pressable').filter(node=>node.props.accessibilityState?.selected===true&&String(node.props.accessibilityLabel||'').startsWith('Diş '));
+ const selected=tree.root.findAllByType('Pressable').filter(node=>node.props.accessibilityState?.selected===true&&String(node.props.accessibilityLabel||'').match(/^Diş \d/)&&String(node.props.accessibilityLabel||'').startsWith('Diş '));
  assert.equal(selected.length,1);
  assert.equal(selected[0].props.accessibilityLabel,'Diş 11, Sağlıklı');
  await renderer.act(async()=>tree.unmount());
@@ -144,7 +146,7 @@ test('overlapping chart refreshes keep the newest patient response',async()=>{
  const Chart=chartComponent({getPatient:()=>{calls++;if(calls===1)return Promise.resolve(patient(8,'Ada'));if(calls===2)return older.promise;if(calls===3)return newer.promise;throw Error('unexpected extra refresh')}});
  let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
- await renderer.act(async()=>{appListeners.slice().forEach(listener=>listener('active'))});
+ await renderer.act(async()=>{appListeners.slice().forEach(listener=>listener('background'));appListeners.slice().forEach(listener=>listener('active'))});
  assert.equal(calls,2);
  await renderer.act(async()=>{lastEvent={event_type:'PATIENT_UPDATED',entity_id:999,payload:{patient_id:8}};tree.update(React.createElement(Chart,{token:'account-a',patientId:8}))});
  assert.equal(calls,3,'patient_id payload must trigger a refresh even when entity_id is not the patient id');
@@ -165,7 +167,7 @@ test('an in-flight background refresh cannot overwrite a confirmed tooth save',a
  let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
  const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel===label||node.findAllByType('Text').some(child=>flat(child.children).includes(label)));assert.ok(item,'missing control '+label);await renderer.act(async()=>item.props.onPress())};
- await renderer.act(async()=>{appListeners.slice().forEach(listener=>listener('active'))});
+ await renderer.act(async()=>{appListeners.slice().forEach(listener=>listener('background'));appListeners.slice().forEach(listener=>listener('active'))});
  assert.equal(calls,2);
  await press('Diş 11, Sağlıklı');
  await press('Diş durumu: Çürük');
@@ -217,12 +219,13 @@ test('tooth chart treatment updates send the stored edit revision and a stable r
  const record={id:7,tooth_number:'11',treatment_name:'Old treatment',treatment_date:'2026-11-01',material:'Old material',doctor_note:'Old note',result:'Old result',edit_revision:revision};
  const api={
   getPatient:async()=>({...patient(8),treatments:[record]}),
+  getToothTreatments:async()=>({items:[record],next_cursor:null}),
   updateTreatment:async(...args)=>{calls.push(args);return{ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false};}
  };
  const Chart=chartComponent(api);let tree;
  const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel===label||node.findAllByType('Text').some(child=>flat(child.children).includes(label)));assert.ok(item,'missing control '+label);await renderer.act(async()=>item.props.onPress())};
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
- await press('Diş 11, Sağlıklı');await press('Tedavi Geçmişi');await press('Düzenle');
+ await press('Diş 11, Sağlıklı');await press('Tedavi Geçmişi');await renderer.act(async()=>{await flush();await flush()});await press('Düzenle');
  const input=tree.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Tedavi adı');assert.ok(input);
  await renderer.act(async()=>input.props.onChangeText('Updated treatment'));
  await press('Tedaviyi Güncelle');
@@ -263,11 +266,11 @@ test('tooth chart clears a definitive validation rejection and permits a correct
 test('tooth chart refuses to update a legacy treatment without a server revision',async()=>{
  focused=true;lastEvent=null;appListeners=[];let updates=0;
  const legacy={id:4,tooth_number:'11',treatment_name:'Legacy treatment',material:'',doctor_note:'',result:''};
- const Chart=chartComponent({getPatient:async()=>({...patient(8),treatments:[legacy]}),updateTreatment:async()=>{updates++;return{ok:true,treatment_id:4,edit_revision:'f'.repeat(64),replayed:false}}});
+ const Chart=chartComponent({getPatient:async()=>({...patient(8),treatments:[legacy]}),getToothTreatments:async()=>({items:[legacy],next_cursor:null}),updateTreatment:async()=>{updates++;return{ok:true,treatment_id:4,edit_revision:'f'.repeat(64),replayed:false}}});
  let tree;
  const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel===label||node.findAllByType('Text').some(child=>flat(child.children).includes(label)));assert.ok(item,'missing control '+label);await renderer.act(async()=>item.props.onPress())};
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
- await press('Diş 11, Sağlıklı');await press('Tedavi Geçmişi');await press('Düzenle');
+ await press('Diş 11, Sağlıklı');await press('Tedavi Geçmişi');await renderer.act(async()=>{await flush();await flush()});await press('Düzenle');
  assert.equal(updates,0,'update must not be sent without an edit revision');
  assert.ok(flat(tree.toJSON()).includes('Tedavi sürümü alınamadı'));
  await renderer.act(async()=>tree.unmount());
@@ -377,7 +380,7 @@ test('tooth chart remains read-only while SecureStore treatment intent restorati
  const Chart=chartComponent({getPatient:async()=>patient(8)},storage);let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush();});
  assert.ok(flat(tree.toJSON()).includes('Güvenli tedavi kaydı kontrol ediliyor'));
- const teeth=tree.root.findAllByType('Pressable').filter(node=>String(node.props.accessibilityLabel||'').startsWith('Diş ')&&/^Diş \d{2},/.test(node.props.accessibilityLabel));
+ const teeth=tree.root.findAllByType('Pressable').filter(node=>String(node.props.accessibilityLabel||'').match(/^Diş \d/)&&String(node.props.accessibilityLabel||'').startsWith('Diş ')&&/^Diş \d{2},/.test(node.props.accessibilityLabel));
  assert.ok(teeth.length>0);
  assert.ok(teeth.every(node=>node.props.disabled===true),'tooth selection must stay locked until SecureStore restore finishes');
  read.resolve(null);
@@ -403,7 +406,7 @@ test('corrupt treatment intent keeps the entire tooth chart read-only',async()=>
  const Chart=chartComponent({getPatient:async()=>patient(8)},storage);let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush();await flush()});
  assert.ok(flat(tree.toJSON()).includes('Bekleyen tedavi taslağı okunamadı.'));
- const teeth=tree.root.findAllByType('Pressable').filter(node=>String(node.props.accessibilityLabel||'').startsWith('Diş ')&&/^Diş \d{2},/.test(node.props.accessibilityLabel));
+ const teeth=tree.root.findAllByType('Pressable').filter(node=>String(node.props.accessibilityLabel||'').match(/^Diş \d/)&&String(node.props.accessibilityLabel||'').startsWith('Diş ')&&/^Diş \d{2},/.test(node.props.accessibilityLabel));
  assert.ok(teeth.length>0);
  assert.ok(teeth.every(node=>node.props.disabled===true));
  await renderer.act(async()=>tree.unmount());
