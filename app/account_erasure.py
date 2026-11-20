@@ -20,6 +20,83 @@ def utcnow_naive():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def erase_guest_analysis_data(session: Session, user_id: int) -> tuple[int, list[str]]:
+    """Erase ephemeral, non-patient guest analyses and queue their private objects.
+
+    Patient-linked Analysis/ImageAsset/PatientMedia and treatment/tooth records
+    are intentionally retained: they can contain third-party clinical records
+    subject to separate patient-care and legal-retention duties.
+    """
+    from app.main import GuestAnalysis, GuestImageAsset
+    from app.work_jobs import (
+        WorkJob,
+        enqueue_ai_result_cleanup,
+        enqueue_guest_analysis_cleanup,
+    )
+
+    dialect = session.get_bind().dialect.name
+    guests_query = select(GuestAnalysis).where(
+        GuestAnalysis.owner_user_id == user_id
+    ).order_by(GuestAnalysis.id)
+    if dialect == "postgresql":
+        guests_query = guests_query.with_for_update()
+    guests = session.exec(
+        guests_query.execution_options(populate_existing=True)
+    ).all()
+    guest_ids = [row.id for row in guests if row.id is not None]
+
+    assets = []
+    if guest_ids:
+        assets_query = select(GuestImageAsset).where(
+            GuestImageAsset.guest_analysis_id.in_(guest_ids)
+        ).order_by(GuestImageAsset.id)
+        if dialect == "postgresql":
+            assets_query = assets_query.with_for_update()
+        assets = session.exec(
+            assets_query.execution_options(populate_existing=True)
+        ).all()
+
+    jobs_query = select(WorkJob).where(
+        WorkJob.owner_user_id == user_id,
+        WorkJob.resource_type == "GUEST",
+    ).order_by(WorkJob.id)
+    if dialect == "postgresql":
+        jobs_query = jobs_query.with_for_update()
+    jobs = session.exec(
+        jobs_query.execution_options(populate_existing=True)
+    ).all()
+
+    references = {
+        str(reference)
+        for reference in (
+            [row.file_path for row in assets]
+            + [row.result_path for row in guests]
+            + [row.result_ref for row in jobs]
+        )
+        if reference
+    }
+    unqueued_references: list[str] = []
+    for reference in sorted(references):
+        if enqueue_guest_analysis_cleanup(session, reference):
+            continue
+        if enqueue_ai_result_cleanup(session, reference):
+            continue
+        # Preserve the old caller fallback for legacy references that do not
+        # match a server-generated allowlist; never broaden the worker path rule.
+        unqueued_references.append(reference)
+
+    # Removing the WorkJob row fences any in-flight worker at guard_publication;
+    # the worker cannot publish after its resource/job has disappeared.
+    for job in jobs:
+        session.delete(job)
+    for asset in assets:
+        session.delete(asset)
+    for guest in guests:
+        session.delete(guest)
+
+    return len(guests), unqueued_references
+
+
 def begin_account_erasure(
     session: Session,
     *,
@@ -52,6 +129,8 @@ def begin_account_erasure(
 
     from app.membership_verification import MembershipVerification
     extra_storage: list[str] = []
+    _, guest_storage_fallback = erase_guest_analysis_data(session, user_id)
+    extra_storage.extend(guest_storage_fallback)
     from app.expert_social_maintenance import erase_user_content
     erase_user_content(session, user_id)
     # Account erasure retains a pseudonymous User row, so its FK cascade does
