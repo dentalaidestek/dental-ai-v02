@@ -4,7 +4,9 @@ export type ClinicalResultSectionId =
   | 'treatment_options'
   | 'treatment_cautions'
   | 'preferred_approach'
-  | 'differential';
+  | 'differential'
+  | 'recommended_evaluation'
+  | 'uncertainty';
 
 export type ClinicalResultSection = {
   id: ClinicalResultSectionId;
@@ -21,6 +23,8 @@ export type ClinicalResultPresentationInput = {
   treatment_cautions?: unknown;
   preferred_approach?: unknown;
   differential?: unknown;
+  recommended_evaluation?: unknown;
+  uncertainty?: unknown;
 };
 
 export const CLINICAL_QUESTION_GUIDANCE =
@@ -44,7 +48,7 @@ export function clinicalResultSections(
   result: ClinicalResultPresentationInput | null | undefined,
 ): ClinicalResultSection[] {
   if (!result) return [];
-  return [
+  const sections: ClinicalResultSection[] = [
     { id: 'most_likely', label: 'En Olası Durum', kind: 'text', value: result.most_likely },
     { id: 'findings', label: 'Önemli Bulgular', kind: 'unordered', value: result.findings },
     { id: 'treatment_options', label: 'Tedavi Seçenekleri', kind: 'ordered', value: result.treatment_options },
@@ -52,4 +56,16 @@ export function clinicalResultSections(
     { id: 'preferred_approach', label: 'Önerilen Yaklaşım', kind: 'text', value: result.preferred_approach },
     { id: 'differential', label: 'Diğer Olası Tanılar', kind: 'unordered', value: result.differential },
   ];
+  // Preliminary-only fields stay out of the signed-off FINAL view, matching
+  // the web result page: uncertainty and recommended evaluation belong to the
+  // clinician's working screen, not the durable record.
+  if (result.status !== 'FINAL') {
+    if (Array.isArray(result.recommended_evaluation) && result.recommended_evaluation.length) {
+      sections.push({ id: 'recommended_evaluation', label: 'Önerilen Değerlendirme', kind: 'ordered', value: result.recommended_evaluation });
+    }
+    if (typeof result.uncertainty === 'string' && result.uncertainty) {
+      sections.push({ id: 'uncertainty', label: 'Belirsizlik', kind: 'text', value: result.uncertainty });
+    }
+  }
+  return sections;
 }
