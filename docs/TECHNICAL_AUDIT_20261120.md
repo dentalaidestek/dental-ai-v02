@@ -124,4 +124,17 @@ Bu turun sonunda `pytest -q` tam süit koşuldu; sonuç final raporda sayılarla
 9. **Misafir analiz seansı temizliği**: rıza kaydı var; seans verisinin otomatik TTL silmesi eklenmeli.
 10. **Yedekleme/geri yükleme tatbikatı** + Postgres PITR kanıtı (60k kullanıcıda zorunlu).
 
+## 10. Ek tur — aynı gün ikinci geçiş (HEAD `99d6c737`)
+
+§6.1'deki 16 kırmızının **9'u çözüldü**, rapor güncel:
+
+| SHA | Düzeltme |
+|---|---|
+| `1c3c0e41` | vm-realm: visionViewer/academicAnswerActions/nativeAuth harness'ları `vm.compileFunction` main-realm yükleme (visionViewer 21/21; ChatGPT poll testi dahil); consultations `method:'GET'`; patientAnalysisHistory `appResumeRefresh` arm'i |
+| `190193b1` | hasta sözleşmeleri: telefon doğrulaması ilk sıra ('Telefon numarası zorunludur.'); onboarding intro 'Profil > Cihaz Bildirimleri' yönlendirmesi; ChatGPT testinde literal `\\n` yazım hatası gerçek newline'a çevrildi |
+| `efa7199d` | sosyal admin: `getSocialAdminReports` tek satır çağrı sözleşmesi; backend `mobile_analysis_history` `before: int \| None = None` modern yazım + `before<1 → 400` guard |
+| `99d6c737` | patientHistoryRetry harness arm'i |
+
+Mevcut durum: mobil süit 928/935 yeşil; kalan 7 kırmızı **yalnız şu üç dosyada**: clinicalWorkflow (2 — web-string çıktı sözleşmesi), session (1 — XHR byte-progress bekleyen eski test, fetch'e geçildi), patientApi (1 — `assert.rejects` matcher anomalisi). `test_mobile_patient_parity.py`: sqlmodel 0.0.44 sabitlenince 27 pass / 13 fail (13'ü ChatGPT'nin aktif çalıştığı hasta geçmişi cursor sözleşmeleri — çakışma yaratmamak için ona bırakıldı). Ortam notu: venv'e sqlmodel+psycopg2-binary kuruldu; sqlmodel repo lock'taki 0.0.44'e sabitlendi (0.0.50 datetime kuralı fixture'ları kırıyordu).
+
 — Rapor sonu. Bu dosya `docs/TECHNICAL_AUDIT_20261120.md` olarak dala commitlenir.
