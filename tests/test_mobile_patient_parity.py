@@ -1580,7 +1580,7 @@ def test_patient_detail_keeps_chart_and_media_queries_out_of_profile_reads(chat,
 
 def test_native_analysis_history_is_patient_tooth_and_cursor_scoped(chat, monkeypatch):
     client, engine = chat
-    monkeypatch.setattr(mobile_modern_api_v3, "engine", engine)
+    monkeypatch.setattr(mobile_analysis_api, "engine", engine)
     base = datetime(2026, 11, 20, 8, 0, 0)
     with Session(engine) as session:
         session.add_all([
@@ -1635,3 +1635,75 @@ def test_native_analysis_history_is_patient_tooth_and_cursor_scoped(chat, monkey
     assert owner_wide.status_code == 200, owner_wide.text
     assert [item["id"] for item in owner_wide.json()["items"]] == [201, 103, 102, 101]
     assert owner_wide.json()["total"] == 4
+
+
+def test_native_analysis_history_stable_cursor_matches_web_order_and_snapshot(chat, monkeypatch):
+    client, engine = chat
+    monkeypatch.setattr(mobile_analysis_api, "engine", engine)
+    base = datetime(2026, 11, 20, 8, 0, 0)
+    with Session(engine) as session:
+        session.add(main.Patient(
+            id=811, anonymous_id="SYNTHETIC-STABLE-HISTORY-811", owner_user_id=1
+        ))
+        # IDs intentionally run opposite to creation time. Two records share
+        # a timestamp so the web's descending ID tie-break is also exercised.
+        session.add_all([
+            main.Analysis(id=1201, patient_id=811, tooth_number="36", status="FINAL",
+                          created_at=base + timedelta(minutes=2)),
+            main.Analysis(id=1202, patient_id=811, tooth_number="36", status="FINAL",
+                          created_at=base + timedelta(minutes=1)),
+            main.Analysis(id=1203, patient_id=811, tooth_number="36", status="FINAL",
+                          created_at=base + timedelta(minutes=1)),
+            main.Analysis(id=1204, patient_id=811, tooth_number="36", status="FINAL",
+                          created_at=base),
+        ])
+        session.commit()
+
+    first = client.get(
+        "/api/mobile/v1/analyses",
+        params={"patient_id": 811, "limit": 2, "stable_order": "true"},
+    )
+    assert first.status_code == 200, first.text
+    assert first.headers["cache-control"] == "private, no-store"
+    assert [item["id"] for item in first.json()["items"]] == [1201, 1203]
+    assert first.json()["total"] == 4
+    cursor = first.json()["next_cursor"]
+    assert isinstance(cursor, str) and cursor
+    assert first.json()["next_before"] is None
+
+    # A newer row inserted after page one must not shift the cursor boundary.
+    with Session(engine) as session:
+        session.add(main.Analysis(
+            id=1205, patient_id=811, tooth_number="11", status="FINAL",
+            created_at=base + timedelta(minutes=3),
+        ))
+        session.commit()
+
+    second = client.get(
+        "/api/mobile/v1/analyses",
+        params={
+            "patient_id": 811,
+            "limit": 2,
+            "stable_order": "true",
+            "before_cursor": cursor,
+        },
+    )
+    assert second.status_code == 200, second.text
+    assert [item["id"] for item in second.json()["items"]] == [1202, 1204]
+    assert second.json()["next_cursor"] is None
+    assert second.json()["next_before"] is None
+    assert 1205 not in [item["id"] for item in second.json()["items"]]
+
+    assert client.get(
+        "/api/mobile/v1/analyses",
+        params={"patient_id": 811, "stable_order": "true", "before_cursor": "!"},
+    ).status_code == 422
+    assert client.get(
+        "/api/mobile/v1/analyses",
+        params={
+            "patient_id": 811,
+            "stable_order": "true",
+            "before": 1203,
+            "before_cursor": cursor,
+        },
+    ).status_code == 422
