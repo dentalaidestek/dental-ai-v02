@@ -201,21 +201,42 @@ export const deleteMedia=async(t:string,patientId:number,mediaId:number):Promise
   throw Error("Klinik görsel silme yanıtı doğrulanamadı. Galeriyi yenileyip durumu kontrol edin.");
  return result;
 };
-export const getMedia=async(t:string,p:number,before?:number)=>{
+export type PatientMediaGalleryItem={
+ id:number;
+ filename:string;
+ media_type:"PHOTO"|"RADIOGRAPH";
+ tooth_number?:string|null;
+ note?:string|null;
+ uploaded_at?:string|null;
+ url:string;
+ thumbnail_url:string;
+};
+export const getMedia=async(t:string,p:number,before?:number):Promise<{items:PatientMediaGalleryItem[];next_before:number|null}>=>{
  if(!Number.isSafeInteger(p)||p<=0||(before!==undefined&&(!Number.isSafeInteger(before)||before<=0)))
   throw Error("Geçersiz hasta veya sayfa kimliği.");
- const r=await req<{items:any[];next_before?:number|null}>(`/patients/${p}/media?limit=40`+(before!==undefined?`&before=${encodeURIComponent(before)}`:""),t);
- const cursor=r?.next_before??null;
- if(!Array.isArray(r?.items)||r.items.length>40||
-   new Set(r.items.map(m=>m?.id)).size!==r.items.length||
-   r.items.some(m=>!m||!Number.isSafeInteger(m.id)||m.id<=0||
-      (m.original_filename!=null&&typeof m.original_filename!=="string")||
-      (m.filename!=null&&typeof m.filename!=="string"))||
-   (cursor!==null&&(!Number.isSafeInteger(cursor)||cursor<=0||!r.items.some(m=>m.id===cursor)))||
-   (r.items.length===0&&cursor!==null)||
-   (before!==undefined&&(r.items.some(m=>m.id>=before)||(cursor!==null&&cursor>=before))))
+ const r=await req<{items:any[];next_before:number|null}>(`/patients/${p}/media?limit=40`+(before!==undefined?`&before=${encodeURIComponent(before)}`:""),t);
+ const cursor=r?.next_before;
+ const items=r?.items;
+ if(!r||!Object.prototype.hasOwnProperty.call(r,"next_before")||
+   !(cursor===null||(Number.isSafeInteger(cursor)&&cursor>0))||
+   !Array.isArray(items)||items.length>40||
+   new Set(items.map(m=>m?.id)).size!==items.length)
   throw Error("Klinik medya sunucusundan geçersiz liste alındı.");
- return {items:r.items.map(m=>({...m,filename:m.filename||m.original_filename||"",url:`${API_BASE}/patients/${p}/media/${m.id}/file`,thumbnail_url:`${API_BASE}/patients/${p}/media/${m.id}/thumbnail`})),next_before:cursor};
+ let previousId=before??Number.MAX_SAFE_INTEGER;
+ for(const media of items){
+  if(!media||!Number.isSafeInteger(media.id)||media.id<=0||media.id>=previousId||
+    !["PHOTO","RADIOGRAPH"].includes(media.media_type)||
+    (media.filename!=null&&typeof media.filename!=="string")||
+    (media.original_filename!=null&&typeof media.original_filename!=="string")||
+    (media.note!=null&&(typeof media.note!=="string"||media.note.length>2000))||
+    (media.tooth_number!=null&&(typeof media.tooth_number!=="string"||media.tooth_number.length>10))||
+    (media.uploaded_at!=null&&typeof media.uploaded_at!=="string"))
+   throw Error("Klinik medya sunucusundan geçersiz liste alındı.");
+  previousId=media.id;
+ }
+ if(cursor!==null&&(!items.length||cursor!==items[items.length-1].id))
+  throw Error("Klinik medya sunucusundan geçersiz sayfalama imleci alındı.");
+ return {items:items.map(media=>({...media,filename:media.filename||media.original_filename||"",url:`${API_BASE}/patients/${p}/media/${media.id}/file`,thumbnail_url:`${API_BASE}/patients/${p}/media/${media.id}/thumbnail`})),next_before:cursor};
 };
 export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
 export type ConsultationRequestPayload={expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string;request_key?:string};
