@@ -88,7 +88,7 @@ test('native thumbnails recheck ownership after lazy R2 generation and stay priv
   const block=modern.split('@router.get("/patients/{patient_id}/media/{media_id}/thumbnail")')[1]?.split('@router.get("/patients/{patient_id}/media/{media_id}")')[0]||'';
   assert.ok(block,'native thumbnail route must be mounted');
   assert.match(block,/_user_owned_patient\(s,user,patient_id\)/);
-  assert.match(block,/row\.patient_id==patient_id and row\.owner_user_id==user\.id/);
+  assert.match(block,/if not row or row\.patient_id!=patient_id or row\.owner_user_id!=user\.id/);
   assert.match(block,/ensure_thumbnail\(file_path\)/);
   assert.match(block,/delete_thumbnail\(file_path\)/);
   assert.match(block,/Cache-Control.*private, no-store/);
