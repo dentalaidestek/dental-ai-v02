@@ -111,6 +111,17 @@ def test_account_erasure_removes_only_guest_ai_data_and_queues_objects(
                 lease_token="running-guest-lease",
             ),
             work_jobs.WorkJob(
+                owner_user_id=owner.id,
+                resource_id=clinical_analysis.id,
+                resource_type="ANALYSIS",
+                kind="FINAL",
+                source_hash="d" * 64,
+                dedupe_key="cancel-clinical-job",
+                payload_json='{"clinical_notes":"transient queued payload"}',
+                result_ref=clinical_analysis.result_path,
+                status="QUEUED",
+            ),
+            work_jobs.WorkJob(
                 owner_user_id=other.id,
                 resource_id=other_guest.id,
                 resource_type="GUEST",
@@ -129,7 +140,7 @@ def test_account_erasure_removes_only_guest_ai_data_and_queues_objects(
         media_id = clinical_media.id
         image_id = clinical_asset.id
 
-        erased_count, fallback = account_erasure.erase_guest_analysis_data(
+        erased_count, fallback = account_erasure.erase_account_ai_data(
             session, owner_id
         )
         session.commit()
@@ -155,6 +166,15 @@ def test_account_erasure_removes_only_guest_ai_data_and_queues_objects(
                 work_jobs.WorkJob.dedupe_key == "keep-guest-job"
             )
         ).one()
+        cancelled_clinical_job = session.exec(
+            select(work_jobs.WorkJob).where(
+                work_jobs.WorkJob.dedupe_key == "cancel-clinical-job"
+            )
+        ).one()
+        assert cancelled_clinical_job.status == "CANCELLED"
+        assert cancelled_clinical_job.error_code == "ACCOUNT_ERASED"
+        assert cancelled_clinical_job.payload_json == "{}"
+        assert cancelled_clinical_job.result_ref is None
 
         # Patient-linked clinical records are intentionally not erased with a
         # clinician account: they belong to patients and may have retention duties.
@@ -167,7 +187,7 @@ def test_account_erasure_removes_only_guest_ai_data_and_queues_objects(
             row.reference
             for row in session.exec(select(work_jobs.WorkGarbage)).all()
         }
-        assert queued == {guest_reference, result_reference}
+        assert queued == {guest_reference, result_reference, clinical_analysis.result_path}
 
 
 def test_guest_cleanup_worker_deletes_only_after_guest_metadata_is_gone(
@@ -228,4 +248,4 @@ def test_guest_upload_finalization_serializes_with_account_erasure():
 
     erasure_source = Path(account_erasure.__file__).read_text(encoding="utf-8")
     begin = erasure_source.split("def begin_account_erasure", 1)[1]
-    assert "erase_guest_analysis_data(session, user_id)" in begin
+    assert "erase_account_ai_data(session, user_id)" in begin
