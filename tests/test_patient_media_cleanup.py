@@ -49,7 +49,27 @@ def test_cleanup_receipt_is_deduplicated_and_contains_only_the_opaque_path(media
         rows = session.exec(select(work_jobs.WorkGarbage)).all()
         assert len(rows) == 1
         assert rows[0].reference == reference
-        assert rows[0].attempts == 0
+        assert rows[0].attempts == 1
+
+
+def test_requeue_advances_cleanup_fence_and_makes_receipt_due(media_engine):
+    reference = media_path()
+    with Session(media_engine) as session:
+        session.add(work_jobs.WorkGarbage(
+            reference=reference,
+            available_at=work_jobs.now() + timedelta(hours=1),
+            attempts=4,
+        ))
+        session.commit()
+        assert work_jobs.enqueue_patient_media_cleanup(session, reference)
+        session.commit()
+        row = session.exec(
+            select(work_jobs.WorkGarbage).where(
+                work_jobs.WorkGarbage.reference == reference
+            )
+        ).one()
+        assert row.attempts == 5
+        assert row.available_at <= work_jobs.now()
 
 
 def test_media_row_delete_and_cleanup_receipt_share_one_transaction(media_engine):
