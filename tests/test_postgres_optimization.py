@@ -838,17 +838,31 @@ def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
         """,
         {'owner': 42, 'snapshot': datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)},
     )
+    # Match the real worker query, including row-lock skipping. The partial
+    # index must exclude terminal DONE/FAILED/CANCELLED history before LIMIT.
     reminder_plan = _explain_analyze_index_names(
         engine,
         """
         SELECT id FROM programreminderjob
         WHERE status='PENDING' AND run_at <= now()
         ORDER BY run_at LIMIT 100
+        FOR UPDATE SKIP LOCKED
+        """,
+    )
+    wakeup_plan = _explain_analyze_index_names(
+        engine,
+        """
+        SELECT run_at FROM programreminderjob
+        WHERE status='PENDING'
+        ORDER BY run_at LIMIT 1
         """,
     )
     assert 'ix_scheduleevent_owner_start_at' in range_plan
     assert {'ix_scheduleevent_owner_created_at','ix_scheduleevent_owner_updated_at'} & snapshot_plan
-    assert 'ix_programreminderjob_status_run_at' in reminder_plan
+    assert 'ix_programreminderjob_pending_run_at' in reminder_plan
+    assert 'ix_programreminderjob_pending_run_at' in wakeup_plan
+    assert 'ix_programreminderjob_run_at' not in reminder_plan
+    assert 'ix_programreminderjob_status_run_at' not in reminder_plan
 
 
 def test_treatment_history_index_migration_upgrades_revision18_online(pg):
