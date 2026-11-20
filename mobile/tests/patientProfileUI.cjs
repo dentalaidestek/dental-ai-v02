@@ -832,3 +832,34 @@ test('patient deletion rechecks the open web-aligned profile against the latest 
  assert.ok(text(tree.toJSON()).includes('Remote update'));
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('native patient edit controls match the web patient_detail field contract',async()=>{
+ const fields=presentationExports.patientProfileEditFields();
+ const nativeKeys=fields.map(field=>field.key);
+ const web=fs.readFileSync(require.resolve('../../app/templates/patient_detail.html'),'utf8');
+ const form=web.split('<form class="patient-info-edit-form"',2)[1]?.split('</form>',1)[0]||'';
+ const webKeys=[...form.matchAll(/<(?:input|textarea)[^>]*\\bname="([^"]+)"/g)].map(match=>match[1]);
+ assert.deepEqual(nativeKeys,webKeys,'native editable fields and ordering must match the canonical web form');
+ assert.deepEqual(fields.map(field=>field.label),['Ad','Soyad','Telefon','TC Kimlik No','Doğum Tarihi','Adres','Başvuru şikâyeti']);
+ assert.equal(fields.find(field=>field.key==='phone').keyboardType,'phone-pad');
+ assert.equal(fields.find(field=>field.key==='tc_kimlik_no').maxLength,11);
+ assert.equal(fields.find(field=>field.key==='address').multiline,true);
+ assert.equal(fields.find(field=>field.key==='chief_complaint').multiline,true);
+
+ const Profile=component({getPatient:async()=>patient(8)});let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'profile-parity',patientId:8,actions}))});
+ const info=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>text(child.children).includes('Hasta Bilgileri')));
+ assert.ok(info);
+ await renderer.act(async()=>info.props.onPress());
+ const inputs=tree.root.findAllByType('TextInput');
+ const labels=inputs.map(input=>input.props.accessibilityLabel);
+ assert.deepEqual(labels,['Ad','Soyad','Telefon','TC Kimlik No','Adres','Başvuru şikâyeti']);
+ assert.ok(tree.root.findAllByType('Child').some(node=>node.props.label==='Doğum Tarihi'),'birth date must use the native date control');
+ assert.equal(inputs.find(input=>input.props.accessibilityLabel==='Telefon').props.keyboardType,'phone-pad');
+ assert.equal(inputs.find(input=>input.props.accessibilityLabel==='TC Kimlik No').props.keyboardType,'number-pad');
+ assert.equal(inputs.find(input=>input.props.accessibilityLabel==='Adres').props.multiline,true);
+ assert.equal(inputs.find(input=>input.props.accessibilityLabel==='Başvuru şikâyeti').props.multiline,true);
+ assert.ok(text(tree.toJSON()).includes('Yaş: 0 · Hasta No: SYN-8'));
+ await renderer.act(async()=>tree.unmount());
+});
