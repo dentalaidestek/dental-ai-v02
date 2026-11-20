@@ -189,9 +189,16 @@ class AccountDeletion(BaseModel):
 async def mobile_delete_account(
     payload: AccountDeletion,
     token: str = Depends(_mobile_access_token),
-    user=Depends(_account_user),
+    user=Depends(_mobile_user),
 ):
-    """Expose the existing guarded self-erasure flow to native clients."""
+    """Expose the existing guarded self-erasure flow to native clients.
+
+    Match the canonical web route's unconditional administrator exclusion before
+    any administrator step-up gate: an admin must receive the same non-erasable
+    outcome whether or not a verified admin session is present.
+    """
+    if user.role == 'ADMIN':
+        raise HTTPException(status_code=409, detail='Yönetici hesabı bu ekrandan silinemez.')
     from app import main as web
 
     response = await run_in_threadpool(
