@@ -1028,3 +1028,17 @@ Web-first review found that `patient_detail` loaded every analysis and treatment
 
 
 The patient-history integration fixture also places all 25 records at the same timestamp, exercising the descending ID tie-break at the page boundary; the newer concurrent insert remains outside the cursor walk.
+
+
+## 2026-11-20 — Native patient-history stable cursor and treatment cards
+
+Web-first review re-read `patient_detail.html`, `patient_treatment_history_items.html`, `patient_history_web.py`, `patient_history_pagination.py` and the mounted mobile analysis-history route before editing.
+
+- Native analysis history now requests the backend's `stable_order=true` / `before_cursor` contract, matching web `created_at DESC, id DESC` order. Patient and FDI filters are validated on every page; duplicate IDs, malformed/looping cursors and mismatched patient rows fail closed.
+- A first-page compatibility fallback retains numeric-ID pagination for older deployed servers that omit the stable cursor field. Once a stable cursor is issued, the continuation must remain stable.
+- Native treatment history now uses web-aligned bordered cards and metadata chips for tooth/date/material, while preserving result and doctor-note fields. The native edit action is disabled until profile/treatment/delete durable-intent gates are resolved.
+- Added `patientAnalysisHistoryCursor.cjs`, updated `patientAnalysisHistory.cjs` and `patientHistoryRetry.cjs`, and added `patientTreatmentPresentation.cjs`. Both new tests are registered in beta and Security Recovery.
+- Isolated strict TypeScript + Node checks: stable cursor helper 7 assertions; treatment presentation helper 13 assertions. Committed React Native / repository test files were not executed in this runtime.
+- Current head `fefda8c8` had zero status checks and zero PR workflow runs. Historical Android/Security jobs still have null/empty steps; no compiler, Gradle or pytest execution is evidenced. The independent audit's 13 Python patient-history failures remain unverified because the pytest trace and checkout environment are unavailable.
+
+Details and safety limits: `docs/mobile-patient-history-treatment-parity-20261120.md`. No merge, deployment, migration or patient-data mutation.
