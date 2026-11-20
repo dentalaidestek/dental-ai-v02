@@ -67,50 +67,58 @@ def erase_account_ai_data(session: Session, user_id: int) -> tuple[int, list[str
         jobs_query.execution_options(populate_existing=True)
     ).all()
 
-    references = {
+    guest_references = {
         str(reference)
         for reference in (
             [row.file_path for row in assets]
             + [row.result_path for row in guests]
-            + [row.result_ref for row in jobs]
         )
         if reference
     }
+    queued_references: set[str] = set()
     unqueued_references: list[str] = []
-    for reference in sorted(references):
+    for reference in sorted(guest_references):
         if enqueue_guest_analysis_cleanup(session, reference):
-            continue
-        if enqueue_ai_result_cleanup(session, reference):
-            continue
-        # Preserve the old caller fallback for legacy references that do not
-        # match a server-generated allowlist; never broaden the worker path rule.
-        unqueued_references.append(reference)
+            queued_references.add(reference)
+        elif enqueue_ai_result_cleanup(session, reference):
+            queued_references.add(reference)
+        else:
+            # Keep the existing caller fallback for legacy guest references;
+            # never broaden the worker's accepted object-key patterns.
+            unqueued_references.append(reference)
 
-    # Removing guest jobs fences in-flight guest workers at guard_publication.
-    # Other account jobs are retained as audit receipts but cannot continue and
-    # no longer keep clinical text/transcript payloads in the queue table.
-    from datetime import datetime, timezone
-    stamp = datetime.now(timezone.utc).replace(tzinfo=None)
+    # Remove guest jobs entirely and scrub transient payloads from all other
+    # jobs. Re-arm result cleanup only for the private AI-result namespace;
+    # the collector preserves any result still referenced by a patient record.
     for job in jobs:
+        reference = str(job.result_ref) if job.result_ref else None
+        if reference and reference not in queued_references:
+            if enqueue_ai_result_cleanup(session, reference):
+                queued_references.add(reference)
+
         if job.resource_type == "GUEST":
+            if reference and reference not in queued_references:
+                unqueued_references.append(reference)
             session.delete(job)
             continue
+
         if job.status in {"QUEUED", "RUNNING"}:
             job.status = "CANCELLED"
             job.error_code = "ACCOUNT_ERASED"
             job.lease_token = None
             job.lease_until = None
         job.payload_json = "{}"
-        if job.result_ref and enqueue_ai_result_cleanup(session, str(job.result_ref)):
+        if reference and reference in queued_references:
             job.result_ref = None
-        job.updated_at = stamp
+        job.updated_at = utcnow_naive()
         session.add(job)
+
     for asset in assets:
         session.delete(asset)
     for guest in guests:
         session.delete(guest)
 
-    return len(guests), unqueued_references
+    return len(guests), sorted(set(unqueued_references))
 
 
 def begin_account_erasure(
