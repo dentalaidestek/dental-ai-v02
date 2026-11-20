@@ -94,8 +94,9 @@ def test_web_patient_analysis_and_treatment_history_are_bounded_and_owner_scoped
 
     profile = client.get("/patients/8801")
     assert profile.status_code == 200, profile.text
-    assert profile.text.count('class="analysis-history-item"') == HISTORY_PAGE_SIZE
-    assert profile.text.count('class="treatment-item"') == HISTORY_PAGE_SIZE
+    # The web partials add a shared row class before the semantic item class.
+    assert profile.text.count('patient-history-row analysis-history-item') == HISTORY_PAGE_SIZE
+    assert profile.text.count('patient-history-row treatment-item') == HISTORY_PAGE_SIZE
     assert 'id="loadMoreAnalyses"' in profile.text
     assert 'id="loadMoreTreatments"' in profile.text
 
