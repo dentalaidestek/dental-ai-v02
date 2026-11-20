@@ -42,6 +42,7 @@ function loadHistory({assets,legacy=true}){
    if(name==='./analysisApi')return analysisApi;
    if(name==='./realtime')return {useRealtime:()=>({lastEvent:null})};
    if(name==='./patientAnalysisPresentation')return presentationExports;
+   if(name==='./appResumeRefresh')return require('../src/appResumeRefresh.ts');
    if(name==='./patientHistoryPresentation')return historyPresentationExports;
    throw new Error('Unexpected import '+name);
   },
