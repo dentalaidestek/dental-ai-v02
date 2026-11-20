@@ -520,3 +520,36 @@ test('every tooth-chart patient refresh explicitly requests FDI chart collection
  assert.equal(chartReads.length,6,'initial, foreground, realtime and post-mutation chart reads must opt in');
  assert.doesNotMatch(source,/getPatient\(token,patientId\)(?!,true)/,'no chart refresh may silently receive the profile-only payload');
 });
+
+
+test('tooth history tab scopes analyses and cursor-paged treatments to the selected FDI tooth',async()=>{
+ focused=true;lastEvent=null;appListeners=[];
+ const calls=[];
+ const Chart=chartComponent({
+  getPatient:async()=>patient(8),
+  getToothTreatments:async(_token,_patientId,tooth,cursor)=>{
+   calls.push({tooth,cursor:cursor??null});
+   return cursor?{items:[],next_cursor:null}:{items:[],next_cursor:'cursor-older'};
+  }
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush()});
+ const press=async(label)=>{
+  const item=tree.root.findAllByType('Pressable').find(node=>
+   node.props.accessibilityLabel===label||
+   node.findAllByType('Text').some(child=>flat(child.children).includes(label))
+  );
+  assert.ok(item,'missing control '+label);
+  await renderer.act(async()=>item.props.onPress());
+ };
+ await press('Diş 36, Sağlıklı');
+ await press('Tedavi Geçmişi');
+ await renderer.act(async()=>{await flush();await flush()});
+ const analysisHistory=tree.root.findAllByType('Child').find(node=>node.props.toothNumber==='36');
+ assert.ok(analysisHistory,'analysis history must be scoped to the selected FDI tooth');
+ assert.equal(analysisHistory.props.patientId,8);
+ assert.deepEqual(calls,[{tooth:'36',cursor:null}]);
+ await press('Daha eski tedavileri göster');
+ assert.deepEqual(calls,[{tooth:'36',cursor:null},{tooth:'36',cursor:'cursor-older'}]);
+ await renderer.act(async()=>tree.unmount());
+});
