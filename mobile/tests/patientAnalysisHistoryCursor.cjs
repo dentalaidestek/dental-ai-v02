@@ -74,6 +74,9 @@ test('legacy servers fall back to bounded numeric cursors without changing the n
   assert.equal(second.next,null);
   assert.match(calls[1],/(?:\\?|&)before=51/);
   assert.doesNotMatch(calls[1],/stable_order=true/);
+  global.fetch=async()=>json({items:firstItems,total:51,next_cursor:null,next_before:51});
+  const nullCursorFallback=await api.getPatientAnalysisHistoryPage('token',8);
+  assert.deepEqual(nullCursorFallback.next,{kind:'legacy',value:51});
  }finally{global.fetch=original}
 });
 
