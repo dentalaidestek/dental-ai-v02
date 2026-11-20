@@ -23,7 +23,7 @@ from app.main import (
 )
 
 # Import the actual mobile auth dependency separately to avoid duplicate auth.
-from app.mobile_api import _mobile_user, _copy_validated_image, MOBILE_MAX_IMAGE_BYTES, _copy_validated_image
+from app.mobile_api import _mobile_user, _copy_validated_image, MOBILE_MAX_IMAGE_BYTES, _valid_fdi_tooth_number
 from app.main import study_ai_ask, SESSION_COOKIE, storage_ensure_local
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile-modern"])
@@ -37,20 +37,73 @@ def _user_owned_patient(session, user, patient_id):
 
 
 @router.get("/analyses")
-def mobile_analysis_history(user=Depends(_mobile_user), limit: int = 30, offset: int = 0, before: int | None = None):
-    limit=max(1,min(limit,50)); offset=max(0,offset)
+def mobile_analysis_history(
+    user=Depends(_mobile_user),
+    limit: int = 30,
+    offset: int = 0,
+    before: int | None = None,
+    patient_id: int | None = None,
+    tooth_number: str | None = None,
+):
+    limit = max(1, min(limit, 50))
+    offset = max(0, offset)
     if before is not None and before <= 0:
-        raise HTTPException(status_code=422,detail="Geçersiz sayfa kimliği.")
+        raise HTTPException(status_code=422, detail="Geçersiz sayfa kimliği.")
+    if patient_id is not None and patient_id <= 0:
+        raise HTTPException(status_code=422, detail="Geçersiz hasta kimliği.")
+    if tooth_number is not None and not _valid_fdi_tooth_number(tooth_number):
+        raise HTTPException(status_code=422, detail="Geçersiz FDI diş numarası.")
+
     with Session(engine, expire_on_commit=False) as s:
-        query=(select(Analysis, Patient).join(Patient, Patient.id==Analysis.patient_id)
-               .where(Patient.owner_user_id==user.id))
+        query = select(Analysis, Patient).join(Patient, Patient.id == Analysis.patient_id)
+        count_query = select(func.count()).select_from(Analysis).join(
+            Patient, Patient.id == Analysis.patient_id
+        )
+
+        if patient_id is not None:
+            # Validate ownership before narrowing the history. Returning 404 for
+            # another account keeps patient existence out of the response.
+            patient = _user_owned_patient(s, user, patient_id)
+            query = query.where(Analysis.patient_id == patient.id)
+            count_query = count_query.where(Analysis.patient_id == patient.id)
+        else:
+            # Preserve the existing owner-wide history contract for callers that
+            # do not request a specific patient.
+            query = query.where(Patient.owner_user_id == user.id)
+            count_query = count_query.where(Patient.owner_user_id == user.id)
+
+        if tooth_number is not None:
+            query = query.where(Analysis.tooth_number == tooth_number)
+            count_query = count_query.where(Analysis.tooth_number == tooth_number)
         if before is not None:
-            query=query.where(Analysis.id < before)
-        rows=s.exec(query.order_by(Analysis.id.desc()).offset(offset if before is None else 0).limit(limit+1)).all()
-        has_more=len(rows)>limit
-        rows=rows[:limit]
-        total=s.exec(select(func.count()).select_from(Analysis).join(Patient,Patient.id==Analysis.patient_id).where(Patient.owner_user_id==user.id)).one()
-        return {"items":[{"id":a.id,"patient_id":p.id,"patient_name":f"{p.first_name or ''} {p.last_name or ''}".strip(),"tooth_number":a.tooth_number,"status":a.status,"clinical_notes":a.clinical_notes,"created_at":a.created_at} for a,p in rows],"total":int(total),"limit":limit,"offset":offset,"next_before":rows[-1][0].id if has_more and rows else None}
+            query = query.where(Analysis.id < before)
+
+        rows = s.exec(
+            query.order_by(Analysis.id.desc())
+            .offset(offset if before is None else 0)
+            .limit(limit + 1)
+        ).all()
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        total = s.exec(count_query).one()
+        return {
+            "items": [
+                {
+                    "id": analysis.id,
+                    "patient_id": patient.id,
+                    "patient_name": f"{patient.first_name or ''} {patient.last_name or ''}".strip(),
+                    "tooth_number": analysis.tooth_number,
+                    "status": analysis.status,
+                    "clinical_notes": analysis.clinical_notes,
+                    "created_at": analysis.created_at,
+                }
+                for analysis, patient in rows
+            ],
+            "total": int(total),
+            "limit": limit,
+            "offset": offset,
+            "next_before": rows[-1][0].id if has_more and rows else None,
+        }
 
 
 @router.get("/patients/{patient_id}/media")
