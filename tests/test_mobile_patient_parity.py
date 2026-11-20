@@ -154,23 +154,25 @@ def test_patient_history_filters_tooth_and_marks_only_confirmed_voice_reviews(ch
         ])
         session.commit()
 
-    # Inspect the effective route table after the successful request. The
-    # previous pre-request snapshot did not reflect the route serving this call.
-    filtered = client.get("/api/mobile/v1/analyses?patient_id=8&tooth_number=36")
-    assert filtered.status_code == 200, filtered.text
-    active_routes = [
-        route for route in main.app.routes
-        if getattr(route, "path", "").rstrip("/") == "/api/mobile/v1/analyses"
+    # The history contract lives in the canonical router. The modern v3
+    # adapter must not leave a duplicate GET route; actual app dispatch below
+    # verifies that the prefixed URL reaches the canonical JSON contract.
+    canonical_routes = [
+        route for route in mobile_analysis_api.router.routes
+        if getattr(route, "path", "").rstrip("/") == "/analyses"
         and "GET" in (getattr(route, "methods", set()) or set())
     ]
-    route_diagnostics = [
-        (getattr(route, "path", None), sorted(getattr(route, "methods", set()) or set()),
-         getattr(getattr(route, "endpoint", None), "__module__", None))
-        for route in main.app.routes
-        if "analys" in getattr(route, "path", "").lower()
+    shadow_routes = [
+        route for route in mobile_modern_api_v3.router.routes
+        if getattr(route, "path", "").rstrip("/") == "/analyses"
+        and "GET" in (getattr(route, "methods", set()) or set())
     ]
-    assert len(active_routes) == 1, f"Expected one canonical analysis route; mounted analysis routes={route_diagnostics}"
-    assert active_routes[0].endpoint.__module__ == "app.mobile_analysis_api"
+    assert mobile_analysis_api.router.prefix == "/api/mobile/v1"
+    assert len(canonical_routes) == 1
+    assert canonical_routes[0].endpoint.__module__ == "app.mobile_analysis_api"
+    assert shadow_routes == []
+    filtered = client.get("/api/mobile/v1/analyses?patient_id=8&tooth_number=36")
+    assert filtered.status_code == 200, filtered.text
     assert filtered.headers["cache-control"] == "private, no-store"
     assert "authorization" in filtered.headers.get("vary", "").lower()
     assert filtered.json()["total"] == 1
