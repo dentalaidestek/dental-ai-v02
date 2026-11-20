@@ -3092,26 +3092,81 @@ def mobile_delete_patient_media(patient_id: int, media_id: int, user: User = Dep
 
 
 @router.get("/patients/{patient_id}/media/{media_id}/file")
-async def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mobile_user)):
-    # Authorize and copy only the storage reference while holding a short DB
-    # session. R2 hydration may involve network I/O and must not pin a DB
-    # connection or patient row lock for the duration of the download.
-    with Session(engine,expire_on_commit=False) as session:
-        patient=session.get(Patient,patient_id); media=session.get(PatientMedia,media_id)
-        if not patient or not media or media.patient_id!=patient_id or patient.owner_user_id!=user.id or media.owner_user_id!=user.id:
-            raise HTTPException(status_code=404,detail="Görüntü bulunamadı.")
-        file_path=media.file_path
-        original_filename=media.original_filename
-    try:
-        path=await run_in_threadpool(storage_ensure_local,file_path)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404,detail="Görüntü dosyası bulunamadı.")
-    from fastapi.responses import FileResponse
-    mime={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp"}.get(path.suffix.lower().lstrip("."),"application/octet-stream")
-    result=FileResponse(path,media_type=mime,filename=original_filename)
-    _mobile_private_no_store(result)
-    return result
+async def mobile_patient_media_file(patient_id: int, media_id: int, user: User = Depends(_mobile_user)):
+    def private_error(status_code: int, detail: str, retry_after: str | None = None):
+        result = JSONResponse({"detail": detail}, status_code=status_code)
+        _mobile_private_no_store(result)
+        result.headers["X-Content-Type-Options"] = "nosniff"
+        if retry_after:
+            result.headers["Retry-After"] = retry_after
+        return result
 
+    # Resolve the owner and immutable storage reference in a short DB session.
+    # R2 hydration runs outside the pool; ownership and source identity are then
+    # checked again immediately before the original is returned to the client.
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        media = session.get(PatientMedia, media_id)
+        if (
+            not patient
+            or patient.owner_user_id != user.id
+            or not media
+            or media.patient_id != patient_id
+            or media.owner_user_id != user.id
+            or not media.file_path
+        ):
+            return private_error(404, "Görüntü bulunamadı.")
+        file_path = media.file_path
+        original_filename = media.original_filename
+
+    try:
+        path = await run_in_threadpool(storage_ensure_local, file_path)
+    except FileNotFoundError:
+        return private_error(404, "Görüntü dosyası bulunamadı.")
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Clinical media original hydration failed for media_id=%s", media_id
+        )
+        return private_error(
+            503,
+            "Klinik görüntü deposuna şu anda erişilemiyor.",
+            retry_after="2",
+        )
+
+    try:
+        with Session(engine, expire_on_commit=False) as verify:
+            current_patient = verify.get(Patient, patient_id)
+            current_media = verify.get(PatientMedia, media_id)
+            still_owned = bool(
+                current_patient
+                and current_patient.owner_user_id == user.id
+                and current_media
+                and current_media.patient_id == patient_id
+                and current_media.owner_user_id == user.id
+                and current_media.file_path == file_path
+                and current_media.original_filename == original_filename
+            )
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Clinical media original ownership recheck failed for media_id=%s", media_id
+        )
+        return private_error(
+            503,
+            "Klinik görüntü güvenli biçimde doğrulanamadı; lütfen yeniden deneyin.",
+            retry_after="2",
+        )
+
+    if not still_owned:
+        return private_error(404, "Görüntü bulunamadı.")
+
+    from fastapi.responses import FileResponse
+    mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(
+        path.suffix.lower(), "application/octet-stream"
+    )
+    result = FileResponse(path, media_type=mime, filename=original_filename)
+    _mobile_private_no_store(result)
+    result.headers["X-Content-Type-Options"] = "nosniff"
+    return result
 async def _invoke_patient_web(handler, request, *args):
     response = await handler(request, *args) if _chat_inspect.iscoroutinefunction(handler) else await _chat_offload(handler, request, *args)
     if response.status_code >= 400:
