@@ -60,7 +60,7 @@ This is **not** a repository pytest run. The actual Security Recovery pytest job
 The next available hosted run provided source-level evidence that was not available at the starting head:
 
 - Android run #4364: TypeScript typecheck, session/auth, and realtime/pagination steps passed. The beta suite failed on two stale source-contract assertions; the APK job had started but was not yet complete at the time of this check.
-- Security Recovery run #2062: native clinical, native Program, native voice, and native Academic jobs passed. Native Social failed one source-contract assertion (79/80 passed). The Python/PostgreSQL security job was still running; no final result is claimed.
+- Security Recovery run #2062 completed: native clinical, native Program, native voice, and native Academic jobs passed. Native Social had one stale source-contract assertion (79/80 passed). The Python security suite passed 568 tests, the PostgreSQL optimization/concurrency suite passed 29 tests, and web duplicate-submit guards passed. The Python run included the six initial route-registry unit cases.
 
 Both beta failures were caused by tests that still asserted the old inline route-registry implementation:
 
@@ -71,7 +71,7 @@ The implementation had deliberately moved to the pure app.mobile_route_registry.
 
 The updated Social and clinical-media test source was read back from the branch. Ten focused source-contract assertions passed against the current GitHub file contents; the route helper's six isolated behavior cases also passed. These checks do not replace the repository Node test run.
 
-After the two test fixes, current head is 86f0d34e296aabbfd968241505b4d38d39b0d167. Security Recovery run #2066 is pending and has no job records yet. No exact-head Android run was present in the latest lookup. Therefore the two stale assertions are fixed in source, but their hosted rerun is still outstanding. The Python/PostgreSQL result from run #2062 also remains unverified.
+After the two stale assertions were fixed, a real FastAPI APIRouter/OpenAPI regression was added. Code head is f762ae0cba07b33d1e82463dc624113062961679; the current PR head is d8165332ce959d5217768f29bb1b64c03a4649f8 after a documentation-only update. Android CI #4369 and Security Recovery #2068 were pending with empty job lists, then were cancelled when the later PR commit superseded them. The corrected Social and clinical-media source assertions therefore still need a hosted rerun. The new real-APIRouter pytest case was validated in an isolated FastAPI/OpenAPI check but has not run in hosted pytest.
 
 No main merge, production deployment, schema migration, patient-record mutation, or store publication occurred.
 
@@ -81,3 +81,10 @@ No main merge, production deployment, schema migration, patient-record mutation,
 A local isolated check using FastAPI APIRouter objects confirmed that a candidate GET+PATCH route is reduced to PATCH when an earlier router already owns GET, and that the combined OpenAPI path still exposes both GET and PATCH. The repository pytest case now performs this same APIRouter/OpenAPI check. It is committed but remains pending execution by the hosted Security Recovery job.
 
 Latest branch head after adding the real FastAPI regression: f762ae0cba07b33d1e82463dc624113062961679. Android CI #4369 and Security Recovery #2068 are pending with no job records at the latest check. Combined commit status is empty; no exact-head CI pass is claimed.
+
+
+## Final run snapshot — 2026-11-21
+
+Security Recovery #2062 is the strongest completed backend evidence for this pass: Python security/identity 568 passed; PostgreSQL migration, query-plan and concurrency tests 29 passed; web form duplicate-submit checks passed. Native clinical, Program, voice and Academic jobs passed. The only failed native security job was Social, where an old source assertion expected the pre-refactor registry marker; the assertion was updated. Android run #4364 passed TypeScript, session/auth and realtime/pagination, but the beta suite failed only the two stale route-registry source assertions described above. Both were updated afterward. The Android APK build in #4364 had not finished at the last available step check.
+
+The seven-case route-registry pytest file now also contains a real FastAPI APIRouter/OpenAPI test. Its behavior passed an isolated local FastAPI check, but this seventh case has not yet been executed by hosted pytest. The latest exact code-head workflows were superseded before any jobs began; current PR head has no combined status checks. Do not describe the corrected native beta suite or the new APIRouter case as CI-green until a fresh run completes.
