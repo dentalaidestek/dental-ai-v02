@@ -351,7 +351,7 @@ test('patient edit reconciliation compares every web-editable field after trim/n
 
 test('patient deletion gate requires all profile and treatment intents to be known and settled',()=>{
  const can=presentationExports.patientProfileCanDeletePatient;
- const ready={busy:false,uncertain:false,treatmentIntentReady:true,treatmentIntentBlocked:false,hasPendingTreatment:false,deleteIntentReady:true,deleteIntentBlocked:false,hasPendingDelete:false};
+ const ready={busy:false,uncertain:false,profileEditReady:true,treatmentIntentReady:true,treatmentIntentBlocked:false,hasPendingTreatment:false,deleteIntentReady:true,deleteIntentBlocked:false,hasPendingDelete:false};
  assert.equal(can(ready),true);
  for(const patch of [
   {busy:true},{uncertain:true},{treatmentIntentReady:false},

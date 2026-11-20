@@ -161,4 +161,18 @@ ChatGPT'nin 26 commit'i (CI diagnostics + hesap silme admin exclusion + test-loa
 
 Python security suite'in tam durumu: requirements-web.lock venv'e kuruldu (CI ile aynı ortam); koşu **73 fail / 461 pass** — bileşim: ChatGPT'nin 26 commit'iyle gelen yeni sözleşme testleri + lock paket seti farkı + bırakılan fixture/contract drift'ler. Kalan alan (patient_parity receipt shape, program lifecycle 422, voice receipt key, push schema rev-15, DetachedInstance) aktif parite çalışmasının sahibi olan akışla koordine edilmeli; benim fix'ler tek dosyada geriye dönüş yaratmadı (mobil süit 950/950 ile kanıtlı). Android CI runner tahsisi hâlâ altyapı borcu.
 
+## 13. Beşinci geçiş — aynı gün (ChatGPT 52 commit sonrası): her iki süit de tam yeşil
+
+ChatGPT'nin 52 commit'i merge edildi (hasta silme preflight fix'leri, route registry çalışması, admin step-up test hizalama). Sonuçlar:
+
+| Alan | Öncesi | Sonrası |
+|---|---|---|
+| Mobil süit | 952/953 | **953/953** |
+| Python security suite | 73 fail / 461 pass | **525/525** |
+| `tsc --noEmit` | 0 | **0** |
+
+Kalan iki kırık testi ben kapattım: (1) hasta silme gate testinde `profileEditReady` verisi eksikti (gate 9 şartlı; UI alanı gerçekten set ediliyor — test verisi tamamlandı); (2) FastAPI 0.141.1 route tablosunu `_IncludedRouter` düğümlerinde kapsüllediği için `main.app.routes` üzerinden path süzme artık çalışmıyordu — canonical analyses route denetimi `effective_candidates()` + `original_route` unwrap ile sürüm-bağımsız hale getirildi (tekil sayım, `mobile_analysis_history` endpoint sözleşmesi korunur).
+
+ChatGPT'nin 52 commit'i, dördüncü geçişte raporladığım 73 fail'in köklerini (receipt shape, voice key, push rev-15 schema, fixture drift'ler) sistematik çözmüş; benim katkım son 2 kırmızı + gate sözleşmesi doğrulaması. Android CI runner tahsisi hâlâ altyapı borcu.
+
 — Rapor sonu. Bu dosya `docs/TECHNICAL_AUDIT_20261120.md` olarak dala commitlenir.
