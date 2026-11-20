@@ -52,10 +52,10 @@ def test_live_audio_only_transcribes_and_never_writes_patient_or_runs_clinical_i
     monkeypatch.setattr(voice_exam.core,'extract',transcribe)
     raw=io.BytesIO()
     with wave.open(raw,'wb') as f:f.setnchannels(1);f.setsampwidth(2);f.setframerate(8000);f.writeframes(b'\0\0'*800)
-    result=client.post('/api/mobile/v1/patients/8/voice-exam/audio',content=raw.getvalue(),headers={'Content-Type':'audio/wav','X-Voice-Consent':'yes'})
+    result=client.post('/api/mobile/v1/patients/8/voice-exam/audio',content=raw.getvalue(),headers={'Content-Type':'audio/wav','X-Voice-Consent':'yes','X-Voice-Request-Key':'session_1234567890_chunk_0'})
     assert result.status_code==200,result.text
     assert result.json()['transcript']=='Synthetic dictated speech' and calls[0]['transcription_only'] is True
-    assert client.post('/api/mobile/v1/patients/9/voice-exam/audio',content=raw.getvalue(),headers={'Content-Type':'audio/wav','X-Voice-Consent':'yes'}).status_code==404
+    assert client.post('/api/mobile/v1/patients/9/voice-exam/audio',content=raw.getvalue(),headers={'Content-Type':'audio/wav','X-Voice-Consent':'yes','X-Voice-Request-Key':'session_1234567890_chunk_0'}).status_code==404
     assert len(calls)==1
     with Session(engine) as s:assert not s.exec(select(main.Analysis)).all() and s.get(main.Patient,8).chief_complaint is None
 
@@ -111,7 +111,7 @@ def test_native_voice_history_returns_only_owned_completed_voice_approvals(chat,
         approved=main.Analysis(
             patient_id=8,
             status='DRAFT',
-            clinical_notes='Sistemik hastalık / hasta beyanı: Astım\\n\\nİlaç / hasta beyanı: Düzenli sentetik ilaç\\n\\nAlerji / hasta beyanı: Penisilin beyanı',
+            clinical_notes='Sistemik hastalık / hasta beyanı: Astım\n\nİlaç / hasta beyanı: Düzenli sentetik ilaç\n\nAlerji / hasta beyanı: Penisilin beyanı',
         )
         session.add(approved);session.flush()
         session.add(WorkJob(
