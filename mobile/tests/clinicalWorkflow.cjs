@@ -12,6 +12,12 @@ function harness(overrides={},saved,initialFocused=true){const exports={},storag
  const finding={};vm.runInNewContext(compile('../src/findings.ts'),{exports:finding});const presentation={};vm.runInNewContext(compile('../src/clinicalResultPresentation.ts'),{exports:presentation});
  vm.runInNewContext(compile('../src/NativeClinicalReview.tsx'),{exports,setTimeout,clearTimeout,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{useIsFocused:()=>focus.current}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=> 'synthetic-key'}:n==='./socialDraft'?{chunkedDraftStore:()=>secure}:n==='./clinicalApi'?endpoint:n==='./findings'?finding:n==='./clinicalResultPresentation'?presentation:{default:props=>React.createElement('Text',null,props.value)}});return{Component:exports.default,calls,storage,endpoint,focus};}
 async function open(h,props={}){let t;await renderer.act(async()=>t=renderer.create(React.createElement(h.Component,{token:'A',userId:1,analysisId:1,...props})));return t}
+test('clinical image source rejects invalid analysis and asset IDs before building a private URL',()=>{
+ const {clinicalImage}=api();
+ assert.throws(()=>clinicalImage('synthetic-token',0,44),/Geçersiz analiz kimliği/);
+ assert.throws(()=>clinicalImage('synthetic-token',17,0),/Geçersiz analiz kimliği/);
+ assert.throws(()=>clinicalImage('synthetic-token',17,1.5),/Geçersiz analiz kimliği/);
+});
 test('vision snapshot requests bypass HTTP cache like the web embedded viewer',async()=>{
  const calls=[];
  const {getVision}=api(async(...args)=>{calls.push(args);return{status:'VISION_PENDING'}});
