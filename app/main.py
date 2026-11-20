@@ -979,7 +979,15 @@ class ProgramReminderJob(SQLModel, table=True):
     __table_args__ = (
         # The worker claims due jobs in run_at order and cancels jobs by event
         # or owner. Keep these hot paths indexable as the durable queue grows.
-        Index("ix_programreminderjob_status_run_at", "status", "run_at"),
+        # The reminder worker and wakeup query only read PENDING rows. A partial
+        # ordered index excludes terminal history and avoids scanning old DONE rows
+        # before the first due reminder when LIMIT is used.
+        Index(
+            "ix_programreminderjob_pending_run_at",
+            "run_at",
+            postgresql_where=text("status = 'PENDING'"),
+            sqlite_where=text("status = 'PENDING'"),
+        ),
         Index("ix_programreminderjob_event_status", "schedule_event_id", "status"),
         Index("ix_programreminderjob_owner_status", "owner_user_id", "status"),
     )
@@ -987,7 +995,7 @@ class ProgramReminderJob(SQLModel, table=True):
     schedule_event_id: int = Field(index=True)
     owner_user_id: int = Field(index=True)
     occurrence_start_at: datetime = Field(index=True)
-    run_at: datetime = Field(index=True)
+    run_at: datetime
     reminder_minutes: int
     event_updated_at: datetime
     dedup_key: str = Field(index=True, unique=True)
