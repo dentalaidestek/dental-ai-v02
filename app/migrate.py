@@ -564,7 +564,7 @@ def _program_pending_reminder_index_state(connection, index_name):
     normalized_predicate = "".join(
         (predicate or "").lower().replace('"', "").split()
     ).replace("(", "").replace(")", "")
-    for cast in ("::character varying", "::varchar", "::text"):
+    for cast in ("::character varying", "::charactervarying", "::varchar", "::text"):
         normalized_predicate = normalized_predicate.replace(cast, "")
     normalized_definition = "".join(
         (definition or "").lower().replace('"', "").split()
