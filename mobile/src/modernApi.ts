@@ -163,7 +163,8 @@ export const getPatientAnalysisHistoryPage=async(
   ids.add(item.id);
  }
  let next:PatientAnalysisHistoryCursor|null=null;
- if(stableRequest&&Object.prototype.hasOwnProperty.call(r,"next_cursor")){
+ const legacyFieldFallback=stableRequest&&cursor===undefined&&r.next_cursor===null&&r.next_before!==undefined&&r.next_before!==null;
+ if(stableRequest&&Object.prototype.hasOwnProperty.call(r,"next_cursor")&&!legacyFieldFallback){
   if((r.next_before!==undefined&&r.next_before!==null)||
      (r.next_cursor!==null&&!validStableAnalysisHistoryCursor(r.next_cursor))||
      (r.next_cursor!==null&&r.items.length!==50)||
