@@ -799,7 +799,7 @@ def test_program_pending_reminder_index_sqlite_migration_is_idempotent(tmp_path)
             text("SELECT sql FROM sqlite_master WHERE type='index' AND name=:name"),
             {'name': 'ix_programreminderjob_pending_run_at'},
         ).scalar_one()
-        assert 'where status = \'PENDING\'' in definition.lower()
+        assert 'where status = \'pending\'' in definition.lower()
         for name in ('ix_programreminderjob_status_run_at', 'ix_programreminderjob_run_at'):
             assert connection.execute(
                 text("SELECT 1 FROM sqlite_master WHERE type='index' AND name=:name"),
