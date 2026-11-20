@@ -51,8 +51,14 @@ def test_web_and_native_tooth_writes_converge_on_one_owner_scoped_row(chat, monk
               "expected_revision": surface_revision},
     )
     assert surface.status_code == 200, surface.text
+    # The surface mutation advances its own revision. A whole-tooth update must
+    # use a fresh snapshot rather than replaying the pre-write surface revision.
+    refreshed = client.get("/api/mobile/v1/patients/8")
+    assert refreshed.status_code == 200, refreshed.text
+    tooth_revision = next(item["revision"] for item in refreshed.json()["teeth"]
+                          if item["tooth_number"] == "36")
     surface_revisions = {
-        surface: next((item["revision"] for item in snapshot.json()["surfaces"]
+        surface: next((item["revision"] for item in refreshed.json()["surfaces"]
                        if item["tooth_number"] == "36" and item["surface"] == surface), None)
         for surface in ("MESIAL", "DISTAL")
     }
