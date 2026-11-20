@@ -1,4 +1,4 @@
-from test_mobile_chat_actions import chat
+from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from app import main,mobile_api,voice_exam
 from sqlmodel import Session,select
 from app.work_jobs import WorkJob
@@ -26,7 +26,7 @@ def test_native_voice_apply_requires_consent_revision_and_owner_then_is_idempote
         assert s.get(main.Patient,8).chief_complaint=='Synthetic approved complaint'
         assert s.exec(select(main.ToothStatus).where(main.ToothStatus.patient_id==8)).one().tooth_number=='36'
         assert len(s.exec(select(WorkJob).where(WorkJob.kind=='VOICE_REVIEW')).all())==1
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     assert client.post(path,json={**values,'confirmed':True}).status_code==404
 
 
@@ -96,7 +96,7 @@ def test_native_anonymous_voice_patient_is_private_owned_and_idempotent(chat,mon
         patient=session.get(main.Patient,payload['patient']['id'])
         assert patient.owner_user_id==1
         assert patient.first_name is None and patient.phone is None
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     other=client.post(path,json={'request_key':key})
     assert other.status_code==201,other.text
     assert other.json()['patient']['id']!=payload['patient']['id']
@@ -159,9 +159,9 @@ def test_native_voice_history_returns_only_owned_completed_voice_approvals(chat,
     assert 'Not completed' not in response.text
     assert 'transcript' not in body and 'audio' not in body
 
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     assert client.get('/api/mobile/v1/patients/8/voice-exam/history').status_code==404
-    client.headers['Authorization']='Bearer token1'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[1]
     assert client.get('/api/mobile/v1/patients/9/voice-exam/history').status_code==404
 
 
@@ -247,7 +247,7 @@ def test_mobile_voice_text_receipts_are_owner_and_patient_scoped(chat,monkeypatc
     key="session_1234567890_chunk_3"
     payload={"transcript":"Same transcript","context":{},"consent":True,"request_key":key}
     assert client.post(path,json=payload).status_code==200
-    client.headers["Authorization"]="Bearer token2"
+    client.headers["Authorization"]="Bearer " + _SESSION_TOKEN[2]
     other_patient_path="/api/mobile/v1/patients/9/voice-exam/text"
     assert client.post(other_patient_path,json=payload).status_code==200
     assert len(calls)==2
