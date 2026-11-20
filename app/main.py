@@ -6715,6 +6715,7 @@ def _save_profile_photo(user_id: int, encoded: str) -> str:
         raise ValueError("Profil fotoğrafı okunamadı.") from exc
     if not raw or len(raw) > 8 * 1024 * 1024:
         raise ValueError("Profil fotoğrafı en fazla 8 MB olabilir.")
+    destination = None
     try:
         with Image.open(io.BytesIO(raw)) as source:
             source.verify()
@@ -6727,7 +6728,13 @@ def _save_profile_photo(user_id: int, encoded: str) -> str:
             image.save(destination, "JPEG", quality=90, optimize=True)
             storage_persist_file(destination, content_type="image/jpeg")
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        if destination is not None:
+            _queue_uncommitted_account_asset_cleanup(str(destination))
         raise ValueError("Geçerli bir profil fotoğrafı yükleyin.") from exc
+    except Exception:
+        if destination is not None:
+            _queue_uncommitted_account_asset_cleanup(str(destination))
+        raise
     return str(destination)
 
 
