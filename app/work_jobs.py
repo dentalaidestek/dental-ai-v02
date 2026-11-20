@@ -353,39 +353,10 @@ def enqueue_ai_result_cleanup(session: Session, reference: str) -> bool:
 
 
 def enqueue_patient_media_cleanup(session: Session, reference: str) -> bool:
-    """Queue an object delete in the same transaction that removes its media row.
-
-    The queue stores only the opaque storage key. Unrecognized legacy references
-    return False so callers can retain their existing synchronous fallback.
-    """
+    """Queue a server-generated patient-media delete in the metadata transaction."""
     if not is_patient_media_reference(reference):
         return False
-
-    stamp = now()
-    existing = session.exec(
-        select(WorkGarbage).where(WorkGarbage.reference == reference)
-    ).first()
-    if existing is not None:
-        if existing.available_at > stamp:
-            existing.available_at = stamp
-            session.add(existing)
-        return True
-
-    row = WorkGarbage(reference=reference, available_at=stamp)
-    try:
-        with session.begin_nested():
-            session.add(row)
-            session.flush()
-    except IntegrityError:
-        existing = session.exec(
-            select(WorkGarbage).where(WorkGarbage.reference == reference)
-        ).first()
-        if existing is None:
-            raise
-        existing.available_at = stamp
-        session.add(existing)
-    return True
-
+    return _enqueue_cleanup_reference(session, reference, delay_seconds=0)
 
 def collect_garbage(engine):
     from app.object_storage import delete
