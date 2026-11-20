@@ -11,7 +11,7 @@ const galleryScript=template.slice(start,end);
 
 test('web clinical gallery starts with a bounded page and displays the full record count',()=>{
   assert.match(template,/patient_media_total/);
-  assert.match(template,/CLINICAL_MEDIA_GALLERY_PAGE_SIZE \+ 1/);
+  assert.match(main,/CLINICAL_MEDIA_GALLERY_PAGE_SIZE \+ 1/);
   assert.match(template,/data-url="\/patients\/\{\{ patient\.id \}\}\/media\/page"/);
   assert.match(template,/data-next-before="\{\{ patient_media_next_before or '' \}\}"/);
   assert.match(template,/id="patientMediaLoadMore"/);
