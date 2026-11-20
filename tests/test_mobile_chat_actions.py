@@ -127,7 +127,7 @@ def test_case_shared_media_is_selected_link_scoped_and_private(chat, tmp_path):
         p=main.Patient(anonymous_id='SYNTHETIC',owner_user_id=1);s.add(p);s.flush()
         media=main.PatientMedia(patient_id=p.id,owner_user_id=1,file_path=str(path),original_filename='synthetic.png',stored_filename='shared.png',media_type='PHOTO');s.add(media);s.flush()
         s.add(main.ConsultationCaseMedia(id=5,case_id=1,patient_media_id=media.id,added_by_user_id=1));s.commit()
-    for token in ('token1','token2'):
+    for token in (_SESSION_TOKEN[1], _SESSION_TOKEN[2]):
         c.headers['Authorization']='Bearer '+token
         shared=c.get('/api/mobile/v1/consultations/1').json()['case']['shared_media']
         assert shared==[{'id':5,'media_type':'PHOTO'}]
@@ -135,7 +135,7 @@ def test_case_shared_media_is_selected_link_scoped_and_private(chat, tmp_path):
         assert response.status_code==200
         assert response.headers['cache-control']=='private, no-store'
         assert c.get('/api/mobile/v1/consultations/1/shared-media/6').status_code==404
-    c.headers['Authorization']='Bearer token3'
+    c.headers['Authorization']='Bearer ' + _SESSION_TOKEN[3]
     assert c.get('/api/mobile/v1/consultations/1/shared-media/5').status_code==404
 
 
