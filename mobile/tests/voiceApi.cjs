@@ -52,7 +52,7 @@ test('voice finalization rejects stale patient revisions and untrusted source re
   await assert.rejects(()=>api.finalizeVoice('token',4,payload,'a'.repeat(64)),/Hasta dosyası görüşme sırasında değişti/);
   assert.equal(calls,1);
   global.fetch=async()=>{calls++;throw Error('unexpected request')};
-  await assert.rejects(()=>api.finalizeVoice('token',4,{...payload,source_fingerprint:'bad'},'a'.repeat(64)),/kaynağı doğrulanamadı/);
+  await assert.rejects(()=>api.finalizeVoice('token',4,{...payload,source_fingerprint:'bad'},'a'.repeat(64)),/anahtarı doğrulanamadı/);
   await assert.rejects(()=>api.finalizeVoice('token',4,payload,'bad'),/sürüm bilgisi doğrulanamadı/);
   assert.equal(calls,1);
   global.fetch=async()=>response(JSON.stringify({ok:true,revision:'a'.repeat(64),final:{source_fingerprint:'c'.repeat(64),not_modified:true,review_status:{source_retryable:true}}}));
