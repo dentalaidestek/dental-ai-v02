@@ -7,14 +7,14 @@ export type ProgramInlineCreate = {
 };
 
 function dayNumber(value: string): number | null {
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const timestamp = Date.parse(`${value}T00:00:00.000Z`);
   if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== value) return null;
   return timestamp / 86_400_000;
 }
 
 function validWallDateTime(value: string): boolean {
-  if (!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(value)) return false;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return false;
   if (dayNumber(value.slice(0, 10)) === null) return false;
   const hour = Number(value.slice(11, 13));
   const minute = Number(value.slice(14, 16));
