@@ -3,7 +3,7 @@ import json
 import hashlib
 from PIL import Image
 from sqlmodel import Session,select
-from test_mobile_chat_actions import chat
+from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from app import main,mobile_analysis_api,work_jobs
 from app.analysis_upload_receipts import keyed_analysis_upload_fingerprint
 from app.patient_media_receipts import encryption_key
@@ -49,7 +49,7 @@ def test_upload_receipt_is_patient_owned_and_absent_is_distinct(chat,monkeypatch
     c,_,raw=setup(chat,monkeypatch,tmp_path);assert post(c,raw).status_code==200
     assert c.get('/api/mobile/v1/analyses/uploads/receipt?patient_id=8&request_key=synthetic-missing-key-001').json()['receipt'] is None
     assert c.get('/api/mobile/v1/analyses/uploads/receipt?patient_id=9&request_key=synthetic-upload-key-001').status_code==404
-    c.headers['Authorization']='Bearer token2'
+    c.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     assert c.get('/api/mobile/v1/analyses/uploads/receipt?patient_id=8&request_key=synthetic-upload-key-001').status_code==404
     assert post(c,raw).status_code==404
 
