@@ -48,6 +48,9 @@ def test_native_voice_apply_keeps_web_conflict_and_fdi_guards(chat,monkeypatch):
 
 def test_live_audio_only_transcribes_and_never_writes_patient_or_runs_clinical_inference(chat,monkeypatch):
     client,engine=setup(chat,monkeypatch);calls=[]
+    # The production route intentionally fails closed without its dedicated
+    # durable ASR receipt key; tests use a synthetic, non-production key.
+    monkeypatch.setenv("VOICE_ASR_RECEIPT_KEY","11"*32)
     def transcribe(**kwargs):calls.append(kwargs);return {'transcript':'Synthetic dictated speech'}
     monkeypatch.setattr(voice_exam.core,'extract',transcribe)
     raw=io.BytesIO()
@@ -114,6 +117,7 @@ def test_native_voice_history_returns_only_owned_completed_voice_approvals(chat,
             clinical_notes='Sistemik hastalık / hasta beyanı: Astım\n\nİlaç / hasta beyanı: Düzenli sentetik ilaç\n\nAlerji / hasta beyanı: Penisilin beyanı',
         )
         session.add(approved);session.flush()
+        approved_id = approved.id
         session.add(WorkJob(
             owner_user_id=1,resource_id=approved.id,resource_type='ANALYSIS',
             kind='VOICE_REVIEW',status='DONE',source_hash='a'*64,
@@ -152,7 +156,7 @@ def test_native_voice_history_returns_only_owned_completed_voice_approvals(chat,
     assert set(body['fields'])=={'medical_history','medications','allergies'}
     assert body['fields']['medical_history']['value']=='Astım'
     assert body['fields']['medical_history']['quote']==''
-    assert body['fields']['medications']['analysis_id']==approved.id
+    assert body['fields']['medications']['analysis_id']==approved_id
     assert body['fields']['medications']['quote']==''
     assert 'Must not leak' not in response.text
     assert 'Other owner secret' not in response.text
