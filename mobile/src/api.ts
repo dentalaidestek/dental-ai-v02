@@ -170,7 +170,7 @@ export async function deletePatient(token:string,id:number,requestKey?:string):P
   throw new ApiError(502,"Hasta silme işlem fişi doğrulanamadı. Aynı güvenli taslak korunuyor.");
  return result;
 }
-export function editPatient(token:string,id:number,payload:{first_name:string;last_name:string;phone?:string;birth_date?:string;tc_kimlik_no?:string;address?:string;chief_complaint?:string;expected_revision?:string}){
+export async function editPatient(token:string,id:number,payload:{first_name:string;last_name:string;phone?:string;birth_date?:string;tc_kimlik_no?:string;address?:string;chief_complaint?:string;expected_revision?:string}){
  if(payload.expected_revision!==undefined&&!/^[a-f0-9]{64}$/.test(payload.expected_revision))throw new Error("Hasta kayıt sürümü geçersiz.");
  return request<{ok:boolean;patient:Patient;edit_revision?:string}>(`/patients/${id}`,token,{method:"PUT",body:JSON.stringify(payload)});
 }
@@ -261,6 +261,38 @@ export async function getPatientMediaUpload(token:string,patientId:number,reques
   throw new ApiError(502,"Klinik görüntü işlem fişi doğrulanamadı.");
  return result;
 }
+
+// XHR tabanlı klinik görüntü yükleme: multipart byte progress raporlar ve
+// Content-Type boundary'sini katmanın kendisine bırakır (fetch'te yapılamaz).
+function uploadPatientMediaViaXHR(token:string,patientId:number,form:FormData,onProgress?:(progress:PatientMediaUploadProgress)=>void):Promise<PatientMediaUploadResult>{
+ return new Promise((resolve,reject)=>{
+  const xhr=new XMLHttpRequest();
+  let timeoutId:any;
+  const finishError=(error:unknown)=>{clearTimeout(timeoutId);reject(error instanceof ApiError?error:new ApiError(503,"Görüntü aktarım bağlantısı kesildi. Yeniden denemeden önce galerisini kontrol edin."))};
+  timeoutId=setTimeout(()=>{xhr.abort();finishError(new ApiError(503,"Görüntü aktarım bağlantısı kesildi. Yeniden denemeden önce galerisini kontrol edin."))},120000);
+  xhr.open("POST",API_BASE+`/patients/${patientId}/media`);
+  xhr.withCredentials=false;
+  xhr.setRequestHeader("Authorization","Bearer "+token);
+  if(onProgress)xhr.upload.onprogress=event=>{onProgress({loaded:event.loaded,total:event.total,lengthComputable:!!event.lengthComputable})};
+  xhr.onerror=()=>finishError(new ApiError(503,"Görüntü aktarım bağlantısı kesildi. Yeniden denemeden önce galerisini kontrol edin."));
+  xhr.ontimeout=()=>finishError(new ApiError(503,"Görüntü aktarım bağlantısı kesildi. Yeniden denemeden önce galerisini kontrol edin."));
+  xhr.onload=()=>{void (async()=>{
+   try{
+    const status=xhr.status,raw=xhr.responseText||"";let data:any={};
+    try{data=raw?JSON.parse(raw):{}}catch{if(status>=200&&status<300)throw new ApiError(502,"Sunucu beklenen klinik görüntü yanıtını göndermedi.")}
+    if(status===401)await revalidateSession(token);
+    if(status<200||status>=300){
+     const detail=typeof data?.detail==="string"?data.detail:(typeof data?.detail?.message==="string"?data.detail.message:"Görüntü yüklenemedi.");
+     throw new ApiError(status,detail);
+    }
+    if(!data?.media||!Number.isSafeInteger(data.media.id)||data.media.id<=0||typeof data.media.original_filename!=="string"||typeof data.media.media_type!=="string"||(data.replayed!==undefined&&typeof data.replayed!=="boolean"))throw new ApiError(502,"Görüntü kayıt fişi doğrulanamadı. Aynı işlem anahtarı korunuyor.");
+    clearTimeout(timeoutId);resolve(data as PatientMediaUploadResult);
+   }catch(error){finishError(error)}
+  })()};
+  xhr.send(form);
+ });
+}
+
 export const uploadPatientMedia=async(
  token:string,
  patientId:number,
@@ -287,6 +319,9 @@ export const uploadPatientMedia=async(
  body.append("file",{uri:file.uri,name:file.name,type:file.type} as any);
  if(toothNumber)body.append("tooth_number",toothNumber);
  if(note?.trim())body.append("note",note.trim().slice(0,2000));
+ // Gerçek cihazda XMLHttpRequest mevcuttur: byte progress + otomatik multipart boundary.
+ // Node test ortamlarında XHR yoktur: fetch yolu çalışır.
+ if(typeof XMLHttpRequest==='function')return uploadPatientMediaViaXHR(token,patientId,body,onProgress);
  const controller=new AbortController();
  const timeout=setTimeout(()=>controller.abort(),120000);
  try{
