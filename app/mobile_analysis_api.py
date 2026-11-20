@@ -530,13 +530,15 @@ def mobile_analysis_history(
     response: Response,
     user: User = Depends(_mobile_user),
     patient_id: Optional[int] = None,
-    before: Optional[int] = Query(None, ge=1),
+    before: int | None = None,
     limit: int = Query(50, ge=1, le=100),
     tooth_number: Optional[str] = None,
 ):
     # Analysis history contains clinical notes and must never be cached by a
     # shared or persistent HTTP cache.
     _mobile_private_no_store(response)
+    if before is not None and before < 1:
+        raise HTTPException(status_code=400, detail="Geçersiz sayfa parametresi.")
     with Session(engine, expire_on_commit=False) as session:
         q = select(Analysis, Patient).join(Patient, Patient.id == Analysis.patient_id)
         count_query = (

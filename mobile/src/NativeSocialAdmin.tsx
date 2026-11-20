@@ -212,11 +212,7 @@ export default function NativeSocialAdmin({ token, user }: Props) {
     }
     try {
       if (mode === "reports") {
-        const page = await api.getSocialAdminReports(
-          token,
-          grant,
-          typeof before === "number" ? before : null,
-        );
+        const page = await api.getSocialAdminReports(token, grant, typeof before === "number" ? before : null);
         if (request !== generation.current || grantRef.current !== grant) return;
         setItems((current) => reset
           ? page.items
