@@ -210,7 +210,7 @@ test('clinical media archive rejects malformed records and stale pagination',asy
    global.fetch=async()=>new Response(JSON.stringify(payload),{status:200});
    await assert.rejects(()=>getMedia('secret',7,10),/geçersiz liste/);
   }
-  global.fetch=async()=>new Response(JSON.stringify({items:[{id:8,original_filename:'scan.png'}],next_before:8}),{status:200});
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:8,original_filename:'scan.png',media_type:'RADIOGRAPH'}],next_before:8}),{status:200});
   const page=await getMedia('secret',7,10);
   assert.equal(page.items[0].filename,'scan.png');
   assert.equal(page.items[0].url,'https://dentalai.tr/api/mobile/v1/patients/7/media/8/file');
