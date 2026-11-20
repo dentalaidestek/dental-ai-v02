@@ -1,6 +1,6 @@
 import json
 from sqlmodel import Session,select
-from test_mobile_chat_actions import chat
+from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from app import main,mobile_analysis_api,work_jobs
 
 RESULT={'status':'INITIAL','most_likely':'Synthetic likely condition','findings':['Synthetic string finding'],'treatment_options':['Synthetic option'],'treatment_cautions':['Synthetic caution'],'preferred_approach':'Synthetic approach','differential':['Synthetic differential'],'recommended_evaluation':['Synthetic exam'],'uncertainty':'Synthetic uncertainty','questions':[{'question':'Synthetic clinical question?','type':'TEXT'}]}
@@ -19,7 +19,7 @@ def test_clinical_strings_questions_and_owner(chat,monkeypatch,tmp_path):
     assert r.json()['result']['findings']==RESULT['findings'] and r.json()['result']['questions']==RESULT['questions']
     assert r.json()['patient_anonymous_id']=='SYNTHETIC'
     assert len(r.json()['revision'])==64 and r.headers['cache-control']=='private, no-store'
-    c.headers['Authorization']='Bearer token2';assert c.get('/api/mobile/v1/analyses/1/clinical').status_code==404
+    c.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2];assert c.get('/api/mobile/v1/analyses/1/clinical').status_code==404
 
 
 def test_final_answers_use_web_dedup_and_existing_receipt_after_completion(chat,monkeypatch,tmp_path):
@@ -33,7 +33,7 @@ def test_final_answers_use_web_dedup_and_existing_receipt_after_completion(chat,
     path.write_text(json.dumps({'ai_result':{**RESULT,'status':'FINAL','questions':[]}}))
     assert c.post(base+'/final-review',json=values).json()['job']['id']==first.json()['job']['id']
     with Session(engine) as s:assert len(s.exec(select(work_jobs.WorkJob)).all())==1
-    c.headers['Authorization']='Bearer token2';assert c.post(base+'/final-review',json=values).status_code==404
+    c.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2];assert c.post(base+'/final-review',json=values).status_code==404
 
 
 def test_stale_inputs_cannot_start_final_work(chat,monkeypatch,tmp_path):
@@ -57,7 +57,7 @@ def test_notes_fdi_and_job_controls_are_owned(chat,monkeypatch,tmp_path):
         s.add(foreign_job);s.commit();s.refresh(foreign_job);foreign_job_id=foreign_job.id
     assert c.post(base+f'/jobs/{foreign_job_id}/cancel').status_code==404
     with Session(engine) as s:assert s.get(work_jobs.WorkJob,foreign_job_id).status=='QUEUED'
-    c.headers['Authorization']='Bearer token2';assert c.post(base+f'/jobs/{job_id}/retry').status_code==404
+    c.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2];assert c.post(base+f'/jobs/{job_id}/retry').status_code==404
 
 
 def test_legacy_result_and_vision_failure_are_visible_without_new_inference(chat,monkeypatch,tmp_path):
