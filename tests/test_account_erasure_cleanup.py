@@ -576,3 +576,26 @@ def test_profile_photo_keys_are_unique_for_identical_uploads(monkeypatch, tmp_pa
     assert first != second
     assert work_jobs.is_account_asset_reference(first)
     assert work_jobs.is_account_asset_reference(second)
+
+def test_profile_photo_storage_failure_creates_durable_cleanup_receipt(
+    monkeypatch, tmp_path, erasure_engine
+):
+    monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path / "uploads")
+    monkeypatch.setattr(main, "engine", erasure_engine)
+
+    def fail_persist(*args, **kwargs):
+        raise RuntimeError("synthetic object-storage write failure")
+
+    monkeypatch.setattr(main, "storage_persist_file", fail_persist)
+    image_bytes = io.BytesIO()
+    Image.new("RGB", (16, 16), (90, 60, 30)).save(image_bytes, format="JPEG")
+    encoded = "data:image/jpeg;base64," + base64.b64encode(image_bytes.getvalue()).decode("ascii")
+
+    with pytest.raises(RuntimeError, match="synthetic object-storage write failure"):
+        main._save_profile_photo(24, encoded)
+
+    with Session(erasure_engine) as session:
+        queued = session.exec(select(work_jobs.WorkGarbage)).all()
+        assert len(queued) == 1
+        assert work_jobs.is_account_asset_reference(queued[0].reference)
+        assert queued[0].reference.startswith("uploads/profile_photos/user_24_")
