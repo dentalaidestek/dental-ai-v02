@@ -1,0 +1,14 @@
+{% for treatment in treatments %}
+<div class="patient-history-row treatment-item" data-initial-visible="{{ 'true' if first_page and loop.index <= 3 else 'false' }}" style="{% if not expanded and (not first_page or loop.index > 3) %}display:none;{% endif %}">
+    <div class="patient-history-main">
+        <div class="patient-history-title">{{ treatment.treatment_name }}</div>
+        <div class="patient-history-meta">
+            <span>Diş {{ treatment.tooth_number or "-" }}</span>
+            <span>{{ treatment.treatment_date or "-" }}</span>
+            {% if treatment.material %}<span>{{ treatment.material }}</span>{% endif %}
+        </div>
+        {% if treatment.result %}<p class="patient-history-note"><strong>Sonuç:</strong> {{ treatment.result }}</p>{% endif %}
+        {% if treatment.doctor_note %}<p class="patient-history-note"><strong>Doktor Notu:</strong> {{ treatment.doctor_note }}</p>{% endif %}
+    </div>
+</div>
+{% endfor %}
