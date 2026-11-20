@@ -17,6 +17,15 @@ const historyPresentationSource=fs.readFileSync(require.resolve('../src/patientH
 const historyPresentationCode=ts.transpileModule(historyPresentationSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
 vm.runInNewContext(historyPresentationCode,{exports:historyPresentationExports,Date,Math,Number,String,Error,Promise,Array,Object});
 
+function loadTypeScriptModule(relative){
+ const source=fs.readFileSync(require.resolve(relative),'utf8');
+ const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+ const exports={};
+ vm.runInNewContext(code,{exports,Date,Math,Number,String,Error,Promise,Array,Object});
+ return exports;
+}
+const appResumeRefreshExports=loadTypeScriptModule('../src/appResumeRefresh.ts');
+
 function loadHistory({assets,legacy=true}){
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativePatientHistory.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2020}}).outputText;
  const exports={};
@@ -42,7 +51,7 @@ function loadHistory({assets,legacy=true}){
    if(name==='./analysisApi')return analysisApi;
    if(name==='./realtime')return {useRealtime:()=>({lastEvent:null})};
    if(name==='./patientAnalysisPresentation')return presentationExports;
-   if(name==='./appResumeRefresh')return require('../src/appResumeRefresh.ts');
+   if(name==='./appResumeRefresh')return appResumeRefreshExports;
    if(name==='./patientHistoryPresentation')return historyPresentationExports;
    throw new Error('Unexpected import '+name);
   },
