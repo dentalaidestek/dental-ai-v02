@@ -5,7 +5,7 @@ from app import main,mobile_analysis_api,work_jobs
 
 
 def setup(chat,monkeypatch):
-    c,engine=chat;monkeypatch.setenv('DENTAL_INFERENCE_REVISION','1');monkeypatch.setattr(work_jobs,'_code_version',lambda:'synthetic-code')
+    c,engine=chat;monkeypatch.setattr(mobile_analysis_api,'engine',engine);monkeypatch.setenv('DENTAL_INFERENCE_REVISION','1');monkeypatch.setattr(work_jobs,'_code_version',lambda:'synthetic-code')
     with Session(engine) as s:
         s.add(main.Patient(id=8,owner_user_id=1,anonymous_id='SYNTHETIC-VIEWER'))
         s.add(main.Analysis(id=1,patient_id=8,status='VISION_READY'))
