@@ -127,7 +127,7 @@ test('clinical media gallery prevents stale account mutations and pagination ove
  assert.ok(source.includes('const mounted=useRef(true)'), 'mounted state must be tracked');
  assert.ok(source.includes('const sequence=++request.current'), 'refresh generations invalidate stale requests');
  assert.ok(source.includes('picker!==pickerGeneration.current'), 'patient switch must cancel pending media picker');
- assert.ok(source.includes('loadLock.current||(more&&(mutation.current||uncertain||loadedOwner!==owner))'), 'pagination must not overlap refresh or mutations');
+ assert.ok(source.includes('if(loadLock.current){if(!more&&current())refreshPending.current=true;return;}'), 'refreshes must queue instead of overlapping an active page');\n assert.ok(source.includes('if(refreshPending.current&&!mutation.current)'), 'queued refresh runs after the active page and mutation');
  assert.ok(source.includes('if(!current())return;'), 'old account must not update gallery after upload');
  assert.ok(source.includes('if(!current()||sequence!==request.current)return;'), 'old page must not overwrite current patient');
 });
