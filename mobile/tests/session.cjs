@@ -73,7 +73,7 @@ test('academic request uses the authoritative JSON contract',async()=>{
 test('media URL remains on the authenticated native endpoint',async()=>{
  const original=global.fetch;
  try{
-  global.fetch=async()=>new Response(JSON.stringify({items:[{id:3,original_filename:'scan.png',url:'https://untrusted.invalid/file'}]}));
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:3,original_filename:'scan.png',media_type:'PHOTO',url:'https://untrusted.invalid/file'}],next_before:null}));
   const result=await modernApi.getMedia('token',7);
   assert.equal(result.items[0].filename,'scan.png');
   assert.equal(result.items[0].url,'https://dentalai.tr/api/mobile/v1/patients/7/media/3/file');
