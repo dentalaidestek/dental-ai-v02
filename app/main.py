@@ -12831,8 +12831,46 @@ def create_guest_analysis(
 
             pending_assets.append(asset)
 
-        live_user = s.get(User, user.id)
+        # Serialize the final guest-upload publication with account erasure.
+        # Erasure locks the same User row before deleting guest rows and assets.
+        live_user_stmt = select(User).where(User.id == user.id)
+        if s.get_bind().dialect.name == "postgresql":
+            live_user_stmt = live_user_stmt.with_for_update()
+        live_user = s.exec(
+            live_user_stmt.execution_options(populate_existing=True)
+        ).first()
         if not live_user or not live_user.is_active:
+            orphan_references = [
+                asset.file_path for asset in pending_assets if asset.file_path
+            ]
+            s.rollback()
+            if orphan_references:
+                # The GuestAnalysis row may already have been erased while
+                # uploads were being written. Queue those uncommitted assets
+                # in a separate transaction so the cleanup survives this rollback.
+                try:
+                    with Session(engine, expire_on_commit=False) as cleanup_session:
+                        rejected = 0
+                        for reference in orphan_references:
+                            if not work_jobs.enqueue_guest_analysis_cleanup(
+                                cleanup_session, reference
+                            ):
+                                rejected += 1
+                        cleanup_session.commit()
+                    if rejected:
+                        logger.warning(
+                            "Guest upload cleanup allowlist rejected %s object(s)",
+                            rejected,
+                        )
+                except Exception:
+                    logger.exception(
+                        "Guest upload cleanup receipt could not be persisted"
+                    )
+                    for reference in orphan_references:
+                        try:
+                            storage_delete(reference)
+                        except Exception:
+                            logger.exception("Guest upload cleanup fallback failed")
             raise work_jobs.WorkCancelled("OWNER_UNAVAILABLE")
         s.add_all(pending_assets)
         s.flush()
