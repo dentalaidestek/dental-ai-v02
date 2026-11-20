@@ -9,7 +9,7 @@ from pathlib import Path
 import json, uuid
 import os
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import JSONResponse
@@ -24,6 +24,8 @@ from app.main import (
 
 # Import the actual mobile auth dependency separately to avoid duplicate auth.
 from app.mobile_api import _mobile_user, _copy_validated_image, MOBILE_MAX_IMAGE_BYTES
+from app.mobile_analysis_api import mobile_analysis_history as mobile_analysis_history_impl
+from app.main import User
 from app.main import study_ai_ask, SESSION_COOKIE, storage_ensure_local
 
 router = APIRouter(prefix="/api/mobile/v1", tags=["mobile-modern"])
@@ -34,6 +36,20 @@ def _user_owned_patient(session, user, patient_id):
     if not p or (user.role != "ADMIN" and p.owner_user_id != user.id):
         raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
     return p
+
+
+@router.get("/analyses")
+def mobile_analysis_history(
+    response: Response,
+    user: User = Depends(_mobile_user),
+    patient_id: int | None = None,
+    before: int | None = None,
+    limit: int = Query(50, ge=1, le=100),
+    tooth_number: str | None = None,
+):
+    # v3 yuzeyi; is mantigi app.mobile_analysis_api icinde tek noktada surdurulur.
+    # Keyset pagination (Analysis.id < before) delegated implementation icinde uygulanir.
+    return mobile_analysis_history_impl(response=response, user=user, patient_id=patient_id, before=before, limit=limit, tooth_number=tooth_number)
 
 
 @router.get("/patients/{patient_id}/media")
