@@ -118,6 +118,8 @@ test('canonical native original-file route rechecks ownership and exact source a
   assert.match(block,/current_media\.file_path == file_path/);
   assert.match(block,/current_media\.original_filename == original_filename/);
   assert.match(block,/except FileNotFoundError/);
+  assert.match(block,/Clinical media original authorization lookup failed/);
+  assert.match(block,/Clinical media original ownership recheck failed/);
   assert.match(block,/except Exception/);
   assert.match(block,/private_error\(\s*503/);
   assert.match(block,/_mobile_private_no_store\(result\)/);
