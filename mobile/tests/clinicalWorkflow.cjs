@@ -12,6 +12,13 @@ function harness(overrides={},saved,initialFocused=true){const exports={},storag
  const finding={};vm.runInNewContext(compile('../src/findings.ts'),{exports:finding});const presentation={};vm.runInNewContext(compile('../src/clinicalResultPresentation.ts'),{exports:presentation});
  vm.runInNewContext(compile('../src/NativeClinicalReview.tsx'),{exports,setTimeout,clearTimeout,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{useIsFocused:()=>focus.current}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=> 'synthetic-key'}:n==='./socialDraft'?{chunkedDraftStore:()=>secure}:n==='./clinicalApi'?endpoint:n==='./findings'?finding:n==='./clinicalResultPresentation'?presentation:{default:props=>React.createElement('Text',null,props.value)}});return{Component:exports.default,calls,storage,endpoint,focus};}
 async function open(h,props={}){let t;await renderer.act(async()=>t=renderer.create(React.createElement(h.Component,{token:'A',userId:1,analysisId:1,...props})));return t}
+test('vision snapshot requests bypass HTTP cache like the web embedded viewer',async()=>{
+ const calls=[];
+ const {getVision}=api(async(...args)=>{calls.push(args);return{status:'VISION_PENDING'}});
+ const result=await getVision('synthetic-token',17,23,'PANORAMIC');
+ assert.deepEqual(calls,[['/analyses/17/assets/23/vision','synthetic-token',{cache:'no-store'}]]);
+ assert.deepEqual(result,{pending:true,findings:[]});
+});
 test('clinical image thumbnails use the canonical API base, reload privately and remount on account switch',async()=>{
  const h=harness({getClinical:async()=>({...base,assets:[{id:44,image_type:'PANORAMIC',has_vision:true,url:'/api/mobile/v1/analyses/1/assets/44'}]})});
  const t=await open(h);
