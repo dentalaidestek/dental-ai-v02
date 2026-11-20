@@ -26,7 +26,7 @@ Before editing, the current branch's web flow was re-read:
 - Added `getPatientAnalysisHistoryPage`, which requests the web-aligned `stable_order=true` cursor and validates patient/FDI scope, duplicate IDs, page bounds, cursor shape and cursor progression.
 - Native `NativePatientHistory` now stores the opaque cursor and retries the same continuation cursor without resetting loaded history.
 - Kept the existing `getAnalysisHistory` numeric API for older call sites.
-- Added a bounded legacy-server fallback: only a first-page response without the stable cursor field may fall back to the numeric cursor; once a stable cursor has been issued, the server must continue it.
+- Added a bounded legacy-server fallback: only the first page may fall back when an older server omits the stable cursor field or returns `next_cursor: null` alongside a valid numeric `next_before`; once a stable cursor has been issued, the server must continue it.
 - Kept the same patient and tooth filters on every page.
 
 ### Treatment history
