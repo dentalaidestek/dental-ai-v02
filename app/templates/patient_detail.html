@@ -148,9 +148,9 @@
         {% if patient_media %}
         <div class="patient-media-profile-preview" onclick="openPatientMediaGallery()" role="button" tabindex="0" aria-label="Klinik görselleri aç">
             {% for media in patient_media[:3] %}
-            <img src="/patients/{{ patient.id }}/media/{{ media.id }}/file" alt="{{ 'Röntgen' if media.media_type == 'RADIOGRAPH' else 'Klinik fotoğraf' }}" loading="lazy">
+            <img src="/patients/{{ patient.id }}/media/{{ media.id }}/thumbnail" alt="{{ 'Röntgen' if media.media_type == 'RADIOGRAPH' else 'Klinik fotoğraf' }}" loading="lazy">
             {% endfor %}
-            {% if patient_media|length > 3 %}<span class="patient-media-preview-more">+{{ patient_media|length - 3 }}</span>{% endif %}
+            {% if patient_media|length > 3 %}<span class="patient-media-preview-more">+{{ patient_media_total - 3 }}</span>{% endif %}
         </div>
 
         <div id="patientMediaGalleryModal" class="patient-media-gallery-modal" aria-hidden="true" onclick="if(event.target === this) closePatientMediaGallery()">
@@ -158,7 +158,7 @@
                 <div class="patient-media-gallery-head">
                     <div>
                         <strong>Klinik Görseller</strong>
-                        <span>{{ patient_media|length }} kayıt</span>
+                        <span>{{ patient_media_total }} kayıt</span>
                     </div>
                     <button type="button" onclick="closePatientMediaGallery()" aria-label="Kapat">×</button>
                 </div>
@@ -197,12 +197,21 @@
                             data-note="{{ (media.note or '')|e }}"
                             data-delete-url="/patients/{{ patient.id }}/media/{{ media.id }}/delete"
                         >
-                            <img src="/patients/{{ patient.id }}/media/{{ media.id }}/file" alt="{{ 'Röntgen' if media.media_type == 'RADIOGRAPH' else 'Klinik fotoğraf' }}" loading="lazy">
+                            <img src="/patients/{{ patient.id }}/media/{{ media.id }}/thumbnail" alt="{{ 'Röntgen' if media.media_type == 'RADIOGRAPH' else 'Klinik fotoğraf' }}" loading="lazy">
                             <span class="patient-media-badge">{{ 'Röntgen' if media.media_type == 'RADIOGRAPH' else 'Fotoğraf' }}</span>
                         </button>
                     </article>
                     {% endfor %}
                 </div>
+                <button
+                    type="button"
+                    id="patientMediaLoadMore"
+                    class="patient-media-load-more"
+                    data-url="/patients/{{ patient.id }}/media/page"
+                    data-next-before="{{ patient_media_next_before or '' }}"
+                    {% if not patient_media_has_more %}hidden{% endif %}
+                >Daha fazla görsel yükle</button>
+                <p id="patientMediaLoadStatus" class="patient-media-load-status" role="status" aria-live="polite"></p>
             </div>
         </div>
 
@@ -516,53 +525,162 @@ document.addEventListener("keydown", function(event) {
 })();
 
 (function () {
-    const checkboxes = Array.from(document.querySelectorAll(".patient-media-checkbox"));
+    const grid = document.getElementById("patientMediaGrid");
     const countLabel = document.getElementById("patientMediaSelectedCount");
     const analyzeButton = document.getElementById("patientMediaAnalyzeSelected");
     const selectAllButton = document.getElementById("patientMediaSelectAll");
+    const loadMoreButton = document.getElementById("patientMediaLoadMore");
+    const loadStatus = document.getElementById("patientMediaLoadStatus");
     const maxAnalysisImages = {{ analysis_image_limit }};
-    if (!checkboxes.length) return;
+    const patientId = {{ patient.id }};
+    const selected = new Set();
+    if (!grid) return;
 
-    function selectedIds() {
-        return checkboxes.filter(function (box) { return box.checked; }).map(function (box) { return box.value; });
+    function boxes() {
+        return Array.from(grid.querySelectorAll(".patient-media-checkbox"));
     }
 
     function updateSelectionUI() {
-        const ids = selectedIds();
+        const ids = Array.from(selected);
         if (countLabel) countLabel.textContent = ids.length + " seçili · analiz sınırı " + maxAnalysisImages;
         if (analyzeButton) analyzeButton.disabled = ids.length === 0;
-        const selectedTarget = Math.min(checkboxes.length, maxAnalysisImages);
-        if (selectAllButton) selectAllButton.textContent = ids.length === selectedTarget && selectedTarget ? "Seçimi Kaldır" : "İlk " + maxAnalysisImages + " Görseli Seç";
+        const firstIds = boxes().slice(0, maxAnalysisImages).map(function (box) { return box.value; });
+        const firstSelected = firstIds.length > 0 && firstIds.every(function (id) { return selected.has(id); });
+        if (selectAllButton) {
+            selectAllButton.textContent = firstSelected
+                ? "İlk " + maxAnalysisImages + " Görselin Seçimini Kaldır"
+                : "İlk " + maxAnalysisImages + " Görseli Seç";
+        }
     }
 
-    checkboxes.forEach(function (box) {
-        box.addEventListener("change", function () {
-            if (box.checked && selectedIds().length > maxAnalysisImages) {
+    function createMediaCard(item) {
+        const id = Number(item && item.id);
+        if (!Number.isSafeInteger(id) || id < 1) return null;
+        const base = "/patients/" + patientId + "/media/" + id;
+        if (item.url !== base + "/file" || item.thumbnail_url !== base + "/thumbnail" || item.delete_url !== base + "/delete") return null;
+        const type = item.media_type === "RADIOGRAPH" ? "Röntgen" : item.media_type === "PHOTO" ? "Fotoğraf" : "";
+        if (!type) return null;
+
+        const article = document.createElement("article");
+        article.className = "patient-media-card";
+        const label = document.createElement("label");
+        label.className = "patient-media-select-control";
+        label.title = "Analiz için seç";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.className = "patient-media-checkbox";
+        checkbox.value = String(id);
+        checkbox.setAttribute("aria-label", type + " seç");
+        const checkmark = document.createElement("span");
+        checkmark.textContent = "✓";
+        label.appendChild(checkbox);
+        label.appendChild(checkmark);
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "patient-media-thumb";
+        button.dataset.src = item.url;
+        button.dataset.type = type;
+        button.dataset.date = typeof item.uploaded_at === "string" ? item.uploaded_at : "";
+        button.dataset.tooth = typeof item.tooth_number === "string" ? item.tooth_number : "";
+        button.dataset.note = typeof item.note === "string" ? item.note : "";
+        button.dataset.deleteUrl = item.delete_url;
+        const image = document.createElement("img");
+        image.src = item.thumbnail_url;
+        image.alt = type === "Röntgen" ? "Röntgen" : "Klinik fotoğraf";
+        image.loading = "lazy";
+        const badge = document.createElement("span");
+        badge.className = "patient-media-badge";
+        badge.textContent = type;
+        button.appendChild(image);
+        button.appendChild(badge);
+        button.addEventListener("click", function () { openPatientMediaPreview(button); });
+        article.appendChild(label);
+        article.appendChild(button);
+        return article;
+    }
+
+    grid.addEventListener("change", function (event) {
+        const box = event.target;
+        if (!box || !box.matches || !box.matches(".patient-media-checkbox")) return;
+        const id = String(box.value);
+        if (box.checked) {
+            if (selected.size >= maxAnalysisImages) {
                 box.checked = false;
                 window.alert("Tek analizde en fazla " + maxAnalysisImages + " görüntü seçebilirsiniz.");
+                return;
             }
-            updateSelectionUI();
-        });
+            selected.add(id);
+        } else {
+            selected.delete(id);
+        }
+        updateSelectionUI();
     });
 
     if (selectAllButton) {
         selectAllButton.addEventListener("click", function () {
-            const selectedIdsNow = selectedIds();
-            const targetCount = Math.min(checkboxes.length, maxAnalysisImages);
-            const shouldSelect = selectedIdsNow.length !== targetCount;
-            checkboxes.forEach(function (box, index) { box.checked = shouldSelect && index < maxAnalysisImages; });
+            const firstIds = boxes().slice(0, maxAnalysisImages).map(function (box) { return box.value; });
+            const allSelected = firstIds.length > 0 && firstIds.every(function (id) { return selected.has(id); });
+            selected.clear();
+            if (!allSelected) firstIds.forEach(function (id) { selected.add(id); });
+            boxes().forEach(function (box) { box.checked = selected.has(box.value); });
             updateSelectionUI();
         });
     }
 
     if (analyzeButton) {
         analyzeButton.addEventListener("click", function () {
-            const ids = selectedIds();
-            if (!ids.length) return;
+            const ids = Array.from(selected);
+            if (!ids.length || ids.length > maxAnalysisImages) return;
             window.location.href = "/analysis/new/{{ patient.id }}?media_ids=" + encodeURIComponent(ids.join(","));
         });
     }
 
+    async function loadNextPage() {
+        if (!loadMoreButton || loadMoreButton.disabled || !loadMoreButton.dataset.nextBefore) return;
+        const cursor = Number(loadMoreButton.dataset.nextBefore);
+        if (!Number.isSafeInteger(cursor) || cursor < 1) {
+            if (loadStatus) loadStatus.textContent = "Galeri imleci doğrulanamadı. Sayfayı yenileyin.";
+            loadMoreButton.hidden = true;
+            return;
+        }
+        loadMoreButton.disabled = true;
+        if (loadStatus) loadStatus.textContent = "Görseller yükleniyor…";
+        try {
+            const response = await fetch(loadMoreButton.dataset.url + "?before=" + encodeURIComponent(String(cursor)), {
+                method: "GET",
+                credentials: "same-origin",
+                headers: { "Accept": "application/json" }
+            });
+            if (!response.ok) throw new Error("Klinik görseller yüklenemedi.");
+            const payload = await response.json();
+            if (!payload || !Array.isArray(payload.items) || payload.items.length > 40) throw new Error("Galeri yanıtı doğrulanamadı.");
+            let previousId = cursor;
+            const cards = [];
+            payload.items.forEach(function (item) {
+                const id = Number(item && item.id);
+                if (!Number.isSafeInteger(id) || id < 1 || id >= previousId) throw new Error("Galeri sıralaması doğrulanamadı.");
+                const card = createMediaCard(item);
+                if (!card) throw new Error("Klinik görsel kaydı doğrulanamadı.");
+                cards.push(card);
+                previousId = id;
+            });
+            const next = payload.next_before;
+            if (next !== null && (!Number.isSafeInteger(next) || next < 1 || !cards.length || next !== previousId)) {
+                throw new Error("Galeri devam imleci doğrulanamadı.");
+            }
+            cards.forEach(function (card) { grid.appendChild(card); });
+            loadMoreButton.dataset.nextBefore = next === null ? "" : String(next);
+            loadMoreButton.hidden = next === null;
+            if (loadStatus) loadStatus.textContent = cards.length ? cards.length + " yeni görüntü yüklendi." : "Başka görüntü bulunamadı.";
+        } catch (error) {
+            if (loadStatus) loadStatus.textContent = error instanceof Error ? error.message : "Görseller yüklenemedi. Yeniden deneyin.";
+        } finally {
+            loadMoreButton.disabled = false;
+        }
+    }
+
+    if (loadMoreButton) loadMoreButton.addEventListener("click", loadNextPage);
     updateSelectionUI();
 })();
 
@@ -687,6 +805,10 @@ document.addEventListener("keydown", function (event) {
 @media(max-width:390px){
   .patient-info-actions{grid-template-columns:1fr}
 }
+.patient-media-load-more{display:block;min-height:40px;margin:14px auto 0;padding:8px 16px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#1e3a8a;font:inherit;font-weight:700;cursor:pointer}
+.patient-media-load-more:disabled{opacity:.6;cursor:wait}
+.patient-media-load-more[hidden]{display:none}
+.patient-media-load-status{min-height:18px;margin:6px 0 0;text-align:center;color:#64748b;font-size:12px}
 </style>
 {% endblock %}
 
