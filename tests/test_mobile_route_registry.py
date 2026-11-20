@@ -97,3 +97,33 @@ def test_method_comparison_is_case_insensitive():
     remove_shadowed_routes((primary,), candidate)
 
     assert candidate.routes == []
+
+
+
+def test_real_fastapi_multi_method_route_keeps_the_nonconflicting_openapi_operation():
+    from fastapi import APIRouter, FastAPI
+
+    primary = APIRouter()
+
+    @primary.get("/registry-probe/{item_id}")
+    def canonical_get(item_id: int):
+        return {"source": "canonical", "id": item_id}
+
+    candidate = APIRouter()
+
+    @candidate.api_route("/registry-probe/{item_id}", methods=["GET", "PATCH"])
+    def modern_adapter(item_id: int):
+        return {"source": "adapter", "id": item_id}
+
+    remove_shadowed_routes((primary,), candidate)
+
+    app = FastAPI()
+    app.include_router(primary)
+    app.include_router(candidate)
+    operations = app.openapi()["paths"]["/registry-probe/{item_id}"]
+
+    assert set(operations) == {"get", "patch"}
+    assert next(
+        route for route in candidate.routes
+        if getattr(route, "path", None) == "/registry-probe/{item_id}"
+    ).methods == {"PATCH"}
