@@ -20,12 +20,14 @@ def utcnow_naive():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def erase_guest_analysis_data(session: Session, user_id: int) -> tuple[int, list[str]]:
-    """Erase ephemeral, non-patient guest analyses and queue their private objects.
+def erase_account_ai_data(session: Session, user_id: int) -> tuple[int, list[str]]:
+    """Erase guest analyses and scrub all queued AI payloads for this account.
 
     Patient-linked Analysis/ImageAsset/PatientMedia and treatment/tooth records
     are intentionally retained: they can contain third-party clinical records
-    subject to separate patient-care and legal-retention duties.
+    subject to separate patient-care and legal-retention duties. Patient AI jobs
+    are cancelled and their transient payloads are cleared; published result
+    objects are preserved by the WorkGarbage reference check when still linked.
     """
     from app.main import GuestAnalysis, GuestImageAsset
     from app.work_jobs import (
@@ -58,7 +60,6 @@ def erase_guest_analysis_data(session: Session, user_id: int) -> tuple[int, list
 
     jobs_query = select(WorkJob).where(
         WorkJob.owner_user_id == user_id,
-        WorkJob.resource_type == "GUEST",
     ).order_by(WorkJob.id)
     if dialect == "postgresql":
         jobs_query = jobs_query.with_for_update()
@@ -85,10 +86,25 @@ def erase_guest_analysis_data(session: Session, user_id: int) -> tuple[int, list
         # match a server-generated allowlist; never broaden the worker path rule.
         unqueued_references.append(reference)
 
-    # Removing the WorkJob row fences any in-flight worker at guard_publication;
-    # the worker cannot publish after its resource/job has disappeared.
+    # Removing guest jobs fences in-flight guest workers at guard_publication.
+    # Other account jobs are retained as audit receipts but cannot continue and
+    # no longer keep clinical text/transcript payloads in the queue table.
+    from datetime import datetime, timezone
+    stamp = datetime.now(timezone.utc).replace(tzinfo=None)
     for job in jobs:
-        session.delete(job)
+        if job.resource_type == "GUEST":
+            session.delete(job)
+            continue
+        if job.status in {"QUEUED", "RUNNING"}:
+            job.status = "CANCELLED"
+            job.error_code = "ACCOUNT_ERASED"
+            job.lease_token = None
+            job.lease_until = None
+        job.payload_json = "{}"
+        if job.result_ref and enqueue_ai_result_cleanup(session, str(job.result_ref)):
+            job.result_ref = None
+        job.updated_at = stamp
+        session.add(job)
     for asset in assets:
         session.delete(asset)
     for guest in guests:
@@ -129,7 +145,7 @@ def begin_account_erasure(
 
     from app.membership_verification import MembershipVerification
     extra_storage: list[str] = []
-    _, guest_storage_fallback = erase_guest_analysis_data(session, user_id)
+    _, guest_storage_fallback = erase_account_ai_data(session, user_id)
     extra_storage.extend(guest_storage_fallback)
     from app.expert_social_maintenance import erase_user_content
     erase_user_content(session, user_id)
