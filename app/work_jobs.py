@@ -390,10 +390,27 @@ def enqueue_patient_media_cleanup(session: Session, reference: str) -> bool:
     return _enqueue_cleanup_reference(session, reference, delay_seconds=0)
 
 def enqueue_account_asset_cleanup(session: Session, reference: str) -> bool:
-    """Queue a private account-owned profile/verification object after metadata commit."""
+    """Queue a private account-owned profile/verification object in its metadata transaction."""
     if not is_account_asset_reference(reference):
         return False
     return _enqueue_cleanup_reference(session, reference, delay_seconds=0)
+
+
+def enqueue_replaced_account_asset_cleanup(
+    session: Session,
+    previous_reference: str | None,
+    current_reference: str | None,
+) -> bool:
+    """Queue only a superseded allowlisted account asset in the caller's transaction.
+
+    The collector re-checks every supported metadata owner before deleting. A
+    same-path upload is a no-op, which matters for content-addressed profile
+    photos where uploading identical bytes reuses the existing object key.
+    """
+    if not previous_reference or previous_reference == current_reference:
+        return False
+    return enqueue_account_asset_cleanup(session, str(previous_reference))
+
 
 def collect_garbage(engine):
     from app.object_storage import delete
