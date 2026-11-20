@@ -38,3 +38,20 @@ The test expected `ix_programreminderjob_status_run_at`, but PostgreSQL selected
 ## Acceptance boundary
 
 These are synthetic query-plan tests, not a measured 60,000-user or concurrent-user capacity result. The new code and tests are committed on `feature/mobile-web-parity-20261110`; the exact latest-head Security Recovery and Android CI results must be read after this change. No production migration, merge, deploy, APK/IPA publication, or patient-data mutation was performed.
+
+
+## Follow-up verification and hardening — 2026-11-20
+
+At head `2844f63ce792340d8ec6a8675549c15899d8c77c`, Android CI #4294 completed successfully: TypeScript typecheck, session/auth, realtime/pagination, all 883 beta regressions, Android/iOS Expo export and the internal ARM64 APK job passed. Security Recovery #1992 passed the security/identity suite and all five native security jobs, but its PostgreSQL migration/concurrency step failed with 26 passed and one failed.
+
+The failing test was `test_program_pending_reminder_index_migration_upgrades_revision19_and_is_idempotent`. The isolated `pg` fixture creates application metadata but intentionally does not create `dental_schema_revision`; the test attempted to update that table before establishing the revision-19 state. This was a test-fixture defect, not a migration runtime failure. The test now creates the revision table and sets revision 19 before invoking the migration.
+
+The same log review exposed a migration-validation weakness: checking that the generated index definition merely contains the words `status` and `pending` would also accept a broader predicate such as `status IN ('PENDING','FAILED')`. PostgreSQL validation now reads `pg_get_expr(indpred, indrelid)`, normalizes casts/parentheses, and requires the exact predicate `status='pending'` as well as a valid btree `run_at` definition. A wrongly defined same-name index is rebuilt before legacy indexes are removed.
+
+Additional regression coverage now checks:
+- PostgreSQL repairs a revision-20 index whose predicate also includes FAILED rows.
+- SQLite repairs the same broadened predicate.
+- The migration refuses to mutate an unversioned SQLite schema.
+- The revision-19 PostgreSQL fixture is initialized explicitly.
+
+These follow-up changes are on the PR branch after the CI head above. Their new Security Recovery and Android runs must complete before they are considered accepted. No live database migration was run.
