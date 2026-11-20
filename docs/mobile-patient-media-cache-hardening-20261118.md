@@ -57,3 +57,26 @@ Regression coverage:
 Commits in this follow-up: `1b53aeb` (route hardening), `9dcfc8b` (generation race regressions), `405ec49` (private success/error regressions), `1811a9f` (native/web source contract), plus this evidence update. The new Python and Node tests are committed but have not yet been executed on the new head. No result from #4302/#2000 is being presented as validation of these follow-up commits.
 
 No patient records or media objects were changed. No schema migration, main merge, production deploy, APK/IPA publication or workflow dispatch was performed.
+## 2026-11-20 — Original clinical-media file delivery race
+
+Web-first comparison re-read the web `/patients/{patient_id}/media/{media_id}/file` handler and the canonical mobile route registry before editing. The active native GET file route is the one in `app/mobile_api.py`; the same path in `app/mobile_modern_api_v3.py` is filtered out when the routers are mounted. The unique thumbnail route remains in the modern router.
+
+### Root cause
+
+The canonical mobile original-file handler authorized the patient/media row, copied `file_path`, then hydrated the original from R2 outside the DB session. Unlike the thumbnail handler, it did not re-check the patient owner, media owner, patient/media relationship or exact source path after hydration. A concurrent patient reassignment, media deletion or file replacement could therefore leave a stale original-file response eligible to be served. The handler also converted only `FileNotFoundError`; a transient R2/network error escaped as an unclassified 500, and pre-response 404 errors did not consistently carry private cache headers.
+
+### Fix
+
+- Re-check the current patient and media after R2 hydration, immediately before returning the original.
+- Require the exact `file_path` and `original_filename` captured before hydration to remain unchanged.
+- Never serve the hydrated file when ownership, relationship or source identity changed.
+- Return generic private 404 for missing/stale objects and generic private 503 with `Retry-After: 2` for storage or verification failures.
+- Apply `Cache-Control: private, no-store`, `Pragma: no-cache`, `Vary: Authorization` and `X-Content-Type-Options: nosniff` to both successful and error responses.
+- Keep R2 hydration outside the DB session; no pooled connection is held across network I/O.
+
+### Regression coverage
+
+- `tests/test_mobile_patient_parity.py`: owner reassignment, source replacement, filename replacement, success/private headers, missing object, transient storage failure, cross-account denial and canonical route registration.
+- `mobile/tests/patientMediaRoute.cjs`: source contract for the mounted canonical original-file route and its post-hydration ownership/source checks. The test is part of `npm run test:beta`.
+
+The change is limited to private original-file delivery and regression coverage. It does not change patient ownership rules, expose storage references, alter the original object, or modify the web handler. No patient rows or media objects were changed. No migration, main merge or live deployment was performed.
