@@ -6,23 +6,22 @@ import {getAnalysis,MobileAnalysis} from './analysisApi';
 import {useRealtime} from './realtime';
 import { shouldRefreshOnAppResume } from './appResumeRefresh';
 import {groupPatientAnalysisAssets,shouldShowLegacyPatientRadiograph} from './patientAnalysisPresentation';
+import {patientAnalysisHistoryDate,patientAnalysisHistoryStatus,patientAnalysisHistoryStatusTone,patientAnalysisHistoryTitle,patientAnalysisHistoryTooth} from './patientHistoryPresentation';
 
 export function analysisStatus(item:{status:string;is_voice_review?:boolean}){
- return item.is_voice_review?'Kaydedildi':
-  ['AI_ANALYZED','FINAL','ANALYSIS_COMPLETE'].includes(item.status)?'Başarılı':
-  ['AI_ERROR','FAILED','ERROR'].includes(item.status)?'Başarısız':'Yarım kaldı';
+ return patientAnalysisHistoryStatus(item);
 }
 
 export default function NativePatientHistory({token,patientId,toothNumber,onOpenAnalysis,onNew}:{token:string;patientId:number;toothNumber?:string;onOpenAnalysis?:(id:number)=>void;onNew?:()=>void}){
  const focused=useIsFocused(),{lastEvent}=useRealtime(),scope=`${token}:${patientId}:${toothNumber||''}`,active=useRef(scope),generation=useRef(0),detailRequest=useRef(0),locked=useRef(false);
  if(active.current!==scope){active.current=scope;generation.current++;detailRequest.current++}
- const [data,setData]=useState<{scope:string;items:AnalysisHistory[];next:number|null}|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[selected,setSelected]=useState<number|null>(null),[detail,setDetail]=useState<MobileAnalysis|null>(null),[detailError,setDetailError]=useState(''),[zoom,setZoom]=useState(1),[legacyRadiographError,setLegacyRadiographError]=useState(false);
+ const [data,setData]=useState<{scope:string;items:AnalysisHistory[];next:number|null}|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[errorMore,setErrorMore]=useState(false),[selected,setSelected]=useState<number|null>(null),[detail,setDetail]=useState<MobileAnalysis|null>(null),[detailError,setDetailError]=useState(''),[zoom,setZoom]=useState(1),[legacyRadiographError,setLegacyRadiographError]=useState(false);
  const visible=data?.scope===scope?data:null;
  const assetGroups=groupPatientAnalysisAssets(detail?.assets);
  const showLegacyRadiograph=detail?shouldShowLegacyPatientRadiograph(detail.analysis.legacy_radiograph_available,detail.assets):false;
- const load=useCallback(async(more=false)=>{if(locked.current)return;locked.current=true;const seq=++generation.current,owner=scope;setBusy(true);try{const page=await getAnalysisHistory(token,more?visible?.next??undefined:undefined,patientId,toothNumber);if(active.current!==owner||generation.current!==seq)return;setData(previous=>({scope:owner,items:more&&previous?.scope===owner?[...previous.items,...page.items.filter(x=>!previous.items.some(y=>y.id===x.id))]:page.items,next:page.next_before}));setError('')}catch(e){if(active.current===owner&&generation.current===seq)setError(e instanceof Error?e.message:'Analiz geçmişi alınamadı.')}finally{if(active.current===owner&&generation.current===seq){locked.current=false;setBusy(false)}}},[token,patientId,toothNumber,scope,visible?.next]);
+ const load=useCallback(async(more=false)=>{if(locked.current)return;locked.current=true;const seq=++generation.current,owner=scope;setBusy(true);setError('');setErrorMore(false);try{const page=await getAnalysisHistory(token,more?visible?.next??undefined:undefined,patientId,toothNumber);if(active.current!==owner||generation.current!==seq)return;setData(previous=>({scope:owner,items:more&&previous?.scope===owner?[...previous.items,...page.items.filter(x=>!previous.items.some(y=>y.id===x.id))]:page.items,next:page.next_before}));setError('');setErrorMore(false)}catch(e){if(active.current===owner&&generation.current===seq){setError(e instanceof Error?e.message:'Analiz geçmişi alınamadı.');setErrorMore(more)}}finally{if(active.current===owner&&generation.current===seq){locked.current=false;setBusy(false)}}},[token,patientId,toothNumber,scope,visible?.next]);
  const loader=useRef(load);loader.current=load;
- useEffect(()=>{locked.current=false;setData(null);setSelected(null);setDetail(null);setError('');void loader.current();return()=>{generation.current++;detailRequest.current++}},[scope]);
+ useEffect(()=>{locked.current=false;setData(null);setSelected(null);setDetail(null);setError('');setErrorMore(false);void loader.current();return()=>{generation.current++;detailRequest.current++}},[scope]);
  useEffect(()=>{
   if(focused)void loader.current();
   let previousState=AppState.currentState;
@@ -45,13 +44,33 @@ export default function NativePatientHistory({token,patientId,toothNumber,onOpen
    <Text style={{fontSize:20,fontWeight:'800',color:'#102033'}}>Analiz Geçmişi</Text>
    {onNew&&<Pressable onPress={onNew} style={{padding:10}}><Text style={{color:'#1769AA',fontWeight:'700'}}>Yeni Analiz</Text></Pressable>}
   </View>
-  {visible?.items.map(item=><Pressable key={item.id} accessibilityRole="button" onPress={()=>void open(item.id)} style={{borderBottomWidth:1,borderColor:'#E5EAF0',paddingVertical:14}}>
-   <Text style={{fontWeight:'800',color:'#102033'}}>{item.is_voice_review?'Sesli muayene':'Analiz'} #{item.id}</Text>
-   <Text style={{color:'#53657B',marginTop:5}}>{item.tooth_number&&!item.is_voice_review?`Diş ${item.tooth_number} · `:''}{new Date(item.created_at).toLocaleString('tr-TR')} · {analysisStatus(item)}　›</Text>
-  </Pressable>)}
+  {visible?.items.map(item=>{
+   const tone=patientAnalysisHistoryStatusTone(item);
+   const badge=tone==='success'?{backgroundColor:'#ECFDF3',borderColor:'#A6F4C5',color:'#067647'}:tone==='danger'?{backgroundColor:'#FEF3F2',borderColor:'#FECDCA',color:'#B42318'}:{backgroundColor:'#FFFAEB',borderColor:'#FEDF89',color:'#B54708'};
+   const tooth=patientAnalysisHistoryTooth(item);
+   return <View key={item.id} style={{backgroundColor:'#FFFFFF',borderWidth:1,borderColor:'#E5EAF0',borderRadius:14,padding:14,marginBottom:10}}>
+    <View style={{flexDirection:'row',alignItems:'flex-start',justifyContent:'space-between'}}>
+     <View style={{flex:1,paddingRight:10}}>
+      <Text style={{fontWeight:'800',fontSize:15,color:'#102033'}}>{patientAnalysisHistoryTitle(item)}</Text>
+      <View style={{flexDirection:'row',flexWrap:'wrap',alignItems:'center',marginTop:8}}>
+       {!!tooth&&<View style={{backgroundColor:'#F1F5F9',borderRadius:7,paddingHorizontal:8,paddingVertical:5,marginRight:6,marginBottom:5}}><Text style={{fontSize:12,color:'#344054'}}>{tooth}</Text></View>}
+       <View style={{backgroundColor:'#F8FAFC',borderRadius:7,paddingHorizontal:8,paddingVertical:5,marginBottom:5}}><Text style={{fontSize:12,color:'#53657B'}}>{patientAnalysisHistoryDate(item.created_at)}</Text></View>
+      </View>
+     </View>
+     <View style={{backgroundColor:badge.backgroundColor,borderColor:badge.borderColor,borderWidth:1,borderRadius:999,paddingHorizontal:9,paddingVertical:5}}>
+      <Text style={{fontSize:11,fontWeight:'800',color:badge.color}}>{analysisStatus(item)}</Text>
+     </View>
+    </View>
+    <View style={{alignItems:'flex-end',marginTop:8}}>
+     <Pressable accessibilityRole="button" accessibilityLabel={`${patientAnalysisHistoryTitle(item)} detaylarını aç`} onPress={()=>void open(item.id)} style={{backgroundColor:'#071B35',borderRadius:9,paddingHorizontal:16,paddingVertical:9,minWidth:86,alignItems:'center'}}>
+      <Text style={{color:'#FFFFFF',fontSize:13,fontWeight:'800'}}>Detay</Text>
+     </Pressable>
+    </View>
+   </View>;
+  })}
   {busy&&<ActivityIndicator style={{margin:12}}/>}
   {!busy&&!error&&visible?.items.length===0&&<Text style={{color:'#53657B',paddingVertical:14}}>Henüz analiz bulunmuyor.</Text>}
-  {!!error&&<><Text accessibilityRole="alert" style={{color:'#B42318'}}>{error}</Text><Pressable onPress={()=>void load()} style={{padding:12}}><Text>Yeniden dene</Text></Pressable></>}
+  {!!error&&<><Text accessibilityRole="alert" style={{color:'#B42318'}}>{error}</Text><Pressable accessibilityRole="button" onPress={()=>void load(errorMore)} style={{padding:12}}><Text>Yeniden dene</Text></Pressable></>}
   {visible?.next&&<Pressable disabled={busy} onPress={()=>void load(true)} style={{padding:12}}><Text style={{color:'#1769AA'}}>Diğer analizleri göster</Text></Pressable>}
   <Modal visible={selected!==null&&data?.scope===scope} onRequestClose={close}>
    <View style={{flex:1,paddingTop:40}}>
