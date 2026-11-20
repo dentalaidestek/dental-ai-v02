@@ -2795,7 +2795,7 @@ def send_brevo_password_reset_email(
         ) from exc
 
 
-app = FastAPI(title="DENTAL-AI", version="0.1.0")
+app = FastAPI(title="DENTAL-AI", version="0.1.0", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(RequestLimits, max_bytes=int(os.getenv("DENTAL_MAX_REQUEST_BYTES", str(128 * 1024 * 1024))))
 
 from app.object_cache import StorageScopeMiddleware
@@ -12751,8 +12751,15 @@ def create_guest_analysis(
     background_tasks: BackgroundTasks,
     tooth_number: Optional[str] = Form(None),
     clinical_notes: Optional[str] = Form(None),
+    ai_consent: Optional[str] = Form(None),
     images: list[UploadFile] = File(default=[]),
 ):
+    if ai_consent != "on":
+        return HTMLResponse(
+            "Analiz başlatmak için radyograf ve klinik bilgilerinizin yapay zekâ ile işlenmesine açık rıza vermeniz gerekir.",
+            status_code=400,
+        )
+
     user = get_current_user(request)
 
     if not user:
@@ -12766,6 +12773,11 @@ def create_guest_analysis(
             status="ANALYZING",
         )
 
+        s.add(AgreementAcceptance(
+            user_id=user.id,
+            agreement_type="AI_GUEST_ANALYSIS",
+            agreement_version=LEGAL_VERSION,
+        ))
         s.add(analysis)
         s.commit()
         s.refresh(analysis)

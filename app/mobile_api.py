@@ -22,6 +22,7 @@ from collections import deque
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field as RequestField
 from sqlmodel import SQLModel, Session, func, select, Field as SQLField
