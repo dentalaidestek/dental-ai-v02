@@ -102,8 +102,14 @@ def test_web_and_native_upload_routes_use_the_same_sanitizer_before_persistence(
     )[0]
     assert "sanitize_clinical_media_image(destination, extension" in guest_analysis
     assert "sanitize_clinical_media_image(destination, source_ext" in patient_analysis
-    assert patient_analysis.index("sanitize_clinical_media_image(destination, source_ext") < patient_analysis.index("storage_persist_file(destination)")
-    assert patient_analysis.index("sanitize_clinical_media_image(destination, extension") < patient_analysis.index("storage_persist_file(destination)")
+    saved_copy_block = patient_analysis.split(
+        "for selected_media, selected_media_path in selected_media_items:", 1
+    )[1].split("for image in images:", 1)[0]
+    new_upload_block = patient_analysis.split("for image in images:", 1)[1].split(
+        "live_user = s.get", 1
+    )[0]
+    assert saved_copy_block.index("sanitize_clinical_media_image(destination, source_ext") < saved_copy_block.index("storage_persist_file(destination)")
+    assert new_upload_block.index("sanitize_clinical_media_image(destination, extension") < new_upload_block.index("storage_persist_file(destination)")
 
     mobile_source = (ROOT / "app/mobile_api.py").read_text(encoding="utf-8")
     copy_block = mobile_source.split("def _copy_validated_image", 1)[1].split(
