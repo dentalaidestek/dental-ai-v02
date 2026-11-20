@@ -5,12 +5,8 @@ const compiled=ts.transpileModule(source,{fileName:'nativeAcademicFiles.ts',comp
 function load(fsapi,timers={}){
  const exports={};
  class ApiError extends Error{constructor(status,message){super(message);this.status=status}}
- vm.runInNewContext(compiled,{
-  exports,AbortController,
-  setTimeout:timers.setTimeout||setTimeout,
-  clearTimeout:timers.clearTimeout||clearTimeout,
-  require:name=>name==='expo-file-system/legacy'?fsapi:name==='./api'?{ApiError}:name==='./sessionExpiry'?{revalidateSession:async()=>{}}:{validateAcademicUploadReceipt:(value,course,key,name,size,mime)=>{if(!value||value.course_id!==course||value.request_key!==key||value.name!==name||value.size!==size||value.mime!==mime||!/^[a-f0-9]{64}$/.test(value.content_sha256)||!/^[a-f0-9]{64}$/.test(value.payload_hash))throw Error('receipt mismatch');return value}}
- });
+ const requireModule=name=>name==='expo-file-system/legacy'?fsapi:name==='./api'?{ApiError}:name==='./sessionExpiry'?{revalidateSession:async()=>{}}:{validateAcademicUploadReceipt:(value,course,key,name,size,mime)=>{if(!value||value.course_id!==course||value.request_key!==key||value.name!==name||value.size!==size||value.mime!==mime||!/^[a-f0-9]{64}$/.test(value.content_sha256)||!/^[a-f0-9]{64}$/.test(value.payload_hash))throw Error('receipt mismatch');return value}};
+ vm.compileFunction(compiled,['exports','require','setTimeout','clearTimeout'])(exports,requireModule,timers.setTimeout||setTimeout,timers.clearTimeout||clearTimeout);
  return exports;
 }
 function filesystem(overrides={}){

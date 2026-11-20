@@ -29,7 +29,7 @@ export default function NativeAcademicComposer({value,onChangeText,onSend,disabl
         accessibilityRole="button"
         accessibilityLabel="Akademik soruyu gönder"
         accessibilityState={{disabled:!canSend}}
-        disabled={!canSend}
+        disabled={disabled}
         onPress={()=>{if(canSend)onSend()}}
         style={[s.send,!canSend&&s.sendDisabled]}
       >

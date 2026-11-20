@@ -61,7 +61,7 @@ export async function uploadAcademic(token:string,course:number,file:AcademicFil
   let body:any;try{body=JSON.parse(result?.body||'')}catch{throw Error('Aktarım sonucu doğrulanamadı. Ders kaynaklarını kontrol edin.')}
   if(!result||result.status>=400||body.ok!==true)throw new ApiError(result?.status||502,typeof body.detail==='string'?body.detail:'Dosya kaydı doğrulanamadı. Ders kaynaklarını kontrol edin.');
   const receipt=validateAcademicUploadReceipt(body.receipt,course,requestKey,file.name,info.size,mime);
-  if(receipt.content_sha256!==expectedContentSha256)throw new ApiError(409,'Sunucudaki dosya içeriği bekleyen aktarım özetiyle eşleşmiyor. Yerel dosya korundu.');
+  if(receipt.content_sha256!==expectedContentSha256)throw new ApiError(409,'Sunucudaki dosyanın içerik özeti bekleyen aktarımla eşleşmiyor. Yerel dosya korundu.');
   // A local copy is deleted only after the server returns the exact durable receipt.
   // A timeout, malformed acknowledgement or cleanup failure keeps the intent recoverable.
   if(!await removeAcademicCacheFile(file.uri))throw new ApiError(500,'Sunucu kaydı doğrulandı ancak yerel dosya güvenli biçimde temizlenemedi. Fişi yeniden kontrol edin.');

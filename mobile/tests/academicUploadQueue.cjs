@@ -3,10 +3,9 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=r
 function compile(file){
  return ts.transpileModule(fs.readFileSync(path.join(__dirname,file),'utf8'),{fileName:file,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
 }
-const apiExports={};
-vm.runInNewContext(compile('../src/academicApi.ts'),{exports:apiExports,require:name=>name==='./api'?{request:async()=>({})}:{}});
-const queueExports={};
-vm.runInNewContext(compile('../src/academicUploadQueue.ts'),{exports:queueExports,require:name=>name==='./academicApi'?apiExports:{}});
+const apiExports={},queueExports={};
+vm.compileFunction(compile('../src/academicApi.ts'),['exports','require'])(apiExports,name=>name==='./api'?{request:async()=>({})}:{});
+vm.compileFunction(compile('../src/academicUploadQueue.ts'),['exports','require'])(queueExports,name=>name==='./academicApi'?apiExports:{});
 const {createAcademicUploadQueue,parseAcademicUploadQueue,replaceAcademicUploadIntent,mergeAcademicUploadIntent,removeAcademicUploadIntent,serializeAcademicUploadQueue,MAX_ACADEMIC_UPLOAD_QUEUE_ITEMS}=queueExports;
 const intent=(n,overrides={})=>({version:2,user:1,course:3,name:`lecture-${n}.pdf`,mime:'application/pdf',uri:`file:///cache/academic/${n}.pdf`,size:100,request_key:`synthetic-upload-key-${String(n).padStart(4,'0')}`,...overrides});
 
