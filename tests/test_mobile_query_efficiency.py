@@ -1,4 +1,5 @@
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine
 from app import main, mobile_api
@@ -97,16 +98,19 @@ def test_consultation_inbox_uses_latest_restore_state_and_max_read_cursor(mobile
                                      content='Unread after cursor', created_at=read_at + main.timedelta(seconds=1)),
         ])
         session.commit()
+        restored_id = restored.id
+        hidden_id = hidden.id
+        other_account_state_id = other_account_state.id
 
     queries.clear()
     result = mobile_api.mobile_consultations(None,owner,None)
     by_id = {item['id']: item for item in result['items']}
-    assert restored.id in by_id
-    assert hidden.id not in by_id
-    assert other_account_state.id in by_id
-    assert by_id[restored.id]['unread_count'] == 1
-    assert by_id[restored.id]['status_key'] == 'NEW_REQUEST'
-    assert by_id[restored.id]['status_label'] == 'Yeni Talep'
+    assert restored_id in by_id
+    assert hidden_id not in by_id
+    assert other_account_state_id in by_id
+    assert by_id[restored_id]['unread_count'] == 1
+    assert by_id[restored_id]['status_key'] == 'NEW_REQUEST'
+    assert by_id[restored_id]['status_label'] == 'Yeni Talep'
     assert len(queries) <= 5
 
 
@@ -192,7 +196,9 @@ def test_all_pages_accessible_without_duplicates_even_with_same_timestamps(mobil
     assert len(seen) == len(set(seen))
     assert set(seen) == expected
     if kind == 'messages':
-        assert mobile_api.mobile_academic_messages(course_id, outsider)['items'] == []
+        with pytest.raises(HTTPException) as foreign_messages:
+            mobile_api.mobile_academic_messages(course_id, outsider)
+        assert foreign_messages.value.status_code == 404
     else:
         foreign = mobile_api.mobile_academic_courses(outsider,None) if kind == 'courses' else mobile_api.mobile_consultations(None,outsider,None)
         assert foreign['items'] == []
