@@ -115,6 +115,75 @@ export const getAnalysisHistory=async(t:string,before?:number,patientId?:number,
    throw Error("Analiz sunucusundan geçersiz liste alındı. Tekrar deneyin.");
  return {...r,next_before};
 };
+
+export type PatientAnalysisHistoryCursor=
+ | {kind:"stable";value:string}
+ | {kind:"legacy";value:number};
+export type PatientAnalysisHistoryPage={items:AnalysisHistory[];total:number;next:PatientAnalysisHistoryCursor|null};
+const validStableAnalysisHistoryCursor=(value:unknown):value is string=>
+ typeof value==="string"&&value.length>=24&&value.length<=192&&/^[A-Za-z0-9_-]+$/.test(value);
+
+/**
+ * Web-parity patient history uses the same descending (created_at, id)
+ * boundary as patient_detail. Numeric-ID pagination remains a compatibility
+ * fallback for older deployed API servers.
+ */
+export const getPatientAnalysisHistoryPage=async(
+ t:string,patientId:number,toothNumber?:string,cursor?:PatientAnalysisHistoryCursor
+):Promise<PatientAnalysisHistoryPage>=>{
+ if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Geçersiz hasta kimliği.");
+ if(toothNumber!==undefined&&!/^(?:[1-4][1-8]|[5-8][1-5])$/.test(toothNumber))throw Error("Geçersiz FDI diş numarası.");
+ if(cursor!==undefined&&(!cursor||typeof cursor!=="object"||
+    (cursor.kind==="stable"&&!validStableAnalysisHistoryCursor(cursor.value))||
+    (cursor.kind==="legacy"&&(!Number.isSafeInteger(cursor.value)||cursor.value<=0))||
+    (cursor.kind!=="stable"&&cursor.kind!=="legacy")))
+  throw Error("Analiz geçmişi sayfalama imleci geçersiz.");
+ const stableRequest=cursor?.kind!=="legacy";
+ const beforeQuery=cursor?.kind==="stable"
+  ?"&before_cursor="+encodeURIComponent(cursor.value)
+  :cursor?.kind==="legacy"
+   ?"&before="+encodeURIComponent(cursor.value)
+   :"";
+ const r=await req<{items:AnalysisHistory[];total:number;next_cursor?:string|null;next_before?:number|null}>(
+  "/analyses?limit=50"+(stableRequest?"&stable_order=true":"")+
+  "&patient_id="+encodeURIComponent(patientId)+
+  (toothNumber?"&tooth_number="+encodeURIComponent(toothNumber):"")+beforeQuery,t
+ );
+ if(!Array.isArray(r?.items)||r.items.length>50||
+    !Number.isSafeInteger(r.total)||r.total<0||r.total<r.items.length)
+  throw Error("Analiz sunucusundan geçersiz liste alındı. Tekrar deneyin.");
+ const ids=new Set<number>();
+ for(const item of r.items){
+  if(!item||!Number.isSafeInteger(item.id)||item.id<=0||ids.has(item.id)||
+     !Number.isSafeInteger(item.patient_id)||item.patient_id!==patientId||
+     typeof item.status!=="string"||
+     (item.is_voice_review!==undefined&&typeof item.is_voice_review!=="boolean")||
+     (toothNumber!==undefined&&item.tooth_number!==toothNumber))
+   throw Error("Analiz sunucusundan hasta kapsamı dışında veya tekrarlanan kayıt alındı.");
+  ids.add(item.id);
+ }
+ let next:PatientAnalysisHistoryCursor|null=null;
+ if(stableRequest&&Object.prototype.hasOwnProperty.call(r,"next_cursor")){
+  if((r.next_before!==undefined&&r.next_before!==null)||
+     (r.next_cursor!==null&&!validStableAnalysisHistoryCursor(r.next_cursor))||
+     (r.next_cursor!==null&&r.items.length!==50)||
+     (cursor?.kind==="stable"&&r.next_cursor===cursor.value))
+   throw Error("Analiz sunucusundan geçersiz kararlı sayfalama imleci alındı.");
+  next=r.next_cursor===null?null:{kind:"stable",value:r.next_cursor};
+ }else{
+  if(cursor?.kind==="stable")throw Error("Analiz sunucusu kararlı geçmiş imlecini devam ettiremedi.");
+  const legacy=r.next_before??null;
+  const lastId=r.items.length?r.items[r.items.length-1].id:null;
+  if((legacy!==null&&(!Number.isSafeInteger(legacy)||legacy<=0||r.items.length!==50||lastId!==legacy))||
+     (legacy!==null&&cursor?.kind==="legacy"&&legacy>=cursor.value)||
+     (cursor?.kind==="legacy"&&r.items.some(item=>item.id>=cursor.value)))
+   throw Error("Analiz sunucusundan geçersiz eski sayfalama imleci alındı.");
+  next=legacy===null?null:{kind:"legacy",value:legacy};
+ }
+ if(r.items.length===0&&next!==null)throw Error("Boş analiz sayfası devam imleci içeremez.");
+ return {items:r.items,total:r.total,next};
+};
+
 export type DeleteMediaResult={
  ok:true;
  media_id:number;
