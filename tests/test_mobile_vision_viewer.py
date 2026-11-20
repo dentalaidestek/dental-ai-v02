@@ -1,6 +1,6 @@
 import json
 from sqlmodel import Session,select
-from test_mobile_chat_actions import chat
+from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from app import main,mobile_analysis_api,work_jobs
 
 
@@ -20,7 +20,7 @@ def test_native_viewer_reads_canonical_owned_snapshot_without_new_inference(chat
     assert r.json()['findings'][0]['bbox']==[.2,.3,.4,.5]
     assert r.headers['cache-control']=='private, no-store'
     assert c.get('/api/mobile/v1/analyses/2/assets/4/vision').status_code==404
-    c.headers['Authorization']='Bearer token2';assert c.get(path).status_code==404
+    c.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2];assert c.get(path).status_code==404
     with Session(engine) as s:assert not s.exec(select(work_jobs.WorkJob)).all()
 
 
