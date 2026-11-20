@@ -83,7 +83,26 @@ jobs:
         run: npm run test:realtime
       - name: Mobile beta regression tests
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: npm run test:beta
+        run: |
+          set -o pipefail
+          npm run test:beta 2>&1 | tee "$RUNNER_TEMP/mobile-beta-tests.log"
+      - name: Preserve beta regression diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-beta-test-diagnostics
+          path: ${{ runner.temp }}/mobile-beta-tests.log
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Summarize beta regression failure
+        if: ${{ failure() }}
+        run: |
+          if [ -f "$RUNNER_TEMP/mobile-beta-tests.log" ]; then
+            echo "## Mobile beta regression diagnostics" >> "$GITHUB_STEP_SUMMARY"
+            echo '~~~text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 120 "$RUNNER_TEMP/mobile-beta-tests.log" >> "$GITHUB_STEP_SUMMARY"
+            echo '~~~' >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Export Android and iOS JavaScript bundles
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npx expo export --platform android --platform ios
