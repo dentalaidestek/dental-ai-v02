@@ -119,7 +119,8 @@ def test_web_and_native_upload_routes_use_the_same_sanitizer_before_persistence(
     upload_block = mobile_source.split('async def mobile_patient_media_upload', 1)[1].split(
         'def _mobile_access_token', 1
     )[0]
-    assert "_copy_validated_image(image, destination, MOBILE_MAX_IMAGE_BYTES)" in upload_block
+    # Clinical archive uploads share the web 12 MiB limit, not the AI-analysis limit.
+    assert "_copy_validated_image(image, destination, MOBILE_MAX_PATIENT_MEDIA_BYTES)" in upload_block
 
 
 def test_native_new_analysis_upload_is_sanitized_before_inference(tmp_path):
