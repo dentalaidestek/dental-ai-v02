@@ -1,4 +1,4 @@
-from test_mobile_chat_actions import chat
+from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from app import main, mobile_analysis_api, mobile_api, mobile_modern_api_v3
 from app.work_jobs import WorkJob, prune_history
 from sqlmodel import Session, select
@@ -83,7 +83,7 @@ def test_tooth_treatment_history_is_bounded_owner_and_tooth_scoped_with_snapshot
     assert len(client.get("/api/mobile/v1/patients/81/teeth/37/treatments").json()["items"]) == 2
     assert client.get("/api/mobile/v1/patients/81/teeth/19/treatments").status_code == 422
 
-    client.headers["Authorization"] = "Bearer token2"
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
     assert client.get("/api/mobile/v1/patients/81/teeth/36/treatments").status_code == 404
 
 
@@ -383,7 +383,7 @@ def test_treatment_create_receipt_replays_once_and_is_owner_scoped(chat):
     })
     assert changed.status_code == 409, changed.text
 
-    client.headers["Authorization"] = "Bearer token2"
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
     assert client.post("/api/mobile/v1/patients/81/treatments", json=payload).status_code == 404
 
     with Session(engine) as session:
@@ -443,7 +443,7 @@ def test_treatment_update_uses_revision_and_replays_exact_mutation(chat):
     })
     assert malformed.status_code == 422, malformed.text
 
-    client.headers["Authorization"] = "Bearer token2"
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
     assert client.put("/api/mobile/v1/patients/82/treatments/821", json=payload).status_code == 404
 
     with Session(engine) as session:
@@ -522,7 +522,7 @@ def test_mobile_patient_media_upload_receipt_replays_once_and_is_owner_scoped(ch
     }, files={"file": ("synthetic.png", changed.getvalue(), "image/png")})
     assert conflict.status_code == 409
 
-    client.headers["Authorization"] = "Bearer token2"
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
     assert client.get(f"/api/mobile/v1/patients/84/media/uploads/{key}").status_code == 404
     assert client.post("/api/mobile/v1/patients/84/media", data={
         "media_type": "PHOTO", "request_key": key,
@@ -539,7 +539,7 @@ def test_mobile_patient_media_upload_receipt_replays_once_and_is_owner_scoped(ch
         session.delete(media[0])
         session.commit()
 
-    client.headers["Authorization"] = "Bearer token1"
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[1]
     deleted_replay = client.post("/api/mobile/v1/patients/84/media", data={
         "media_type": "PHOTO", "request_key": key,
     }, files={"file": ("synthetic.png", payload, "image/png")})
@@ -715,7 +715,7 @@ def test_mobile_patient_media_preserves_extension_and_enforces_web_validation(ch
 
 def test_web_analysis_selection_and_submission_share_four_image_limit(chat,monkeypatch,tmp_path):
     client,engine=chat
-    client.cookies.set(main.SESSION_COOKIE,'token1')
+    client.cookies.set(main.SESSION_COOKIE,_SESSION_TOKEN[1])
     main.UPLOAD_DIR.mkdir(parents=True,exist_ok=True)
     image=tmp_path/'synthetic-analysis-limit.png'
     Image.new('RGB',(8,8),'white').save(image)
@@ -763,7 +763,7 @@ def test_web_analysis_selection_and_submission_share_four_image_limit(chat,monke
 
 def test_patient_archive_accepts_twelve_images_and_rejects_thirteen(chat,monkeypatch,tmp_path):
     client,engine=chat
-    client.cookies.set(main.SESSION_COOKIE,'token1')
+    client.cookies.set(main.SESSION_COOKIE,_SESSION_TOKEN[1])
     upload_dir=tmp_path/'patient-media-uploads'
     upload_dir.mkdir(parents=True,exist_ok=True)
     monkeypatch.setattr(main,'UPLOAD_DIR',upload_dir)
@@ -923,7 +923,7 @@ def test_mobile_patient_media_batch_quota_is_scoped_to_owner_and_patient(chat, m
         session.commit()
 
     batch_id = 'synthetic-shared-batch-0001'
-    for patient_id, token in [(8, 'token'), (9, 'token'), (10, 'token2')]:
+    for patient_id, token in [(8, _SESSION_TOKEN[1]), (9, _SESSION_TOKEN[1]), (10, _SESSION_TOKEN[2])]:
         client.headers['Authorization'] = 'Bearer ' + token
         for index in range(9):
             response = _post_patient_media_batch_file(
@@ -1139,7 +1139,7 @@ def test_native_patient_media_delete_replay_is_idempotent_and_owner_scoped(chat,
     assert client.delete("/api/mobile/v1/patients/88/media/890").status_code == 404
     assert client.delete("/api/mobile/v1/patients/999/media/880").status_code == 404
 
-    client.headers["Authorization"] = "Bearer token2"
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
     assert client.delete("/api/mobile/v1/patients/88/media/880").status_code == 404
     with Session(engine) as session:
         assert session.get(main.PatientMedia, 880) is None
@@ -1170,7 +1170,7 @@ def test_mobile_patient_delete_receipt_replays_after_lost_response_and_is_owner_
     reused = client.delete(f"/api/mobile/v1/patients/112?request_key={request_key}")
     assert reused.status_code == 409, reused.text
 
-    client.headers["Authorization"] = "Bearer token2"
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
     assert client.delete(f"/api/mobile/v1/patients/111?request_key={request_key}").status_code == 404
 
     with Session(engine) as session:
@@ -1348,7 +1348,7 @@ def test_patient_treatment_history_is_bounded_snapshot_paginated_and_owner_scope
     assert empty.json()["treatments"] == []
     assert empty.json()["treatments_next_cursor"] is None
 
-    client.headers["Authorization"] = "Bearer token2"
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
     assert client.get(f"/api/mobile/v1/patients/801/treatments?cursor={cursor}").status_code == 404
 
 
@@ -1446,7 +1446,7 @@ def test_mobile_patient_media_responses_are_private_and_owner_scoped(chat, monke
     assert len(image_response.content) > 0
 
     # The same URLs must not reveal patient media or upload receipts to another account.
-    client.headers["Authorization"] = "Bearer token2"
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
     assert client.get("/api/mobile/v1/patients/801/media").status_code == 404
     assert client.get(f"/api/mobile/v1/patients/801/media/uploads/{request_key}").status_code == 404
     assert client.get(f"/api/mobile/v1/patients/801/media/{media_id}/file").status_code == 404
@@ -1481,7 +1481,7 @@ def test_mobile_patient_directory_search_matches_web_tckn_owner_scope_and_no_sto
         session.commit()
 
     # The web search accepts TCKN and keeps the result within the signed-in owner.
-    client.cookies.set(main.SESSION_COOKIE, "token1")
+    client.cookies.set(main.SESSION_COOKIE, _SESSION_TOKEN[1])
     web = client.get("/patients/search?q=11111111111")
     assert web.status_code == 200, web.text
     assert 'data-patient-id="901"' in web.text
@@ -1510,13 +1510,13 @@ def test_mobile_patient_directory_search_matches_web_tckn_owner_scope_and_no_sto
     assert hidden.json()["total"] == 0
     assert client.get("/api/mobile/v1/patients/902").status_code == 404
 
-    client.headers["Authorization"] = "Bearer token2"
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
     owned_by_second = client.get("/api/mobile/v1/patients?q=22222222222")
     assert owned_by_second.status_code == 200
     assert [item["id"] for item in owned_by_second.json()["items"]] == [902]
 
     # Search pages follow the web's surname/name order, not insertion recency.
-    client.headers["Authorization"] = "Bearer token1"
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[1]
     ordered = client.get("/api/mobile/v1/patients?q=Directory")
     assert ordered.status_code == 200
     assert [item["id"] for item in ordered.json()["items"]] == [904, 903]
@@ -1572,7 +1572,7 @@ def test_patient_detail_keeps_chart_and_media_queries_out_of_profile_reads(chat,
     assert gallery.status_code == 200, gallery.text
     assert [item["id"] for item in gallery.json()["items"]] == [8803]
 
-    client.headers["Authorization"] = "Bearer token2"
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
     assert client.get("/api/mobile/v1/patients/880").status_code == 404
     assert client.get("/api/mobile/v1/patients/880", params={"include_chart": "true"}).status_code == 404
 
