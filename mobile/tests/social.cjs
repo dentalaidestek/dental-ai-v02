@@ -295,12 +295,12 @@ test('active mobile media routes and analysis pagination contracts',()=>{
  const active=fs.readFileSync(require('node:path').join(__dirname,'../../app/mobile_api.py'),'utf8');
  const extended=fs.readFileSync(require('node:path').join(__dirname,'../../app/mobile_modern_api_v3.py'),'utf8');
  const main=fs.readFileSync(require('node:path').join(__dirname,'../../app/main.py'),'utf8');
- assert.match(main,/from app\\.mobile_route_registry import remove_shadowed_routes as _remove_shadowed_mobile_routes/);
- assert.match(main,/_remove_shadowed_mobile_routes\\(\\(mobile_router, mobile_analysis_router\\), mobile_modern_router\\)/);
+ assert.ok(main.includes("from app.mobile_route_registry import remove_shadowed_routes as _remove_shadowed_mobile_routes"));
+ assert.ok(main.includes("_remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)"));
  assert.ok(main.indexOf('app.include_router(mobile_router)')<main.indexOf('_remove_shadowed_mobile_routes('));
  assert.ok(main.indexOf('_remove_shadowed_mobile_routes(')<main.indexOf('app.include_router(mobile_modern_router)'));
- assert.match(active,/@router\\.get\\("\\/patients\\/\\{patient_id\\}\\/media\\/\\{media_id\\}\\/file"\\)/);
- assert.match(extended,/@router\\.get\\("\\/patients\\/\\{patient_id\\}\\/media\\/\\{media_id\\}\\/file"\\)/);
+ assert.ok(active.includes('@router.get("/patients/{patient_id}/media/{media_id}/file")'));
+ assert.ok(extended.includes('@router.get("/patients/{patient_id}/media/{media_id}/file")'));
  assert.match(client,/body\.append\("file",\{uri:file\.uri/);
  // mobile_api.py formatter emits `file: UploadFile = File(None)`; spacing is a style detail, the contract is unchanged.
  assert.match(active,/file:\s*UploadFile\s*=\s*File\(None\)/);
