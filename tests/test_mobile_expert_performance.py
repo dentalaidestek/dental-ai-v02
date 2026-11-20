@@ -1,6 +1,6 @@
 from datetime import timedelta
 from sqlmodel import Session
-from test_mobile_chat_actions import chat
+from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from app import main
 
 
@@ -14,14 +14,14 @@ def test_native_expert_performance_uses_owned_web_aggregates_and_policy(chat):
         s.add(main.ConsultationEvent(case_id=5,actor_user_id=1,event_type='MISSED_REQUEST_COUNTED',payload_json='{"private":"never serialize raw event data"}'))
         s.commit()
     response=client.get('/api/mobile/v1/account/expert-performance');assert response.status_code==200,response.text
-    data=response.json();assert data['owner_id']==1 and data['performance']['completed_count']==1
+    data=response.json();assert 'owner_id' not in data and data['performance']['completed_count']==1
     assert data['performance']['avg_response_minutes']==5
     assert data['policy']['blocked'] is True and data['policy']['reason']=='Synthetic owner-only reason'
     assert data['events'][0]['event_type']=='MISSED_REQUEST_COUNTED'
     assert 'payload_json' not in response.text and 'never serialize' not in response.text
     assert response.headers['cache-control']=='private, no-store'
-    client.headers['Authorization']='Bearer token2';other=client.get('/api/mobile/v1/account/expert-performance').json()
-    assert other['owner_id']==2 and other['performance']['completed_count']==0
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2];other=client.get('/api/mobile/v1/account/expert-performance').json()
+    assert 'owner_id' not in other and other['performance']['completed_count']==0
     assert other['events']==[] and other['policy']['reason'] is None
 
 
