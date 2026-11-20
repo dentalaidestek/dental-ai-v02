@@ -1474,7 +1474,7 @@ def test_patient_detail_keeps_chart_and_media_queries_out_of_profile_reads(chat,
         ))
         session.commit()
 
-    profile = client.get("/api/mobile/v1/patients/880")
+    profile = client.get("/api/mobile/v1/patients/880", params={"include_chart": "false"})
     assert profile.status_code == 200, profile.text
     assert profile.headers["cache-control"] == "private, no-store"
     assert profile.json()["teeth"] == []
@@ -1486,6 +1486,12 @@ def test_patient_detail_keeps_chart_and_media_queries_out_of_profile_reads(chat,
     assert [item["tooth_number"] for item in chart.json()["teeth"]] == ["36"]
     assert [(item["tooth_number"], item["surface"]) for item in chart.json()["surfaces"]] == [("36", "MESIAL")]
     assert chart.json()["media"] == []
+
+    # Omitting the new query keeps the original response for older native clients.
+    legacy = client.get("/api/mobile/v1/patients/880")
+    assert legacy.status_code == 200, legacy.text
+    assert [item["tooth_number"] for item in legacy.json()["teeth"]] == ["36"]
+    assert [(item["tooth_number"], item["surface"]) for item in legacy.json()["surfaces"]] == [("36", "MESIAL")]
 
     # The profile's gallery remains available through its separate bounded endpoint.
     gallery = client.get("/api/mobile/v1/patients/880/media")
