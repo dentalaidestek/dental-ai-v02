@@ -3407,8 +3407,8 @@ def _profile_photo_url(user: Optional[User]) -> Optional[str]:
 def _queue_uncommitted_account_asset_cleanup(reference: Optional[str]) -> None:
     """Persist cleanup for a newly written account asset whose DB transaction failed.
 
-    Do not delete directly: content-addressed profile photos can reuse a key that
-    is still referenced by the current account. The collector performs the
+    Do not delete directly: the failed write may still share a legacy or
+    idempotently reused key with current metadata. The collector performs the
     authoritative reference check before touching object storage.
     """
     if not reference:
