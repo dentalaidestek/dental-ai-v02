@@ -1,4 +1,4 @@
-from test_mobile_chat_actions import chat
+from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from app import main
 from sqlmodel import Session,select
 from starlette.responses import Response
@@ -64,9 +64,9 @@ def test_email_change_is_session_bound_and_revokes_access_after_confirmation(acc
     response=client.post('/api/mobile/v1/account/email',json={'new_email':'updated@example.test','password':'correct-password'})
     assert response.status_code==200,response.text
     assert response.json()['pending_email']=='updated@example.test'
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     assert client.post('/api/mobile/v1/account/email/confirm',json={'code':sent[-1][1]}).status_code==400
-    client.headers['Authorization']='Bearer token1'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[1]
     response=client.post('/api/mobile/v1/account/email/confirm',json={'code':sent[-1][1]})
     assert response.status_code==200,response.text
     assert response.json()['requires_login'] is True
@@ -79,7 +79,7 @@ def test_admin_email_cannot_change_and_profile_photo_is_private(account):
         user=s.get(main.User,1);user.role='ADMIN';user.email=main.ADMIN_FIXED_EMAIL;s.add(user);s.commit()
     assert client.get('/api/mobile/v1/account').status_code==403
     with Session(engine) as s:
-        s.add(main.AdminVerifiedSession(token_hash=main.hash_session_token('token1'),user_id=1));s.commit()
+        s.add(main.AdminVerifiedSession(token_hash=main.hash_session_token(_SESSION_TOKEN[1]),user_id=1));s.commit()
     assert client.post('/api/mobile/v1/account/email',json={'new_email':'admin-new@example.test','password':'correct-password'}).status_code==403
     assert client.get('/api/mobile/v1/account').json()['email_change_allowed'] is False
     import io,base64
@@ -90,7 +90,7 @@ def test_admin_email_cannot_change_and_profile_photo_is_private(account):
     path=client.get('/api/mobile/v1/account').json()['photo_url']
     response=client.get(path)
     assert response.status_code==200 and response.headers['cache-control']=='private, no-store'
-    client.headers['Authorization']='Bearer token2'
+    client.headers['Authorization']='Bearer ' + _SESSION_TOKEN[2]
     assert client.get(path).status_code==404
 
 
@@ -137,7 +137,7 @@ def test_native_self_erasure_keeps_the_web_admin_exclusion(account):
     with Session(engine) as s:
         user=s.get(main.User,1)
         assert user.is_active and user.email=='synthetic@example.test'
-        s.add(main.AdminVerifiedSession(token_hash=main.hash_session_token('token1'),user_id=1))
+        s.add(main.AdminVerifiedSession(token_hash=main.hash_session_token(_SESSION_TOKEN[1]),user_id=1))
         s.commit()
 
     response=client.post('/api/mobile/v1/account/delete',json=payload)
