@@ -690,25 +690,37 @@ def test_program_query_index_migration_upgrades_revision15_online(pg):
         'ix_scheduleevent_owner_start_at',
         'ix_scheduleevent_owner_created_at',
         'ix_scheduleevent_owner_updated_at',
-        'ix_programreminderjob_status_run_at',
+        'ix_programreminderjob_pending_run_at',
         'ix_programreminderjob_event_status',
         'ix_programreminderjob_owner_status',
         'ix_treatment_patient_created_id',
     )
+    legacy_reminder_indexes = (
+        'ix_programreminderjob_status_run_at',
+        'ix_programreminderjob_run_at',
+    )
     with engine.begin() as connection:
         connection.execute(text('CREATE TABLE IF NOT EXISTS dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
         connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,15) ON CONFLICT(id) DO UPDATE SET version=15'))
-        for name in index_names:
+        for name in (*index_names, *legacy_reminder_indexes):
             connection.execute(text(f'DROP INDEX IF EXISTS {name}'))
     migrate.apply()
     migrate.require_schema(engine)
     with engine.connect() as connection:
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 19
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 20
         for name in index_names:
             assert connection.execute(
                 text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
                 {'name': name},
             ).scalar_one() is True
+        for name in legacy_reminder_indexes:
+            assert connection.execute(text('SELECT to_regclass(:name)'), {'name': name}).scalar_one() is None
+        definition = connection.execute(
+            text('SELECT indexdef FROM pg_indexes WHERE schemaname=current_schema() AND indexname=:name'),
+            {'name': 'ix_programreminderjob_pending_run_at'},
+        ).scalar_one()
+        assert 'WHERE' in definition.upper()
+        assert 'STATUS' in definition.upper() and 'PENDING' in definition.upper()
 
 
 def _explain_analyze_index_names(connection, statement, params=None):
