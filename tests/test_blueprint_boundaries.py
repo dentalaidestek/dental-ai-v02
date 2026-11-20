@@ -330,7 +330,13 @@ def test_upload_queues_atomically_and_closes_db_for_storage(database, monkeypatc
     monkeypatch.setattr(main, 'classify_dental_image', classify)
     client = TestClient(main.app)
     url = '/analysis/guest/new' if guest else f'/analysis/new/{ids.patient}'
-    response = client.post(url, files={'images': ('example.jpg', image_bytes, 'image/jpeg')}, follow_redirects=False)
+    # Guest analysis must carry the same explicit AI-processing consent as
+    # the real web form; the test must not bypass that privacy boundary.
+    form_data = {'ai_consent': 'on'} if guest else {}
+    response = client.post(
+        url, data=form_data, files={'images': ('example.jpg', image_bytes, 'image/jpeg')},
+        follow_redirects=False,
+    )
     assert response.status_code == 303
     with Session(engine) as s:
         jobs = s.exec(select(work_jobs.WorkJob)).all()
