@@ -383,7 +383,7 @@ test('patient profile keeps tooth-chart data opt-in while chart reads request it
   assert.deepEqual(profile.teeth,[]);
   await getPatient('token',8,true);
   assert.equal(urls.length,2);
-  assert.match(urls[0],/\/patients\/8$/,'ordinary profile reads must not request chart collections');
+  assert.match(urls[0],/\/patients\/8\?include_chart=false$/,'ordinary profile reads must explicitly omit chart collections');
   assert.match(urls[1],/\/patients\/8\?include_chart=true$/,'tooth-chart reads must explicitly request FDI data');
  }finally{global.fetch=original}
 });
