@@ -546,6 +546,37 @@ def _upgrade_treatment_history_index(main):
 
 
 
+def _program_pending_reminder_index_state(connection, index_name):
+    """Return whether a PostgreSQL index is exactly the pending-only run_at index.
+
+    Checking that an index definition merely contains the words STATUS and
+    PENDING is insufficient: a predicate such as status IN ('PENDING','FAILED')
+    would also pass while retaining terminal jobs in the hot queue.
+    """
+    row = connection.execute(text(
+        "SELECT i.indisvalid, pg_get_expr(i.indpred, i.indrelid), "
+        "pg_get_indexdef(i.indexrelid) "
+        "FROM pg_index i WHERE i.indexrelid=to_regclass(:name)"
+    ), {"name": index_name}).one_or_none()
+    if row is None:
+        return False, None
+    valid, predicate, definition = row
+    normalized_predicate = "".join(
+        (predicate or "").lower().replace('"', "").split()
+    ).replace("(", "").replace(")", "")
+    for cast in ("::character varying", "::varchar", "::text"):
+        normalized_predicate = normalized_predicate.replace(cast, "")
+    normalized_definition = "".join(
+        (definition or "").lower().replace('"', "").split()
+    )
+    matches = (
+        valid is True
+        and normalized_predicate == "status='pending'"
+        and "usingbtree(run_at)" in normalized_definition
+    )
+    return matches, valid
+
+
 def _upgrade_program_reminder_pending_index(main):
     """Install a compact pending-only due-queue index and advance revision 20.
 
@@ -583,25 +614,7 @@ def _upgrade_program_reminder_pending_index(main):
                 if revision not in (TREATMENT_HISTORY_INDEX_REVISION, PROGRAM_REMINDER_PENDING_INDEX_REVISION):
                     return False
 
-                valid = connection.execute(
-                    text("SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)"),
-                    {"name": index_name},
-                ).scalar()
-                definition = connection.execute(
-                    text(
-                        "SELECT indexdef FROM pg_indexes "
-                        "WHERE schemaname=current_schema() AND indexname=:name"
-                    ),
-                    {"name": index_name},
-                ).scalar()
-                normalized = "".join((definition or "").lower().replace('"', "").split())
-                expected = (
-                    valid is True
-                    and "usingbtree(run_at)" in normalized
-                    and "where" in normalized
-                    and "status" in normalized
-                    and "pending" in normalized
-                )
+                expected, valid = _program_pending_reminder_index_state(connection, index_name)
                 if not expected:
                     if valid is not None:
                         connection.execute(text(f"DROP INDEX CONCURRENTLY IF EXISTS {index_name}"))
@@ -610,25 +623,8 @@ def _upgrade_program_reminder_pending_index(main):
                         "ON programreminderjob (run_at) WHERE status = 'PENDING'"
                     ))
 
-                valid = connection.execute(
-                    text("SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)"),
-                    {"name": index_name},
-                ).scalar()
-                definition = connection.execute(
-                    text(
-                        "SELECT indexdef FROM pg_indexes "
-                        "WHERE schemaname=current_schema() AND indexname=:name"
-                    ),
-                    {"name": index_name},
-                ).scalar()
-                normalized = "".join((definition or "").lower().replace('"', "").split())
-                if not (
-                    valid is True
-                    and "usingbtree(run_at)" in normalized
-                    and "where" in normalized
-                    and "status" in normalized
-                    and "pending" in normalized
-                ):
+                expected, _ = _program_pending_reminder_index_state(connection, index_name)
+                if not expected:
                     raise RuntimeError("Program pending reminder index is missing, invalid or has the wrong predicate")
 
                 # The partial index replaces both broad indexes for the only hot
