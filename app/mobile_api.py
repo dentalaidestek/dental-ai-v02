@@ -2209,7 +2209,7 @@ def _patient_media_result(media: PatientMedia, replayed: bool = False) -> dict:
             "media_type": media.media_type,
             "tooth_number": media.tooth_number,
             "note": media.note,
-            "uploaded_at": media.uploaded_at,
+            "uploaded_at": media.uploaded_at.isoformat() if media.uploaded_at else None,
         },
         "replayed": replayed,
     }
