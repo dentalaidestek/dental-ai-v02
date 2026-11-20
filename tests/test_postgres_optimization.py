@@ -728,8 +728,15 @@ def test_program_pending_reminder_index_migration_upgrades_revision19_and_is_ide
     from app import migrate
     engine, _, _ = pg
     with engine.begin() as connection:
+        # The pg fixture creates application metadata, not the release revision
+        # table. Build the exact pre-revision-20 state this migration test needs.
         connection.execute(text(
-            'UPDATE dental_schema_revision SET version=19 WHERE id=1'
+            'CREATE TABLE IF NOT EXISTS dental_schema_revision '
+            '(id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'
+        ))
+        connection.execute(text(
+            'INSERT INTO dental_schema_revision VALUES (1,19) '
+            'ON CONFLICT(id) DO UPDATE SET version=19'
         ))
         connection.execute(text('DROP INDEX IF EXISTS ix_programreminderjob_pending_run_at'))
         connection.execute(text(
