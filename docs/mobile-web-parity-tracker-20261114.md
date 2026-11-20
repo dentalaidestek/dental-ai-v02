@@ -948,3 +948,31 @@ Privacy review confirmed that web/mobile owner checks and saved-media ownership 
 Isolated verification: 3/3 image-limit contract fixture tests, 6/6 composer presentation/TSX-syntax fixture tests, and a strict TypeScript shared-limit/import-export fixture passed. The TSX parser check used a minimal component fixture; the committed guard still needs to run against the actual repository component in CI. These fixtures are not the full repository checkout. Full `npm test`, Expo typecheck/export, Android Gradle/device tests and Python security pytest remain unexecuted because this runtime could not clone GitHub and the current workflows are manual-only. The current HEAD has no check runs or commit statuses; previously retrieved 18 November jobs failed before their first step with empty steps and unavailable log blobs, so they did not run the compiler or tests. No green CI is claimed.
 
 No main merge, live deploy, migration, APK/IPA publication or clinical record mutation.
+
+
+## 2026-11-20 — Native clinical result parity with the web result page
+
+Web-first inspection completed before native edits:
+- `app/templates/result.html` initial result order: likely condition, important findings, treatment options, treatment cautions, preferred approach, differential, then clinician questions and the web's question guidance.
+- The FINAL branch uses the same six clinical sections in the same order inside the pale `#f5f8ff` final box; it does not show preliminary-only uncertainty, evaluation, or preliminary-assessment sections.
+- `app/templates/analysis_viewer.html` and the authenticated web handlers were checked alongside `NativeVisionViewer` and `clinicalApi.ts`. The native manual-finding request is already routed through the owner-scoped web finding handler; no duplicate endpoint or persistence path was added.
+
+New native parity gaps found and corrected:
+- INITIAL / ANALYSIS_COMPLETE was labelled “Ön Klinik Değerlendirme” instead of the web’s “Klinik Değerlendirme”.
+- Findings were rendered after all other sections instead of second, and treatment options had no ordered-list markers.
+- Native rendered uncertainty, preliminary assessment and recommended-evaluation fields that the web result page does not render.
+- The native clinician-question form omitted the web's explanation and “Kısa klinik cevap yazın...” placeholder.
+- FINAL did not use the web's pale final-result container.
+
+Implementation:
+- Added `mobile/src/clinicalResultPresentation.ts` as a small, pure web-order/title contract.
+- Updated `NativeClinicalReview.tsx` to render the six sections in web order, use bullet/ordered markers, apply the final-result background, and restore question guidance and placeholder copy.
+- Added three presentation-contract tests and two component-level regressions in `clinicalResultPresentation.cjs` and `clinicalWorkflow.cjs`; registered the new suite in `npm run test:beta`.
+
+CI/typecheck/security boundary:
+- The previous Android typecheck import/export defect in `analysisApi.ts` remains corrected: the canonical image limit is imported from and re-exported from `uploadLimits.ts`.
+- At the inspected starting head `c577998`, no workflow run or commit status existed for the current head. Android and Security Recovery workflows remain `workflow_dispatch`-only, consistent with the user's request to stop repeated CI notifications.
+- Rechecked the last available Android typecheck and Security Recovery jobs (run 43772807470 / 43772807464): both reported completed/failure but returned zero steps; all three job-log downloads returned `BlobNotFound` 404. The compiler, Gradle and pytest did not start. This is an Actions log/runner availability failure, not evidence of a source-level test failure; the exact hosted-runner/account cause remains unverified.
+- The new committed Node regressions, full Expo `tsc --noEmit`, Android Gradle build, and Python security suite have not been executed in this runtime. No green CI is claimed.
+
+Commits in this run: `8158d10`, `d37a5ed`, `5627818`, `07d231c`, `de6d6d7`, and this tracker update. No auth, owner-scope, patient-data, database, provider, workflow-trigger or production code was changed. No main merge, deploy, migration, APK/IPA publication or clinical record mutation.
