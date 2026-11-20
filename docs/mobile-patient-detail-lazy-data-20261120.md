@@ -12,11 +12,11 @@ The mobile `GET /patients/{id}` response always queried every tooth status, ever
 
 ## Change
 
-- `include_chart` is now opt-in on the owner-scoped, private/no-store patient-detail endpoint.
-- Ordinary profile reads return empty `teeth` and `surfaces` collections without querying those tables.
-- The six native tooth-chart read paths explicitly request `include_chart=true`, including initial load, refresh and post-mutation reconciliation.
+- The new `include_chart` query is explicit for current native clients; the server default remains `true` so already-installed clients that omit the parameter keep the original response.
+- Current native profile reads send `include_chart=false` and return empty `teeth` and `surfaces` collections without querying those tables; tooth-chart reads send `include_chart=true`.
+- All six native tooth-chart read paths explicitly request `include_chart=true`, including initial load, refresh and post-mutation reconciliation.
 - Patient detail no longer fetches the duplicate 20-row media preview. The existing cursor-paginated `/patients/{id}/media` endpoint remains the source for the native clinical archive.
-- The response shape stays backward compatible (`teeth`, `surfaces`, `media` remain arrays); ownership checks, `private, no-store`, treatment snapshot/cursor behavior and clinical write paths are unchanged.
+- The response shape stays backward compatible (`teeth`, `surfaces`, `media` remain arrays), and legacy clients that omit `include_chart` still receive chart data. Ownership checks, `private, no-store`, treatment snapshot/cursor behavior and clinical write paths are unchanged.
 
 This reduces the work performed by ordinary native profile opens without weakening the dedicated chart or gallery workflows. It is a query/payload reduction, not a measured 60,000-user capacity claim.
 
