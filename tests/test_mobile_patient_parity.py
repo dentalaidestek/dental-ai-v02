@@ -1975,15 +1975,34 @@ def test_mobile_patient_media_file_storage_errors_are_private_and_generic(
     assert "private storage detail" not in response.text
 
 def test_mobile_original_media_file_route_is_the_single_mounted_hardened_handler():
-    route_path = "/api/mobile/v1/patients/{patient_id}/media/{media_id}/file"
-    matches = [
-        route for route in main.app.routes
-        if getattr(route, "path", None) == route_path
-        and "GET" in getattr(route, "methods", set())
+    # FastAPI's included APIRoute path representation differs across the
+    # router and application collections. Assert the canonical endpoint
+    # identity at both levels rather than relying on one formatted path.
+    route_suffix = "/patients/{patient_id}/media/{media_id}/file"
+    canonical = [
+        route for route in mobile_api.router.routes
+        if getattr(route, "path", "").rstrip("/").endswith(route_suffix)
+        and "GET" in (getattr(route, "methods", set()) or set())
     ]
-    assert len(matches) == 1
-    assert matches[0].endpoint is mobile_api.mobile_patient_media_file
-    source = inspect.getsource(matches[0].endpoint)
+    assert len(canonical) == 1
+    assert canonical[0].endpoint is mobile_api.mobile_patient_media_file
+
+    mounted = [
+        route for route in main.app.routes
+        if getattr(route, "endpoint", None) is mobile_api.mobile_patient_media_file
+        and "GET" in (getattr(route, "methods", set()) or set())
+    ]
+    assert len(mounted) == 1
+
+    # The modern adapter must not shadow the canonical original-file route.
+    shadows = [
+        route for route in mobile_modern_api_v3.router.routes
+        if getattr(route, "path", "").rstrip("/").endswith(route_suffix)
+        and "GET" in (getattr(route, "methods", set()) or set())
+    ]
+    assert not shadows
+
+    source = inspect.getsource(mounted[0].endpoint)
     assert "current_media.file_path == file_path" in source
     assert "_mobile_private_no_store(result)" in source
 
