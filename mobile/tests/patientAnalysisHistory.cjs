@@ -26,7 +26,7 @@ function loadHistory({assets,legacy=true}){
   ActivityIndicator:'ActivityIndicator',Image:'Image',Modal:'Modal',Pressable:'Pressable',
   ScrollView:'ScrollView',Text:'Text',View:'View'
  };
- const modernApi={getAnalysisHistory:async()=>({items:[item],next_before:null})};
+ const modernApi={getPatientAnalysisHistoryPage:async()=>({items:[item],total:1,next:null})};
  const analysisApi={getAnalysis:async()=>({
   analysis:{id:41,patient_id:8,tooth_number:'11',clinical_notes:'Synthetic note',status:'FINAL',created_at:item.created_at,is_voice_review:false,legacy_radiograph_available:legacy},
   patient:{id:8,anonymous_id:'SYN-8',age:0,chief_complaint:null},

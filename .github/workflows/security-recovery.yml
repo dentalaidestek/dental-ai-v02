@@ -40,7 +40,7 @@ jobs:
       - name: Install native clinical regression dependencies
         run: npm ci
       - name: Validate clinical result schema, restart recovery and web viewer parity
-        run: node --test tests/clinicalWorkflow.cjs tests/visionViewer.cjs tests/patientApi.cjs tests/analysisHistoryScope.cjs tests/patientProfileUI.cjs tests/patientVoiceHistory.cjs tests/voiceEvidence.cjs tests/voiceApi.cjs tests/voiceWorkflow.cjs tests/patientHistoryWebPaging.cjs tests/patientHistoryRetry.cjs
+        run: node --test tests/clinicalWorkflow.cjs tests/visionViewer.cjs tests/patientApi.cjs tests/analysisHistoryScope.cjs tests/patientProfileUI.cjs tests/patientVoiceHistory.cjs tests/voiceEvidence.cjs tests/voiceApi.cjs tests/voiceWorkflow.cjs tests/patientHistoryWebPaging.cjs tests/patientHistoryRetry.cjs tests/patientAnalysisHistoryCursor.cjs tests/patientTreatmentPresentation.cjs
   native-social-security:
     runs-on: ubuntu-latest
     defaults:

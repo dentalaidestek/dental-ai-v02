@@ -1,7 +1,7 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {ActivityIndicator,AppState,Image,Modal,Pressable,ScrollView,Text,View} from 'react-native';
 import {useIsFocused} from '@react-navigation/native';
-import {AnalysisHistory,getAnalysisHistory} from './modernApi';
+import {AnalysisHistory,PatientAnalysisHistoryCursor,getPatientAnalysisHistoryPage} from './modernApi';
 import {getAnalysis,MobileAnalysis} from './analysisApi';
 import {useRealtime} from './realtime';
 import { shouldRefreshOnAppResume } from './appResumeRefresh';
@@ -15,11 +15,11 @@ export function analysisStatus(item:{status:string;is_voice_review?:boolean}){
 export default function NativePatientHistory({token,patientId,toothNumber,onOpenAnalysis,onNew}:{token:string;patientId:number;toothNumber?:string;onOpenAnalysis?:(id:number)=>void;onNew?:()=>void}){
  const focused=useIsFocused(),{lastEvent}=useRealtime(),scope=`${token}:${patientId}:${toothNumber||''}`,active=useRef(scope),generation=useRef(0),detailRequest=useRef(0),locked=useRef(false);
  if(active.current!==scope){active.current=scope;generation.current++;detailRequest.current++}
- const [data,setData]=useState<{scope:string;items:AnalysisHistory[];next:number|null}|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[errorMore,setErrorMore]=useState(false),[selected,setSelected]=useState<number|null>(null),[detail,setDetail]=useState<MobileAnalysis|null>(null),[detailError,setDetailError]=useState(''),[zoom,setZoom]=useState(1),[legacyRadiographError,setLegacyRadiographError]=useState(false);
+ const [data,setData]=useState<{scope:string;items:AnalysisHistory[];next:PatientAnalysisHistoryCursor|null}|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[errorMore,setErrorMore]=useState(false),[selected,setSelected]=useState<number|null>(null),[detail,setDetail]=useState<MobileAnalysis|null>(null),[detailError,setDetailError]=useState(''),[zoom,setZoom]=useState(1),[legacyRadiographError,setLegacyRadiographError]=useState(false);
  const visible=data?.scope===scope?data:null;
  const assetGroups=groupPatientAnalysisAssets(detail?.assets);
  const showLegacyRadiograph=detail?shouldShowLegacyPatientRadiograph(detail.analysis.legacy_radiograph_available,detail.assets):false;
- const load=useCallback(async(more=false)=>{if(locked.current)return;locked.current=true;const seq=++generation.current,owner=scope;setBusy(true);setError('');setErrorMore(false);try{const page=await getAnalysisHistory(token,more?visible?.next??undefined:undefined,patientId,toothNumber);if(active.current!==owner||generation.current!==seq)return;setData(previous=>({scope:owner,items:more&&previous?.scope===owner?[...previous.items,...page.items.filter(x=>!previous.items.some(y=>y.id===x.id))]:page.items,next:page.next_before}));setError('');setErrorMore(false)}catch(e){if(active.current===owner&&generation.current===seq){setError(e instanceof Error?e.message:'Analiz geçmişi alınamadı.');setErrorMore(more)}}finally{if(active.current===owner&&generation.current===seq){locked.current=false;setBusy(false)}}},[token,patientId,toothNumber,scope,visible?.next]);
+ const load=useCallback(async(more=false)=>{if(locked.current)return;locked.current=true;const seq=++generation.current,owner=scope;setBusy(true);setError('');setErrorMore(false);try{const page=await getPatientAnalysisHistoryPage(token,patientId,toothNumber,more?visible?.next??undefined:undefined);if(active.current!==owner||generation.current!==seq)return;setData(previous=>({scope:owner,items:more&&previous?.scope===owner?[...previous.items,...page.items.filter(x=>!previous.items.some(y=>y.id===x.id))]:page.items,next:page.next}));setError('');setErrorMore(false)}catch(e){if(active.current===owner&&generation.current===seq){setError(e instanceof Error?e.message:'Analiz geçmişi alınamadı.');setErrorMore(more)}}finally{if(active.current===owner&&generation.current===seq){locked.current=false;setBusy(false)}}},[token,patientId,toothNumber,scope,visible?.next]);
  const loader=useRef(load);loader.current=load;
  useEffect(()=>{locked.current=false;setData(null);setSelected(null);setDetail(null);setError('');setErrorMore(false);void loader.current();return()=>{generation.current++;detailRequest.current++}},[scope]);
  useEffect(()=>{

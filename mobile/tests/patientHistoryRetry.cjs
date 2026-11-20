@@ -16,7 +16,7 @@ vm.runInNewContext(compile('src/patientAnalysisPresentation.ts'),{exports:presen
 const historyPresentation={};
 vm.runInNewContext(compile('src/patientHistoryPresentation.ts'),{exports:historyPresentation,Date,Math,Number,String,Error,Promise,Array,Object});
 
-function loadHistory(getAnalysisHistory){
+function loadHistory(getPatientAnalysisHistoryPage){
  const exports={};
  const native={AppState:{currentState:'active',addEventListener:()=>({remove(){}})},ActivityIndicator:'ActivityIndicator',Image:'Image',Modal:'Modal',Pressable:'Pressable',ScrollView:'ScrollView',Text:'Text',View:'View'};
  const item=(id)=>({id,patient_id:8,patient_name:'Synthetic',tooth_number:'36',status:'FINAL',clinical_notes:'Synthetic',created_at:'2026-11-17T10:00:00Z'});
@@ -26,7 +26,7 @@ function loadHistory(getAnalysisHistory){
    if(name==='react')return {...React,default:React};
    if(name==='react-native')return native;
    if(name==='@react-navigation/native')return {useIsFocused:()=>true};
-   if(name==='./modernApi')return {getAnalysisHistory};
+   if(name==='./modernApi')return {getPatientAnalysisHistoryPage};
    if(name==='./analysisApi')return {getAnalysis:async(_token,id)=>({analysis:{id,patient_id:8,status:'FINAL',created_at:'2026-11-17T10:00:00Z'},patient:{id:8,anonymous_id:'SYN-8'},assets:[]})};
    if(name==='./realtime')return {useRealtime:()=>({lastEvent:null})};
    if(name==='./patientAnalysisPresentation')return presentation;
@@ -48,11 +48,12 @@ function pressableWithText(tree,label){
 test('failed next-page request retries the same cursor without resetting loaded history',async()=>{
  const calls=[];
  let nextPageAttempts=0;
- const {History,item}=loadHistory(async(_token,before,patientId)=>{
-  calls.push({before:before??null,patientId});
-  if(before===41&&nextPageAttempts++===0)throw Error('Synthetic network interruption');
-  if(before===41)return {items:[item(40)],total:2,next_before:null};
-  return {items:[item(41)],total:2,next_before:41};
+ const cursor={kind:'stable',value:'YXNkZmdoaWprbG1ub3BxcnN0dXZ3eHl6'};
+ const {History,item}=loadHistory(async(_token,patientId,_toothNumber,before)=>{
+  calls.push({cursor:before?.value??null,patientId});
+  if(before?.value===cursor.value&&nextPageAttempts++===0)throw Error('Synthetic network interruption');
+  if(before?.value===cursor.value)return {items:[item(40)],total:2,next:null};
+  return {items:[item(41)],total:2,next:cursor};
  });
  let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(History,{token:'synthetic-token',patientId:8}));await flush()});
@@ -65,7 +66,7 @@ test('failed next-page request retries the same cursor without resetting loaded 
  const retry=pressableWithText(tree,'Yeniden dene');
  assert.ok(retry,'failed continuation must expose a retry action');
  await renderer.act(async()=>{retry.props.onPress();await flush()});
- assert.deepEqual(calls,[{before:null,patientId:8},{before:41,patientId:8},{before:41,patientId:8}]);
+ assert.deepEqual(calls,[{cursor:null,patientId:8},{cursor:'YXNkZmdoaWprbG1ub3BxcnN0dXZ3eHl6',patientId:8},{cursor:'YXNkZmdoaWprbG1ub3BxcnN0dXZ3eHl6',patientId:8}]);
  const labels=tree.root.findAllByType('Text').map(node=>String(node.props.children));
  assert.ok(labels.includes('Analiz #41'),'first page must remain visible');
  assert.ok(labels.includes('Analiz #40'),'retry must append the next page');
