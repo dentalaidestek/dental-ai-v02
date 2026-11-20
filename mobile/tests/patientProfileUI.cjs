@@ -12,6 +12,9 @@ loadModuleRealm(presentationCode,presentationExports);
 const deleteIntentExports={};
 const deleteIntentCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/patientDeleteIntent.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
 loadModuleRealm(deleteIntentCode,deleteIntentExports);
+const patientTreatmentExports={};
+const patientTreatmentCode=ts.transpileModule(fs.readFileSync(require.resolve('../src/patientTreatmentPresentation.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+loadModuleRealm(patientTreatmentCode,patientTreatmentExports);
 function component(api,file='NativePatientProfile',storage=new Map()){
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/'+file+'.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const intentExports={};
@@ -22,7 +25,7 @@ function component(api,file='NativePatientProfile',storage=new Map()){
  const alertCalls=[];
  const native={StyleSheet:{create:s=>s},AppState:{addEventListener:()=>({remove(){}})},Platform:{OS:'android'},Alert:{alert:(title,message,buttons)=>alertCalls.push({title,message,buttons})},...Object.fromEntries(['Modal','ActivityIndicator','KeyboardAvoidingView','Pressable','RefreshControl','ScrollView','Text','TextInput','View'].map(s=>[s,s])),ScrollView:props=>React.createElement('ScrollView',props,props.refreshControl,props.children)},exports={};
  const endpoints={getPatient:async()=>patient(8),getPatientTreatments:async()=>({items:[],next_cursor:null}),createTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),updateTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),...api};
- loadModuleRealm(code,exports,name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:name==='./patientDeleteIntent'?deleteIntentExports:name==='./patientProfilePresentation'?presentationExports:{default:'Child'});
+ loadModuleRealm(code,exports,name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:name==='./patientDeleteIntent'?deleteIntentExports:name==='./patientTreatmentPresentation'?patientTreatmentExports:name==='./patientProfilePresentation'?presentationExports:{default:'Child'});
  const Original=exports.default;
  const Wrapped=props=>React.createElement(Original,{userId:1,...props});
  Wrapped.storage=storage;
