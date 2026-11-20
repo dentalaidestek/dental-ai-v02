@@ -34,6 +34,8 @@ No schema or migration change was needed. Patient, Analysis, ImageAsset, Patient
 1. Only a different, allowlisted previous object is queued.
 2. Replaced profile photo, expert credential and title-change document objects are collected after the metadata switches, while new paths remain referenced and intact.
 3. Web-handler source contract checks for transactional queue insertion, failed-upload cleanup and ORCID-before-storage ordering.
+4. Identical profile-photo bytes produce distinct per-upload keys, preventing a later upload from reusing an older queued key.
+5. A simulated profile-photo object-storage write failure creates a durable cleanup receipt.
 
 The test file is already included in the Python Security Recovery command in `.github/workflows/security-recovery.yml`.
 
