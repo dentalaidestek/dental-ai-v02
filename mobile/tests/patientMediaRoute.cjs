@@ -104,7 +104,10 @@ test('native thumbnails recheck exact ownership and source identity after R2 gen
   assert.match(native,/item\.thumbnail_url\|\|item\.url/);
   assert.match(native,/source=\{\{uri:preview\.url/);
   assert.match(main,/app\.include_router\(mobile_router\)[\s\S]*app\.include_router\(mobile_modern_router\)/);
-  assert.match(main,/mobile_modern_router\.routes\[:\]\s*=\s*\[route for route in mobile_modern_router\.routes/);
+  assert.ok(main.includes("from app.mobile_route_registry import remove_shadowed_routes as _remove_shadowed_mobile_routes"));
+   assert.ok(main.includes("_remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)"));
+   assert.ok(main.indexOf("app.include_router(mobile_router)")<main.indexOf("_remove_shadowed_mobile_routes("));
+   assert.ok(main.indexOf("_remove_shadowed_mobile_routes(")<main.indexOf("app.include_router(mobile_modern_router)"));
 });
 
 test('canonical native original-file route rechecks ownership and exact source after R2 hydration',()=>{
