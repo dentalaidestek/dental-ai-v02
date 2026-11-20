@@ -67,7 +67,14 @@ def test_program_edit_copy_complete_delete_reuse_web_lifecycle(program):
     copied=client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08','2030-01-09']})
     assert copied.status_code==200,copied.text
     assert client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08','2030-01-09']}).status_code==200
-    with Session(engine) as s:assert len(s.exec(select(main.ScheduleEvent).where(main.ScheduleEvent.owner_user_id==1)).all())==3
+    with Session(engine) as s:
+        rows=s.exec(select(main.ScheduleEvent).where(main.ScheduleEvent.owner_user_id==1)).all()
+        assert len(rows)==3
+        copied_rows=[row for row in rows if row.id!=ident]
+        assert len(copied_rows)==2
+        assert all(len(row.client_request_hash or "")==64 for row in copied_rows)
+        assert len({row.client_request_hash for row in copied_rows})==2
+        assert all(len(row.client_payload_hash or "")==64 for row in copied_rows)
     assert client.post(f'/api/mobile/v1/program/events/{ident}/complete').status_code==200
     assert client.delete(f'/api/mobile/v1/program/events/{ident}').status_code==200
     deleted=client.get(f'/api/mobile/v1/program/events/{ident}')
@@ -469,3 +476,23 @@ def test_program_cursor_endpoint_is_private_and_rejects_tampering(program):
         params={"view": "today", "day": "2030-01-07", "cursor": tampered},
     )
     assert rejected.status_code == 422
+
+
+def test_program_copy_receipt_rejects_changed_source_payload(program):
+    client,engine=program
+    values={'event_type':'APPOINTMENT','title':'Synthetic copy receipt','start_at':'2030-01-07T10:00','end_at':'2030-01-07T10:30','patient_id':8,'reminder_minutes':'NONE','recurrence_rule':'NONE','request_key':'program-copy-source-000001'}
+    created=client.post('/api/mobile/v1/program/events',json=values)
+    assert created.status_code==200,created.text
+    ident=created.json()['event']['id']
+    copied=client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08']})
+    assert copied.status_code==200,copied.text
+    changed=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'title':'Changed source title'})
+    assert changed.status_code==200,changed.text
+    replay=client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08']})
+    assert replay.status_code==409,replay.text
+    with Session(engine) as session:
+        rows=session.exec(select(main.ScheduleEvent).where(main.ScheduleEvent.owner_user_id==1)).all()
+        assert len(rows)==2
+        copies=[row for row in rows if row.id!=ident]
+        assert len(copies)==1 and copies[0].title=='Synthetic copy receipt'
+
