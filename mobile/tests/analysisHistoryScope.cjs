@@ -28,24 +28,34 @@ function loadModernApi(payload){
  return {api:moduleExports,calls};
 }
 
-const item=(id,patientId,tooth='36')=>({
+const item=(id,patientId,tooth='36',isVoiceReview)=>({
  id,patient_id:patientId,patient_name:'Synthetic',tooth_number:tooth,
- status:'FINAL',clinical_notes:'Synthetic clinical note',created_at:'2026-11-20T08:00:00'
+ status:'FINAL',clinical_notes:'Synthetic clinical note',created_at:'2026-11-20T08:00:00',
+ ...(isVoiceReview===undefined?{}:{is_voice_review:isVoiceReview})
 });
 
 test('analysis history sends patient and FDI filters with the cursor',async()=>{
- const {api,calls}=loadModernApi({items:[item(100,810)],total:2,next_before:100});
+ const {api,calls}=loadModernApi({items:[item(100,810,'36',true)],total:2,next_before:100});
  const result=await api.getAnalysisHistory('synthetic-token',101,810,'36');
  assert.equal(calls.length,1);
  assert.equal(calls[0].url,'https://dentalai.tr/api/mobile/v1/analyses?limit=50&before=101&patient_id=810&tooth_number=36');
  assert.equal(calls[0].init.headers.Authorization,'Bearer synthetic-token');
  assert.deepEqual(Array.from(result.items,x=>x.id),[100]);
  assert.equal(result.next_before,100);
+ assert.equal(result.items[0].is_voice_review,true);
 });
 
 test('analysis history rejects a response containing another patient',async()=>{
  const {api}=loadModernApi({items:[item(200,820)],total:1,next_before:null});
  await assert.rejects(()=>api.getAnalysisHistory('synthetic-token',undefined,810),/geçersiz liste/i);
+});
+
+test('analysis history rejects malformed voice-review state but accepts legacy omission',async()=>{
+ const {api}=loadModernApi({items:[item(100,810,'36','DONE')],total:1,next_before:null});
+ await assert.rejects(()=>api.getAnalysisHistory('synthetic-token',undefined,810),/geçersiz liste/i);
+ const legacy=loadModernApi({items:[item(100,810)],total:1,next_before:null});
+ const result=await legacy.api.getAnalysisHistory('synthetic-token',undefined,810);
+ assert.equal(result.items[0].is_voice_review,undefined);
 });
 
 test('analysis history rejects an invalid FDI filter before network access',async()=>{
