@@ -13,7 +13,7 @@ Accepted object-key shapes are intentionally narrow:
 
 The collector re-checks User.profile_photo_path, ExpertProfile.credential_document_path, ExpertTitleChange.credential_document_path and MembershipVerification.document_path before deleting. If any record still references an object, the receipt is retired without deleting the object. This protects shared/reused paths and concurrent ownership changes.
 
-R2 failures retain the receipt and its five-minute retry time; a later worker invocation can finish the deletion. Existing attempt-count fencing protects a re-queued receipt from an older collector. Unknown legacy paths remain on the prior caller fallback and are not admitted into the generic worker allowlist.
+R2 failures retain the receipt and use bounded exponential retry delays (5, 10, 20 … up to 360 minutes); a later worker invocation can finish the deletion. Existing attempt-count fencing protects a re-queued receipt from an older collector. Unknown legacy paths remain on the prior caller fallback and are not admitted into the generic worker allowlist.
 
 ## Data-retention boundary
 
