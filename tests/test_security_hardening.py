@@ -75,10 +75,12 @@ def test_native_app_disables_backup_and_cleartext():
 
 def test_protected_clinical_media_is_not_browser_cached():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
-    start = source.index("def patient_media_file")
-    block = source[start:source.index("def delete_patient_media", start)]
-    assert '_mobile_private_no_store(result)' in block
-    assert 'FileResponse(path,media_type=mime,filename=original_filename)' in block
+    block = source.split("def patient_media_file", 1)[1].split(
+        '@app.get("/patients/{patient_id}/media/page")', 1
+    )[0]
+    assert "patient.owner_user_id != user.id" in block
+    assert "media.owner_user_id != user.id" in block
+    assert 'FileResponse(path, headers={"Cache-Control":"private, no-store"})' in block
 
 
 def test_admin_login_uses_same_brute_force_throttle():
@@ -307,10 +309,13 @@ def test_account_deletion_expires_browser_cookies_with_root_path():
 
 def test_native_media_file_enforces_media_owner_as_well_as_patient_owner():
     source = (ROOT / "app/mobile_api.py").read_text(encoding="utf-8")
-    block = source.split('def mobile_patient_media_file', 1)[1].split('def _mobile_access_token', 1)[0]
-    assert 'media.patient_id!=patient_id' in block
-    assert 'media.owner_user_id!=user.id' in block
-    assert 'Cache-Control":"private, no-store' in block
+    block = source.split("async def mobile_patient_media_file", 1)[1].split(
+        "async def _invoke_patient_web", 1
+    )[0]
+    assert "media.patient_id!=patient_id" in block
+    assert "patient.owner_user_id!=user.id" in block
+    assert "media.owner_user_id!=user.id" in block
+    assert "_mobile_private_no_store(result)" in block
 
 def test_e2ee_message_storage_has_ciphertext_envelopes_without_forcing_plaintext():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
