@@ -70,7 +70,7 @@ export async function getPatient(token:string,id:number,includeChart=false){
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz hasta kimliği.");
  // Profile reads stay lean; only the dedicated tooth-chart screen opts into
  // the bounded FDI status/surface collections.
- const path="/patients/"+id+(includeChart?"?include_chart=true":"");
+ const path="/patients/"+id+"?include_chart="+(includeChart?"true":"false");
  const result=await request<PatientDetail>(path,token);
  if(!result?.patient||result.patient.id!==id||
     (result.edit_revision!==undefined&&(typeof result.edit_revision!=="string"||!/^[a-f0-9]{64}$/.test(result.edit_revision)))||
