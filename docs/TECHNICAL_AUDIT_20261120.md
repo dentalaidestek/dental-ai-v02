@@ -151,4 +151,14 @@ Mevcut durum: mobil süit 935 testte **931 yeşil**; kalan 4 kırmızı **yalnı
 
 Kalan borç: `test_mobile_patient_parity.py` 27 pass / 13 fail (ChatGPT'nin aktif hasta geçmişi işi); Android CI "runner tahsis edilemedi" (altyapı). PR #257 açık/draft, head bu SHA; main merge ve canlı deploy kullanıcı onayına kadar yasak.
 
+## 12. Dördüncü geçiş — aynı gün (HEAD `59eefc99`): P1 web-mesaj düzeltmesi + harness hizalama
+
+ChatGPT'nin 26 commit'i (CI diagnostics + hesap silme admin exclusion + test-loader transpile fix'leri) merge edildi; mobil süit **950/950, `tsc --noEmit` 0**. Follow-up dokümanında bilinçli bırakılan Python security suite alanı devralındı:
+
+| SHA | Düzeltme |
+|---|---|
+| `59eefc99` | **P1:** `main.py` consultation upload handler'ında `status_events`/`notification_events` tanımsızdı — her web mesaj gönderiminde NameError 500; tanımlar fonksiyon-top düzeyinde restore edildi (merge kaybı). Ayrıca: `_mobile_private_no_store` direct-call shim'i; chat fixture 6-char sentetik token → 35-char opaque (program-cursor MAC sözleşmesi); query_efficiency direct-call'ları `(response, user, before=None)` imzalarına taşındı — raw `Query` default'ları artık SQLite'a bind edilmiyor. Seçili ailelerde ölçülen iyileşme: query_efficiency 8→3, program 5→2, chat datetime receipt'leri yeşil. |
+
+Python security suite'in tam durumu: requirements-web.lock venv'e kuruldu (CI ile aynı ortam); koşu **73 fail / 461 pass** — bileşim: ChatGPT'nin 26 commit'iyle gelen yeni sözleşme testleri + lock paket seti farkı + bırakılan fixture/contract drift'ler. Kalan alan (patient_parity receipt shape, program lifecycle 422, voice receipt key, push schema rev-15, DetachedInstance) aktif parite çalışmasının sahibi olan akışla koordine edilmeli; benim fix'ler tek dosyada geriye dönüş yaratmadı (mobil süit 950/950 ile kanıtlı). Android CI runner tahsisi hâlâ altyapı borcu.
+
 — Rapor sonu. Bu dosya `docs/TECHNICAL_AUDIT_20261120.md` olarak dala commitlenir.
