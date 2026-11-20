@@ -350,7 +350,7 @@ def test_account_asset_cleanup_allowlist_is_strict():
     assert all(not work_jobs.is_account_asset_reference(reference) for reference in invalid)
 
 
-def test_account_asset_cleanup_retries_r2_failure_with_backoff_across_worker_restarts(
+def test_account_asset_cleanup_retries_r2_failure_with_backoff_across_collector_invocations(
     erasure_engine, monkeypatch
 ):
     reference = "uploads/profile_photos/user_8_" + "f" * 16 + ".jpg"
