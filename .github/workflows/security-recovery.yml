@@ -7,6 +7,7 @@ on:
       - feature/mobile-beta-20261110
     paths:
       - ".github/workflows/security-recovery.yml"
+      - ".github/workflows/mobile-android.yml"
       - "app/**"
       - "tests/**"
       - "mobile/**"
