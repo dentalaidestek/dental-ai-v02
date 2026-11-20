@@ -354,7 +354,7 @@ test('patient deletion gate requires all profile and treatment intents to be kno
  const ready={busy:false,uncertain:false,profileEditReady:true,treatmentIntentReady:true,treatmentIntentBlocked:false,hasPendingTreatment:false,deleteIntentReady:true,deleteIntentBlocked:false,hasPendingDelete:false};
  assert.equal(can(ready),true);
  for(const patch of [
-  {busy:true},{uncertain:true},{treatmentIntentReady:false},
+  {busy:true},{uncertain:true},{profileEditReady:false},{treatmentIntentReady:false},
   {treatmentIntentBlocked:true},{hasPendingTreatment:true},
    {deleteIntentReady:false},{deleteIntentBlocked:true},{hasPendingDelete:true}
  ]) assert.equal(can({...ready,...patch}),false,JSON.stringify(patch));

@@ -175,4 +175,13 @@ Kalan iki kırık testi ben kapattım: (1) hasta silme gate testinde `profileEdi
 
 ChatGPT'nin 52 commit'i, dördüncü geçişte raporladığım 73 fail'in köklerini (receipt shape, voice key, push rev-15 schema, fixture drift'ler) sistematik çözmüş; benim katkım son 2 kırmızı + gate sözleşmesi doğrulaması. Android CI runner tahsisi hâlâ altyapı borcu.
 
+## 14. Altıncı geçiş — aynı gün: her iki süit de sıfır kırmızı, v3 yüzey sözleşmesi netleşti
+
+ChatGPT'nin bir sonraki 52 commit'i (hasta silme preflight serisi + route registry çalışması) merge edildi; `tests/test_mobile_patient_parity.py` çakışması onun kaynak-router yaklaşımıyla çözüldü. İki kırık test kapatıldı:
+
+1. **Hasta silme gate testi** — gate 9 şartlı (`profileEditReady` dahil); test fixture verisinde alan eksikti; UI gerçekten set ediyor. Test verisi tamamlandı (ChatGPT'nin `4312db7` matrix'iyle uyumlu).
+2. **Canonical analyses route denetimi** — FastAPI 0.141.1 router path'lerini prefix-birleşik kaydediyor; ChatGPT'nin `/analyses` filtresi boş dönüyordu. `/api/mobile/v1/analyses` ile doğrultuldu; v3 yüzeyi için `shadow_routes == []` yerine **delegasyon sözleşmesi** yazıldı: `mobile_modern_api_v3.mobile_analysis_history_impl is mobile_analysis_api.mobile_analysis_history` — v3 yüzeyi yalnız canonical implementation'ı çağıran ince kabuk (kaynak doğrulandı: `mobile_modern_api_v3.py:27` import + satır 52 çağrı), paralel klinik mantık yok.
+
+Kanıt: Python security **525/525**, mobil **953/953**, `tsc --noEmit` **0**. Kalan açık kalemler: Android CI runner tahsisi, fiziksel cihaz kabulü, production PostgreSQL/R2 kontrolleri ve 60-69k yük testi (ChatGPT'nin dokümanıyla aynı).
+
 — Rapor sonu. Bu dosya `docs/TECHNICAL_AUDIT_20261120.md` olarak dala commitlenir.

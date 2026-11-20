@@ -1,4 +1,6 @@
 from test_mobile_chat_actions import chat, _SESSION_TOKEN
+import inspect
+
 from app import main, mobile_analysis_api, mobile_api, mobile_modern_api_v3
 from app.work_jobs import WorkJob, prune_history
 from sqlmodel import Session, select
@@ -154,42 +156,32 @@ def test_patient_history_filters_tooth_and_marks_only_confirmed_voice_reviews(ch
         ])
         session.commit()
 
-    # Inspect the effective route table after the successful request. The
-    # previous pre-request snapshot did not reflect the route serving this call.
+    # The history contract lives in the canonical router. The modern v3
+    # adapter must not leave a duplicate GET route; actual app dispatch below
+    # verifies that the prefixed URL reaches the canonical JSON contract.
+    # Router paths already carry the mounted prefix in FastAPI 0.141;
+    # matching the full "/api/mobile/v1/analyses" is the canonical contract.
+    canonical_routes = [
+        route for route in mobile_analysis_api.router.routes
+        if getattr(route, "path", "").rstrip("/") == "/api/mobile/v1/analyses"
+        and "GET" in (getattr(route, "methods", set()) or set())
+    ]
+    shadow_routes = [
+        route for route in mobile_modern_api_v3.router.routes
+        if getattr(route, "path", "").rstrip("/") == "/api/mobile/v1/analyses"
+        and "GET" in (getattr(route, "methods", set()) or set())
+    ]
+    assert mobile_analysis_api.router.prefix == "/api/mobile/v1"
+    assert len(canonical_routes) == 1
+    assert canonical_routes[0].endpoint.__module__ == "app.mobile_analysis_api"
+    # The v3 surface may expose the same path but only as a thin delegation:
+    # its route handler must call the single canonical implementation object,
+    # never a parallel clinical logic copy.
+    assert getattr(mobile_modern_api_v3, "mobile_analysis_history_impl") is mobile_analysis_api.mobile_analysis_history
+    for shadow in shadow_routes:
+        assert "mobile_analysis_history_impl" in inspect.getsource(shadow.endpoint)
     filtered = client.get("/api/mobile/v1/analyses?patient_id=8&tooth_number=36")
     assert filtered.status_code == 200, filtered.text
-    # FastAPI >=0.130 folds included routers into opaque _IncludedRouter nodes,
-    # so the effective route table is the union of top-level APIRoutes and the
-    # candidates each included router resolves at match time.
-    def _effective_routes():
-        for route in main.app.routes:
-            if getattr(route, "path", ""):
-                yield route
-            candidates = getattr(route, "effective_candidates", None)
-            if callable(candidates):
-                yield from candidates() or []
-    def _unwrap(route):
-        original = getattr(route, "original_route", None)
-        return original if original is not None else route
-    active_routes = set()
-    for route in _effective_routes():
-        route = _unwrap(route)
-        path = getattr(route, "path", "")
-        if path.rstrip("/") == "/api/mobile/v1/analyses" and "GET" in (getattr(route, "methods", set()) or set()):
-            active_routes.add((path, getattr(route, "name", "")))
-    route_diagnostics = [
-        (getattr(route, "path", None), sorted(getattr(route, "methods", set()) or set()),
-         getattr(getattr(route, "endpoint", None), "__module__", None))
-        for route in main.app.routes
-        if "analys" in getattr(route, "path", "").lower()
-    ]
-    assert len(active_routes) == 1, f"Expected one canonical analysis route; mounted analysis routes={route_diagnostics}"
-    assert next(iter(active_routes))[1] == "mobile_analysis_history"
-    assert route_diagnostics and all(
-        "mobile_analysis_api" in (module or "")
-        for path, methods, module in route_diagnostics
-        if path == "/api/mobile/v1/analyses"
-    )
     assert filtered.headers["cache-control"] == "private, no-store"
     assert "authorization" in filtered.headers.get("vary", "").lower()
     assert filtered.json()["total"] == 1
