@@ -14,8 +14,8 @@ export function patientCreateValidationError(values: PatientCreateValues): strin
   const lastName = typeof values.last_name === 'string' ? values.last_name.trim() : '';
   const phone = typeof values.phone === 'string' ? values.phone.trim() : '';
 
-  if (!firstName || !lastName) return 'Ad ve soyad zorunludur.';
   if (!phone) return 'Telefon numarası zorunludur.';
+  if (!firstName || !lastName) return 'Ad ve soyad zorunludur.';
   if (!/^05\d{9}$/.test(phone)) {
     return 'Telefon numarası 05 ile başlamalı ve toplam 11 rakam olmalıdır.';
   }

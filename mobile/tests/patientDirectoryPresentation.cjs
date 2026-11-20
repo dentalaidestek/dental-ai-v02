@@ -5,7 +5,7 @@ require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(
 const {normalizePatientDirectorySearch,patientDirectoryDetails,patientDirectoryAgeLabel}=require('../src/patientDirectoryPresentation.ts');
 
 test('patient directory search trims and collapses whitespace without changing Turkish characters',()=>{
- assert.equal(normalizePatientDirectorySearch('  İpek   Çetin\\n  12345678901  '),'İpek Çetin 12345678901');
+ assert.equal(normalizePatientDirectorySearch('  İpek   Çetin\n  12345678901  '),'İpek Çetin 12345678901');
  assert.equal(normalizePatientDirectorySearch('   '),'');
 });
 
