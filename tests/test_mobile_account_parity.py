@@ -126,11 +126,21 @@ def test_native_self_erasure_keeps_the_web_admin_exclusion(account):
         user=s.get(main.User,1)
         user.role='ADMIN'
         s.add(user)
+        s.commit()
+
+    payload={'confirm_username':'chat-user-1','password':'correct-password'}
+    # The web route excludes administrators before password confirmation; the
+    # native adapter must do the same before its separate admin step-up policy.
+    response=client.post('/api/mobile/v1/account/delete',json=payload)
+    assert response.status_code==409,response.text
+
+    with Session(engine) as s:
+        user=s.get(main.User,1)
+        assert user.is_active and user.email=='synthetic@example.test'
         s.add(main.AdminVerifiedSession(token_hash=main.hash_session_token('token1'),user_id=1))
         s.commit()
-    response=client.post('/api/mobile/v1/account/delete',json={
-        'confirm_username':'chat-user-1','password':'correct-password'
-    })
+
+    response=client.post('/api/mobile/v1/account/delete',json=payload)
     assert response.status_code==409,response.text
     with Session(engine) as s:
         user=s.get(main.User,1)
