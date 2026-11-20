@@ -315,7 +315,7 @@ test('photo picker results are invalidated when patient scope changes even if th
 
 test('full gallery refresh invalidates preview and zoom on success and failure',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
- assert.match(source,/setError\(''\);if\(!more\)\{setSelected\(\[\]\);setPreview\(null\);setZoom\(1\)\}/);
+ assert.match(source,/setError\(''\);\s*if\(!more\)\{setSelected\(\[\]\);setPreview\(null\);setZoom\(1\)\}/);
  assert.match(source,/if\(!more\)\{setItems\(\[\]\);setCursor\(null\);setSelected\(\[\]\);setPreview\(null\);setZoom\(1\)\}/);
 });
 
