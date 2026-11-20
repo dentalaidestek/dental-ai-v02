@@ -1,11 +1,12 @@
 from types import SimpleNamespace
 import re
+import json
 import pytest
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from test_mobile_chat_actions import chat
+from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from app import main, mobile_api, migrate
 
 
@@ -23,9 +24,9 @@ def test_web_and_native_tooth_writes_converge_on_one_owner_scoped_row(chat, monk
     monkeypatch.setattr(main, "get_current_user", lambda _request: web_user)
     chart_page = client.get("/patients/8/teeth")
     assert chart_page.status_code == 200, chart_page.text
-    tooth_revision = re.search(
-        r'name="expected_revision" id="toothExpectedRevision" value="([a-f0-9]{64})"', chart_page.text
-    ).group(1)
+    revision_match = re.search(r"const TOOTH_REVISIONS\s*=\s*(\{.*?\});", chart_page.text)
+    assert revision_match, "web chart must expose the selected tooth revision map"
+    tooth_revision = json.loads(revision_match.group(1))["36"]
     # The empty surface has a deterministic server-side revision fingerprint.
     empty_surface_revision = mobile_api.observation_revision(
         None, kind="surface", patient_id=8, tooth_number="36", surface="MESIAL"
@@ -72,7 +73,7 @@ def test_web_and_native_tooth_writes_converge_on_one_owner_scoped_row(chat, monk
         assert by_surface["MESIAL"].status == "ROOT_CANAL"
         assert by_surface["DISTAL"].status == "ROOT_CANAL"
         assert by_surface["MESIAL"].note == "native whole-tooth observation"
-    client.headers["Authorization"] = "Bearer token3"
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[3]
     denied = client.put(
         "/api/mobile/v1/patients/8/teeth/36/surfaces/MESIAL",
         json={"status": "HEALTHY", "note": "must not be stored", "expected_revision": None},
@@ -211,9 +212,9 @@ def test_web_tooth_chart_posts_snapshot_revision_and_rejects_stale_form(chat, mo
     monkeypatch.setattr(main, "get_current_user", lambda _request: web_user)
     page = client.get("/patients/28/teeth")
     assert page.status_code == 200, page.text
-    match = re.search(r'name="expected_revision" id="toothExpectedRevision" value="([a-f0-9]{64})"', page.text)
-    assert match, "web chart must bind the selected tooth's snapshot revision"
-    revision = match.group(1)
+    match = re.search(r"const TOOTH_REVISIONS\s*=\s*(\{.*?\});", page.text)
+    assert match, "web chart must expose the selected tooth's snapshot revision map"
+    revision = json.loads(match.group(1))["36"]
     first = client.post("/patients/28/teeth/36", data={
         "status": "CARIES", "note": "web first", "expected_revision": revision,
     }, follow_redirects=False)
