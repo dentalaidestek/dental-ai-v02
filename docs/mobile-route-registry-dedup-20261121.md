@@ -37,7 +37,7 @@ That is a registry correctness defect, not a currently observed production endpo
 - Only colliding methods are removed; remaining methods stay attached to the candidate APIRoute.
 - Routes without an HTTP method set (for example WebSocket routes) remain untouched.
 - \`app/main.py\` calls the pure helper before mounting the modern router, preserving canonical router order.
-- Added six pytest cases for exact collisions, same path/different method, partial multi-method collisions, multiple primary routers, methodless/idempotent behavior, and case-insensitive method matching.
+- Added seven pytest cases for exact collisions, same path/different method, partial multi-method collisions, multiple primary routers, methodless/idempotent behavior, case-insensitive method matching, and a real FastAPI APIRouter/OpenAPI integration check.
 - Registered the focused pytest file in the existing Security Recovery Python command. No new workflow trigger or duplicate CI path was added.
 
 ## Validation
@@ -74,3 +74,10 @@ The updated Social and clinical-media test source was read back from the branch.
 After the two test fixes, current head is 86f0d34e296aabbfd968241505b4d38d39b0d167. Security Recovery run #2066 is pending and has no job records yet. No exact-head Android run was present in the latest lookup. Therefore the two stale assertions are fixed in source, but their hosted rerun is still outstanding. The Python/PostgreSQL result from run #2062 also remains unverified.
 
 No main merge, production deployment, schema migration, patient-record mutation, or store publication occurred.
+
+
+## Real FastAPI route check
+
+A local isolated check using FastAPI APIRouter objects confirmed that a candidate GET+PATCH route is reduced to PATCH when an earlier router already owns GET, and that the combined OpenAPI path still exposes both GET and PATCH. The repository pytest case now performs this same APIRouter/OpenAPI check. It is committed but remains pending execution by the hosted Security Recovery job.
+
+Latest branch head after adding the real FastAPI regression: f762ae0cba07b33d1e82463dc624113062961679. Android CI #4369 and Security Recovery #2068 are pending with no job records at the latest check. Combined commit status is empty; no exact-head CI pass is claimed.
