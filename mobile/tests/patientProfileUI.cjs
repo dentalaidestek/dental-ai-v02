@@ -783,3 +783,52 @@ test('voice examination stays on the dedicated home feature and stack route',asy
  assert.match(app,/Stack\.Screen name="VoiceExam"/);
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('patient deletion requires a resolved profile-edit snapshot',()=>{
+ const ready={busy:false,uncertain:false,profileEditReady:true,treatmentIntentReady:true,treatmentIntentBlocked:false,hasPendingTreatment:false,deleteIntentReady:true,deleteIntentBlocked:false,hasPendingDelete:false};
+ assert.equal(presentationExports.patientProfileCanDeletePatient(ready),true);
+ assert.equal(presentationExports.patientProfileCanDeletePatient({...ready,profileEditReady:false}),false,'unsaved or conflicted profile edits must fail closed');
+ assert.equal(presentationExports.patientProfileCanDeletePatient({...ready,profileEditReady:true,hasPendingTreatment:true}),false);
+});
+
+test('unsaved patient profile edits disable destructive deletion without sending a request',async()=>{
+ let deletes=0;
+ const Profile=component({getPatient:async()=>patient(8),deletePatient:async()=>{deletes++;return{ok:true,patient_id:8,already_deleted:false}}});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}));await Promise.resolve();await Promise.resolve()});
+ const info=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Bilgileri')));
+ await renderer.act(async()=>info.props.onPress());
+ const name=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad');
+ await renderer.act(async()=>name.props.onChangeText('Unsaved profile name'));
+ const remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
+ assert.equal(remove.props.disabled,true,'an unsaved profile draft must block patient deletion');
+ assert.ok(text(tree.toJSON()).includes('Kaydedilmemiş hasta bilgileri var'));
+ assert.equal(deletes,0);
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('patient deletion rechecks the open web-aligned profile against the latest server snapshot',async()=>{
+ let reads=0,deletes=0;
+ const latest=patient(8);latest.patient.first_name='Remote update';
+ const storage=new Map();
+ const Profile=component({
+  getPatient:async()=>++reads===1?patient(8):latest,
+  deletePatient:async()=>{deletes++;return{ok:true,patient_id:8,already_deleted:false}}
+ },'NativePatientProfile',storage);
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}));await Promise.resolve();await Promise.resolve()});
+ const info=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Bilgileri')));
+ await renderer.act(async()=>info.props.onPress());
+ const remove=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Hasta Kaydını Sil')));
+ assert.equal(remove.props.disabled,false,'a clean profile may begin the explicit delete confirmation');
+ await renderer.act(async()=>remove.props.onPress());
+ await renderer.act(async()=>Profile.alertCalls[0].buttons[1].onPress());
+ await renderer.act(async()=>{Profile.alertCalls[1].buttons[1].onPress();await new Promise(resolve=>setImmediate(resolve));});
+ assert.equal(reads,2,'the latest server profile must be fetched immediately before a new delete intent');
+ assert.equal(deletes,0,'a changed server snapshot must stop deletion before the API call');
+ assert.equal(storage.has('dai.patient-delete.v1.1.8'),false,'no delete receipt may be created from a stale profile view');
+ assert.ok(text(tree.toJSON()).includes('Silme durduruldu'));
+ assert.ok(text(tree.toJSON()).includes('Remote update'));
+ await renderer.act(async()=>tree.unmount());
+});
