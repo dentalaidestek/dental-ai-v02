@@ -15341,9 +15341,22 @@ app.include_router(mobile_router)
 from app.mobile_analysis_api import router as mobile_analysis_router
 app.include_router(mobile_analysis_router)
 from app.mobile_modern_api_v3 import router as mobile_modern_router
-_mobile_mounted_routes = {(method, route.path) for route in app.routes for method in getattr(route, "methods", ())}
-mobile_modern_router.routes[:] = [route for route in mobile_modern_router.routes
-    if not any((method, route.path) in _mobile_mounted_routes for method in getattr(route, "methods", ()))]
+# FastAPI may keep included routers as lazy entries in app.routes. Build the
+# collision set from the source routers themselves so duplicate endpoints are
+# removed before the modern adapter is mounted, independent of that internals.
+_mobile_mounted_routes = {
+    (method, route.path)
+    for mounted_router in (mobile_router, mobile_analysis_router)
+    for route in mounted_router.routes
+    for method in getattr(route, "methods", ())
+}
+mobile_modern_router.routes[:] = [
+    route for route in mobile_modern_router.routes
+    if not any(
+        (method, route.path) in _mobile_mounted_routes
+        for method in getattr(route, "methods", ())
+    )
+]
 app.include_router(mobile_modern_router)
 
 
