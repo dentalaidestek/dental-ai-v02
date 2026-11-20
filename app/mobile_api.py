@@ -1359,6 +1359,7 @@ def mobile_patient_detail(
     patient_id: int,
     response: Response,
     include_chart: bool = Query(default=True),
+    include_media: bool = Query(default=True),
     user: User = Depends(_mobile_user),
 ):
     _mobile_private_no_store(response)
@@ -1401,9 +1402,21 @@ def mobile_patient_detail(
             )
             if len(treatment_page) > _TREATMENT_HISTORY_INITIAL_LIMIT else None
         )
-        # Clinical media has its own bounded cursor endpoint. Do not fetch a
-        # second, unused preview page as part of every patient-detail response.
-        media = []
+        # Current native screens load the gallery from its bounded cursor
+        # endpoint. Keep the original preview page for legacy clients that omit
+        # include_media, while allowing current profile/chart reads to skip it.
+        if include_media:
+            media = session.exec(
+                select(PatientMedia)
+                .where(
+                    (PatientMedia.patient_id == patient_id)
+                    & (PatientMedia.owner_user_id == user.id)
+                )
+                .order_by(PatientMedia.id.desc())
+                .limit(20)
+            ).all()
+        else:
+            media = []
 
         profile = session.exec(select(PatientProfile).where(PatientProfile.patient_id == patient_id)).first()
         return {
