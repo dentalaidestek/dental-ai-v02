@@ -1474,14 +1474,14 @@ def test_patient_detail_keeps_chart_and_media_queries_out_of_profile_reads(chat,
         ))
         session.commit()
 
-    profile = client.get("/api/mobile/v1/patients/880", params={"include_chart": "false"})
+    profile = client.get("/api/mobile/v1/patients/880", params={"include_chart": "false", "include_media": "false"})
     assert profile.status_code == 200, profile.text
     assert profile.headers["cache-control"] == "private, no-store"
     assert profile.json()["teeth"] == []
     assert profile.json()["surfaces"] == []
     assert profile.json()["media"] == []
 
-    chart = client.get("/api/mobile/v1/patients/880", params={"include_chart": "true"})
+    chart = client.get("/api/mobile/v1/patients/880", params={"include_chart": "true", "include_media": "false"})
     assert chart.status_code == 200, chart.text
     assert [item["tooth_number"] for item in chart.json()["teeth"]] == ["36"]
     assert [(item["tooth_number"], item["surface"]) for item in chart.json()["surfaces"]] == [("36", "MESIAL")]
@@ -1492,6 +1492,16 @@ def test_patient_detail_keeps_chart_and_media_queries_out_of_profile_reads(chat,
     assert legacy.status_code == 200, legacy.text
     assert [item["tooth_number"] for item in legacy.json()["teeth"]] == ["36"]
     assert [(item["tooth_number"], item["surface"]) for item in legacy.json()["surfaces"]] == [("36", "MESIAL")]
+    assert [item["id"] for item in legacy.json()["media"]] == [8803]
+
+    media_only = client.get(
+        "/api/mobile/v1/patients/880",
+        params={"include_chart": "false", "include_media": "true"},
+    )
+    assert media_only.status_code == 200, media_only.text
+    assert media_only.json()["teeth"] == []
+    assert media_only.json()["surfaces"] == []
+    assert [item["id"] for item in media_only.json()["media"]] == [8803]
 
     # The profile's gallery remains available through its separate bounded endpoint.
     gallery = client.get("/api/mobile/v1/patients/880/media")
