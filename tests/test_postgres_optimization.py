@@ -858,6 +858,23 @@ def test_program_pending_reminder_index_sqlite_migration_is_idempotent(tmp_path)
                 text("SELECT 1 FROM sqlite_master WHERE type='index' AND name=:name"),
                 {'name': name},
             ).scalar_one_or_none() is None
+    # Revision 20 must repair an index that has the right name/column but
+    # accidentally includes FAILED rows in its predicate.
+    with engine.begin() as connection:
+        connection.execute(text('DROP INDEX ix_programreminderjob_pending_run_at'))
+        connection.execute(text(
+            "CREATE INDEX ix_programreminderjob_pending_run_at "
+            "ON programreminderjob (run_at) WHERE status IN ('PENDING','FAILED')"
+        ))
+    assert migrate._upgrade_program_reminder_pending_index(migration_target) is True
+    with engine.connect() as connection:
+        definition = connection.execute(text(
+            "SELECT sql FROM sqlite_master WHERE type='index' "
+            "AND name='ix_programreminderjob_pending_run_at'"
+        )).scalar_one()
+        normalized = "".join(definition.lower().split()).replace("(", "").replace(")", "")
+        assert "wherestatus='pending'" in normalized
+        assert "failed" not in normalized
     engine.dispose()
 
 def _explain_analyze_index_names(connection, statement, params=None):
