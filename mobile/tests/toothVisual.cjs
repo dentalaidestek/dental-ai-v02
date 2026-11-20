@@ -33,8 +33,8 @@ test('lower quadrants rotate the visual while upper quadrants remain upright',()
 
 test('native renderer uses the shared atlas for primary and permanent teeth',()=>{
   const source=fs.readFileSync(require.resolve('../src/NativeToothVisual.tsx'),'utf8');
-  assert.match(source,/Image source=\{atlas\}/);
-  assert.match(source,/left:-model\.column\*width/);
+  assert.match(source,/SvgImage\s+href=\{atlas\}/);
+  assert.match(source,/x=\{-model\.column\*60\}/);
   assert.doesNotMatch(source,/primarySvg|primary-enamel/);
 });
 
@@ -57,7 +57,7 @@ test('extracted tooth uses the web grayscale and 70 percent brightness contract'
   assert.equal(toothVisualFilter('EXTRACTED'),EXTRACTED_TOOTH_FILTER_URL);
   assert.equal(toothVisualFilter('HEALTHY'),undefined);
   assert.equal(toothVisualFilter('CARIES'),undefined);
-  const values=EXTRACTED_TOOTH_FILTER_MATRIX.trim().split(/\\s+/).map(Number);
+  const values=EXTRACTED_TOOTH_FILTER_MATRIX.trim().split(/\s+/).map(Number);
   assert.equal(values.length,20);
   assert.ok(values.every(Number.isFinite));
   const luminance=values[0]+values[1]+values[2];

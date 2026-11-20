@@ -12,6 +12,7 @@ function loadApi(fetchImpl){
   exports,
   require:name=>{
    if(name==='./sessionExpiry')return{reportSessionExpiry(){},revalidateSession:async()=>{}};
+   if(name==='./patientDirectoryPresentation')return require('../src/patientDirectoryPresentation.ts');
    throw Error('unexpected import '+name);
   },
   fetch:fetchImpl,

@@ -233,8 +233,8 @@ function validateToothPayload(payload:{status:ToothStatusCode;note?:string;surfa
    throw new Error("Seçilen diş yüzeylerinin sürümü alınamadı; şemayı yenileyin.");
  }
 }
-export function updateToothSurface(token:string,patientId:number,toothNumber:string,surface:ToothSurfaceCode,payload:{status:ToothStatusCode;note?:string;expected_revision:string|null}){validateToothTarget(patientId,toothNumber);if(!validToothSurfaces.has(surface))throw new Error("Geçersiz diş yüzeyi.");validateToothPayload(payload);if(payload.expected_revision!==null&&!/^[a-f0-9]{64}$/.test(payload.expected_revision))throw new Error("Diş yüzeyi sürümü alınamadı; şemayı yenileyin.");return request<{ok:boolean;tooth_number:string;surface:string;status:string;revision:string}>(`/patients/${patientId}/teeth/${toothNumber}/surfaces/${surface}`,token,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
-export function updateTooth(token:string,patientId:number,toothNumber:string,payload:{status:ToothStatusCode;note?:string;surface?:ToothSurfaceCode;surfaces?:ToothSurfaceCode[];surface_revisions?:Record<string,string|null>;expected_revision:string|null}){validateToothTarget(patientId,toothNumber);validateToothPayload(payload);if(payload.expected_revision!==null&&!/^[a-f0-9]{64}$/.test(payload.expected_revision))throw new Error("Diş şeması sürümü alınamadı; şemayı yenileyin.");return request<{ok:boolean;tooth_number:string;status:string;surface?:string;revision:string}>(`/patients/${patientId}/teeth/${toothNumber}`,token,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
+export function updateToothSurface(token:string,patientId:number,toothNumber:string,surface:ToothSurfaceCode,payload:{status:ToothStatusCode;note?:string;expected_revision:string|null}){validateToothTarget(patientId,toothNumber);if(!validToothSurfaces.has(surface))throw new Error("Geçersiz diş yüzeyi.");validateToothPayload(payload);if(payload.expected_revision!==undefined&&payload.expected_revision!==null&&!/^[a-f0-9]{64}$/.test(payload.expected_revision))throw new Error("Diş yüzeyi sürümü alınamadı; şemayı yenileyin.");return request<{ok:boolean;tooth_number:string;surface:string;status:string;revision:string}>(`/patients/${patientId}/teeth/${toothNumber}/surfaces/${surface}`,token,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
+export function updateTooth(token:string,patientId:number,toothNumber:string,payload:{status:ToothStatusCode;note?:string;surface?:ToothSurfaceCode;surfaces?:ToothSurfaceCode[];surface_revisions?:Record<string,string|null>;expected_revision:string|null}){validateToothTarget(patientId,toothNumber);validateToothPayload(payload);if(payload.expected_revision!==undefined&&payload.expected_revision!==null&&!/^[a-f0-9]{64}$/.test(payload.expected_revision))throw new Error("Diş şeması sürümü alınamadı; şemayı yenileyin.");return request<{ok:boolean;tooth_number:string;status:string;surface?:string;revision:string}>(`/patients/${patientId}/teeth/${toothNumber}`,token,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
 
 export type NotificationItem={id:number;title:string;message:string;notice_type?:string;target_url?:string|null;is_read:boolean;created_at:string};
 export type Expert={id:number;display_name:string;specialty?:string|null;academic_title?:string|null;institution?:string|null;availability:string;consultation_price?:number|null};
@@ -275,48 +275,38 @@ export const uploadPatientMedia=async(
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw new Error("Geçersiz hasta kimliği.");
  if(!file?.uri||!file.name||!file.type)throw new Error("Geçerli bir klinik görüntü seçin.");
  if(!["PHOTO","RADIOGRAPH"].includes(mediaType))throw new Error("Geçersiz görüntü türü.");
- if(typeof requestKey!=='string'||!/^[A-Za-z0-9_-]{16,96}$/.test(requestKey))throw new Error("Geçersiz klinik görüntü işlem anahtarı.");
- if(typeof batchId!=='string'||!/^[A-Za-z0-9_-]{16,96}$/.test(batchId))throw new Error("Geçersiz klinik görüntü yükleme grubu.");
+ if(requestKey!==undefined&&typeof requestKey!=='string')throw new Error("Geçersiz klinik görüntü işlem anahtarı.");
+ if(requestKey&&!/^[A-Za-z0-9_-]{16,96}$/.test(requestKey))throw new Error("Geçersiz klinik görüntü işlem anahtarı.");
+ if(batchId!==undefined&&typeof batchId!=='string')throw new Error("Geçersiz klinik görüntü yükleme grubu.");
+ if(batchId&&!/^[A-Za-z0-9_-]{16,96}$/.test(batchId))throw new Error("Geçersiz klinik görüntü yükleme grubu.");
  if(toothNumber!==undefined&&!validFdiTooth(toothNumber))throw new Error("Geçersiz FDI diş numarası.");
  const body=new FormData();
  body.append("media_type",mediaType);
- body.append("request_key",requestKey);
- body.append("batch_id",batchId);
+ if(requestKey)body.append("request_key",requestKey);
+ if(batchId)body.append("batch_id",batchId);
  body.append("file",{uri:file.uri,name:file.name,type:file.type} as any);
  if(toothNumber)body.append("tooth_number",toothNumber);
  if(note?.trim())body.append("note",note.trim().slice(0,2000));
- return await new Promise<PatientMediaUploadResult>((resolve,reject)=>{
-  const xhr=new XMLHttpRequest();
-  let settled=false;
-  const finish=(action:(value:any)=>void,value:any)=>{if(settled)return;settled=true;action(value)};
-  xhr.open("POST",API_BASE+`/patients/${patientId}/media`);
-  xhr.withCredentials=false;
-  xhr.timeout=120000;
-  xhr.setRequestHeader("Authorization","Bearer "+token);
-  if(xhr.upload)xhr.upload.onprogress=event=>{
-   try{onProgress?.({loaded:event.loaded,total:event.total,lengthComputable:event.lengthComputable})}catch{}
-  };
-  xhr.onload=()=>{
-   void(async()=>{
-    let data:any={};
-    try{data=xhr.responseText?JSON.parse(xhr.responseText):{}}catch{
-     if(xhr.status>=200&&xhr.status<300)throw new ApiError(502,"Sunucu beklenen klinik görüntü yanıtını göndermedi.");
-    }
-    if(xhr.status===401)await revalidateSession(token);
-    if(xhr.status<200||xhr.status>=300){
-     const detail=typeof data?.detail==="string"?data.detail:"Görüntü yüklenemedi.";
-     throw new ApiError(xhr.status,detail);
-    }
-    if(!data?.media||!Number.isSafeInteger(data.media.id)||data.media.id<=0||typeof data.media.original_filename!=="string"||typeof data.media.media_type!=="string"||typeof data.replayed!=="boolean")
-     throw new ApiError(502,"Görüntü kayıt fişi doğrulanamadı. Aynı işlem anahtarı korunuyor.");
-    finish(resolve,data as PatientMediaUploadResult);
-   })().catch(error=>finish(reject,error));
-  };
-  xhr.onerror=()=>finish(reject,new ApiError(503,"Görüntü aktarım bağlantısı kesildi. Aynı işlem anahtarıyla durumu doğrulayın."));
-  xhr.ontimeout=()=>finish(reject,new ApiError(408,"Görüntü yükleme zaman aşımına uğradı. Aynı işlem anahtarıyla durumu doğrulayın."));
-  xhr.onabort=()=>finish(reject,new ApiError(408,"Görüntü yüklemesi durduruldu. Aynı işlem anahtarıyla durumu doğrulayın."));
-  try{xhr.send(body)}catch(error){finish(reject,error)}
- });
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),120000);
+ try{
+  const response=await fetch(API_BASE+`/patients/${patientId}/media`,{method:"POST",body,credentials:"omit",headers:{Authorization:"Bearer "+token},signal:controller.signal});
+  const raw=await response.text();let data:any={};
+  try{data=raw?JSON.parse(raw):{}}catch{
+   if(response.ok)throw new ApiError(502,"Sunucu beklenen klinik görüntü yanıtını göndermedi.");
+  }
+  if(response.status===401)await revalidateSession(token);
+  if(response.status<200||response.status>=300){
+   const detail=typeof data?.detail==="string"?data.detail:(typeof data?.detail?.message==="string"?data.detail.message:"Görüntü yüklenemedi.");
+   throw new ApiError(response.status,detail);
+  }
+  if(!data?.media||!Number.isSafeInteger(data.media.id)||data.media.id<=0||typeof data.media.original_filename!=="string"||typeof data.media.media_type!=="string"||(data.replayed!==undefined&&typeof data.replayed!=="boolean"))
+   throw new ApiError(502,"Görüntü kayıt fişi doğrulanamadı. Aynı işlem anahtarı korunuyor.");
+  return data as PatientMediaUploadResult;
+ }catch(error){
+  if(error instanceof ApiError)throw error;
+  throw new ApiError(503,"Görüntü aktarım bağlantısı kesildi. Yeniden denemeden önce galerisini kontrol edin.");
+ }finally{clearTimeout(timeout)}
 };
 
 export async function createConsultation(token:string,payload:{expert_user_id:number;clinical_summary:string;requester_opinion?:string;question:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string}){return request<{ok:boolean;case_id:number}>("/consultations",token,{method:"POST",body:JSON.stringify(payload)});}
