@@ -723,6 +723,90 @@ def test_program_query_index_migration_upgrades_revision15_online(pg):
         assert 'STATUS' in definition.upper() and 'PENDING' in definition.upper()
 
 
+
+def test_program_pending_reminder_index_migration_upgrades_revision19_and_is_idempotent(pg):
+    from app import migrate
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        connection.execute(text(
+            'UPDATE dental_schema_revision SET version=19 WHERE id=1'
+        ))
+        connection.execute(text('DROP INDEX IF EXISTS ix_programreminderjob_pending_run_at'))
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_programreminderjob_status_run_at '
+            'ON programreminderjob (status, run_at)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_programreminderjob_run_at '
+            'ON programreminderjob (run_at)'
+        ))
+
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(
+            text('SELECT version FROM dental_schema_revision WHERE id=1')
+        ).scalar_one() == 20
+        assert connection.execute(
+            text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
+            {'name': 'ix_programreminderjob_pending_run_at'},
+        ).scalar_one() is True
+        assert connection.execute(
+            text('SELECT to_regclass(:name)'),
+            {'name': 'ix_programreminderjob_status_run_at'},
+        ).scalar_one() is None
+        assert connection.execute(
+            text('SELECT to_regclass(:name)'),
+            {'name': 'ix_programreminderjob_run_at'},
+        ).scalar_one() is None
+
+    # A second release-migration invocation must validate, not rebuild or fail.
+    migrate.apply()
+    with engine.connect() as connection:
+        assert connection.execute(
+            text('SELECT version FROM dental_schema_revision WHERE id=1')
+        ).scalar_one() == 20
+
+
+def test_program_pending_reminder_index_sqlite_migration_is_idempotent(tmp_path):
+    from types import SimpleNamespace
+    from app import migrate
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'program-reminder-index.db'}")
+    with engine.begin() as connection:
+        connection.execute(text(
+            'CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'
+        ))
+        connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,19)'))
+        connection.execute(text(
+            'CREATE TABLE programreminderjob (id INTEGER PRIMARY KEY, status VARCHAR NOT NULL, run_at TIMESTAMP NOT NULL)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX ix_programreminderjob_status_run_at ON programreminderjob (status, run_at)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX ix_programreminderjob_run_at ON programreminderjob (run_at)'
+        ))
+
+    migration_target = SimpleNamespace(engine=engine)
+    assert migrate._upgrade_program_reminder_pending_index(migration_target) is True
+    assert migrate._upgrade_program_reminder_pending_index(migration_target) is True
+    with engine.connect() as connection:
+        assert connection.execute(
+            text('SELECT version FROM dental_schema_revision WHERE id=1')
+        ).scalar_one() == 20
+        definition = connection.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='index' AND name=:name"),
+            {'name': 'ix_programreminderjob_pending_run_at'},
+        ).scalar_one()
+        assert 'where status = \'PENDING\'' in definition.lower()
+        for name in ('ix_programreminderjob_status_run_at', 'ix_programreminderjob_run_at'):
+            assert connection.execute(
+                text("SELECT 1 FROM sqlite_master WHERE type='index' AND name=:name"),
+                {'name': name},
+            ).scalar_one_or_none() is None
+    engine.dispose()
+
 def _explain_analyze_index_names(connection, statement, params=None):
     # SQLAlchemy 2.x removed Engine.execute(); accept the Engine used by the
     # caller, open a short-lived Connection, and keep the helper reusable with
