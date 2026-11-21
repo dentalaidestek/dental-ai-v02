@@ -29,6 +29,51 @@ test('legacy radiograph fallback uses a scoped private endpoint and never expose
  assert.throws(()=>legacyClinicalImage('synthetic-token',0),/Geçersiz analiz kimliği/);
  assert.throws(()=>legacyClinicalImage('synthetic-token',1.5),/Geçersiz analiz kimliği/);
 });
+
+test('legacy radiograph appears in native clinical review and opens a dedicated full-screen preview',async()=>{
+ const h=harness(),t=await open(h,{legacyRadiographAvailable:true});
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ const source=apiBase+'/analyses/1/legacy-radiograph';
+ const thumbnail=()=>t.root.findAllByType('Image').find(node=>node.props.source?.uri===source);
+ assert.ok(thumbnail(),'legacy image is shown when the server explicitly marks it available');
+ assert.equal(thumbnail().props.source.headers.Authorization,'Bearer A');
+ assert.equal(thumbnail().props.source.cache,'reload');
+ const opener=t.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Eski kayıtlı radyografiyi büyüt');
+ assert.ok(opener,'legacy preview has an accessible open action');
+ await renderer.act(async()=>opener.props.onPress());
+ const modal=()=>t.root.findAllByType('Modal')[0];
+ assert.equal(modal().props.visible,true);
+ assert.ok(t.root.findAllByType('Image').some(node=>node.props.style?.flex===1),'full-screen preview renders the private image');
+ await renderer.act(async()=>button(t,'Kapat').props.onPress());
+ assert.equal(modal().props.visible,false);
+ await renderer.act(async()=>t.unmount());
+});
+
+test('legacy radiograph fallback fails closed when modern assets exist or the server flag is false',async()=>{
+ const modern=harness({getClinical:async()=>({...base,assets:[{id:44,image_type:'PANORAMIC',has_vision:true,url:'/api/mobile/v1/analyses/1/assets/44'}]})});
+ const t=await open(modern,{legacyRadiographAvailable:true});
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ assert.ok(t.root.findAllByType('Image').some(node=>node.props.source?.uri===apiBase+'/analyses/1/assets/44'));
+ assert.ok(!t.root.findAllByType('Image').some(node=>node.props.source?.uri===apiBase+'/analyses/1/legacy-radiograph'));
+ await renderer.act(async()=>t.unmount());
+ const old=harness(),next=await open(old,{legacyRadiographAvailable:false});
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ assert.ok(!next.root.findAllByType('Image').some(node=>node.props.source?.uri===apiBase+'/analyses/1/legacy-radiograph'));
+ await renderer.act(async()=>next.unmount());
+});
+
+test('legacy radiograph image failure can be retried without changing its authorized endpoint',async()=>{
+ const h=harness(),t=await open(h,{legacyRadiographAvailable:true});
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ const source=apiBase+'/analyses/1/legacy-radiograph';
+ const thumbnail=()=>t.root.findAllByType('Image').find(node=>node.props.source?.uri===source);
+ await renderer.act(async()=>thumbnail().props.onError());
+ assert.ok(text(t.toJSON()).includes('Eski radyografi yüklenemedi.'));
+ await renderer.act(async()=>button(t,'Görüntüyü Yeniden Yükle').props.onPress());
+ assert.ok(!text(t.toJSON()).includes('Eski radyografi yüklenemedi.'));
+ assert.ok(thumbnail(),'retry retains the same owner-authorized API route');
+ await renderer.act(async()=>t.unmount());
+});
 test('vision snapshot requests bypass HTTP cache like the web embedded viewer',async()=>{
  const calls=[];
  const {getVision}=api(async(...args)=>{calls.push(args);return{status:'VISION_PENDING'}});
