@@ -167,17 +167,25 @@ def test_native_bearer_session_can_apply_and_read_only_its_own_approved_anamnesi
     assert client.get('/patients/2/voice-exam/history', headers=headers).status_code == 404
 
 
-def test_native_bearer_voice_auth_rejects_unverified_expired_and_non_doctor_sessions(app_client):
+def test_native_bearer_voice_auth_rejects_unverified_expired_and_non_doctor_sessions(app_client, monkeypatch):
     client, engine = app_client
+    main = sys.modules['app.main']
+    # Make this an explicitly Bearer-only integration test. A cookie/session
+    # stub must not mask which persisted token identity the route evaluates.
+    monkeypatch.setattr(main, 'get_current_user', lambda request: None)
     with Session(engine) as session:
         session.add(User(id=3, role='PATIENT', email_verified_at=datetime.utcnow()))
         session.add(User(id=4, role='DOCTOR', email_verified_at=None))
         session.commit()
+        assert session.get(User, 3).role == 'PATIENT'
+        assert session.get(User, 4).email_verified_at is None
     patient_headers, _ = _bearer_headers(engine, 'patient-token', user_id=3)
     unverified_headers, _ = _bearer_headers(engine, 'unverified-token', user_id=4)
     expired_headers, expired_hash = _bearer_headers(engine, 'expired-token', expires_at=datetime.utcnow()-timedelta(seconds=1))
     for headers in (patient_headers, unverified_headers, expired_headers):
-        assert client.get('/patients/1/voice-exam/history', headers=headers).status_code == 401
+        assert voice._user(SimpleNamespace(method='GET', headers=headers)) is None
+        response = client.get('/patients/1/voice-exam/history', headers=headers)
+        assert response.status_code == 401, response.text
     with Session(engine) as session:
         assert session.get(SessionToken, expired_hash) is None
 
