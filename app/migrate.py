@@ -612,7 +612,7 @@ def _upgrade_program_reminder_pending_index(main):
                 revision = connection.execute(
                     text("SELECT version FROM dental_schema_revision WHERE id=1")
                 ).scalar()
-                if revision not in (TREATMENT_HISTORY_INDEX_REVISION, PROGRAM_REMINDER_PENDING_INDEX_REVISION):
+                if revision not in (TREATMENT_HISTORY_INDEX_REVISION, PROGRAM_REMINDER_PENDING_INDEX_REVISION, REVISION):
                     return False
 
                 expected, valid = _program_pending_reminder_index_state(connection, index_name)
@@ -664,7 +664,7 @@ def _upgrade_program_reminder_pending_index(main):
             revision = connection.execute(
                 text("SELECT version FROM dental_schema_revision WHERE id=1")
             ).scalar()
-            if revision not in (TREATMENT_HISTORY_INDEX_REVISION, PROGRAM_REMINDER_PENDING_INDEX_REVISION):
+            if revision not in (TREATMENT_HISTORY_INDEX_REVISION, PROGRAM_REMINDER_PENDING_INDEX_REVISION, REVISION):
                 return False
 
             definition = connection.execute(
