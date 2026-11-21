@@ -1,8 +1,7 @@
 import {ChatFile,validateChatFile} from "./chatFiles";
-import {ApiError} from './api';
+import {ApiError,API_BASE} from './api';
 import {revalidateSession} from './sessionExpiry';
 import {normalizeNotificationReadAt} from "./notificationState";
-const API_BASE="https://dentalai.tr/api/mobile/v1";
 async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
  const headers:any={Authorization:"Bearer "+token,...(!(init.body instanceof FormData)?{"Content-Type":"application/json"}:{}),...(init.headers||{})};
  // Bound network waits for notifications, consultations, academic and media screens.

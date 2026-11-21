@@ -19,7 +19,7 @@ function loadApi(payload,status=200){
   fetch:async(url,init)=>{calls.push({url,init});return{ok:status>=200&&status<300,status,text:async()=>JSON.stringify(payload)}},
   require:name=>{
    if(name==='./chatFiles')return{validateChatFile:()=>true};
-   if(name==='./api')return{ApiError};
+   if(name==='./api')return{ApiError,API_BASE:'https://dentalai.tr/api/mobile/v1'};
    if(name==='./sessionExpiry')return{revalidateSession:async()=>{}};
    if(name==='./notificationState')return{normalizeNotificationReadAt:value=>value};
    throw Error('Unexpected module '+name);
@@ -31,6 +31,8 @@ const row=(id,media_type='PHOTO')=>({
  id,filename:'clinical-'+id+'.jpg',media_type,tooth_number:'36',
  note:'Kontrol',uploaded_at:'2026-11-20T10:00:00'
 });
+
+test('modern media API imports the shared canonical API base',()=>{const source=fs.readFileSync(path.join(__dirname,'../src/modernApi.ts'),'utf8');assert.match(source,/import \{ApiError,API_BASE\} from '\.\/api'/);assert.doesNotMatch(source,/const API_BASE=/);});
 
 test('native clinical media accepts the web-compatible descending cursor page and builds private API paths',async()=>{
  const {api,calls}=loadApi({items:[row(42,'RADIOGRAPH'),row(41)],next_before:41});
