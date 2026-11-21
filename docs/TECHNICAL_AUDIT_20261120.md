@@ -297,4 +297,18 @@ Hesap: `scripts/capacity_model_69k.py` (parametrik; Kasım 2026 liste fiyatları
 
 **Merge sonrası beyan (ChatGPT 8325c3a0 auto-merge):** ChatGPT'nin taze `supportRequests.cjs` testindeki `"&before_id="+before` literal beklentisi kendi HEAD'inde de kırmızıydı (src 4fc28a26'da `encodeURIComponent` yazımına geçmiş); assertion gerçek — ve daha güvenli — src sözleşmesine (`"&before_id="+encodeURIComponent(before)`) hizalandı; test kuralları gevşetilmedi, testin kendi yorumundaki niyet (cursor'ın `before` argümanından iletmesi) birebir kanıtlanmaya devam ediyor. Final kanıt: mobil süit **1013/1013**, `tsc` **0**.
 
+## 22. On birinci geçiş — sorulan kontrol sorularına kanıtlı cevaplar + 3. tur tarama
+
+**S1: Geçemeyen test / hatalı test var mı?** Yok. Mobil **1013/1013**, `tsc --noEmit` **0**, Python **557 passed / 27 skipped / 0 failed**; uzak dal güncel (behind 0 / ahead 0). Bu raporda benim yaptığım tek test dosyası düzenlemesi §21'de beyan edilen `supportRequests.cjs` cursor assertion hizalamasıdır (ChatGPT'nin kendi HEAD'inde de kırmızıydı); benim 7 yeni testimin hiçbiri src'te var olmayan bir sözleşmeyi beklemez — hepsi gerçek davranışı kanıtlıyor.
+
+**S2: Web'de olup mobilde olmayan bir şey kaldı mı? (3. tur hedefli tarama):**
+- **Annotate ucunun web'de üreticisi yok** — `/expert-support/cases/{id}/annotate/{message_id}` hiçbir web şablonu/JS tarafından çağrılmıyor; web canvas işaretlemesi (expert_case_room.html:292,333-342) görsel+çizimi JPEG'e birleştirip normal IMAGE mesajı olarak `/media-message` ile gönderiyor (:280). Uç API-only olduğundan mobilin not-bazlı ANNOTATION üretimi meşru ve web'in ANNOTATION render etiketiyle (`✎ İşaretlenmiş görüntü`, expert_case_room.html:37) uyumlu. **Kalıntı (kayda geçti):** mobilin eklediği anotasyon notu web'de yalnız etiketle görünür, metin render edilmez — notun web'de de gösterilmesi tek satırlık web şablon işi, sonraki tur önerisi.
+- **Canlı transkript (A1) tam netleşti:** Gemini Live WS hiçbir veri yazmaz (voice_exam_live.py:1 — saf relay + eşzamanlılık limiti); web'de canlı final metinler aynı klasik `/voice-exam/text` → `/voice-exam/finalize` → `/voice-exam/apply` uçlarına akar (voice-exam.js:170,335). Mobilin mevcut kaydet→yükle→finalize akışı **verisel olarak TAM karşılık**; fark yalnız anlık döküman UX katmanıdır — veri/aksiyon kaybı yok.
+- **Watch listesi:** web'de aktif watch listesi/iptal gerçekten yok (yalnız form + `watch=1` flash + bildirim sonrası otomatik `is_active=False`, main.py:7706); mobilin GET listesi benim eklediğim meşru mobil fazlalık (web parite boşluğu değil).
+
+**S3: "Modal beklemede uzun işlem" senaryoları (kaynak düzeyinde denetim):**
+- **Anotasyon modalı:** gerçektime `catchUp`/`load` sırasında modal state'i mesaj listesinden bağımsız — açıkken mesaj gelmesi çakışmaz; çift basım `annotateBusy` ile engelli; görüşme silinip/kapanırsa submit web handler'ın 409/403'ünü hata mesajı olarak gösterir, `Vazgeç` her koşulda çalışır.
+- **Belge görüntüleme:** `lock.current` + hesap scope'u + `finally` ile busy bırakma; yükleme modalıyla paylaşılan lock çakışmayı engeller. **Bulunan gerçek edge (bu turda düzeltildi):** her paylaşımda `Date.now()` ile yeni önbellek dosyası yazıp biriktiriyordu → sabit dosya adına alındı (`belge-{purpose}.{ext}`, üzerine yazım; NativeProfessional.tsx:35-36) — düzeltme sonrası mobil süit **1013/1013**, `tsc` **0**.
+- **Müsaitlik aboneliği:** `watchBusy` + `activeToken` guard'lı; hesap değişiminde eski hesabın abonelik bilgisi ekrana yazılamaz.
+
 **Canlıya deploy edilmedi.**

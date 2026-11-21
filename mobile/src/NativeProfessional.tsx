@@ -33,7 +33,8 @@ export default function NativeProfessional({token,onChanged,onPublicProfile,onBu
    const doc=await getProfessionalDocument(token,purpose);
    const extension=doc.media_type==='application/pdf'?'pdf':doc.media_type==='image/png'?'png':'jpg';
    if(!FileSystem.cacheDirectory)throw Error('Yerel önbellek kullanılamıyor.');
-   const target=FileSystem.cacheDirectory+'belge-'+purpose+'-'+Date.now()+'.'+extension;
+   // Sabit dosya adı: her görüntüleme aynı hedefi üzerine yazar, önbellek birikmez.
+   const target=FileSystem.cacheDirectory+'belge-'+purpose+'.'+extension;
    await FileSystem.writeAsStringAsync(target,doc.data_base64,{encoding:FileSystem.EncodingType.Base64});
    if(await Sharing.isAvailableAsync()){await Sharing.shareAsync(target,{mimeType:doc.media_type,dialogTitle:'Belgeyi görüntüle'})}
    if(mounted.current&&scope.current===token)setNotice('Belge görüntülenmek üzere açıldı.');
