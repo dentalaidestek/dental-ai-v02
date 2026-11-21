@@ -417,8 +417,9 @@ def test_startup_rejects_wrong_approved_anamnesis_index_columns():
     engine = create_engine("sqlite://")
     _revision_21_ledger_with_query_index(engine, "patient_id")
 
-    with pytest.raises(RuntimeError, match="exact approved anamnesis.*query index"):
+    with pytest.raises(RuntimeError, match="approved anamnesis query index") as error:
         require_schema(engine)
+    assert "exact owner/patient/field/source columns" in str(error.value)
 
     with engine.connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM approvedanamnesis")).scalar_one() == 1
