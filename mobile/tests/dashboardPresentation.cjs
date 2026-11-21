@@ -67,7 +67,7 @@ test('native home renders real recent analyses and patches valid program events 
  assert.match(program,/!actionIntentReady\|\|uncertain/);
  assert.match(source,/initialEventId=\{eventId\}/);
  assert.match(source,/openRequestId:Date\.now\(\)/);
- assert.match(source,/key=\{token\+":"\+openRequestId\}/);
+ assert.match(source,/const programRenderKey=useSessionRenderKey\(`\$\{token\}:\$\{userId\}:\$\{openRequestId\}`\)/);\n assert.match(source,/<NativeProgram key=\{programRenderKey\}/);\n assert.doesNotMatch(source,/key=\{token\+":"\+openRequestId\}/,'navigation remount identity must remain opaque');
  assert.match(program,/navigation\.setParams\?\.\(\{eventId:undefined\}\)/);
 
 
