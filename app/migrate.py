@@ -750,7 +750,7 @@ def _upgrade_approved_anamnesis_schema(main):
         # are upgraded below and advance to 21 only after the backfill completes.
         if revision not in (PROGRAM_REMINDER_PENDING_INDEX_REVISION, APPROVED_ANAMNESIS_REVISION):
             return False
-        for required in ("analysis", "workjob"):
+        for required in ("analysis", "workjob", "patient"):
             if not inspect(connection).has_table(required):
                 raise RuntimeError(f"Approved anamnesis migration requires {required}")
         table.create(connection, checkfirst=True)
@@ -760,8 +760,8 @@ def _upgrade_approved_anamnesis_schema(main):
         last_id = 0
         insert_sql = text(
             "INSERT INTO approvedanamnesis "
-            "(owner_user_id, patient_id, field_key, value, analysis_id) "
-            "VALUES (:owner_user_id, :patient_id, :field_key, :value, :analysis_id) "
+            "(owner_user_id, patient_id, field_key, value, analysis_id, created_at) "
+            "VALUES (:owner_user_id, :patient_id, :field_key, :value, :analysis_id, CURRENT_TIMESTAMP) "
             "ON CONFLICT (analysis_id, field_key) DO NOTHING"
         )
         while True:
@@ -769,6 +769,7 @@ def _upgrade_approved_anamnesis_schema(main):
                 "SELECT a.id AS analysis_id, a.patient_id AS patient_id, "
                 "w.owner_user_id AS owner_user_id, a.clinical_notes AS clinical_notes "
                 "FROM analysis AS a JOIN workjob AS w ON w.resource_id = a.id "
+                "JOIN patient AS p ON p.id = a.patient_id AND p.owner_user_id = w.owner_user_id "
                 "WHERE a.id > :last_id AND w.resource_type = 'ANALYSIS' "
                 "AND w.kind = 'VOICE_REVIEW' AND w.status = 'DONE' "
                 "ORDER BY a.id ASC LIMIT 500"
