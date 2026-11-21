@@ -12,6 +12,15 @@ const INSTALLATION_PROOF_KEY = "dai.push.installation_proof";
 type DeviceIdentity = { deviceId: string; installationProof: string };
 let deviceIdentityPromise: Promise<DeviceIdentity> | null = null;
 let installationClaimQueue: Promise<void> = Promise.resolve();
+
+// All server mutations for this physical installation share one ordered queue.
+// In particular, logout must run after any in-flight login claim/refresh so a
+// late claim cannot re-bind the device to an account that has already signed out.
+function enqueueInstallationMutation<T>(operation: () => Promise<T>): Promise<T> {
+  const result = installationClaimQueue.then(operation, operation);
+  installationClaimQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
 const ENABLED_USER_KEY = (userId: number) => "dai.push.enabled." + String(userId);
 const DELIVERY_USER_KEY = (userId: number) => "dai.push.delivery." + String(userId);
 
@@ -132,64 +141,68 @@ async function expoToken(): Promise<{ deviceId: string; installationProof: strin
 
 /** Called only from the explicit account setting; never prompts during app startup. */
 export async function enableNativePush(token: string, userId: number): Promise<NativePushState> {
-  const registration = await expoToken();
-  const registered = await registerPushDevice(token, registration.deviceId, registration.token, registration.platform, registration.installationProof);
-  await SecureStore.setItemAsync(enabledKey(userId), "1");
-  await SecureStore.setItemAsync(DELIVERY_USER_KEY(userId), registered.delivery_enabled ? "1" : "0");
+  await enqueueInstallationMutation(async () => {
+    const registration = await expoToken();
+    const registered = await registerPushDevice(token, registration.deviceId, registration.token, registration.platform, registration.installationProof);
+    await SecureStore.setItemAsync(enabledKey(userId), "1");
+    await SecureStore.setItemAsync(DELIVERY_USER_KEY(userId), registered.delivery_enabled ? "1" : "0");
+  });
   return getNativePushState(userId);
 }
 
 /** Claim this installation for the authenticated account without enabling push or requesting OS permission. */
 export function claimNativePushDeviceForSession(token: string, userId: number): Promise<void> {
   enabledKey(userId); // Validate the account scope before making the authenticated claim.
-  const claim = async () => {
+  return enqueueInstallationMutation(async () => {
     const identity = await deviceIdentity();
     await claimPushDevice(token, identity.deviceId, identity.installationProof);
-  };
-  // Serialize account changes: a slow claim from the previous session must not
-  // finish after the new session and remove the new account's device binding.
-  const result = installationClaimQueue.then(claim, claim);
-  installationClaimQueue = result.catch(() => undefined);
-  return result;
+  });
 }
 
 /** Refreshes an opted-in token on login/foreground without showing a permission prompt. */
 export async function refreshNativePushRegistration(token: string, userId: number): Promise<boolean> {
   if ((await SecureStore.getItemAsync(enabledKey(userId))) !== "1") return false;
-  await installationClaimQueue.catch(() => undefined);
-  const platform = Platform.OS;
-  if (platform !== "android" && platform !== "ios") return false;
+  return enqueueInstallationMutation(async () => {
+    // Re-check after waiting: logout or an explicit opt-out may have run first.
+    if ((await SecureStore.getItemAsync(enabledKey(userId))) !== "1") return false;
+    const platform = Platform.OS;
+    if (platform !== "android" && platform !== "ios") return false;
 
-  const permission = await Notifications.getPermissionsAsync();
-  const currentDeviceId = await storedDeviceId();
-  if (!permission.granted) {
-    if (currentDeviceId) await unregisterPushDevice(token, currentDeviceId);
-    await SecureStore.deleteItemAsync(enabledKey(userId));
-    await SecureStore.deleteItemAsync(DELIVERY_USER_KEY(userId));
-    return false;
-  }
-  if (!easProjectId()) return false;
+    const permission = await Notifications.getPermissionsAsync();
+    const currentDeviceId = await storedDeviceId();
+    if (!permission.granted) {
+      if (currentDeviceId) await unregisterPushDevice(token, currentDeviceId);
+      await SecureStore.deleteItemAsync(enabledKey(userId));
+      await SecureStore.deleteItemAsync(DELIVERY_USER_KEY(userId));
+      return false;
+    }
+    if (!easProjectId()) return false;
 
-  const registration = await expoToken();
-  const registered = await registerPushDevice(token, registration.deviceId, registration.token, registration.platform, registration.installationProof);
-  await SecureStore.setItemAsync(DELIVERY_USER_KEY(userId), registered.delivery_enabled ? "1" : "0");
-  return true;
+    const registration = await expoToken();
+    const registered = await registerPushDevice(token, registration.deviceId, registration.token, registration.platform, registration.installationProof);
+    await SecureStore.setItemAsync(DELIVERY_USER_KEY(userId), registered.delivery_enabled ? "1" : "0");
+    return true;
+  });
 }
 
 export async function disableNativePush(token: string, userId: number): Promise<NativePushState> {
-  const currentDeviceId = await storedDeviceId();
-  if (currentDeviceId) await unregisterPushDevice(token, currentDeviceId);
-  await SecureStore.deleteItemAsync(enabledKey(userId));
-  await SecureStore.deleteItemAsync(DELIVERY_USER_KEY(userId));
+  await enqueueInstallationMutation(async () => {
+    const currentDeviceId = await storedDeviceId();
+    if (currentDeviceId) await unregisterPushDevice(token, currentDeviceId);
+    await SecureStore.deleteItemAsync(enabledKey(userId));
+    await SecureStore.deleteItemAsync(DELIVERY_USER_KEY(userId));
+  });
   return getNativePushState(userId);
 }
 
-/** Logout revokes this account/device pair before the session is discarded. */
+/** Logout revokes this account/device pair after every earlier claim/refresh has settled. */
 export async function unregisterNativePushForLogout(token: string, userId: number): Promise<void> {
-  const currentDeviceId = await storedDeviceId();
-  if (currentDeviceId) await unregisterPushDevice(token, currentDeviceId);
-  await SecureStore.deleteItemAsync(enabledKey(userId));
-  await SecureStore.deleteItemAsync(DELIVERY_USER_KEY(userId));
+  await enqueueInstallationMutation(async () => {
+    const currentDeviceId = await storedDeviceId();
+    if (currentDeviceId) await unregisterPushDevice(token, currentDeviceId);
+    await SecureStore.deleteItemAsync(enabledKey(userId));
+    await SecureStore.deleteItemAsync(DELIVERY_USER_KEY(userId));
+  });
 }
 
 export function subscribeToNativePushResponses(
