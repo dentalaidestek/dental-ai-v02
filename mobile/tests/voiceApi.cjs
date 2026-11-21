@@ -7,7 +7,7 @@ const transcribeVoiceAudio=(...args)=>api.transcribeVoiceAudio(...(args.length==
 const response=(body,status=200)=>({ok:status>=200&&status<300,status,text:async()=>body});
 test('voice extraction sends consent, bearer and patient path',async()=>{
  const original=global.fetch;let call;global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',review:{fields:{}}}))};
- try{const result=await api.extractVoice('secret',12,'muayene konuşması',{sessionId:'session_1234567890'});assert.equal(result.ok,true);assert.match(call.url,/\/patients\/12\/voice-exam\/text$/);assert.equal(call.init.headers.Authorization,'Bearer secret');assert.equal(call.init.credentials,'omit');assert.deepEqual(JSON.parse(call.init.body),{transcript:'muayene konuşması',consent:true,context:{},request_key:'session_1234567890_0_'+'0'.repeat(64)})}finally{global.fetch=original}
+ try{const result=await api.extractVoice('secret',12,'muayene konuşması',{sessionId:'session_1234567890'});assert.equal(result.ok,true);assert.equal(call.url,'https://dentalai.tr/patients/12/voice-exam/text');assert.equal(call.init.headers.Authorization,'Bearer secret');assert.equal(call.init.credentials,'omit');assert.deepEqual(JSON.parse(call.init.body),{transcript:'muayene konuşması',consent:true,context:{},request_key:'session_1234567890_0_'+'0'.repeat(64)})}finally{global.fetch=original}
 });
 test('voice API surfaces HTTP errors without masking details',async()=>{
  const original=global.fetch;global.fetch=async()=>response(JSON.stringify({detail:'Hasta erişim yetkisi yok'}),403);
@@ -453,7 +453,7 @@ test('native voice history uses authenticated no-store GET and validates approve
  global.fetch=async(url,init)=>{call={url,init};return response(JSON.stringify({ok:true,revision:'a'.repeat(64),fields:{medical_history:{value:'Astım beyanı',quote:'',analysis_id:17}},notice:'Hastayla güncelliğini doğrulayın.'}))};
  try{
   const result=await api.getVoiceHistory('secret',12);
-  assert.ok(call.url.endsWith('/patients/12/voice-exam/history'));
+  assert.equal(call.url,'https://dentalai.tr/patients/12/voice-exam/history');
   assert.equal(call.init.method,'GET');assert.equal(call.init.headers.Authorization,'Bearer secret');
   assert.equal(call.init.credentials,'omit');
   assert.equal(call.init.headers['Cache-Control'],'no-store');assert.equal(call.init.body,undefined);
@@ -491,7 +491,7 @@ test('approved voice history uses the authenticated patient-scoped read endpoint
  try{
   const result=await api.getVoiceHistory('secret-token',12);
   assert.equal(result.fields.allergies.value,'Alerjim yok');
-  assert.ok(call.url.endsWith('/patients/12/voice-exam/history'));
+  assert.equal(call.url,'https://dentalai.tr/patients/12/voice-exam/history');
   assert.equal(call.init.method,'GET');
   assert.equal(call.init.headers.Authorization,'Bearer secret-token');
   assert.equal(call.init.credentials,'omit');
