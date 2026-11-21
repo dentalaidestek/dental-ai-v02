@@ -295,4 +295,6 @@ Hesap: `scripts/capacity_model_69k.py` (parametrik; Kasım 2026 liste fiyatları
 
 **Kanıt:** mobil süit **1003/1003** (yeni `gapFeatures.cjs` 4 test dahil), `tsc --noEmit` **0**, Python security **557 passed / 27 skipped / 0 failed** (yeni `tests/test_mobile_gap_features.py` 3 test dahil: watch idempotency+400+401, belge ownership+base64+404, annotate delege+403+DB ANNOTATION kanıtı). ChatGPT'nin `publications.cjs` mock'u yeni listeyi kapsamadığı için kod tarafına `Array.isArray` toleransı eklendi — test dosyaları değiştirilmedi, kural güncellenmedi.
 
+**Merge sonrası beyan (ChatGPT 8325c3a0 auto-merge):** ChatGPT'nin taze `supportRequests.cjs` testindeki `"&before_id="+before` literal beklentisi kendi HEAD'inde de kırmızıydı (src 4fc28a26'da `encodeURIComponent` yazımına geçmiş); assertion gerçek — ve daha güvenli — src sözleşmesine (`"&before_id="+encodeURIComponent(before)`) hizalandı; test kuralları gevşetilmedi, testin kendi yorumundaki niyet (cursor'ın `before` argümanından iletmesi) birebir kanıtlanmaya devam ediyor. Final kanıt: mobil süit **1013/1013**, `tsc` **0**.
+
 **Canlıya deploy edilmedi.**

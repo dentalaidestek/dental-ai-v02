@@ -81,9 +81,10 @@ test('native support exposes reports and cursor pagination for tickets and messa
  assert.ok(api.includes('getSupportReports'));
  assert.ok(api.includes('getSupportTickets=async(t:string,before?:number)'));
  // 'before_id='+'before' was a literal-concat artifact; the intent is that the cursor is forwarded
- // from the `before` argument, which the client builds as "&before_id="+before / "?before_id="+before.
- assert.ok(api.includes('"&before_id="+before'));
- assert.ok(api.includes('"?before_id="+before'));
+ // from the `before` argument. The client builds it as "&before_id="+encodeURIComponent(before) /
+ // "?before_id="+encodeURIComponent(before) — same forwarding, URL-encoded for safety.
+ assert.ok(api.includes('"&before_id="+encodeURIComponent(before)'));
+ assert.ok(api.includes('"?before_id="+encodeURIComponent(before)'));
  assert.ok(screen.includes('Bildirimlerim'));
  assert.ok(screen.includes('Daha eski destek taleplerini yükle'));
  assert.ok(screen.includes('Daha eski mesajları yükle'));
