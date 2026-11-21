@@ -142,10 +142,15 @@ def _drain(engine):
                     row.status='FAILED';row.error=payload.get('error','Çalışma tamamlanamadı. Yeniden deneyebilirsin.')
                     row.stage='Tamamlanamadı';row.updated_at=now();session.add(row);session.commit()
         except Exception:
-            # Do not store provider/user exception text or restart a paid call.
+            # Cancellation is acknowledged only after the worker unwinds and closes
+            # the nested provider stream; never report success at request time alone.
             with Session(engine) as session:
                 row=session.get(StudyRun,run.id)
-                if row is not None and row.status=='RUNNING':
+                if row is not None and row.status=='CANCEL_REQUESTED':
+                    row.status='CANCELLED';row.stage='AI akışı kapatıldı'
+                    row.error='Çalışma iptal edildi; sağlayıcı akışı kapatıldı.'
+                    row.partial_text='';row.updated_at=now();session.add(row);session.commit()
+                elif row is not None and row.status=='RUNNING':
                     row.status='FAILED';row.error='Çalışma tamamlanamadı. Önceki kayıtların korunuyor.'
                     row.updated_at=now();session.add(row);session.commit()
 
@@ -183,10 +188,21 @@ def cancel_run(session, *, run_id, owner, course):
     row=session.exec(select(StudyRun).where(StudyRun.id==run_id,
         StudyRun.owner_user_id==owner,StudyRun.course_id==course).with_for_update()).first()
     if row is None:return None
-    if row.status in ('QUEUED','RUNNING','INTERRUPTED'):
-        row.status='CANCELLED';row.stage='Kullanıcı tarafından iptal edildi'
-        row.error='Bu çalışma iptal edildi.';row.partial_text='';row.updated_at=now()
-        session.add(row)
+    if row.status=='QUEUED':
+        # No worker/provider has claimed this request; cancel it immediately.
+        row.status='CANCELLED';row.stage='Sıradaki çalışma iptal edildi'
+        row.error='Bu çalışma iptal edildi; AI çağrısı başlatılmadı.'
+        row.partial_text='';row.updated_at=now();session.add(row)
+    elif row.status=='RUNNING':
+        # The worker must observe this state, unwind its generators and close the
+        # provider stream before it transitions the run to CANCELLED.
+        row.status='CANCEL_REQUESTED';row.stage='AI akışı durduruluyor'
+        row.error='Durdurma isteği alındı; sağlayıcı bağlantısı kapatılıyor.'
+        row.partial_text='';row.updated_at=now();session.add(row)
+    elif row.status=='INTERRUPTED':
+        row.status='CANCELLED';row.stage='Kesilmiş çalışma iptal edildi'
+        row.error='Kesilmiş çalışma iptal edildi; yeniden başlatılmadı.'
+        row.partial_text='';row.updated_at=now();session.add(row)
     return row
 
 
