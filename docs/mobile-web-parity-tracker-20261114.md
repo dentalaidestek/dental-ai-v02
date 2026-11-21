@@ -1226,3 +1226,29 @@ Physical Android/iOS audio-route acceptance remains open, including Bluetooth, p
 PR head `857feb3d9342e0af74244348cf4335af4b6e4b9a` had a passing `npm run typecheck` step, but the Android workflow failed later in realtime/recovery and beta tests; Security Recovery failed only in Native Clinical. The common runtime error was `nextSessionRenderKey is not a function`: the three VM-based CJS test harnesses for `NativeDentalAI` and `NativeClinicalReview` did not map the newly imported `./sessionRenderKey` module. This is a test harness integration defect; it does not establish a production component failure. The Native Clinical viewer test additionally asserted the obsolete user-ID-based key after the app had moved to opaque session keys.
 
 Added a shared test-only TypeScript bridge and explicit module mappings in `analysisRefresh.cjs`, `analysisRecovery.cjs` and `clinicalWorkflow.cjs`; updated the stale key assertion; and added a regression requiring all harnesses to resolve the helper. Latest-head rerun is pending after these commits. Do not mark the Android beta/recovery suites green until the new CI jobs complete. No main merge, production deploy or clinical record mutation.
+
+
+## 2026-11-21 — Voice Exam CI harness repair and web-entry parity
+
+### Web-first inspection
+
+Before editing native UI, compared `app/templates/voice_exam_entry.html`, `app/templates/voice_exam_panel.html`, `app/static/voice-exam.css`, `app/static/voice-exam-live.js` and `app/static/voice-exam.js` with `mobile/src/VoiceExamEntry.tsx`, `NativePatientSelect.tsx` and `NativeVoiceRecorder.tsx`. The web entry exposes a three-step flow, distinct new/existing-patient paths, a bounded patient search, and an explicit microphone/privacy notice. The native entry previously compressed those into one generic card and showed appointment-oriented search copy inside the patient picker. A supplied patient ID also stopped at the selection stage even though the web session URL opens the examination directly.
+
+### Starting-head CI root cause
+
+At `f48c1b39fa67508d64c971199a6ba607c0da83bd`, Android typecheck, session/auth, realtime/pagination, APK assembly and Android/iOS JS bundle export passed. The beta suite passed 969/974 tests; five VoiceExamEntry tests failed with `sessionRenderKey_1.nextSessionRenderKey is not a function`. Security Recovery reproduced the same five failures in native voice/clinical jobs. Python security/identity recovery, PostgreSQL migration/concurrency and native Program, Social, Academic and Support security suites passed. This was a test VM module-resolution/bridge failure; it was not an Android typecheck regression and did not demonstrate a clinical API authorization defect.
+
+### Changes and commits
+
+- `401e1f0` — load the actual production session-key helper through Node's CommonJS module loader.
+- `9ca1907` — make all voice VM mappings tolerate extensionless and explicit TypeScript module specifiers; update patient-specific route tests to expect direct exam entry.
+- `145c00c` — assert the shared helper export and all six VM mappings.
+- `c734bfe` — add optional search title/hint/placeholder/empty-label props to the shared patient selector; appointment defaults remain unchanged.
+- `276b8bc` — redesign the native Voice Exam entry hierarchy to match the web hero, steps, new/existing-patient cards and privacy note; verified `initialPatientId` now opens the exam stage without a redundant tap.
+- `88b13d7` — cover contextual patient-search copy while retaining appointment defaults.
+- `e508034` — cover web-first Voice Exam hierarchy, privacy guidance and direct patient-route parity.
+- `4274406` — record the CI diagnosis and release boundary in the focused voice review.
+
+### Validation and next gate
+
+The repaired head has not yet received fresh completed Android/Security Recovery results in this work package. Do not call the five VM failures fixed until those jobs rerun green. No local typecheck/test result is claimed, no web/backend or provider behavior was changed, and no main merge, live deploy, APK/IPA release, migration or patient-data operation occurred. Next: verify current-head CI, then resume web-first patient-profile, clinical-media and AI-analysis parity; 60,000-user scale remains un-certified and needs dedicated load testing.
