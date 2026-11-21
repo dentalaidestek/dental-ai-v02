@@ -224,3 +224,19 @@ test('web radiograph and intraoral viewers preselect only permanent FDI teeth li
   assert.ok(!snippet.includes('\\\\d{2}'),'viewer must not use the escaped digit matcher');
  }
 });
+
+
+test('failed private image can be retried without repeating the vision request',async()=>{
+ let calls=0;const Component=ui(async()=>{calls++;return{pending:false,findings:[]}});let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:31,assetId:7,onClose(){}})));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ const first=t.root.findByType('Image'),firstKey=first.key;
+ await renderer.act(async()=>first.props.onError());
+ assert.ok(text(t.toJSON()).includes('Görüntü yüklenemedi'));
+ const retry=findPressable(t.root,'Görüntüyü Yeniden Yükle');assert.ok(retry);
+ await renderer.act(async()=>retry.props.onPress());
+ assert.notEqual(t.root.findByType('Image').key,firstKey);
+ assert.equal(calls,1,'image retry must not call getVision or create another AI job');
+ assert.ok(!text(t.toJSON()).includes('Görüntü yüklenemedi'));
+ await renderer.act(async()=>t.unmount());
+});
