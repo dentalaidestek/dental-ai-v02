@@ -55,6 +55,7 @@ test('native home renders real recent analyses and patches valid program events 
  assert.match(source,/parseDashboardProgramSnapshot\(lastEvent\)/);
  assert.match(source,/if\(snapshot\)setD\(previous=>previous\?applyDashboardProgramSnapshot/);
  assert.match(source,/recent_analyses\|\|\[\]/);
+ assert.match(source,/nav\\.navigate\\("AnalysisResult",\\{id:item\\.id\\}\\)/);
 
  assert.match(source,/dashboard_event!==undefined/);
 
