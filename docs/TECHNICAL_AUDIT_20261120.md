@@ -360,3 +360,17 @@ Hesap: `scripts/capacity_model_69k.py` (parametrik; Kasım 2026 liste fiyatları
 **Sonuç:** mobil node süiti **959 test — 940→959 pass**, kalan 0 fail; `tsc --noEmit` **0 hata**; polyfill+program+analiz+parite hedef paketi **112/112**. Fix'ler: `mobile/src/cryptoPolyfill.ts` (yeni), `App.tsx` (ilk import), `NativeProgram.tsx` (＋ butonu), `package.json` (test kaydı), 3 test dosyası shim güncellemesi, `tests/cryptoPolyfill.cjs` (yeni).
 
 **Canlıya deploy edilmedi — Not Found hatalarının kaybolması için backend'in (ve yeni uygulama build'inin) bu branch'ten deploy edilmesi şart; istemci tarafındaki crypto çökmesi ve ＋ butonu düzeltmeleri deploy sonrası cihaza yeni build ile ulaşır.**
+
+## 26. On beşinci geçiş — mesaj kutusu web paritesi + Akademik AI 404 kilit açılması (5 yeni ekran görüntüsü)
+
+**Kapsam:** Kullanıcı web görünümü (dentalai.tr uzman vaka odası) ile mobil uygulamanın mesaj kutusunu karşılaştırarak birebir parite istedi: web'deki `＋ (Dosya ekle)` butonu mobilde yok, "Gönder" yazılı gri buton web'in mavi yuvarlak `↑` butonuyla değiştirilmeli; ayrıca Akademik AI'da ders/not oluşturma 404 sonrası kilitleniyor.
+
+**Kompozitör paritesi (ModernScreens.tsx + ChatAttachmentComposer.tsx).** Web referansı: `expert_case_room.html` — `expert-media-composer` etiketi `＋ Dosya ekle` (42px, arka plan `#eff6ff`, renk `#2563eb`) ve `expert-send-circle` `↑` (42px mavi `#2563eb`). Mobilde artık: (1) kompozitörün solunda web ile aynı `＋` çember butonu (`accessibilityLabel="Dosya ekle"`) — ek seçeneklerini açıp kapatır; (2) eski `+ Fotoğraf / Kamera / PDF / Ses` kalıcı satırı `optionsOpen` prop'uyla bu toggle'ın arkasına taşındı (bekleyen ek paneli, önizleme, hata ve makbuz akışı kapalıyken de çalışır; tamamen sessiz durumda hiç render edilmez — web gibi); (3) "Gönder" yazılı pill kaldırıldı, yerine web'deki mavi yuvarlak `↑` butonu (`accessibilityLabel="Gönder"`, aynı disabled mantığı).
+
+**Akademik AI "belirsiz sonuç" kilidi (NativeAcademic.tsx).** Ekran görüntüsündeki "Oluşturma sonucu belirsiz… yeni bir ders isteği açılmaz" bloğu: canlı sunucu `POST /academic/courses` 404 döndüğünde akım bunu belirsiz sonuç sanıp intent'i kilitliyordu (3 kurtarma butonu). 404 kesin bir yanıttır — sunucuda kayıt oluşmamıştır. Düzeltme: `sendCreate` ve `checkCreateReceipt` catch bloklarında `status===404` dalı → bekleyen intent SecureStore'dan silinir, belirsizlik kalkar, net Türkçe mesaj gösterilir ("Sunucu ders oluşturma özelliğini desteklemiyor (404)…"). Gerçekten bilinmeyen sonuçlar (timeout/502/ağ) için idempotent belirsizlik akışı aynen korundu. Web formuyla alan paritesi zaten uyumlu (başlık zorunlu ≥2, açıklama isteğe bağlı, 500 karakter — `notes.html` ile aynı).
+
+**Global 404 mesajı (api.ts).** FastAPI'nin çıplak `Not Found` detayı tüm ekranlarda ham İngilizce göründüğü için (Programım, Destek Taleplerim, Dental Akış, Akademik AI) `request()` içinde `404 + detail 'Not Found'` → "Sunucuda istenen kayıt bulunamadı (404). Uygulama ile sunucu sürümü uyumsuz olabilir; güncellemeyi kontrol edip tekrar deneyin." olarak eşlendi; anlamlı Türkçe detaylar aynen geçer.
+
+**Sonuç:** mobil node süiti tam koşum yeşil; hedef paket (chatComposerParity + consultations + chatFiles + chatSafetyActions + academicComposer/Workflow/AnswerActions + consultationRealtime) **108/108**; `tsc --noEmit` **0**. Yeni test `tests/chatComposerParity.cjs` (4 vaka) package test:beta'ya kayıtlı.
+
+**Canlıya deploy edilmedi — kompozitör paritesi ve 404 akılları cihaza yeni uygulama build'i ile, Not Found'ların kökü ise backend deploy'u ile kapanır.**

@@ -49,7 +49,7 @@ function Library({token,userId,select}:{token:string;userId:number;select:(c:A.C
    const v=await A.createCourse(token,pending.title,pending.description,requestKey);
    await SecureStore.deleteItemAsync(createKey);
    if(alive.current){setUncertain(null);setCreateReceiptDeleted(false);select(v.course)}
-  }catch(e){if(alive.current){const status=e&&typeof e==='object'&&'status' in e?Number((e as {status?:unknown}).status):0;if(status===410)setCreateReceiptDeleted(true);setError(failure(e));setUncertain(pending)}}
+  }catch(e){if(alive.current){const status=e&&typeof e==='object'&&'status' in e?Number((e as {status?:unknown}).status):0;if(status===410)setCreateReceiptDeleted(true);else if(status===404){void SecureStore.deleteItemAsync(createKey).catch(()=>{});setUncertain(null);setError('Sunucu ders oluşturma özelliğini desteklemiyor (404). Kayıt sunucuda oluşmadı; sunucu güncellemesinden sonra tekrar deneyebilirsiniz.')}else{setError(failure(e));setUncertain(pending)}}}
   finally{lock.current=false;if(alive.current)setBusy(false)}
  }
  function create(){
@@ -62,7 +62,7 @@ function Library({token,userId,select}:{token:string;userId:number;select:(c:A.C
   if(!uncertainIntent.request_key){void load();return}
   lock.current=true;setBusy(true);setError('');
   try{const existing=await A.courseCreateReceipt(token,uncertainIntent.request_key);if(existing){await SecureStore.deleteItemAsync(createKey);if(alive.current){setUncertain(null);setCreateReceiptDeleted(false);select(existing.course)}}else if(alive.current)setError('Sunucuda bu istek anahtarı için kayıt bulunamadı. Aynı istek anahtarıyla güvenli yeniden deneyebilirsiniz.')}
-  catch(e){if(alive.current){const status=e&&typeof e==='object'&&'status' in e?Number((e as {status?:unknown}).status):0;if(status===410)setCreateReceiptDeleted(true);setError(failure(e))}}
+  catch(e){if(alive.current){const status=e&&typeof e==='object'&&'status' in e?Number((e as {status?:unknown}).status):0;if(status===410)setCreateReceiptDeleted(true);else if(status===404){void SecureStore.deleteItemAsync(createKey).catch(()=>{});setUncertain(null);setError('Sunucuda bu istek için makbuz bulunamadı (404). Bekleyen ders isteği temizlendi; sunucu güncellemesinden sonra yeni istek açabilirsiniz.')}else setError(failure(e))}}
   finally{lock.current=false;if(alive.current)setBusy(false)}
  }
  function retryCreate(){if(uncertainIntent?.request_key)void sendCreate(uncertainIntent,true)}

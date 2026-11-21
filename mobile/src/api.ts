@@ -36,7 +36,7 @@ export async function request<T>(path:string,token?:string,options:RequestInit={
    if(response.ok)throw new ApiError(502,"Sunucu beklenen JSON yanıtını göndermedi. Lütfen tekrar deneyin.");
   }
   if(response.ok&&(!raw.trim()||!body||typeof body!=="object"||Array.isArray(body)))throw new ApiError(502,"Sunucudan geçersiz API yanıtı alındı.");
-  if(!response.ok){if(response.status===401&&token){if(path==="/me")reportSessionExpiry(token);else await revalidateSession(token)}const detail=body?.detail;const duplicateId=path==="/patients"&&response.status===409&&Number.isSafeInteger(detail?.patient_id)&&detail.patient_id>0?detail.patient_id:undefined;throw new ApiError(response.status,typeof detail==="string"?detail:(typeof detail?.message==="string"?detail.message:"İstek başarısız."),duplicateId);}
+  if(!response.ok){if(response.status===401&&token){if(path==="/me")reportSessionExpiry(token);else await revalidateSession(token)}const rawDetail=body?.detail;const notFound404=response.status===404&&(!rawDetail||rawDetail==="Not Found");const detail=notFound404?"Sunucuda istenen kayıt bulunamadı (404). Uygulama ile sunucu sürümü uyumsuz olabilir; güncellemeyi kontrol edip tekrar deneyin.":rawDetail;const duplicateId=path==="/patients"&&response.status===409&&Number.isSafeInteger(detail?.patient_id)&&detail.patient_id>0?detail.patient_id:undefined;throw new ApiError(response.status,typeof detail==="string"?detail:(typeof detail?.message==="string"?detail.message:"İstek başarısız."),duplicateId);}
   return body as T;
  }catch(error){
   if(controller.signal.aborted&&!externalSignal?.aborted)throw new ApiError(408,"Sunucu yanıt vermedi. Bağlantınızı kontrol edip tekrar deneyin.");
