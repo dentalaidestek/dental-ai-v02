@@ -835,7 +835,7 @@ def stream_rag_v2(
                     if not chunk:
                         # Keep structured/private output hidden while allowing the
                         # durable worker to observe cancellation during generation.
-                        if checked_set or checked_source or pdf_patch:
+                        if checked_set or checked_source or pdf_patch or generation_options.get('response_schema'):
                             yield ''
                         continue
                     emitted = True
