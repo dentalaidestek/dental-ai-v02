@@ -16,15 +16,15 @@ const output = ts.transpileModule(source, {
   },
 }).outputText;
 
-const exports = {};
-vm.compileFunction(output, ['exports', 'require'])(exports, name => {
+const hookExports = {};
+vm.compileFunction(output, ['exports', 'require'])(hookExports, name => {
   if (name === 'react') return React;
   if (name === './sessionRenderKey') return sessionRenderKey;
   throw new Error('Unexpected useSessionRenderKey dependency: ' + name);
 });
 
-if (typeof exports.default !== 'function') {
+if (typeof hookExports.default !== 'function') {
   throw new TypeError('useSessionRenderKey.ts did not expose its default hook');
 }
 
-module.exports = exports;
+module.exports = hookExports;
