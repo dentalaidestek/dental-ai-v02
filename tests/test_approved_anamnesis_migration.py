@@ -66,7 +66,7 @@ def test_revision_21_backfills_all_completed_voice_reviews_in_bounded_pages():
         assert rows[-1]["analysis_id"] == 503
         assert all(row["created_at"] is not None for row in rows)
         indexes = inspect(connection).get_indexes("approvedanamnesis")
-        assert any(item["name"] == "ix_approvedanamnesis_owner_patient_field_id" for item in indexes)
+        assert any(item["name"] == "ix_approvedanamnesis_owner_patient_field_analysis" for item in indexes)
 
     # A retry after interruption/redeploy is safe and cannot duplicate records.
     assert _upgrade_approved_anamnesis_schema(SimpleNamespace(engine=engine)) is True
@@ -95,7 +95,7 @@ def test_fresh_revision_21_database_still_creates_the_ledger():
     with engine.connect() as connection:
         assert "approvedanamnesis" in inspect(connection).get_table_names()
         indexes = inspect(connection).get_indexes("approvedanamnesis")
-        assert any(item["name"] == "ix_approvedanamnesis_owner_patient_field_id" for item in indexes)
+        assert any(item["name"] == "ix_approvedanamnesis_owner_patient_field_analysis" for item in indexes)
     engine.dispose()
 
 
@@ -134,6 +134,56 @@ def test_revision20_existing_ledger_table_is_still_backfilled():
         assert row["analysis_id"] == 1
         assert row["value"] == "Penisilin beyanı"
         assert row["created_at"] is not None
+        assert connection.execute(text(
+            "SELECT version FROM dental_schema_revision WHERE id=1"
+        )).scalar_one() == 21
+    engine.dispose()
+
+
+def test_backfill_preserves_an_existing_newer_analysis_provenance():
+    engine = create_engine("sqlite://")
+    table = ApprovedAnamnesis.__table__
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"
+        ))
+        connection.execute(text("INSERT INTO dental_schema_revision(id, version) VALUES (1, 20)"))
+        connection.execute(text(
+            "CREATE TABLE patient (id INTEGER PRIMARY KEY, owner_user_id INTEGER NOT NULL)"
+        ))
+        connection.execute(text("INSERT INTO patient(id, owner_user_id) VALUES (77, 9)"))
+        connection.execute(text(
+            "CREATE TABLE analysis (id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, clinical_notes TEXT)"
+        ))
+        connection.execute(text(
+            "CREATE TABLE workjob (id INTEGER PRIMARY KEY, owner_user_id INTEGER NOT NULL, "
+            "resource_id INTEGER NOT NULL, resource_type VARCHAR NOT NULL, kind VARCHAR NOT NULL, status VARCHAR NOT NULL)"
+        ))
+        connection.execute(text(
+            "INSERT INTO analysis(id, patient_id, clinical_notes) VALUES "
+            "(1, 77, 'Alerji / hasta beyanı: Eski onay'), "
+            "(900, 77, 'Alerji / hasta beyanı: Yeni onay')"
+        ))
+        connection.execute(text(
+            "INSERT INTO workjob(id, owner_user_id, resource_id, resource_type, kind, status) VALUES "
+            "(1, 9, 1, 'ANALYSIS', 'VOICE_REVIEW', 'DONE'), "
+            "(900, 9, 900, 'ANALYSIS', 'VOICE_REVIEW', 'DONE')"
+        ))
+        table.create(connection, checkfirst=True)
+        # Simulate a newer approval already present when a legacy backfill runs.
+        connection.execute(table.insert().values(
+            owner_user_id=9, patient_id=77, field_key="allergies",
+            value="Yeni onay", analysis_id=900,
+        ))
+
+    assert _upgrade_approved_anamnesis_schema(SimpleNamespace(engine=engine)) is True
+    with engine.connect() as connection:
+        rows = connection.execute(
+            select(table.c.analysis_id, table.c.value)
+            .where(table.c.patient_id == 77, table.c.field_key == "allergies")
+            .order_by(table.c.analysis_id)
+        ).all()
+        assert rows == [(1, "Eski onay"), (900, "Yeni onay")]
         assert connection.execute(text(
             "SELECT version FROM dental_schema_revision WHERE id=1"
         )).scalar_one() == 21
