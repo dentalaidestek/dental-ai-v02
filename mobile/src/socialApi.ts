@@ -952,8 +952,27 @@ export const patchComment = (t: string, c: SocialComment, text: string) =>
     method: "PATCH",
     body: JSON.stringify({ text, version: c.version }),
   });
-export const deleteComment = (t: string, id: number) =>
-  socialRequest(t, `/comments/${id}`, { method: "DELETE" });
+export const deleteComment = async (
+  t: string,
+  id: number,
+): Promise<{ ok: true; comment_count: number; removed_count: number }> => {
+  if (!Number.isSafeInteger(id) || id < 1) throw new Error("Geçersiz yorum kimliği.");
+  const value = await socialRequest<unknown>(t, `/comments/${id}`, { method: "DELETE" });
+  if (
+    !value || typeof value !== "object" || Array.isArray(value) ||
+    (value as Record<string, unknown>).ok !== true ||
+    !Number.isSafeInteger((value as Record<string, unknown>).comment_count) ||
+    ((value as Record<string, unknown>).comment_count as number) < 0 ||
+    !Number.isSafeInteger((value as Record<string, unknown>).removed_count) ||
+    ((value as Record<string, unknown>).removed_count as number) < 1
+  ) throw new ApiError(502, "Yorum silme yanıtı doğrulanamadı.");
+  const result = value as Record<string, unknown>;
+  return {
+    ok: true,
+    comment_count: result.comment_count as number,
+    removed_count: result.removed_count as number,
+  };
+};
 export const reportSocial = (
   t: string,
   target_type: "POST" | "COMMENT",
