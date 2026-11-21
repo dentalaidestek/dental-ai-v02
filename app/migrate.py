@@ -16,7 +16,8 @@ ACADEMIC_COURSE_RECEIPT_REVISION = 17
 TOOTH_CHART_OBSERVATION_REVISION = 18
 TREATMENT_HISTORY_INDEX_REVISION = 19
 PROGRAM_REMINDER_PENDING_INDEX_REVISION = 20
-REVISION = PROGRAM_REMINDER_PENDING_INDEX_REVISION
+APPROVED_ANAMNESIS_REVISION = 21
+REVISION = APPROVED_ANAMNESIS_REVISION
 PROGRAM_QUERY_INDEX_LOCK = 71048238
 TOOTH_CHART_OBSERVATION_LOCK = 71048240
 TREATMENT_HISTORY_INDEX_LOCK = 71048241
@@ -719,6 +720,89 @@ def _upgrade_program_reminder_pending_index(main):
 
 
 
+
+def _upgrade_approved_anamnesis_schema(main):
+    """Create the append-only approved anamnesis ledger and backfill all legacy reviews.
+
+    Backfill is keyset-paged and idempotent. The source Analysis and completed
+    VOICE_REVIEW WorkJob remain untouched; the new rows retain their analysis_id.
+    """
+    if main.engine.dialect.name not in ("postgresql", "sqlite"):
+        return False
+    from app.approved_anamnesis import ApprovedAnamnesis, parse_approved_fields
+
+    table = ApprovedAnamnesis.__table__
+    with main.engine.begin() as connection:
+        if main.engine.dialect.name == "postgresql":
+            connection.execute(text("SET LOCAL lock_timeout = '5s'"))
+            connection.execute(text("SET LOCAL statement_timeout = '10min'"))
+            connection.execute(text("SELECT pg_advisory_xact_lock(71048243)"))
+        if not inspect(connection).has_table("dental_schema_revision"):
+            return False
+        revision = connection.execute(
+            text("SELECT version FROM dental_schema_revision WHERE id=1")
+        ).scalar()
+        if revision == APPROVED_ANAMNESIS_REVISION:
+            if not inspect(connection).has_table(table.name):
+                raise RuntimeError("Approved anamnesis table is missing at schema revision 21")
+            return True
+        if revision != PROGRAM_REMINDER_PENDING_INDEX_REVISION:
+            return False
+        for required in ("analysis", "workjob"):
+            if not inspect(connection).has_table(required):
+                raise RuntimeError(f"Approved anamnesis migration requires {required}")
+        table.create(connection, checkfirst=True)
+
+        # Keep memory bounded even for large archives. Each page is ordered by
+        # immutable Analysis.id and each legacy analysis/field pair is unique.
+        last_id = 0
+        insert_sql = text(
+            "INSERT INTO approvedanamnesis "
+            "(owner_user_id, patient_id, field_key, value, analysis_id) "
+            "VALUES (:owner_user_id, :patient_id, :field_key, :value, :analysis_id) "
+            "ON CONFLICT (analysis_id, field_key) DO NOTHING"
+        )
+        while True:
+            page = connection.execute(text(
+                "SELECT a.id AS analysis_id, a.patient_id AS patient_id, "
+                "w.owner_user_id AS owner_user_id, a.clinical_notes AS clinical_notes "
+                "FROM analysis AS a JOIN workjob AS w ON w.resource_id = a.id "
+                "WHERE a.id > :last_id AND w.resource_type = 'ANALYSIS' "
+                "AND w.kind = 'VOICE_REVIEW' AND w.status = 'DONE' "
+                "ORDER BY a.id ASC LIMIT 500"
+            ), {"last_id": last_id}).mappings().all()
+            if not page:
+                break
+            batch = []
+            for source in page:
+                for key, value in parse_approved_fields(source["clinical_notes"]).items():
+                    batch.append({
+                        "owner_user_id": source["owner_user_id"],
+                        "patient_id": source["patient_id"],
+                        "field_key": key,
+                        "value": value,
+                        "analysis_id": source["analysis_id"],
+                    })
+            if batch:
+                connection.execute(insert_sql, batch)
+            last_id = page[-1]["analysis_id"]
+
+        result = connection.execute(text(
+            "UPDATE dental_schema_revision SET version=:version "
+            "WHERE id=1 AND version=:prior"
+        ), {"version": APPROVED_ANAMNESIS_REVISION,
+            "prior": PROGRAM_REMINDER_PENDING_INDEX_REVISION})
+        if result.rowcount != 1:
+            current = connection.execute(
+                text("SELECT version FROM dental_schema_revision WHERE id=1")
+            ).scalar()
+            if current != APPROVED_ANAMNESIS_REVISION:
+                raise RuntimeError("Schema changed during approved anamnesis migration")
+    logger.warning("migration.approved_anamnesis complete revision=%s",
+                   APPROVED_ANAMNESIS_REVISION)
+    return True
+
+
 def _apply_baseline():
     from app import main
     # Revision 18 enforces one current tooth observation; revision 19 adds the
@@ -836,6 +920,8 @@ def apply():
     from app import main
     if not _upgrade_program_reminder_pending_index(main):
         raise RuntimeError("Could not apply Program pending reminder index revision 20")
+    if not _upgrade_approved_anamnesis_schema(main):
+        raise RuntimeError("Could not apply approved anamnesis revision 21")
     from app.expert_social_schema import apply as apply_social_schema
     apply_social_schema(main.engine)
 
