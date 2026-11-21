@@ -240,3 +240,19 @@ test('failed private image can be retried without repeating the vision request',
  assert.ok(!text(t.toJSON()).includes('Görüntü yüklenemedi'));
  await renderer.act(async()=>t.unmount());
 });
+
+
+test('switching to another authorized asset clears image failure and loads only that asset',async()=>{
+ const calls=[],assets=[{id:7,image_type:'BITEWING'},{id:8,image_type:'INTRAORAL_PHOTO'}];
+ const Component=ui(async(...args)=>{calls.push(args);return{pending:false,findings:[]}});let t;
+ const props={token:'A',analysisId:32,assetId:7,assets,onClose(){}};
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,props)));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ await renderer.act(async()=>t.root.findByType('Image').props.onError());
+ assert.ok(text(t.toJSON()).includes('Görüntü yüklenemedi'));
+ await renderer.act(async()=>{t.update(React.createElement(Component,{...props,assetId:8}));await new Promise(r=>setImmediate(r))});
+ assert.ok(!text(t.toJSON()).includes('Görüntü yüklenemedi'));
+ assert.equal(t.root.findByType('Image').key,'32:8:0');
+ assert.deepEqual(calls,[['A',32,7,'BITEWING'],['A',32,8,'INTRAORAL_PHOTO']]);
+ await renderer.act(async()=>t.unmount());
+});
