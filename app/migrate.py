@@ -68,6 +68,8 @@ def require_schema(engine,*,require_study=False):
         raise RuntimeError('Run python -m app.migrate before starting this service') from exc
     if revision != REVISION:
         raise RuntimeError(f'Expected schema revision {REVISION}; run python -m app.migrate')
+    if not inspect(engine).has_table("approvedanamnesis"):
+        raise RuntimeError("Run python -m app.migrate to create the approved anamnesis ledger")
     # Additive admin MFA tables: the production startup only checks schema revision,
     # so the original init_db() DDL never runs on Render. Serialize this small
     # compatibility migration across concurrent web instances.
@@ -913,7 +915,7 @@ def _apply_baseline():
         main._backfill_program_reminder_jobs()
         with main.engine.begin() as connection:
             connection.execute(text('CREATE TABLE IF NOT EXISTS dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
-            connection.execute(text('INSERT INTO dental_schema_revision(id, version) VALUES(1, :version) ON CONFLICT(id) DO UPDATE SET version=excluded.version'), {'version': REVISION})
+            connection.execute(text('INSERT INTO dental_schema_revision(id, version) VALUES(1, :version) ON CONFLICT(id) DO UPDATE SET version=excluded.version'), {'version': PROGRAM_REMINDER_PENDING_INDEX_REVISION})
     finally:
         if lock:
             try:
