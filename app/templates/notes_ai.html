@@ -100,6 +100,11 @@ body.study-chat-active #studyChat .study-quiz-option>span:first-child{width:35px
 /* Portal avoids clipping by the chat shell and keeps menu above messages. */
 body>.study-academic-overflow-panel.study-overflow-portal{position:fixed!important;z-index:2147483000!important;top:var(--study-menu-top,190px)!important;left:var(--study-menu-left,12px)!important;right:auto!important;width:min(360px,calc(100vw - 20px))!important;max-height:min(70dvh,620px)!important;overflow-y:auto!important;display:block!important}
 body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!important}
+
+/* ChatGPT-style inline stop control: same composer button, same footprint. */
+.study-chat-clean-composer #studySendButton.study-send-stop{font-size:0!important;display:grid!important;place-items:center!important;line-height:1!important;}
+.study-chat-clean-composer #studySendButton.study-send-stop::before{content:"";width:12px;height:12px;border-radius:2px;background:currentColor;display:block;}
+.study-chat-clean-composer #studySendButton.study-send-stop:disabled{opacity:.72;}
 </style>
 <div class="study-ai-page study-chat-shell study-chat-clean-shell">
     <header class="study-chat-clean-topbar">
@@ -597,7 +602,12 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
 
     let activeRun=null, runTimer=null;
     function setWorking(value) {
-        send.disabled=value;
+        const canStop=!!activeRun;
+        send.disabled=value ? !canStop : materialCount===0;
+        send.textContent=canStop?'■':'↑';
+        send.setAttribute('aria-label',canStop?'Durdur':'Gönder');
+        send.title=canStop?'Devam eden yanıtı durdur':'Gönder';
+        send.classList.toggle('study-send-stop',canStop);
         if (attach) attach.disabled=value || uploading;
         if(learningInfo)renderLearning(learningInfo);
     }
@@ -650,33 +660,42 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
         } catch (_) {learningText('studyProgressState','Bağlantı bekleniyor');learningText('studyLearningUpdated','Kayıtlar güncellenemedi. Güncelle düğmesiyle tekrar deneyebilirsin.');}
         finally{learningBusy=false;if(learningQueued){learningQueued=false;refreshLearning();}}
     }
-    function addRunCancel(id,pending) {
-        if(pending.querySelector('.study-cancel-run'))return;
-        const button=document.createElement('button');
-        button.type='button';button.className='study-cancel-run';
-        button.textContent='Bu işlemi durdur';
-        button.style.cssText='margin-top:10px;padding:7px 12px;border:1px solid currentColor;border-radius:8px;background:transparent;color:inherit;cursor:pointer';
-        button.addEventListener('click',async()=>{
-            if(button.disabled)return;
-            button.disabled=true;button.textContent='Durduruluyor...';
-            try{
-                const response=await fetch('/notes/courses/'+courseId+'/ai/runs/'+id+'/cancel',{method:'POST',credentials:'same-origin'});
-                const data=await response.json();
-                if(!response.ok||!data.ok)throw new Error('İşlem durdurulamadı.');
+    let activePending=null,activeUserMessage=null,cancelInFlight=false;
+    async function stopActiveRun() {
+        const id=activeRun;
+        if(!id || cancelInFlight)return;
+        cancelInFlight=true;send.disabled=true;send.textContent='…';
+        try {
+            const response=await fetch('/notes/courses/'+courseId+'/ai/runs/'+id+'/cancel',{
+                method:'POST',credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}
+            });
+            const data=await response.json();
+            if(!response.ok || !data.ok)throw new Error(data.error || 'Çalışma durdurulamadı.');
+            if(data.run && data.run.status==='DONE') {
                 clearTimeout(runTimer);
-                const thinking=pending.querySelector('.study-thinking');
-                if(thinking)thinking.textContent='İşlem iptal edildi.';
-                button.remove();activeRun=null;setWorking(false);
-                status.textContent='Yalnızca bu çalışma iptal edildi.';
-            }catch(error){button.disabled=false;button.textContent='Bu işlemi durdur';status.textContent=error.message;}
-        });
-        pending.appendChild(button);
+                cancelInFlight=false;
+                await followRun(id,activePending,activeUserMessage);
+                return;
+            }
+            if(!data.run || data.run.status!=='CANCELLED')throw new Error('Sunucu iptali doğrulayamadı; çalışma devam ediyor.');
+            clearTimeout(runTimer);
+            const pending=activePending;
+            const thinking=pending && pending.querySelector('.study-thinking');
+            if(thinking)thinking.textContent='İşlem iptal edildi.';
+            if(pending)pending.classList.remove('pending');
+            activeRun=null;activePending=null;activeUserMessage=null;
+            status.textContent='Çalışma sunucu tarafında iptal edildi. Yeni yanıt kaydedilmeyecek.';
+            setWorking(false);
+        } catch(error) {
+            status.textContent=error.message || 'İşlem durdurulamadı.';
+            setWorking(true);
+        } finally {cancelInFlight=false;}
     }
     async function followRun(id,pending,userMessage) {
-        addRunCancel(id,pending);
         try {
             const response=await fetch('/notes/courses/'+courseId+'/ai/runs/'+id,{credentials:'same-origin'});
             const data=await response.json();
+            if(activeRun!==id)return;
             if (!response.ok || !data.ok) throw new Error('Çalışmanın durumuna erişilemedi.');
             const run=data.run;
             status.textContent='';
@@ -696,18 +715,26 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
                 else pending.querySelector('.study-chat-markdown').innerHTML=safeMarkdown(run.answer || '');
                 addPdfArtifact(pending,run.artifact || null);
                 addAnswerActions(pending);
-                status.textContent='';activeRun=null;setWorking(false);refreshLearning();refreshQuizzes();if(learningChannel)learningChannel.postMessage('updated');
+                status.textContent='';activeRun=null;activePending=null;activeUserMessage=null;setWorking(false);refreshLearning();refreshQuizzes();if(learningChannel)learningChannel.postMessage('updated');
                 scrollChatBottom();return;
+            }
+            if (run.status==='CANCELLED') {
+                const thinking=pending.querySelector('.study-thinking');
+                if(thinking)thinking.textContent='İşlem iptal edildi.';
+                pending.classList.remove('pending');
+                status.textContent='Çalışma sunucu tarafında iptal edildi.';
+                activeRun=null;activePending=null;activeUserMessage=null;setWorking(false);return;
             }
             if (!['QUEUED','RUNNING'].includes(run.status)) {
                 pending.remove();userMessage.remove();
                 if (!input.value.trim()) input.value=run.question || '';
                 status.textContent=run.error || 'Çalışma tamamlanamadı.';
-                activeRun=null;setWorking(false);return;
+                activeRun=null;activePending=null;activeUserMessage=null;setWorking(false);return;
             }
             runTimer=setTimeout(()=>followRun(id,pending,userMessage),document.hidden?8000:1500);
         } catch (error) {
-            // A lost browser connection does not stop or restart the server job.
+            // A stopped run must never recreate a polling loop after cancellation.
+            if(activeRun!==id)return;
             status.textContent='';
             const thinking=pending.querySelector('.study-thinking');
             if(thinking) thinking.textContent='Bağlantı bekleniyor. Çalışman sunucuda devam ediyor.';
@@ -729,7 +756,7 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
             const response=await fetch('/notes/courses/'+courseId+'/ai/runs',{method:'POST',body:data,credentials:'same-origin'});
             const result=await response.json();
             if (!response.ok || !result.ok) throw new Error(result.error || 'Çalışma başlatılamadı.');
-            activeRun=result.run.id;setWorking(true);followRun(activeRun,pending,userMessage);
+            activeRun=result.run.id;activePending=pending;activeUserMessage=userMessage;setWorking(true);followRun(activeRun,pending,userMessage);
         } catch (error) {
             pending.remove();userMessage.remove();
             if(!input.value.trim())input.value=text;
@@ -748,7 +775,7 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
             if (run.status==='INTERRUPTED') {status.textContent=run.error;return;}
             const userMessage=addMessage('user',run.question,false,true);
             const pending=addMessage('assistant','',true,true);
-            activeRun=run.id;setWorking(true);followRun(activeRun,pending,userMessage);
+            activeRun=run.id;activePending=pending;activeUserMessage=userMessage;setWorking(true);followRun(activeRun,pending,userMessage);
         } catch (_) {}
     }
     document.addEventListener('visibilitychange',()=>{
@@ -793,7 +820,11 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
         filesInput.addEventListener('change',uploadChatFiles);
     }
 
-    form.addEventListener('submit', event => { event.preventDefault(); sendMessage(input.value); });
+    form.addEventListener('submit', event => {
+        event.preventDefault();
+        if(activeRun){stopActiveRun();return;}
+        sendMessage(input.value);
+    });
     input.addEventListener('input', () => {
         input.style.height='auto';
         input.style.height=Math.min(input.scrollHeight,140)+'px';
