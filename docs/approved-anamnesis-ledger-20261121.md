@@ -14,7 +14,7 @@ The new table is an append-only ledger, not a mutable "current value" cache. The
 
 `reviewed_history_payload()` now reads the indexed ledger, selecting the latest value independently for every allowlisted field. It no longer scans or limits the last 12 voice analyses. The existing JSON shape is preserved (`value`, empty `quote`, original `analysis_id`, notice and revision), so the web patient profile and native patient profile keep using the same history endpoint without separate storage contracts.
 
-The reader first verifies that the requesting clinician owns the patient, then additionally scopes rows by both `owner_user_id` and `patient_id`. Only the seven explicit history fields are exposed. Transcripts, raw audio, provider payloads, unapproved extraction, and generic clinical notes are not copied to the ledger. Negative patient statements remain exact statements and are not converted into diagnoses or active medication claims. The normal patient-delete transaction explicitly deletes that patient's ledger rows after ownership authorization, before deleting the patient.
+The reader first verifies that the requesting clinician owns the patient, then additionally scopes rows by both `owner_user_id` and `patient_id`. Only the seven explicit history fields are exposed. Transcripts, raw audio, provider payloads, unapproved extraction, and generic clinical notes are not copied to the ledger. Negative patient statements remain exact statements and are not converted into diagnoses or active medication claims. The web patient-delete transaction explicitly deletes that patient's ledger rows after ownership authorization, before deleting the patient. The native delete adapter treats the ledger as a clinical dependent and refuses deletion while any ledger row remains, including an orphan whose original Analysis row is unexpectedly missing.
 
 ## Revision 21 migration and legacy backfill
 
@@ -31,7 +31,7 @@ The migration uses a transaction-scoped PostgreSQL advisory lock, bounded lock/s
 - A fresh database already stamped revision 21 still creates the table.
 - A PostgreSQL database-level row-lock regression holds the patient row lock, confirms a second transaction is blocked in `pg_stat_activity`, then verifies both ledger rows and original Analysis IDs survive in order. This validates the database serialization primitive; it is not an end-to-end concurrent HTTP test.
 - Web-cookie and native-Bearer history reads return the same approved field contract; stale second approvals are rejected without adding a ledger row.
-- Patient deletion removes ledger rows only after the existing owner authorization succeeds.
+- Web patient deletion removes ledger rows only after owner authorization; native patient deletion blocks if a ledger row remains, even when its Analysis provenance row is missing.
 - Startup rejects a revision-21 database if the ledger table or covering lookup index is missing.
 
 ## Validation boundary
