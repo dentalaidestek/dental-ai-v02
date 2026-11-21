@@ -35,3 +35,9 @@ Immediately before these changes, the inspected CI runs on head `70379ae33139336
 Those runs predate the Bearer-auth changes and do not validate the new tests. The current branch head after this work is recorded in the PR; no matching new-head workflow run or commit status was available through the connected GitHub records at the time of this note. Therefore the new backend tests, native voice tests and Android typecheck are still awaiting execution on the new head. The earlier runner-allocation failures were pre-step infrastructure failures, not compiler/test diagnostics; their exact hosted-runner/account cause was not exposed by GitHub's records.
 
 No main merge, live deploy, migration, APK publication or real patient-data mutation was performed.
+
+## Additional route-mount defect found during final path verification
+
+A second independent integration mismatch remained after fixing authentication: `mobile/src/voiceApi.ts` used the generic mobile API base `https://dentalai.tr/api/mobile/v1`, but `app/voice_exam.py` defines an unprefixed `APIRouter()` and `app/main.py` includes it without a prefix. Only `app/mobile_api.py` is mounted under `/api/mobile/v1`; neither the mobile analysis nor mobile modern router declares voice-exam aliases. The native voice client therefore targeted a path that was not registered by FastAPI.
+
+Corrected the voice client's base to `https://dentalai.tr`, keeping the same authenticated root routes used by the web voice flow. Strengthened the native client regressions to assert the complete absolute POST and GET URLs, so a future reintroduction of the mobile prefix fails the test instead of passing a suffix-only assertion.
