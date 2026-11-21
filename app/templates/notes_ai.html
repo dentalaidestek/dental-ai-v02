@@ -722,11 +722,12 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
                 pending.remove();userMessage.remove();
                 if (!input.value.trim()) input.value=run.question || '';
                 status.textContent=run.error || 'Çalışma tamamlanamadı.';
-                activeRun=null;setWorking(false);return;
+                activeRun=null;activePending=null;activeUserMessage=null;setWorking(false);return;
             }
             runTimer=setTimeout(()=>followRun(id,pending,userMessage),document.hidden?8000:1500);
         } catch (error) {
-            // A lost browser connection does not stop or restart the server job.
+            // A stopped run must never recreate a polling loop after cancellation.
+            if(activeRun!==id)return;
             status.textContent='';
             const thinking=pending.querySelector('.study-thinking');
             if(thinking) thinking.textContent='Bağlantı bekleniyor. Çalışman sunucuda devam ediyor.';
