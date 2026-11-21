@@ -718,6 +718,13 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
                 status.textContent='';activeRun=null;activePending=null;activeUserMessage=null;setWorking(false);refreshLearning();refreshQuizzes();if(learningChannel)learningChannel.postMessage('updated');
                 scrollChatBottom();return;
             }
+            if (run.status==='CANCELLED') {
+                const thinking=pending.querySelector('.study-thinking');
+                if(thinking)thinking.textContent='İşlem iptal edildi.';
+                pending.classList.remove('pending');
+                status.textContent='Çalışma sunucu tarafında iptal edildi.';
+                activeRun=null;activePending=null;activeUserMessage=null;setWorking(false);return;
+            }
             if (!['QUEUED','RUNNING'].includes(run.status)) {
                 pending.remove();userMessage.remove();
                 if (!input.value.trim()) input.value=run.question || '';
