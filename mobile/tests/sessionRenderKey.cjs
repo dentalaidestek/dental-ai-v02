@@ -43,3 +43,21 @@ test('all VM component harnesses resolve the opaque session-key helper',()=>{
   assert.ok(source.includes(contract),file+' must map the sessionRenderKey import into its VM');
  }
 });
+
+
+test('patient profile child sections use an opaque key across token and patient scope changes',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientProfile.tsx'),'utf8');
+ const parsed=ts.createSourceFile('NativePatientProfile.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+ const keys=[];
+ const visit=node=>{
+  if(ts.isJsxAttribute(node)&&node.name.getText(parsed)==='key'&&node.initializer&&ts.isJsxExpression(node.initializer))keys.push(node.initializer.expression?.getText(parsed)||'');
+  ts.forEachChild(node,visit);
+ };
+ visit(parsed);
+ assert.equal(keys.length,3,'media, analysis history and approved voice history keep explicit remount boundaries');
+ assert.ok(keys.every(value=>value==='profileRenderKey'),'profile children must not use the raw token-bearing scope as a React key');
+ assert.ok(!keys.some(value=>/\\b(?:token|scope|userId)\\b/.test(value)),'React keys must not contain bearer credentials or identity tuples');
+ assert.match(source,/import \\{nextSessionRenderKey\\} from '\\.\\/sessionRenderKey';/);
+ assert.match(source,/profileRenderIdentity=useRef<\\{scope:string;key:string\\}\\|null>\\(null\\)/);
+ assert.match(source,/profileRenderIdentity\\.current\\.scope!==scope/,'the opaque key must rotate when the account, token or patient scope changes');
+});
