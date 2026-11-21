@@ -43,6 +43,7 @@ test('private analysis image identity changes across opaque session, asset and r
  assert.throws(()=>api.clinicalAnalysisImageKey('scope',0,7,0),/kapsamı doğrulanamadı/);
  assert.throws(()=>api.clinicalAnalysisImageKey('scope',31,0,0),/kapsamı doğrulanamadı/);
  assert.throws(()=>api.clinicalAnalysisImageKey('scope',31,7,-1),/kapsamı doğrulanamadı/);
+ assert.throws(()=>api.clinicalAnalysisImageKey('synthetic-bearer-token',31,7,0),/kapsamı doğrulanamadı/);
 });
 
 test('private clinical image requests carry the current bearer token and force revalidation',()=>{
