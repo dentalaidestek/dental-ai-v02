@@ -65,6 +65,9 @@ test('native home renders real recent analyses and patches valid program events 
  assert.match(program,/setEditor\(\{id:target\.event_id\}\)/);
  assert.match(program,/!actionIntentReady\|\|uncertain/);
  assert.match(source,/initialEventId=\{eventId\}/);
+ assert.match(source,/openRequestId:Date\.now\(\)/);
+ assert.match(source,/key=\{token\+":"\+openRequestId\}/);
+ assert.match(program,/navigation\.setParams\?\.\(\{eventId:undefined\}\)/);
 
 
 
