@@ -160,6 +160,8 @@ test('private history image helper validates identity and returns only canonical
  assert.ok(!key.includes('synthetic-token'));
  assert.notEqual(key,patientAnalysisHistoryImageKey(createPatientAnalysisHistoryImageScope(),41,7));
  assert.notEqual(key,patientAnalysisHistoryImageKey(scope,41,null));
+ assert.notEqual(key,patientAnalysisHistoryImageKey(scope,41,7,1),'image-only retry must remount without changing the analysis request');
+ assert.throws(()=>patientAnalysisHistoryImageKey(scope,41,7,-1),/kapsamı/);
  const asset=patientAnalysisHistoryImageSource('synthetic-token',41,7);
  assert.equal(asset.uri,'https://dentalai.tr/api/mobile/v1/analyses/41/assets/7');
  assert.equal(asset.headers.Authorization,'Bearer synthetic-token');
@@ -172,6 +174,67 @@ test('private history image helper validates identity and returns only canonical
  assert.throws(()=>patientAnalysisHistoryImageKey('synthetic-token',41,7),/kapsamı/);
 });
 
+
+
+test('history image retry remounts private assets without repeating the analysis detail request',async()=>{
+ let detailCalls=0;
+ const History=loadHistory({
+  assets:[{id:7,original_filename:'clinical.png',image_type:'PHOTO',has_vision:false}],
+  legacy:false,
+  getAnalysis:async()=>{
+   detailCalls++;
+   return {
+    analysis:{id:41,patient_id:8,tooth_number:'11',clinical_notes:'Synthetic note',status:'FINAL',created_at:'2026-11-17T10:00:00Z',is_voice_review:false,legacy_radiograph_available:false},
+    patient:{id:8,anonymous_id:'SYN-8',age:0,chief_complaint:null},
+    assets:[{id:7,original_filename:'clinical.png',image_type:'PHOTO',has_vision:false}]
+   };
+  }
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(History,{token:'synthetic-token',patientId:8}));await flush()});
+ const row=tree.root.findAllByType('Pressable')[0];
+ await renderer.act(async()=>{row.props.onPress();await flush()});
+ const before=tree.root.findByType('Image').props.testID;
+ await renderer.act(async()=>tree.root.findByType('Image').props.onError());
+ assert.ok(tree.root.findAllByType('Text').some(node=>node.props.children==='Görselleri yeniden yükle'));
+ const retry=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>child.props.children==='Görselleri yeniden yükle'));
+ assert.ok(retry);
+ await renderer.act(async()=>{retry.props.onPress();await flush()});
+ const after=tree.root.findByType('Image');
+ assert.notEqual(after.props.testID,before);
+ assert.equal(after.props.source.cache,'reload');
+ assert.equal(detailCalls,1,'image retry must not fetch analysis detail or repeat inference');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('legacy radiograph image retry restores only the private image component',async()=>{
+ let detailCalls=0;
+ const History=loadHistory({
+  assets:[],legacy:true,
+  getAnalysis:async()=>{
+   detailCalls++;
+   return {
+    analysis:{id:41,patient_id:8,tooth_number:'11',clinical_notes:'Synthetic note',status:'FINAL',created_at:'2026-11-17T10:00:00Z',is_voice_review:false,legacy_radiograph_available:true},
+    patient:{id:8,anonymous_id:'SYN-8',age:0,chief_complaint:null},assets:[]
+   };
+  }
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(History,{token:'synthetic-token',patientId:8}));await flush()});
+ const row=tree.root.findAllByType('Pressable')[0];
+ await renderer.act(async()=>{row.props.onPress();await flush()});
+ const image=tree.root.findByType('Image'),before=image.props.testID;
+ await renderer.act(async()=>image.props.onError());
+ assert.ok(tree.root.findAllByType('Text').some(node=>String(node.props.children).includes('Radyografik görüntü alınamadı')));
+ const retry=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>child.props.children==='Görselleri yeniden yükle'));
+ assert.ok(retry);
+ await renderer.act(async()=>{retry.props.onPress();await flush()});
+ const next=tree.root.findByType('Image');
+ assert.notEqual(next.props.testID,before);
+ assert.ok(next.props.source.uri.endsWith('/legacy-radiograph'));
+ assert.equal(detailCalls,1);
+ await renderer.act(async()=>tree.unmount());
+});
 
 test('an in-flight patient-history read coalesces a realtime refresh and does not double-fetch on initial focus',async()=>{
  let resolveFirst,calls=0;
