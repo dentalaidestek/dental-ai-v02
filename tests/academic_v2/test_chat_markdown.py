@@ -47,25 +47,35 @@ def test_streaming_incomplete_table_is_not_discarded_and_metadata_is_hidden():
     assert '<h3>Başlık</h3>' in render('# Başlık\n- Madde')
 
 
-def run_client_function(name, end_marker, harness):
+def run_client_function(name, end_marker, harness, prefix=''):
     node=shutil.which('node')
     if not node:
         pytest.skip('Node is required to execute the production chat client')
     template=Path('app/templates/notes_ai.html').read_text()
     start=template.index(name)
     end=template.index(end_marker,start)
-    return json.loads(subprocess.check_output([node,'-e',template[start:end]+harness],text=True))
+    # prefix şablon diliminden ÖNCE koşar: dilim üst-seviye ifadeleri (ör.
+    # visibilitychange listener'ları) TDZ'ye takılmadan stub'ları bulsun.
+    return json.loads(subprocess.check_output([node,'-e',prefix+template[start:end]+harness],text=True))
 
 
-def test_interrupted_stream_keeps_partial_answer_restores_request_and_disables_export():
+def test_interrupted_run_keeps_partial_answer_restores_request():
+    # 35c2397a sonrası akış durable runs'a geçti: sendMessage POST /runs ile çalışma
+    # açar, followRun poll eder; INTERRUPTED çalışma kısmi cevabı sunucuda tutar,
+    # istemci bekleyen balonu temizler, isteği geri yükler ve hatayı gösterir.
     result=run_client_function('    async function followRun(',"    async function uploadChatFiles(",r'''
+sendMessage('Tüm soruları aktar').then(async()=>{while(activeRun)await new Promise(r=>setTimeout(r,20));process.stdout.write(JSON.stringify({
+ removed:made.map(x=>x.removed),input:input.value,status:status.textContent,
+ partial:made[1].children.some(x=>x.className==='study-run-partial'),artifacts,enabled:!send.disabled}))});
+''', prefix=r'''
+function node(){return {removed:false,children:[],classList:{remove(){}},
+  querySelector(sel){return sel==='.study-run-partial'?null:this},appendChild(x){this.children.push(x)},remove(){this.removed=true}}}
+const document={createElement:node,hidden:false,getElementById:()=>({addEventListener(){}}),addEventListener:()=>{}};
 var activeRun=null;var runTimer=null;var learningTimer=null;var learningChannel=null;
-var refreshLearning=()=>{};var refreshQuizzes=()=>{};
+var refreshLearning=()=>{};var refreshQuizzes=()=>{};var setWorking=()=>{};
+var addRunCancel=()=>{};var learningText=()=>{};
 const window={addEventListener:()=>{}};
 const made=[];
-function node(){return {removed:false,children:[],classList:{remove(){}},
-  querySelector(){return this},appendChild(x){this.children.push(x)},remove(){this.removed=true}}}
-const document={createElement:node,hidden:false,getElementById:()=>({addEventListener(){}}),addEventListener:()=>{}};
 const materialCount=1,v2Streaming=true,courseId=2,send={disabled:false},status={};
 const input={value:'Soru',style:{},focus(){}};
 const attach=null,applyIndexReadiness=()=>{};
@@ -73,16 +83,17 @@ const addMessage=()=>{const x=node();made.push(x);return x};
 const safeMarkdown=x=>x,scrollChatBottom=()=>{};
 let artifacts=0;const addPdfArtifact=()=>artifacts++;
 const events=[{type:'delta',text:'Tamamlanan bölüm.'},{type:'error',error:'Geçici hizmet sorunu.'}];
-const fetch=async()=>({ok:true,body:{getReader:()=>({read:async()=>({done:false,
- value:new TextEncoder().encode(events.map(x=>JSON.stringify(x)).join('\n')+'\n')})})}});
-sendMessage('Tüm soruları aktar').then(()=>process.stdout.write(JSON.stringify({
- removed:made.map(x=>x.removed),input:input.value,status:status.textContent,
- warning:made[1].children[0].textContent,artifacts,enabled:!send.disabled})));
+const fetch=async url=> url.includes('/ai/runs/active')
+ ? {ok:true,json:async()=>({ok:true,run:null})}
+ : (url.includes('/ai/runs/9')
+    ? {ok:true,json:async()=>({ok:true,run:{id:9,status:'INTERRUPTED',partial:'Tamamlanan bölüm.',
+        error:'Geçici hizmet sorunu.',question:'Tüm soruları aktar'}})}
+    : {ok:true,json:async()=>({ok:true,run:{id:9,status:'RUNNING'}})});
 ''')
-    assert result['removed']==[False,False]
+    assert result['removed']==[True,True]
     assert result['input']=='Tüm soruları aktar'
     assert result['status']=='Geçici hizmet sorunu.'
-    assert 'tamamlanmadı' in result['warning']
+    assert result['partial'] is True
     assert result['artifacts']==0 and result['enabled']
 
 
