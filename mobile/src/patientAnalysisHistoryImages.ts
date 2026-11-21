@@ -11,17 +11,19 @@ export function createPatientAnalysisHistoryImageScope():string{
  return 'patient-analysis-history-scope-'+nextPatientAnalysisHistoryScope;
 }
 
-/** Force a new native image component for another authorized session or asset. */
+/** Force a new native image component for another authorized session, asset or retry. */
 export function patientAnalysisHistoryImageKey(
  scope:string,
  analysisId:number,
  assetId:PatientAnalysisHistoryImageAssetId,
+ revision=0,
 ):string{
  if(typeof scope!=='string'||!/^patient-analysis-history-scope-[1-9]\d*$/.test(scope)||
     !Number.isSafeInteger(analysisId)||analysisId<=0||
-    (assetId!==null&&(!Number.isSafeInteger(assetId)||assetId<=0)))
+    (assetId!==null&&(!Number.isSafeInteger(assetId)||assetId<=0))||
+    !Number.isSafeInteger(revision)||revision<0)
   throw Error('Hasta analiz görsel kapsamı doğrulanamadı.');
- return 'patient-analysis-history:'+scope+':'+analysisId+':'+(assetId===null?'legacy-radiograph':assetId);
+ return 'patient-analysis-history:'+scope+':'+analysisId+':'+(assetId===null?'legacy-radiograph':assetId)+':'+revision;
 }
 
 /** Private analysis images are revalidated by the authenticated API on every mount. */
