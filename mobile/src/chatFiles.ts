@@ -19,7 +19,7 @@ export function validateChatFile(file:ChatFile):ChatFile&{kind:ChatFileKind}{
 }
 export function fitChatImage(naturalWidth:number,naturalHeight:number,maxWidth:number,maxHeight:number){
  if([naturalWidth,naturalHeight,maxWidth,maxHeight].some(n=>!Number.isFinite(n)||n<=0))throw Error("Görüntü boyutu geçersiz.");
- const scale=Math.min(maxWidth/naturalWidth,maxHeight/naturalHeight),exportScale=Math.min(1,1600/Math.max(naturalWidth,naturalHeight));
+ const scale=Math.min(maxWidth/naturalWidth,maxHeight/naturalHeight),exportScale=Math.min(1,4096/Math.max(naturalWidth,naturalHeight));
  return {width:naturalWidth*scale,height:naturalHeight*scale,exportWidth:Math.round(naturalWidth*exportScale),exportHeight:Math.round(naturalHeight*exportScale)};
 }
 export function clampChatPoint(x:number,y:number,width:number,height:number):[number,number]{

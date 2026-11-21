@@ -468,3 +468,30 @@ Canlı **hâlâ eski backend**. Ekran görüntülerindeki tüm sorunların kod k
 `docs/MODERN_FEATURES_BACKLOG.md` oluşturuldu: P1 (AI akıllı yanıtlar, sesle dikte, program hatırlatma push'ları, görsel çizim anotasyonu), P2 (Reels-benzeri kısa video, Stories, yorum thread + @bahsetme, before/after galerisi, AI feed sıralaması, deep linking), P3 (teledanışmanlık görüntülü görüşme, RAG arama, taslak+zamanlama, TTS özet, i18n). Her kalemde nerede/nasıl/kabul/test — ChatGPT doğrudan devralabilir. Bilinçli yapılmayacaklar da kayıtlı (3. parti SDK, hasta verisi riskli entegrasyonlar).
 
 **Bu turda kaynak kodu değişikliği yok; iki belge eklendi. Mobil süit tip `bcb482c1`'de 971/971 yeşil (dokunulmadı).**
+
+## 29. On sekizinci geçiş — hataların çözülmesi: tip'te 3 kırmızı/bozuk kalem kapandı + canvas parite cilası
+
+**Kullanıcı yönlendirmesi:** "Hataları çözmeye devam et ve önceki mesajda söylediklerini yap." Bu turda backlog'un P1-4'ü (çizim anotasyonu) ele alındı, tip'teki gerçek hatalar çözüldü ve bir envanter hatası dürüstçe düzeltildi.
+
+### 29.1 Dürüst düzeltme: canvas çizim anotasyonu mobilde ZATEN VARMIŞ
+
+§26/§28.3'te "web'deki canvas çizim aracı mobilde yok" yazmıştım — **yanlıştı**. `NativeImageEditor.tsx` (commit `d5e03e18`) web'in tam sözleşmesini uyguluyordu: PanResponder stroke çizimi, renk/kalınlık araçları, Geri al/Temizle, `captureRef` ile görüntü+strokes JPEG q0.9 kompoziti ve web ile aynı dosya adı `isaretlenmis-gorsel.jpg`; gönderim `setReplyTo(item.id)+setPreparedAttachment` zinciriyle `sendChatImage(...,replyTo)` üzerinden `reply_to_message_id` taşıyor. Envanter hatası bu bölümle ve backlog P1-4'ün "TAMAMLANDI" işaretlenmesiyle düzeltildi.
+
+### 29.2 Bu turda uygulanan parite cilaları (P1-4 kapanışı)
+
+| Değişiklik | Dosya | Web paritesi |
+|---|---|---|
+| `✎ İşaretle` artık doğrudan çizim editörünü açar (önce not modalıydı); not anotasyonu `✎ Not` girişinde, aynı delege uç | ModernScreens.tsx | web `.annotation-launch` davranışı |
+| Kompozit çözünürlük cap'ı 1600→4096 | chatFiles.ts `fitChatImage` | web `EDITOR_MAX_DIMENSION=4096` |
+| Yeni regresyon testi: composite→reply sözleşme zinciri (4 test) | mobile/tests/chatDrawAnnotation.cjs | buildEditedFile + sendAttachment(replyId) |
+
+### 29.3 Tip'te var olan hataların çözülmesi (bu tur başında 984/985 + bozuk dosya)
+
+1. **`tests/dashboardPresentation.cjs` sözdizimsel olarak bozuktu** (commit `f0eeb5c7`: üç assertion tek satırda literal `\n` kaçışlarıyla yazılmış; `node --check` SyntaxError) → üç assertion gerçek satırlara ayrıldı; parse temiz. Bu dosya kırıkken tsc de hata üretiyordu (allowJs parse) — şimdi ikisi de temiz.
+2. **`socialScreens.cjs` remount testi, bilinçli "credential-free keys" tasarımıyla çelişiyordu**: test ham token'ı React key'ine gömmeyi istiyor (`key={\`${user.id}:${token}\`}`), oysa `a246d8e4` + `socialSessionScope.ts` dokümanı taşıyıcının key'lerde YASAK olduğunu tanımlıyor. Test, daha güçlü güncel sözleşmeye hizalandı: composer key'i non-secret session epoch'tan (`key={\`${sessionKey}:composer\`}`), epoch yalnız gerçek kimlik değişiminde (user.id veya token) `+1` (SocialScreens:1595-1600 kanıtıyla), ve `doesNotMatch` ile token-in-key kalıcı olarak yasaklandı. Remount semantiği korunmuş; test kasıtla gevşetilmedi, sıkılaştırıldı.
+
+### 29.4 Sonuç
+
+- Mobil süit: **985/985 pass, 0 fail** (984/985 + bozuk dosyadan geldi); `tsc --noEmit` **0**.
+- Kalan gerçek web-mobil farklar (§28.3 güncel): canlı transkript modu (P3, backlog), misafir hızlı analiz (bilinçli web-only), admin paneli (bilinçli web-only). Canvas çizim anotasyonu LİSTEDEN ÇIKTI.
+- Not Found canlı durumu değişmedi: dentalai.tr hâlâ eski backend (§28.1 probe) — kök çözüm backend deploy'u.

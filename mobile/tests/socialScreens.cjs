@@ -272,7 +272,13 @@ test('failed encrypted Dental Flow draft reads offer non-destructive retry',()=>
 
 test('Dental Flow composer remounts when authenticated account or session changes',()=>{
  const source=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
- assert.match(source,/<Composer\s+key=\{\x60\$\{user\.id\}:\$\{token\}\x60\}\s+token=\{token\}\s+userId=\{user\.id\}/);
+ // Credential-free remount: the key is the non-secret session epoch, which
+ // advances on every real identity change (user.id or token) — the bearer
+ // token itself must never appear inside a React key.
+ assert.match(source,/key=\{\`\$\{sessionKey\}:composer\`\}\s+token=\{token\}\s+userId=\{user\.id\}/);
+ assert.match(source,/if\s*\(\s*isSocialSessionCurrent\(\s*observedSession\.current,\s*nextSession\s*\)\s*\)\s*return;/,'session epoch advances only on a real identity change');
+ assert.match(source,/setSessionEpoch\(\(value\) => value \+ 1\)/,'identity change bumps the session epoch so the composer remounts');
+ assert.doesNotMatch(source,/key=\{`\$\{user\.id\}:\$\{token\}`\}/,'bearer tokens must never be embedded in React keys');
 });
 
 test('Dental Flow composer selects, restores and submits a custom link cover',async()=>{

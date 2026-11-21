@@ -26,11 +26,8 @@
 - **Kabul:** saat dilimi doğru (TR), tekrar eden dersler her hafta tek bildirim; push izni kapalıysa sessiz atlanır.
 - **Test:** `tests/test_program_reminders.py` (zamanlama, iptal, saat dilimi) + `mobile/tests/reminderSettings.cjs`.
 
-### P1-4: Görsel çizim anotasyonu mobilde (web canvas paritesi — bilinen son fonksiyon eksiği)
-- **Nerede:** mobil `NativeImageEditor.tsx` zaten var (kırpma/döndürme) → üzerine kalem/ok/oklu çizim katmanı (react-native-svg veya view-shot); gönderim aynı `annotate` ucu (modernApi action:"annotate", §21'de eklendi).
-- **Nasıl:** CaseRoom görsel mesajında "✎ İşaretle" → düzenleyicide "Çiz" modu; kaydedince işaretli görsel ANNOTATION mesajı olarak gider (web ile aynı data modeli: `reply_to_message_id=original.id + original_media_path`).
-- **Kabul:** çizim kalıcı (indirilebilir görsel), orijinal mesaj korunur, web tarafı aynı ANNOTATION'ı render eder.
-- **Test:** `mobile/tests/chatDrawAnnotation.cjs` (ANNOTATION veri sözleşmesi web ile birebir).
+### P1-4: Görsel çizim anotasyonu mobilde — ✅ TAMAMLANDI (2026-11-21, bu envanter kalemi kapanmıştır)
+- **Düzeltme:** Kalem/çizim düzenleyicisi mobilde zaten mevcuttu (`NativeImageEditor.tsx`, commit `d5e03e18`): PanResponder stroke çizimi, renk/kalınlık araçları, Geri al/Temizle, `captureRef` ile görüntü+strokes JPEG q0.9 kompoziti, dosya adı web ile birebir `isaretlenmis-gorsel.jpg`. Eklenen parite cilası: (1) `✎ İşaretle` artık web annotation-launch gibi doğrudan çizim editörünü açar (not anotasyonu `✎ Not` girişine taşındı, aynı delege uç), (2) kompozit çözünürlük cap'ı web `EDITOR_MAX_DIMENSION` ile eşitlendi (1600→4096, `chatFiles.ts fitChatImage`), (3) `mobile/tests/chatDrawAnnotation.cjs` ile web sözleşme zinciri (composite → `sendChatImage(reply_to_message_id)` → `client_message_id`) test altına alındı. Süit 985/985 yeşil.
 
 ---
 
