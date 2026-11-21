@@ -19,7 +19,7 @@ test('Grad-CAM attention matches the web modality pools',()=>{
  assert.ok(!unknown.some(item=>item.attention));
  assert.ok(!model.visionFindings(snapshot).some(item=>item.attention),'missing modality fails closed');
 });
-function ui(getVision,onScrollTo=()=>{}){const exports={},timers=[];let nextTimer=0;const schedule=(fn,delay)=>{const id=++nextTimer;timers.push({id,fn,delay,cancelled:false});return id},cancel=id=>{const timer=timers.find(x=>x.id===id);if(timer)timer.cancelled=true};const ScrollView=React.forwardRef((props,ref)=>{React.useImperativeHandle(ref,()=>({scrollTo:onScrollTo}));return React.createElement('ScrollView',props,props.children)});const native={StyleSheet:{create:x=>x},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};native.ScrollView=ScrollView;vm.compileFunction(compile('../src/NativeVisionViewer.tsx'),['exports','require','Error','setTimeout','clearTimeout'])(exports,n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='react-native-svg'?{default:'Svg',Rect:'Rect'}:n==='@react-navigation/native'?{useIsFocused:()=>true}:n==='./visionModel'?model:{getVision,clinicalImage:()=>({uri:'https://example.invalid/synthetic.png',headers:{Authorization:'Bearer synthetic'}})},Error,schedule,cancel);exports.default.__timers=timers;return exports.default}
+function ui(getVision,onScrollTo=()=>{},getClinicalImage=()=>({uri:'https://example.invalid/synthetic.png',headers:{Authorization:'Bearer synthetic'}})){const exports={},timers=[];let nextTimer=0;const schedule=(fn,delay)=>{const id=++nextTimer;timers.push({id,fn,delay,cancelled:false});return id},cancel=id=>{const timer=timers.find(x=>x.id===id);if(timer)timer.cancelled=true};const ScrollView=React.forwardRef((props,ref)=>{React.useImperativeHandle(ref,()=>({scrollTo:onScrollTo}));return React.createElement('ScrollView',props,props.children)});const native={StyleSheet:{create:x=>x},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};native.ScrollView=ScrollView;vm.compileFunction(compile('../src/NativeVisionViewer.tsx'),['exports','require','Error','setTimeout','clearTimeout'])(exports,n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='react-native-svg'?{default:'Svg',Rect:'Rect'}:n==='@react-navigation/native'?{useIsFocused:()=>true}:n==='./visionModel'?model:{getVision,clinicalImage:getClinicalImage},Error,schedule,cancel);exports.default.__timers=timers;return exports.default}
 test('native findings match web fallback descriptions without inventing an image region',()=>{const list=model.visionFindings({findings:[{finding_code:'CARIES',label:'Çürük şüphesi',confidence:.9,fdi:'36',surface:'O'},{label:'Unlocalized finding',confidence:null},{label:'Long description',confidence:.9,description:'x'.repeat(5000)}]},'INTRAORAL_PHOTO');assert.equal(list[0].description,'Çürük şüphesi 36 numaralı diş ile ilişkilendirilmiştir. İlgili yüzey: O.');assert.equal(list[1].description,'Unlocalized finding');assert.equal(list[1].box,null);assert.equal(list[2].description.length,4000)});
 
 test('selecting a native finding returns to the image so its overlay is visible',async()=>{const scrolls=[],Component=ui(async()=>({pending:false,findings:model.visionFindings({findings:[finding]},'PANORAMIC')}),value=>scrolls.push(value));let t;await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:21,assetId:4,onClose(){}})));await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});const card=t.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='button'&&text(node).includes('Synthetic caries'));assert.ok(card);await renderer.act(async()=>card.props.onPress());assert.equal(scrolls.length,1);assert.equal(scrolls[0].y,0);assert.equal(scrolls[0].animated,true);const selectedCard=t.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='button'&&text(node).includes('Synthetic caries'));assert.ok(selectedCard.props.accessibilityHint.includes('görüntü'));await renderer.act(async()=>t.unmount())});
@@ -230,17 +230,40 @@ test('failed private image can be retried without repeating the vision request',
  let calls=0;const Component=ui(async()=>{calls++;return{pending:false,findings:[]}});let t;
  await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:31,assetId:7,onClose(){}})));
  await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
- const first=t.root.findByType('Image'),firstKey=first.key;
+ const first=t.root.findByType('Image'),firstKey=first.props.testID;
  await renderer.act(async()=>first.props.onError());
  assert.ok(text(t.toJSON()).includes('Görüntü yüklenemedi'));
  const retry=findPressable(t.root,'Görüntüyü Yeniden Yükle');assert.ok(retry);
  await renderer.act(async()=>retry.props.onPress());
- assert.notEqual(t.root.findByType('Image').key,firstKey);
+ assert.notEqual(t.root.findByType('Image').props.testID,firstKey);
  assert.equal(calls,1,'image retry must not call getVision or create another AI job');
  assert.ok(!text(t.toJSON()).includes('Görüntü yüklenemedi'));
  await renderer.act(async()=>t.unmount());
 });
 
+
+
+test('viewer image identity changes on account switch without exposing the bearer token',async()=>{
+ const visionCalls=[],imageCalls=[];
+ const Component=ui(async(...args)=>{visionCalls.push(args);return{pending:false,findings:[]}},()=>{},(token,analysisId,assetId)=>{
+  imageCalls.push({token,analysisId,assetId});
+  return{uri:'https://example.invalid/private-image',headers:{Authorization:'Bearer '+token},cache:'reload'};
+ });
+ const base={analysisId:44,assetId:9,assets:[{id:9,image_type:'PANORAMIC'}],onClose(){}};
+ let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{...base,token:'synthetic-token-A'})));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ const first=t.root.findByType('Image'),firstKey=first.props.testID;
+ assert.ok(!firstKey.includes('synthetic-token-A'));
+ await renderer.act(async()=>{t.update(React.createElement(Component,{...base,token:'synthetic-token-B'}));await new Promise(r=>setImmediate(r))});
+ const next=t.root.findByType('Image');
+ assert.notEqual(next.props.testID,firstKey);
+ assert.equal(next.props.source.headers.Authorization,'Bearer synthetic-token-B');
+ assert.ok(!next.props.testID.includes('synthetic-token-B'));
+ assert.deepEqual(visionCalls,[['synthetic-token-A',44,9,'PANORAMIC'],['synthetic-token-B',44,9,'PANORAMIC']]);
+ assert.deepEqual(imageCalls,[{token:'synthetic-token-A',analysisId:44,assetId:9},{token:'synthetic-token-B',analysisId:44,assetId:9}]);
+ await renderer.act(async()=>t.unmount());
+});
 
 test('switching to another authorized asset clears image failure and loads only that asset',async()=>{
  const calls=[],assets=[{id:7,image_type:'BITEWING'},{id:8,image_type:'INTRAORAL_PHOTO'}];
@@ -248,11 +271,16 @@ test('switching to another authorized asset clears image failure and loads only 
  const props={token:'A',analysisId:32,assetId:7,assets,onClose(){}};
  await renderer.act(async()=>t=renderer.create(React.createElement(Component,props)));
  await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
- await renderer.act(async()=>t.root.findByType('Image').props.onError());
+ const firstImage=t.root.findByType('Image'),firstKey=firstImage.props.testID,staleError=firstImage.props.onError;
+ await renderer.act(async()=>staleError());
  assert.ok(text(t.toJSON()).includes('Görüntü yüklenemedi'));
  await renderer.act(async()=>{t.update(React.createElement(Component,{...props,assetId:8}));await new Promise(r=>setImmediate(r))});
  assert.ok(!text(t.toJSON()).includes('Görüntü yüklenemedi'));
- assert.equal(t.root.findByType('Image').key,'32:8:0');
+ const nextImage=t.root.findByType('Image');
+ assert.notEqual(nextImage.props.testID,firstKey);
+ assert.match(nextImage.props.testID,/^clinical-analysis:clinical-vision-scope-\\d+:32:8:0$/);
+ await renderer.act(async()=>staleError());
+ assert.ok(!text(t.toJSON()).includes('Görüntü yüklenemedi'),'a late error from the previous asset cannot poison the active image');
  assert.deepEqual(calls,[['A',32,7,'BITEWING'],['A',32,8,'INTRAORAL_PHOTO']]);
  await renderer.act(async()=>t.unmount());
 });
