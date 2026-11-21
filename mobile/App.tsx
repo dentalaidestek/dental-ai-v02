@@ -17,7 +17,7 @@ import*as SecureStore from"expo-secure-store";
 
 import NativeNewPatient from "./src/NativeNewPatient";
 import {StatusBar} from "expo-status-bar";
-import{createPatient,editPatient,deletePatient,createTreatment,updateTreatment,createSchedule,completeSchedule,deleteSchedule,getDashboard,getMe,getPatient,getPatients,getSchedule,login,verifyEmail,logout,Patient,PatientDetail,ScheduleEvent,User}from"./src/api";
+import{createPatient,editPatient,deletePatient,createTreatment,updateTreatment,createSchedule,completeSchedule,deleteSchedule,getDashboard,getMe,getPatient,getPatients,getSchedule,login,verifyEmail,logout,Dashboard,Patient,PatientDetail,ScheduleEvent,User}from"./src/api";
 import {SafeAreaProvider,SafeAreaView} from "react-native-safe-area-context";
 import {DentalFlow} from "./src/SocialScreens";
 import NativeSocialAdmin from "./src/NativeSocialAdmin";
@@ -35,6 +35,7 @@ import{RealtimeProvider,useRealtime}from"./src/realtime";
 
 import{getNotificationUnreadCount}from"./src/modernApi";
 import {shouldRefreshHomeUnread} from "./src/notificationRefresh";
+import {dashboardGreetingForHour,dashboardProfessionalName,parseDashboardProgramSnapshot,applyDashboardProgramSnapshot} from "./src/dashboardPresentation";
 import{claimNativePushDeviceForSession,refreshNativePushRegistration,subscribeToNativePushResponses,unregisterNativePushForLogout}from"./src/nativePush";
 
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",red:"#B42318",green:"#16803C"};
@@ -78,25 +79,126 @@ function VisualFeature({title,description,asset,tint,onPress,photo=false}:{title
   <Text style={{position:"absolute",right:12,top:20,fontSize:24,fontWeight:"800",color:"#143C59"}}>›</Text>
  </Pressable>;
 }
-function Home({token,user}:{token:string;user:User}){const nav:any=useNavigation();const focused=useIsFocused();const{lastEvent}=useRealtime();
- const[d,setD]=useState<any>();const[homeSearch,setHomeSearch]=useState("");const[r,setR]=useState(false);const[unread,setUnread]=useState(0);const[homeError,setHomeError]=useState("");const load=useCallback(async()=>{try{setD(await getDashboard(token));setHomeError("")}catch(e:any){setHomeError(e?.message||"Ana sayfa yüklenemedi.")}},[token]);const loadUnread=useCallback(async()=>{try{setUnread(await getNotificationUnreadCount(token))}catch{}},[token]);useEffect(()=>{load();if(focused)loadUnread()},[load,loadUnread,focused]);useEffect(()=>{if(shouldRefreshHomeUnread(lastEvent))loadUnread()},[lastEvent,loadUnread]);useEffect(()=>{if(lastEvent&&["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED","ANALYSIS_CREATED","ANALYSIS_UPDATED","PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(String(lastEvent.event_type||lastEvent.type)))load()},[load,lastEvent]);
- return <ScrollView style={s.page} contentContainerStyle={[s.content,{paddingHorizontal:10,paddingTop:8}]} refreshControl={<RefreshControl refreshing={r} onRefresh={async()=>{setR(true);await load();setR(false)}}/>}>
-  <View style={[s.top,{marginBottom:8}]}><View style={{flex:1}}><Text style={s.muted}>Merhaba 👋</Text><Text style={s.userName}>{user.display_name}</Text></View><Pressable accessibilityRole="button" accessibilityLabel={unread>0?`Bildirimler, ${unread} okunmamış`:"Bildirimler"} onPress={()=>nav.navigate("Notifications")} style={{width:44,height:44,alignItems:"center",justifyContent:"center",marginRight:8}}><Text style={{fontSize:25,color:C.navy}}>🔔</Text>{unread>0&&<View style={{position:"absolute",right:0,top:0,minWidth:18,height:18,borderRadius:9,backgroundColor:C.red,alignItems:"center",justifyContent:"center",paddingHorizontal:3}}><Text style={{color:"#FFF",fontSize:10,fontWeight:"800"}}>{unread>99?"99+":unread}</Text></View>}</Pressable><Logo small/></View>{!!homeError&&<Pressable accessibilityRole="button" onPress={()=>void load()} style={s.card}><Text style={s.err}>{homeError} · Tekrar dene</Text></Pressable>}
-  <View style={[s.hero,{backgroundColor:"#EAF3FD",padding:0,minHeight:116,height:116,borderRadius:19}]}><View style={{flex:1,padding:14,zIndex:1}}><Text style={[s.eyebrow,{color:"#426B99"}]}>DENTAL AI</Text><Text style={[s.heroTitle,{color:"#08294F",fontSize:21,maxWidth:230}]}>Hoş geldin, {user.display_name}</Text><Text style={[s.heroSub,{color:"#42617C",maxWidth:220}]}>Sağlıklı bir gülüş, sağlıklı bir gelecek demektir.</Text></View><Image source={{uri:DASHBOARD_ASSET+"welcome_tooth.webp"}} resizeMode="cover" style={{width:112,height:110,alignSelf:"center"}}/></View><View style={{flexDirection:"row",alignItems:"center",backgroundColor:"#FFFFFF",borderWidth:1,borderColor:"#DCE7F4",borderRadius:14,marginTop:8,paddingHorizontal:11,height:46}}><Icon n="search"/><TextInput accessibilityLabel="Ana sayfada hasta ara" style={{flex:1,marginLeft:10,color:"#10233F",fontSize:13}} placeholder="Hasta adı, hasta no, telefon veya TC ile ara..." placeholderTextColor="#7B8B9D" value={homeSearch} onChangeText={setHomeSearch} maxLength={100} autoCapitalize="none" autoCorrect={false} returnKeyType="search" onSubmitEditing={()=>nav.navigate("Patients",{screen:"PatientsList",params:{search:homeSearch.trim()}})}/><Pressable accessibilityRole="button" accessibilityLabel="Hastaları ara" onPress={()=>nav.navigate("Patients",{screen:"PatientsList",params:{search:homeSearch.trim()}})}><Text style={{color:"#0878F9",fontWeight:"800"}}>Ara</Text></Pressable></View>
-  <View style={{gap:6}}>
-{["DOCTOR","ADMIN"].includes(String(user.role||"").toUpperCase())&&<VisualFeature title="Sesli Muayene" description="Hasta seç, görüşmeyi başlat ve muayene özetini kontrol et." asset="voice_exam.webp" tint="#F1F5FD" onPress={()=>nav.navigate("VoiceExam")} photo/>}
-<VisualFeature title="Hastalar" description="Hasta kayıtlarını yönetin, yeni hasta ekleyin." asset="patients_clinic.webp" tint="#EDF8F5" onPress={()=>nav.navigate("Patients")}/>
-<VisualFeature title="Dental AI ile Analiz" description="Röntgen ve klinik görüntüleri yapay zeka ile analiz edin." asset="ai_xray.webp" tint="#EEF4FD" onPress={()=>nav.navigate("AI")}/>
-<VisualFeature title="Diş Şeması" description="Etkileşimli diş şeması ile kayıt ve planlama yapın. Hasta seçin." asset="tooth_chart.webp" tint="#F2F4FF" onPress={()=>nav.navigate("Patients",{screen:"ToothChartBrowser"})}/>
-<VisualFeature title="Uzmandan Destek Al" description="Vakanız için doğrulanmış bir uzmandan ikinci görüş alın." asset="expert_consult.webp" tint="#F3F6FC" onPress={()=>nav.navigate("ExpertDirectory")} photo/>
-<VisualFeature title="Dental Akış" description="Uzmanları takip et, mesleki paylaşımları keşfet." asset="dental_flow.webp?v=20261109-1" tint="#F7F2F9" onPress={()=>nav.navigate("DentalFlow")} photo/>
-{String(user.role||"").toUpperCase()==="ADMIN"&&<VisualFeature title="Dental Akış Yönetimi" description="Bekleyen içerikleri ve şikâyetleri güvenli biçimde inceleyin." asset="dental_flow.webp?v=20261109-1" tint="#EEF3F8" onPress={()=>nav.navigate("SocialAdmin")} photo/>}
+function Home({token,user}:{token:string;user:User}){
+ const nav:any=useNavigation();
+ const focused=useIsFocused();
+ const{lastEvent}=useRealtime();
+ const[d,setD]=useState<Dashboard|null>(null);
+ const[homeSearch,setHomeSearch]=useState("");
+ const[refreshing,setRefreshing]=useState(false);
+ const[unread,setUnread]=useState(0);
+ const[homeError,setHomeError]=useState("");
+ const greeting=dashboardGreetingForHour(new Date().getHours());
+ const displayName=dashboardProfessionalName(user.professional_title,user.display_name||user.username);
+ const load=useCallback(async()=>{
+  try{setD(await getDashboard(token));setHomeError("")}
+  catch(e:any){setHomeError(e?.message||"Ana sayfa yüklenemedi.")}
+ },[token]);
+ const loadUnread=useCallback(async()=>{
+  try{setUnread(await getNotificationUnreadCount(token))}catch{}
+ },[token]);
+ useEffect(()=>{void load();if(focused)void loadUnread()},[load,loadUnread,focused]);
+ useEffect(()=>{if(shouldRefreshHomeUnread(lastEvent))void loadUnread()},[lastEvent,loadUnread]);
+ useEffect(()=>{
+  if(!lastEvent)return;
+  const type=String(lastEvent.event_type||lastEvent.type||"");
+  if(["PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(type)){
+   const snapshot=parseDashboardProgramSnapshot(lastEvent);
+   if(snapshot)setD(previous=>previous?applyDashboardProgramSnapshot(previous,snapshot):previous);
+   else void load();
+   return;
+  }
+  if(["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED","ANALYSIS_CREATED","ANALYSIS_UPDATED"].includes(type))void load();
+ },[lastEvent,load]);
+ const hasProgramSnapshot=d?.dashboard_event!==undefined;
+ const programEvent:any=hasProgramSnapshot?d?.dashboard_event:d?.upcoming_events?.[0]||null;
+ const programTitle=hasProgramSnapshot?(d?.dashboard_event_label==="Bugün"?"Bugünkü Program":"Yaklaşan Program"):"Yaklaşan Program";
+ const programTime=programEvent
+  ?(typeof programEvent.start_time==="string"?programEvent.start_time:programEvent.start_at?new Date(programEvent.start_at).toLocaleString("tr-TR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"Saat belirtilmedi")
+  :"";
+ const programDetail=programEvent?[programEvent.patient_name,programEvent.type_label||programEvent.event_type].filter(Boolean).join(" · "):"";
+ return <ScrollView style={s.page} contentContainerStyle={[s.content,{paddingHorizontal:10,paddingTop:8}]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async()=>{setRefreshing(true);await load();setRefreshing(false)}}/>}>
+  <View style={[s.top,{marginBottom:8}]}>
+   <View style={{flex:1}}/>
+   <Pressable accessibilityRole="button" accessibilityLabel={unread>0?("Bildirimler, "+unread+" okunmamış"):"Bildirimler"} onPress={()=>nav.navigate("Notifications")} style={{width:44,height:44,alignItems:"center",justifyContent:"center",marginRight:8}}>
+    <Text style={{fontSize:25,color:C.navy}}>🔔</Text>
+    {unread>0&&<View style={{position:"absolute",right:0,top:0,minWidth:18,height:18,borderRadius:9,backgroundColor:C.red,alignItems:"center",justifyContent:"center",paddingHorizontal:3}}><Text style={{color:"#FFF",fontSize:10,fontWeight:"800"}}>{unread>99?"99+":unread}</Text></View>}
+   </Pressable>
+   <Logo small/>
   </View>
-  <View style={[s.stats,{marginTop:8}]}><Stat v={d?.stats?.patient_count??"—"} l="Hasta"/><Stat v={d?.stats?.analysis_count??"—"} l="Analiz"/><Stat v={d?.stats?.upcoming_event_count??"—"} l="Yaklaşan"/></View>
-  <View style={s.grid}><Quick icon="search" title="Akademik AI" sub="Notlarından sor" onPress={()=>nav.navigate("Academic")}/><Quick icon="calendar" title="Program" sub="Bugünkü plan" onPress={()=>nav.navigate("Program")}/><Quick icon="clock" title="Analiz geçmişi" sub="Eski analizlerin" onPress={()=>nav.navigate("AnalysisHistory")}/><Quick icon="clock" title="Bildirimler" sub="Canlı gelişmeler" onPress={()=>nav.navigate("Notifications")}/><Quick icon="messages" title="Destek Talepleri" sub="Yardım ve destek" onPress={()=>nav.navigate("SupportRequests")}/></View>
-  <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginTop:12}}><Text style={s.section}>Yaklaşan Program</Text><Pressable accessibilityRole="button" onPress={()=>nav.navigate("Program")}><Text style={{color:"#0878F9",fontWeight:"800"}}>Tümünü Gör ›</Text></Pressable></View>{(d?.upcoming_events||[]).slice(0,1).map((e:any)=><Pressable accessibilityRole="button" onPress={()=>nav.navigate("Program")} style={s.event} key={e.id}><View style={s.eventIcon}><Icon n="clock"/></View><View style={{flex:1}}><Text style={s.cardTitle}>{e.title}</Text><Text style={s.cardSub}>{e.start_at?new Date(e.start_at).toLocaleString("tr-TR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"Saat belirtilmedi"}</Text></View><Icon n="chevron"/></Pressable>)}{!(d?.upcoming_events||[]).length&&<View style={s.card}><Text style={s.cardSub}>Yaklaşan program bulunmuyor.</Text><Pressable accessibilityRole="button" onPress={()=>nav.navigate("Program")} style={{marginTop:12}}><Text style={{color:"#0878F9",fontWeight:"800"}}>Programa Ekle ›</Text></Pressable></View>}
-  <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between"}}><Text style={s.section}>Son Hastalar</Text><Pressable accessibilityRole="button" onPress={()=>nav.navigate("Patients")}><Text style={{color:"#0878F9",fontWeight:"800"}}>Tümünü Gör ›</Text></Pressable></View>{(d?.recent_patients||[]).slice(0,3).map((p:Patient)=><PatientRow key={p.id} p={p} on={()=>nav.navigate("Patients",{screen:"PatientDetail",params:{id:p.id}})}/>)}{!(d?.recent_patients||[]).length&&<View style={s.card}><Text style={s.cardSub}>Henüz hasta kaydı yok.</Text><Pressable accessibilityRole="button" onPress={()=>nav.navigate("Patients",{screen:"NewPatient"})} style={{marginTop:12}}><Text style={{color:"#0878F9",fontWeight:"800"}}>Hasta Ekle ›</Text></Pressable></View>}
-  <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between"}}><Text style={s.section}>Son Analizler</Text><Pressable accessibilityRole="button" onPress={()=>nav.navigate("AnalysisHistory")}><Text style={{color:"#0878F9",fontWeight:"800"}}>Tümünü Gör ›</Text></Pressable></View><View style={s.card}><Text style={s.cardSub}>Geçmiş analizlerini görüntüle.</Text><Pressable accessibilityRole="button" onPress={()=>nav.navigate("AnalysisHistory")} style={{marginTop:12}}><Text style={{color:"#0878F9",fontWeight:"800"}}>Analiz Geçmişi ›</Text></Pressable></View>
+  {!!homeError&&<Pressable accessibilityRole="button" onPress={()=>void load()} style={s.card}><Text style={s.err}>{homeError} · Tekrar dene</Text></Pressable>}
+  <View style={[s.hero,{backgroundColor:"#EAF3FD",padding:0,minHeight:116,height:116,borderRadius:19}]}>
+   <View style={{flex:1,padding:14,zIndex:1}}>
+    <Text style={[s.eyebrow,{color:"#426B99"}]}>{greeting.toLocaleUpperCase("tr-TR")}</Text>
+    <Text accessibilityRole="header" style={[s.heroTitle,{color:"#08294F",fontSize:21,maxWidth:230}]}>{displayName}</Text>
+    <Text style={[s.heroSub,{color:"#42617C",maxWidth:220}]}>Kliniğini tek ekrandan yönet, Dental AI araçlarına hızlıca eriş.</Text>
+   </View>
+   <Image source={{uri:DASHBOARD_ASSET+"welcome_tooth.webp"}} resizeMode="cover" style={{width:112,height:110,alignSelf:"center"}}/>
+  </View>
+  <View style={{flexDirection:"row",alignItems:"center",backgroundColor:"#FFFFFF",borderWidth:1,borderColor:"#DCE7F4",borderRadius:14,marginTop:8,paddingHorizontal:11,height:46}}>
+   <Icon n="search"/>
+   <TextInput accessibilityLabel="Ana sayfada hasta ara" style={{flex:1,marginLeft:10,color:"#10233F",fontSize:13}} placeholder="Hasta adı, soyadı veya hasta no..." placeholderTextColor="#7B8B9D" value={homeSearch} onChangeText={setHomeSearch} maxLength={100} autoCapitalize="none" autoCorrect={false} returnKeyType="search" onSubmitEditing={()=>nav.navigate("Patients",{screen:"PatientsList",params:{search:normalizePatientDirectorySearch(homeSearch)}})}/>
+   <Pressable accessibilityRole="button" accessibilityLabel="Hastaları ara" onPress={()=>nav.navigate("Patients",{screen:"PatientsList",params:{search:normalizePatientDirectorySearch(homeSearch)}})}><Text style={{color:"#0878F9",fontWeight:"800"}}>Ara</Text></Pressable>
+  </View>
+  <View style={{gap:6}}>
+   {["DOCTOR","ADMIN"].includes(String(user.role||"").toUpperCase())&&<VisualFeature title="Sesli Muayene" description="Hasta seç, görüşmeyi başlat ve muayene özetini kontrol et." asset="voice_exam.webp" tint="#F1F5FD" onPress={()=>nav.navigate("VoiceExam")} photo/>}
+   <VisualFeature title="Hastalar" description="Hasta kayıtlarını yönetin, yeni hasta ekleyin." asset="patients_clinic.webp" tint="#EDF8F5" onPress={()=>nav.navigate("Patients")}/>
+   <VisualFeature title="Dental AI ile Analiz" description="Röntgen ve klinik görüntüleri yapay zeka ile analiz edin." asset="ai_xray.webp" tint="#EEF4FD" onPress={()=>nav.navigate("AI")}/>
+   <VisualFeature title="Diş Şeması" description="Etkileşimli diş şeması ile kayıt ve planlama yapın. Hasta seçin." asset="tooth_chart.webp" tint="#F2F4FF" onPress={()=>nav.navigate("Patients",{screen:"ToothChartBrowser"})}/>
+   <VisualFeature title="Uzmandan Destek Al" description="Vakanız için doğrulanmış bir uzmandan ikinci görüş alın." asset="expert_consult.webp" tint="#F3F6FC" onPress={()=>nav.navigate("ExpertDirectory")} photo/>
+   <VisualFeature title="Dental Akış" description="Uzmanları takip et, mesleki paylaşımları keşfet." asset="dental_flow.webp?v=20261109-1" tint="#F7F2F9" onPress={()=>nav.navigate("DentalFlow")} photo/>
+   {String(user.role||"").toUpperCase()==="ADMIN"&&<VisualFeature title="Dental Akış Yönetimi" description="Bekleyen içerikleri ve şikâyetleri güvenli biçimde inceleyin." asset="dental_flow.webp?v=20261109-1" tint="#EEF3F8" onPress={()=>nav.navigate("SocialAdmin")} photo/>}
+  </View>
+  <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginTop:12}}>
+   <Text style={s.section}>{programTitle}</Text>
+   <Pressable accessibilityRole="button" onPress={()=>nav.navigate("Program")}><Text style={{color:"#0878F9",fontWeight:"800"}}>Tümünü Gör ›</Text></Pressable>
+  </View>
+  {programEvent?<Pressable accessibilityRole="button" accessibilityLabel={programEvent.title+" program kaydını aç"} onPress={()=>nav.navigate("Program")} style={s.event} key={programEvent.id}>
+   <View style={s.eventIcon}><Icon n="clock"/></View>
+   <View style={{flex:1}}>
+    <Text style={s.cardTitle}>{programEvent.title}</Text>
+    <Text style={s.cardSub}>{programTime}</Text>
+    {!!programDetail&&<Text style={s.cardSub}>{programDetail}</Text>}
+   </View>
+   <Icon n="chevron"/>
+  </Pressable>:<View style={s.card}>
+   <Text style={s.cardSub}>{hasProgramSnapshot?"Bugün için program bulunmuyor.":"Yaklaşan program bulunmuyor."}</Text>
+   <Pressable accessibilityRole="button" onPress={()=>nav.navigate("Program")} style={{marginTop:12}}><Text style={{color:"#0878F9",fontWeight:"800"}}>Programa Ekle ›</Text></Pressable>
+  </View>}
+  <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between"}}>
+   <Text style={s.section}>Son Hastalar</Text>
+   <Pressable accessibilityRole="button" onPress={()=>nav.navigate("Patients")}><Text style={{color:"#0878F9",fontWeight:"800"}}>Tümünü Gör ›</Text></Pressable>
+  </View>
+  {(d?.recent_patients||[]).slice(0,3).map((p:Patient)=><PatientRow key={p.id} p={p} on={()=>nav.navigate("Patients",{screen:"PatientDetail",params:{id:p.id}})}/>)}
+  {!(d?.recent_patients||[]).length&&<View style={s.card}>
+   <Text style={s.cardSub}>Henüz hasta kaydı yok.</Text>
+   <Pressable accessibilityRole="button" onPress={()=>nav.navigate("Patients",{screen:"NewPatient"})} style={{marginTop:12}}><Text style={{color:"#0878F9",fontWeight:"800"}}>Hasta Ekle ›</Text></Pressable>
+  </View>}
+  <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between"}}>
+   <Text style={s.section}>Son Analizler</Text>
+   <Pressable accessibilityRole="button" onPress={()=>nav.navigate("AnalysisHistory")}><Text style={{color:"#0878F9",fontWeight:"800"}}>Tümünü Gör ›</Text></Pressable>
+  </View>
+  {(d?.recent_analyses||[]).slice(0,3).map(item=><Pressable accessibilityRole="button" accessibilityLabel={item.patient_name+" analiz sonucunu aç"} key={item.id} onPress={()=>nav.navigate("AnalysisResult",{id:item.id})} style={s.event}>
+   <View style={s.eventIcon}><Text style={{fontSize:12,fontWeight:"900",color:C.navy}}>AI</Text></View>
+   <View style={{flex:1}}>
+    <Text style={s.cardTitle}>{item.patient_name||"Hasta"}</Text>
+    <Text style={s.cardSub}>{item.tooth_number?"Diş "+item.tooth_number+" · ":""}{item.status}</Text>
+    <Text style={s.cardSub}>{new Date(item.created_at).toLocaleString("tr-TR")}</Text>
+   </View>
+   <Icon n="chevron"/>
+  </Pressable>)}
+  {!(d?.recent_analyses||[]).length&&<View style={s.card}>
+   <Text style={s.cardSub}>Henüz klinik analiz yok.</Text>
+   <Pressable accessibilityRole="button" onPress={()=>nav.navigate("AI")} style={{marginTop:12}}><Text style={{color:"#0878F9",fontWeight:"800"}}>Dental AI ile Analiz Başlat ›</Text></Pressable>
+  </View>}
+  <View style={[s.stats,{marginTop:12}]}><Stat v={d?.stats?.patient_count??"—"} l="Hasta"/><Stat v={d?.stats?.analysis_count??"—"} l="Analiz"/><Stat v={d?.stats?.upcoming_event_count??"—"} l="Yaklaşan"/></View>
+  <View style={s.grid}>
+   <Quick icon="search" title="Akademik AI" sub="Notlarından sor" onPress={()=>nav.navigate("Academic")}/>
+   <Quick icon="calendar" title="Program" sub="Bugünkü plan" onPress={()=>nav.navigate("Program")}/>
+   <Quick icon="clock" title="Analiz geçmişi" sub="Eski analizlerin" onPress={()=>nav.navigate("AnalysisHistory")}/>
+   <Quick icon="clock" title="Bildirimler" sub="Canlı gelişmeler" onPress={()=>nav.navigate("Notifications")}/>
+   <Quick icon="messages" title="Destek Talepleri" sub="Yardım ve destek" onPress={()=>nav.navigate("SupportRequests")}/>
+  </View>
   <Text style={{fontSize:11,color:"#65778D",lineHeight:17,marginTop:20,textAlign:"center"}}>ⓘ Dental AI, araştırma ve prototip aşamasındadır. Klinik tanı veya tedavi amacıyla kullanılmamalıdır.</Text>
  </ScrollView>
 }
