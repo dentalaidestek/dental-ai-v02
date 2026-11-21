@@ -54,7 +54,9 @@ function mountMedia(getMedia, options={}){
    isClinicalMediaVaultUri:(uri,userId,patientId)=>typeof uri==='string'&&uri.startsWith('file:///documents/dai-clinical-vault/'+userId+'/'+patientId+'/')&&uri.endsWith('.dai'),
    validateClinicalMediaVaultFile:async()=>{}
   };
+  if(name==='./clinicalMediaPresentation')return loadSrcModule('clinicalMediaPresentation',requireChain);
   if(name==='./api')return {
+   API_BASE:'https://dentalai.tr/api/mobile/v1',
    ApiError:class extends Error{constructor(status,message){super(message);this.status=status}},
    getPatientMediaUpload:async(...args)=>options.onReceipt?options.onReceipt(...args):({found:false}),
    uploadPatientMedia:async(...args)=>options.onUpload?options.onUpload(...args):({media:{id:1,original_filename:'synthetic.png',media_type:'PHOTO'},replayed:false})
@@ -86,17 +88,17 @@ test('switching accounts starts a new gallery request while the old request is p
  const Media=mountMedia(async(token,id)=>{
   calls.push([token,id]);
   if(token==='old')return new Promise(resolve=>{resolveOld=resolve});
-  return {items:[{id:9,url:'https://example.invalid/new.jpg',media_type:'PHOTO'}],next_before:null};
+  return {items:[{id:9,url:'https://dentalai.tr/api/mobile/v1/patients/2/media/9/file',media_type:'PHOTO'}],next_before:null};
  });
  let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'old',patientId:1,onAnalysis:()=>{}}))});
  assert.deepEqual(calls,[['old',1]]);
  await renderer.act(async()=>{tree.update(React.createElement(Media,{token:'new',patientId:2,onAnalysis:()=>{}}))});
  assert.deepEqual(calls,[['old',1],['new',2]],'new account must not inherit old loading lock');
- await renderer.act(async()=>{resolveOld({items:[{id:1,url:'https://example.invalid/old.jpg',media_type:'PHOTO'}],next_before:null})});
+ await renderer.act(async()=>{resolveOld({items:[{id:1,url:'https://dentalai.tr/api/mobile/v1/patients/1/media/1/file',media_type:'PHOTO'}],next_before:null})});
  const images=tree.root.findAllByType('Image');
- assert.ok(images.some(x=>String(x.props.source?.uri).includes('new.jpg')));
- assert.ok(!images.some(x=>String(x.props.source?.uri).includes('old.jpg')),'stale patient media must never render');
+ assert.ok(images.some(x=>String(x.props.source?.uri).includes('/patients/2/media/9/file')));
+ assert.ok(!images.some(x=>String(x.props.source?.uri).includes('/patients/1/media/1/file')),'stale patient media must never render');
  await renderer.act(async()=>tree.unmount());
 });
 
@@ -121,7 +123,7 @@ async function pressByAccessibilityLabel(tree,label){
 test('ambiguous gallery delete can be reconciled by replaying the same delete request',async()=>{
  let deleteCalls=0,confirmDeleteAction;
  const Media=mountMedia(async()=>({
-  items:[{id:5,url:'https://example.invalid/clinical-5.png',media_type:'PHOTO',uploaded_at:'2026-11-17T10:00:00'}],
+  items:[{id:5,url:'https://dentalai.tr/api/mobile/v1/patients/5/media/5/file',media_type:'PHOTO',uploaded_at:'2026-11-17T10:00:00'}],
   next_before:null
  }),{
   onDelete:async()=>{
@@ -175,7 +177,7 @@ test('uncertain media mutations freeze selection and pagination until reconcilia
 test('account switch never exposes old patient thumbnails during pending new request',async()=>{
  let resolveNext;
  const Media=mountMedia(async(token)=>token==='old'
-  ?{items:[{id:1,url:'https://example.invalid/old.jpg',media_type:'PHOTO'}],next_before:null}
+  ?{items:[{id:1,url:'https://dentalai.tr/api/mobile/v1/patients/1/media/1/file',media_type:'PHOTO'}],next_before:null}
   :new Promise(resolve=>{resolveNext=resolve}));
  let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'old',patientId:1,onAnalysis:()=>{}}))});
@@ -214,7 +216,7 @@ test('refresh is blocked during unresolved mutation and paging callback observes
 test('delayed delete confirmation from previous account cannot delete old patient media',async()=>{
  let confirmation;
  const deletes=[];
- const Media=mountMedia(async()=>({items:[{id:5,url:'https://example.invalid/file',media_type:'PHOTO'}],next_before:null}),{
+ const Media=mountMedia(async()=>({items:[{id:5,url:'https://dentalai.tr/api/mobile/v1/patients/5/media/5/file',media_type:'PHOTO'}],next_before:null}),{
   onAlert:(_title,_message,buttons)=>{confirmation=buttons.find(button=>button.text==='Sil')},
   onDelete:(...args)=>deletes.push(args)
  });
@@ -272,7 +274,7 @@ test('failed full refresh clears stale patient images and selection rather than 
  let fail=false;
  const Media=mountMedia(async()=>{
   if(fail)throw Error('offline');
-  return {items:[{id:17,url:'https://example.invalid/stale.jpg',media_type:'PHOTO'}],next_before:null};
+  return {items:[{id:17,url:'https://dentalai.tr/api/mobile/v1/patients/1/media/17/file',media_type:'PHOTO'}],next_before:null};
  });
  let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'account',patientId:1,onAnalysis:()=>{}}))});
@@ -288,7 +290,7 @@ test('failed full refresh clears stale patient images and selection rather than 
 
 test('failed older gallery page retains verified images and cursor for an explicit retry',async()=>{
  let fail=true;const cursors=[];
- const Media=mountMedia(async(_token,_patient,before)=>{cursors.push(before);if(before){if(fail)throw Error('offline');return{items:[{id:4,url:'https://example.invalid/older.jpg',media_type:'PHOTO'}],next_before:null}}return{items:[{id:9,url:'https://example.invalid/recent.jpg',media_type:'PHOTO'}],next_before:5}});
+ const Media=mountMedia(async(_token,_patient,before)=>{cursors.push(before);if(before){if(fail)throw Error('offline');return{items:[{id:4,url:'https://dentalai.tr/api/mobile/v1/patients/1/media/4/file',media_type:'PHOTO'}],next_before:null}}return{items:[{id:9,url:'https://dentalai.tr/api/mobile/v1/patients/1/media/9/file',media_type:'PHOTO'}],next_before:5}});
  let tree;await renderer.act(async()=>tree=renderer.create(React.createElement(Media,{token:'account',patientId:1,onAnalysis(){}})));
  await renderer.act(async()=>tree.root.findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='Klinik görselleri aç').props.onPress());
  await renderer.act(async()=>tree.root.findByType('FlatList').props.onEndReached());
@@ -361,7 +363,7 @@ test('selected-media analysis rejects oversized clinical context before network 
 });
 
 test('saved gallery selection opens the same durable composer used for new analysis images',async()=>{
- const Media=mountMedia(async()=>({items:[{id:21,url:'https://example.invalid/saved-21.png',media_type:'RADIOGRAPH'},{id:22,url:'https://example.invalid/saved-22.png',media_type:'PHOTO'}],next_before:null}));
+ const Media=mountMedia(async()=>({items:[{id:21,url:'https://dentalai.tr/api/mobile/v1/patients/1/media/21/file',media_type:'RADIOGRAPH'},{id:22,url:'https://dentalai.tr/api/mobile/v1/patients/1/media/22/file',media_type:'PHOTO'}],next_before:null}));
  let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'account-token',userId:77,patientId:8,onAnalysis:()=>{}}))});
  const open=tree.root.findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='Klinik görselleri aç');
@@ -384,7 +386,7 @@ test('saved gallery selection opens the same durable composer used for new analy
 });
 
 test('account switch closes a mixed analysis composer and clears prior saved-media selection',async()=>{
- const Media=mountMedia(async(_token,id)=>({items:[{id:id===8?21:31,url:'https://example.invalid/'+id+'.png',media_type:'PHOTO'}],next_before:null}));
+ const Media=mountMedia(async(_token,id)=>({items:[{id:id===8?21:31,url:'https://dentalai.tr/api/mobile/v1/patients/'+id+'/media/'+(id===8?21:31)+'/file',media_type:'PHOTO'}],next_before:null}));
  let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'old',userId:1,patientId:8,onAnalysis:()=>{}}))});
  await renderer.act(async()=>tree.root.findAllByType('Pressable').find(n=>n.props.accessibilityLabel==='Klinik görselleri aç').props.onPress());
@@ -528,7 +530,7 @@ test('new patient media drafts persist ciphertext only and upload through a disp
 
 test('clinical gallery refreshes on focus and app foreground without polling',async()=>{
  const listeners=new Set(),calls=[];const options={appStateListeners:listeners,focused:true};
- const Media=mountMedia(async()=>{calls.push(calls.length+1);return{items:[{id:calls.length,url:'https://example.invalid/gallery-'+calls.length+'.jpg',media_type:'PHOTO'}],next_before:null}},options);
+ const Media=mountMedia(async()=>{calls.push(calls.length+1);return{items:[{id:calls.length,url:'https://dentalai.tr/api/mobile/v1/patients/1/media/'+calls.length+'/file',media_type:'PHOTO'}],next_before:null}},options);
  const props={token:'account',patientId:8,onAnalysis:()=>{}};let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,props))});
  assert.equal(calls.length,1,'mount performs one initial gallery read');
@@ -562,10 +564,10 @@ test('realtime media events during cursor paging coalesce into one refresh after
  let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,props));await flush()});
  assert.deepEqual(calls,[null]);
- await renderer.act(async()=>{pending.shift().resolve({items:[{id:50,url:'https://example.invalid/50.jpg',media_type:'PHOTO'}],next_before:50});await flush()});
+ await renderer.act(async()=>{pending.shift().resolve({items:[{id:50,url:'https://dentalai.tr/api/mobile/v1/patients/1/media/50/file',media_type:'PHOTO'}],next_before:50});await flush()});
  await pressByAccessibilityLabel(tree,'Klinik görselleri aç');
  assert.deepEqual(calls,[null,null],'opening the gallery refreshes the first page');
- await renderer.act(async()=>{pending.shift().resolve({items:[{id:50,url:'https://example.invalid/50.jpg',media_type:'PHOTO'}],next_before:50});await flush()});
+ await renderer.act(async()=>{pending.shift().resolve({items:[{id:50,url:'https://dentalai.tr/api/mobile/v1/patients/1/media/50/file',media_type:'PHOTO'}],next_before:50});await flush()});
  const list=tree.root.findByType('FlatList');
  await renderer.act(async()=>{list.props.onEndReached();await flush()});
  assert.deepEqual(calls,[null,null,50]);
@@ -574,9 +576,63 @@ test('realtime media events during cursor paging coalesce into one refresh after
  event={event_type:'PATIENT_MEDIA_DELETED',payload:{patient_id:8,media_id:49}};
  await renderer.act(async()=>{tree.update(React.createElement(Media,{...props,pulse:2}));await flush()});
  assert.deepEqual(calls,[null,null,50],'realtime refresh must wait instead of being dropped or overlapping the page request');
- await renderer.act(async()=>{pending.shift().resolve({items:[{id:40,url:'https://example.invalid/40.jpg',media_type:'PHOTO'}],next_before:null});await flush()});
+ await renderer.act(async()=>{pending.shift().resolve({items:[{id:40,url:'https://dentalai.tr/api/mobile/v1/patients/1/media/40/file',media_type:'PHOTO'}],next_before:null});await flush()});
  assert.deepEqual(calls,[null,null,50,null],'one coalesced first-page refresh runs after paging unlocks');
- await renderer.act(async()=>{pending.shift().resolve({items:[{id:51,url:'https://example.invalid/51.jpg',media_type:'PHOTO'}],next_before:null});await flush()});
+ await renderer.act(async()=>{pending.shift().resolve({items:[{id:51,url:'https://dentalai.tr/api/mobile/v1/patients/1/media/51/file',media_type:'PHOTO'}],next_before:null});await flush()});
  assert.ok(tree.root.findAllByType('Image').some(node=>String(node.props.source?.uri).includes('/51.jpg')));
+ await renderer.act(async()=>tree.unmount());
+});
+
+
+test('clinical archive camera capture is encrypted and persisted as an owner-scoped retry draft',async()=>{
+ const storage=new Map(),encrypted=[],cameraOptions=[];
+ const picker={
+  requestCameraPermissionsAsync:async()=>({granted:true}),
+  launchCameraAsync:async options=>{
+   cameraOptions.push(options);
+   return {canceled:false,assets:[{uri:'file:///cache/captured-clinical.jpg',fileName:'captured-clinical.jpg',mimeType:'image/jpeg',fileSize:1024}]};
+  }
+ };
+ const Media=mountMedia(async()=>({items:[],next_before:null}),{
+  picker,storage,
+  onEncrypt:async(uri,userId,patientId)=>{encrypted.push({uri,userId,patientId});return 'file:///documents/dai-clinical-vault/'+userId+'/'+patientId+'/captured-clinical.dai';}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'camera-session',patientId:4,onAnalysis:()=>{}}));await new Promise(resolve=>setImmediate(resolve));});
+ const cameraButton=findButton(tree,'Kamerayla Fotoğraf Çek');
+ assert.ok(cameraButton,'the clinical archive must expose the web-equivalent camera action');
+ await renderer.act(async()=>{await cameraButton.props.onPress();});
+ assert.equal(cameraOptions.length,1);
+ assert.deepEqual(cameraOptions[0],{mediaTypes:['images'],quality:.9});
+ assert.deepEqual(encrypted,[{uri:'file:///cache/captured-clinical.jpg',userId:1,patientId:4}]);
+ const raw=storage.get('dai.patient-media.upload.1.4');
+ assert.ok(raw,'camera capture must be checkpointed before the user starts network upload');
+ const draft=JSON.parse(raw);
+ assert.equal(draft.version,3);
+ assert.equal(draft.userId,1);
+ assert.equal(draft.patientId,4);
+ assert.equal(draft.mediaType,'PHOTO');
+ assert.match(draft.batchId,/^[A-Za-z0-9_-]{16,96}$/);
+ assert.equal(draft.files.length,1);
+ assert.equal(draft.files[0].uri,draft.files[0].encryptedUri);
+ assert.ok(draft.files[0].encryptedUri.includes('/1/4/'));
+ assert.ok(visible(tree.toJSON()).includes('1 fotoğraf seçildi'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('camera permission denial does not stage or encrypt a clinical image',async()=>{
+ const storage=new Map();let cameraLaunches=0,encryptions=0;
+ const Media=mountMedia(async()=>({items:[],next_before:null}),{
+  picker:{requestCameraPermissionsAsync:async()=>({granted:false}),launchCameraAsync:async()=>{cameraLaunches++;return{canceled:false,assets:[]}}},
+  storage,
+  onEncrypt:async()=>{encryptions++;return 'file:///documents/blocked.dai'}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'camera-session',patientId:4,onAnalysis:()=>{}}));await new Promise(resolve=>setImmediate(resolve));});
+ await renderer.act(async()=>{await findButton(tree,'Kamerayla Fotoğraf Çek').props.onPress();});
+ assert.equal(cameraLaunches,0);
+ assert.equal(encryptions,0);
+ assert.equal(storage.has('dai.patient-media.upload.1.4'),false);
+ assert.ok(visible(tree.toJSON()).includes('Klinik fotoğraf çekmek için kamera izni gerekli.'));
  await renderer.act(async()=>tree.unmount());
 });
