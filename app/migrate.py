@@ -809,6 +809,10 @@ def _apply_baseline():
     # bounded native treatment-history query index.
     if _upgrade_treatment_history_index(main):
         return
+    # Revision 20 is a complete baseline. Do not replay the historical init_db
+    # DDL when upgrading an already-live database to the additive revision 21.
+    if _upgrade_program_reminder_pending_index(main):
+        return
     if _upgrade_tooth_chart_observation_indexes(main):
         if not _upgrade_treatment_history_index(main):
             raise RuntimeError("Could not apply treatment history index revision 19")
