@@ -772,7 +772,7 @@ def test_program_pending_reminder_index_migration_upgrades_revision19_and_is_ide
     with engine.connect() as connection:
         assert connection.execute(
             text('SELECT version FROM dental_schema_revision WHERE id=1')
-        ).scalar_one() == 20
+        ).scalar_one() == 21
 
 
 def test_program_pending_reminder_index_rebuilds_broader_postgres_predicate(pg):
