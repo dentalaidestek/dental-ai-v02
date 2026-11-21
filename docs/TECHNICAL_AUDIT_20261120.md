@@ -497,3 +497,41 @@ Canlı **hâlâ eski backend**. Ekran görüntülerindeki tüm sorunların kod k
 - Mobil süit: **985/985 pass, 0 fail** (984/985 + bozuk dosyadan geldi); `tsc --noEmit` **0**.
 - Kalan gerçek web-mobil farklar (§28.3 güncel): canlı transkript modu (P3, backlog), misafir hızlı analiz (bilinçli web-only), admin paneli (bilinçli web-only). Canvas çizim anotasyonu LİSTEDEN ÇIKTI.
 - Not Found canlı durumu değişmedi: dentalai.tr hâlâ eski backend (§28.1 probe) — kök çözüm backend deploy'u.
+
+## 30. On dokuzuncu geçiş — cihaz testi şikâyetleri: kök neden probe ile saptandı + ana sayfa paritesi kodlandı
+
+**Kullanıcı şikâyetleri:** (1) ana sayfada "Uzman Profilim" butonu yok, (2) web'deki açılır menü yerine diş logosu duruyor ve aynı işi görmüyor, (3) profilimdeki kullanıcı adı/parola/diğer güncellemeler çalışmıyor, (4) ana sayfada Sesli Muayene kartı yok, (5) "bütün eksikleri tamamla, gerekirse canlıya al".
+
+### 30.1 Kanıtlı kök neden: canlı backend, mobil v1 router'ın ESKİ sürümünü çalıştırıyor
+
+Canlı probe (2026-11-21, dentalai.tr):
+
+| İstek | Canlı yanıt | Anlamı |
+|---|---|---|
+| `GET /api/mobile/v1/dashboard` | 401 | rota VAR (eski sürüm) |
+| `GET /api/mobile/v1/consultations` | 401 | rota VAR |
+| `GET /api/mobile/v1/account` | **404** | `app/mobile_account_api.py` rotaları canlıda YOK |
+| `POST /account/username` (web form ucu) | 422 | web ucu VAR; sorun mobil adaptörde |
+
+Böylece dört şikâyetin tek kökü açıklanıyor: telefon uygulaması profil güncellemelerini `/api/mobile/v1/account/*` üzerinden yapıyor; bu adaptör (`mobile_account_api.py`: display-name, username, password, email+kod, profile-photo, delete) canlıda deploy edilmemiş → "işlevsiz butonlar, Not Found". Sesli Muayene kartının görünmemesi de aynı aileden: eski `/dashboard` payload'ında `voice_exam_enabled` alanı yok ve kart `===true` şartıyla gizleniyordu. **Mobil kod eksiksiz** (NativeAccount formları, VoiceExamEntry, NativeProfessional ExpertManagement ekranı hep mevcut); çalışmama nedeni deploy eksikliği.
+
+### 30.2 Bu turda kodlanan istemci pariteleri (App.tsx Home)
+
+| Değişiklik | Web karşılığı (base.html) |
+|---|---|
+| Başlığa `⋮` menü düğmesi (aria `Tüm menüyü aç`) + alt sayfa: Hesabım (Profil), Programım, Dental Akış, Diş Şemaları, Analiz Geçmişi, Destek Taleplerim (+ADMIN: Dental Akış Yönetimi) | `menu-toggle` + `#mainMenu` öğeleriyle birebir eşleme; diş logosu marka olarak sola alındı (web'de brand soldadır) |
+| `⭐ Uzman Profilim` başlık girişi (DOCTOR/ADMIN) → `ExpertManagement` ekranı | `expert-header-entry` (expert_nav.eligible; mobilde rol proxy'si) |
+| Sesli Muayene kartı koşulu `===true` → `!==false` | Eski canlı (alan yok) kartı gösterir; yeni backend `false` gönderirse (kullanıcı kapatmışsa) yine gizlenir |
+
+Yeni test `mobileHomeParity.cjs` (4 test) + `dashboardPresentation.cjs`'deki bayat `===true` assertion'ı yeni sözleşmeye hizalandı. Süit **985/985**, `tsc --noEmit` 0.
+
+### 30.3 Canlıya alma (deploy) — net engel beyanı ve runbook
+
+Bu sandbox'ta sunucuya (dentalai.tr / 216.24.57.1) SSH erişimi, deploy pipeline'ı (Dockerfile/compose/deploy workflow'u) veya sunucu kimlik bilgileri **yoktur**; repoda deploy mekanizması tanımlı değil (workflows yalnız CI: mobile-android, android-test-apk, security-recovery, voice-regression vb.). Bu nedenle deploy'u ben çalıştıramam; "gerekirse canlıya al" istemi sunucu operatörünün elinde. Tam runbook:
+
+1. Sunucuda depoyu güncelle: `git fetch && git checkout feature/mobile-web-parity-20261110 && git pull`.
+2. Bağımlılıklar: `pip install -r requirements.txt`.
+3. Şema geçişini uygula (projenin kullandığı migration akışı; son commit'ler revizyon-20 anamnesis backfill kapısına işaret ediyor — backfill tamamlanmadan ileri revizyona geçme).
+4. Servisi yeniden başlat (uvicorn/servis adı operatöre göre).
+5. Doğrulama (bu raporun probe'larıyla aynı): `curl -s -o /dev/null -w "%{http_code}" https://dentalai.tr/api/mobile/v1/account` → **401** dönmeli (404 değil); `/api/mobile/v1/dashboard` payload'ında `voice_exam_enabled` alanı görünmeli.
+6. İstemci tarafı: menü/`Uzman Profilim` girişi/ses kartı görünürlüğü için `android-test-apk` workflow çıktısından YENİ APK kurulumu gerekir. Profil güncelleme formları ise mevcut APK'da zaten var; deploy sonrası yeniden APK almadan çalışmaya başlar.

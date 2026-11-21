@@ -91,6 +91,7 @@ function Home({token,user}:{token:string;user:User}){
  const{lastEvent}=useRealtime();
  const[d,setD]=useState<Dashboard|null>(null);
  const[homeSearch,setHomeSearch]=useState("");
+ const[menuOpen,setMenuOpen]=useState(false);
  const[refreshing,setRefreshing]=useState(false);
  const[unread,setUnread]=useState(0);
  const[homeError,setHomeError]=useState("");
@@ -123,14 +124,20 @@ function Home({token,user}:{token:string;user:User}){
   ?(typeof programEvent.start_time==="string"?programEvent.start_time:programEvent.start_at?new Date(programEvent.start_at).toLocaleString("tr-TR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"Saat belirtilmedi")
   :"";
  const programDetail=programEvent?[programEvent.patient_name,programEvent.type_label||programEvent.event_type].filter(Boolean).join(" · "):"";
- return <ScrollView style={s.page} contentContainerStyle={[s.content,{paddingHorizontal:10,paddingTop:8}]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async()=>{setRefreshing(true);await load();setRefreshing(false)}}/>}>
+ // Web topbar menu-toggle parity (base.html #mainMenu): same entries mapped to native screens.
+ const menuItems:Array<[string,()=>void]>=[["Hesabım (Profil)",()=>nav.navigate("Profile")],["Programım",()=>nav.navigate("Program")],["Dental Akış",()=>nav.navigate("DentalFlow")],["Diş Şemaları",()=>nav.navigate("Patients",{screen:"ToothChartBrowser"})],["Analiz Geçmişi",()=>nav.navigate("AnalysisHistory")],["Destek Taleplerim",()=>nav.navigate("SupportRequests")]];
+ if(String(user.role||"").toUpperCase()==="ADMIN")menuItems.push(["Dental Akış Yönetimi",()=>nav.navigate("SocialAdmin")]);
+ return <View style={{flex:1}}>
+ <ScrollView style={s.page} contentContainerStyle={[s.content,{paddingHorizontal:10,paddingTop:8}]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async()=>{setRefreshing(true);await load();setRefreshing(false)}}/>}>
   <View style={[s.top,{marginBottom:8}]}>
+   <Logo small/>
    <View style={{flex:1}}/>
-   <Pressable accessibilityRole="button" accessibilityLabel={unread>0?("Bildirimler, "+unread+" okunmamış"):"Bildirimler"} onPress={()=>nav.navigate("Notifications")} style={{width:44,height:44,alignItems:"center",justifyContent:"center",marginRight:8}}>
+   {["DOCTOR","ADMIN"].includes(String(user.role||"").toUpperCase())&&<Pressable accessibilityRole="button" accessibilityLabel="Uzman Profilim" onPress={()=>nav.navigate("ExpertManagement")} style={{flexDirection:"row",alignItems:"center",backgroundColor:"#FFFFFF",borderWidth:1,borderColor:"#DCE7F4",borderRadius:19,paddingHorizontal:10,height:36,marginRight:6}}><Text style={{fontSize:13,fontWeight:"800",color:"#0878F9"}}>⭐ Uzman Profilim</Text></Pressable>}
+   <Pressable accessibilityRole="button" accessibilityLabel={unread>0?("Bildirimler, "+unread+" okunmamış"):"Bildirimler"} onPress={()=>nav.navigate("Notifications")} style={{width:44,height:44,alignItems:"center",justifyContent:"center",marginRight:2}}>
     <Text style={{fontSize:25,color:C.navy}}>🔔</Text>
     {unread>0&&<View style={{position:"absolute",right:0,top:0,minWidth:18,height:18,borderRadius:9,backgroundColor:C.red,alignItems:"center",justifyContent:"center",paddingHorizontal:3}}><Text style={{color:"#FFF",fontSize:10,fontWeight:"800"}}>{unread>99?"99+":unread}</Text></View>}
    </Pressable>
-   <Logo small/>
+   <Pressable accessibilityRole="button" accessibilityLabel="Tüm menüyü aç" onPress={()=>setMenuOpen(true)} style={{width:44,height:44,alignItems:"center",justifyContent:"center"}}><Text style={{fontSize:24,color:C.navy,fontWeight:"800"}}>⋮</Text></Pressable>
   </View>
   {!!homeError&&<Pressable accessibilityRole="button" onPress={()=>void load()} style={s.card}><Text style={s.err}>{homeError} · Tekrar dene</Text></Pressable>}
   <View style={[s.hero,{backgroundColor:"#EAF3FD",padding:0,minHeight:116,height:116,borderRadius:19}]}>
@@ -147,7 +154,7 @@ function Home({token,user}:{token:string;user:User}){
    <Pressable accessibilityRole="button" accessibilityLabel="Hastaları ara" onPress={()=>nav.navigate("Patients",{screen:"PatientsList",params:{search:normalizePatientDirectorySearch(homeSearch)}})}><Text style={{color:"#0878F9",fontWeight:"800"}}>Ara</Text></Pressable>
   </View>
   <View style={{gap:6}}>
-   {["DOCTOR","ADMIN"].includes(String(user.role||"").toUpperCase())&&d?.voice_exam_enabled===true&&<VisualFeature title="Sesli Muayene" description="Hasta seç, görüşmeyi başlat ve muayene özetini kontrol et." asset="voice_exam.webp" tint="#F1F5FD" onPress={()=>nav.navigate("VoiceExam")} photo/>}
+   {["DOCTOR","ADMIN"].includes(String(user.role||"").toUpperCase())&&d?.voice_exam_enabled!==false&&<VisualFeature title="Sesli Muayene" description="Hasta seç, görüşmeyi başlat ve muayene özetini kontrol et." asset="voice_exam.webp" tint="#F1F5FD" onPress={()=>nav.navigate("VoiceExam")} photo/>}
    <VisualFeature title="Hastalar" description="Hasta kayıtlarını yönetin, yeni hasta ekleyin." asset="patients_clinic.webp" tint="#EDF8F5" onPress={()=>nav.navigate("Patients")}/>
    <VisualFeature title="Dental AI ile Analiz" description="Röntgen ve klinik görüntüleri yapay zeka ile analiz edin." asset="ai_xray.webp" tint="#EEF4FD" onPress={()=>nav.navigate("AI")}/>
    <VisualFeature title="Diş Şeması" description="Etkileşimli diş şeması ile kayıt ve planlama yapın. Hasta seçin." asset="tooth_chart.webp" tint="#F2F4FF" onPress={()=>nav.navigate("Patients",{screen:"ToothChartBrowser"})}/>
@@ -207,6 +214,15 @@ function Home({token,user}:{token:string;user:User}){
   </View>
   <Text style={{fontSize:11,color:"#65778D",lineHeight:17,marginTop:20,textAlign:"center"}}>ⓘ Dental AI, araştırma ve prototip aşamasındadır. Klinik tanı veya tedavi amacıyla kullanılmamalıdır.</Text>
  </ScrollView>
+ {menuOpen&&<View style={{position:"absolute",left:0,right:0,top:0,bottom:0,backgroundColor:"rgba(7,27,53,.6)",justifyContent:"flex-end",zIndex:1000}}>
+  <Pressable accessibilityRole="button" accessibilityLabel="Menüyü kapat" onPress={()=>setMenuOpen(false)} style={{flex:1}}/>
+  <View style={{backgroundColor:"#FFFFFF",borderTopLeftRadius:18,borderTopRightRadius:18,paddingHorizontal:16,paddingTop:14,paddingBottom:26}}>
+   <Text style={{fontSize:18,fontWeight:"800",color:C.navy,marginBottom:4}}>Tüm menü</Text>
+   {menuItems.map(([label,action])=><Pressable key={label} accessibilityRole="button" onPress={()=>{setMenuOpen(false);action()}} style={{paddingVertical:12,borderBottomWidth:1,borderBottomColor:"#EEF2F7"}}><Text style={{color:"#10233F",fontWeight:"700"}}>{label}</Text></Pressable>)}
+   <Pressable accessibilityRole="button" onPress={()=>setMenuOpen(false)} style={{paddingVertical:12}}><Text style={{color:C.muted,fontWeight:"800"}}>Kapat</Text></Pressable>
+  </View>
+ </View>}
+ </View>
 }
 function NewPatient({token,onCreated}:{token:string;onCreated:(p:Patient)=>void}){return <NativeNewPatient token={token} onCreated={onCreated}/>;}
 

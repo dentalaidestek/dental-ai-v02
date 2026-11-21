@@ -51,7 +51,9 @@ test('program snapshot patch is immutable and preserves unrelated dashboard data
 test('native home renders real recent analyses and patches valid program events without a dashboard GET',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../App.tsx'),'utf8');
  assert.match(source,/dashboardGreetingForHour/);
- assert.match(source,/d\?\.voice_exam_enabled===true/);
+ // Only an explicit false (new backend, user disabled voice exam) hides the
+ // card; older deployed backends omit the field entirely and must still show it.
+ assert.match(source,/d\?\.voice_exam_enabled!==false/);
  assert.match(source,/dashboardProfessionalName/);
  assert.match(source,/parseDashboardProgramSnapshot\(lastEvent\)/);
  assert.match(source,/if\(snapshot\)setD\(previous=>previous\?applyDashboardProgramSnapshot/);
