@@ -477,3 +477,49 @@ def test_structured_quiz_generation_yields_cancel_heartbeat_and_closes_provider(
     assert next(stream)==''
     stream.close()
     assert closed==[True]
+
+
+def test_running_cancel_is_not_acknowledged_until_worker_closes_stream(course_env):
+    main,engine,client=course_env
+    with Session(engine) as session:
+        current=learning.get_or_create_state(session,1,6)
+        row=runs.StudyRun(owner_user_id=1,course_id=6,request_key='e'*32,
+            epoch=current.epoch,question='20 soru hazırla',status='RUNNING')
+        session.add(row);session.commit();ident=row.id
+    response=client.post(f'/notes/courses/6/ai/runs/{ident}/cancel')
+    assert response.status_code==200
+    assert response.json()['run']['status']=='CANCEL_REQUESTED'
+    again=client.post(f'/notes/courses/6/ai/runs/{ident}/cancel')
+    assert again.status_code==200
+    assert again.json()['run']['status']=='CANCEL_REQUESTED'
+
+
+def test_running_cancel_checkpoint_closes_provider_before_ack(monkeypatch,course_env):
+    main,engine,client=course_env
+    closed=[]
+    class ProviderIterator:
+        def __init__(self):self.index=0
+        def __iter__(self):return self
+        def __next__(self):
+            self.index+=1
+            return 'chunk-'+str(self.index)
+        def close(self):closed.append(True)
+    with Session(engine) as session:
+        current=learning.get_or_create_state(session,1,6)
+        row=runs.StudyRun(owner_user_id=1,course_id=6,request_key='f'*32,
+            epoch=current.epoch,question='20 soru hazırla',status='RUNNING')
+        session.add(row);session.commit();ident=row.id
+    ticks=iter([0.0,3.0])
+    monkeypatch.setattr(runs.time,'monotonic',lambda:next(ticks))
+    stream=runs.generation(engine,ident,ProviderIterator())
+    assert next(stream)=='chunk-1'
+    response=client.post(f'/notes/courses/6/ai/runs/{ident}/cancel')
+    assert response.json()['run']['status']=='CANCEL_REQUESTED'
+    with pytest.raises(ValueError):
+        next(stream)
+    assert closed==[True]
+    with Session(engine) as session:
+        row=session.get(runs.StudyRun,ident)
+        assert row.status=='CANCEL_REQUESTED'
+        row.status='CANCELLED';session.add(row);session.commit()
+        assert session.get(runs.StudyRun,ident).status=='CANCELLED'
