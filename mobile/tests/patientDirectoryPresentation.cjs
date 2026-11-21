@@ -43,7 +43,11 @@ test('native directory is wired to bounded server search, automatic paging and e
  assert.match(source,/patientDirectoryDetails/);
  assert.match(source,/maxLength=\{100\}/);
  assert.match(source,/Ana sayfada hasta ara/);
- assert.match(source,/Hasta adı, hasta no, telefon veya TC ile ara/);
+ const webDirectory=fs.readFileSync(path.join(__dirname,'../../app/templates/patients_all.html'),'utf8');
+ const webSearch=fs.readFileSync(path.join(__dirname,'../../app/templates/patient_search.html'),'utf8');
+ assert.match(webDirectory,/placeholder="Hasta adı, numarası veya telefonu ile ara\.\.\."/);
+ assert.match(webSearch,/placeholder="TC, ad, soyad veya hasta no\.\.\."/);
+ assert.match(source,/placeholder="Ad, soyad, hasta no, telefon veya TC ile ara…"/);
  assert.ok((source.match(/maxLength=\{100\}/g)||[]).length>=2,'home and directory search must share the server bound');
  assert.match(source,/onEndReachedThreshold=\{0\.4\}/);
  assert.match(source,/Daha fazla hasta/);
