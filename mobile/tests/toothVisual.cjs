@@ -38,6 +38,18 @@ test('native renderer uses the shared atlas for primary and permanent teeth',()=
   assert.doesNotMatch(source,/primarySvg|primary-enamel/);
 });
 
+test('native tooth rows use the web mobile permanent and primary visual dimensions',()=>{
+  const chart=fs.readFileSync(require.resolve('../src/NativeToothChart.tsx'),'utf8');
+  const web=fs.readFileSync(require.resolve('../../app/templates/tooth_chart.html'),'utf8');
+  assert.match(web,/\.tooth-visual\{height:64px/);
+  assert.match(web,/\.primary-row \.tooth-visual\{height:70px/);
+  assert.match(chart,/const visualHeight=primary\?70:64/);
+  assert.match(chart,/height:visualHeight\+16/);
+  assert.equal((chart.match(/height:visualHeight,borderRadius:7/g)||[]).length,2);
+  assert.equal((chart.match(/NativeToothVisual number=\{n\} status=\{st\} height=\{58\}/g)||[]).length,2);
+  assert.doesNotMatch(chart,/NativeToothVisual number=\{n\} status=\{st\} height=\{37\}/);
+});
+
 test('invalid FDI positions are rejected before rendering',()=>{
   for(const number of ['19','29','39','49','56','66','76','86','99','1','']) {
     assert.throws(()=>toothVisualModel(number),/Geçersiz FDI/);
