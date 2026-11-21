@@ -2,7 +2,30 @@
 from datetime import datetime
 from hashlib import sha256
 import json
+import re
 from typing import Optional
+
+
+_FDI_TOOTH_NUMBER = re.compile(r\"^(?:[1-4][1-8]|[5-8][1-5])$\")
+_COMMON_SURFACES = frozenset({\"MESIAL\", \"DISTAL\", \"BUCCAL\", \"LINGUAL\"})
+
+
+def valid_fdi_tooth_number(tooth_number: object) -> bool:
+    \"\"\"Return whether a value is a canonical permanent or primary FDI tooth id.\"\"\"
+    return isinstance(tooth_number, str) and bool(_FDI_TOOTH_NUMBER.fullmatch(tooth_number))
+
+
+def applicable_tooth_surfaces(tooth_number: object) -> frozenset[str]:
+    \"\"\"Return the five anatomically applicable surfaces for one FDI tooth.\"\"\"
+    if not valid_fdi_tooth_number(tooth_number):
+        return frozenset()
+    axial_surface = \"INCISAL\" if int(tooth_number[1]) <= 3 else \"OCCLUSAL\"
+    return _COMMON_SURFACES | {axial_surface}
+
+
+def is_applicable_tooth_surface(tooth_number: object, surface: object) -> bool:
+    \"\"\"Reject impossible incisal/occlusal observations at the API boundary.\"\"\"
+    return isinstance(surface, str) and surface in applicable_tooth_surfaces(tooth_number)
 
 
 def observation_revision(row, *, kind: str, patient_id: int, tooth_number: str,
