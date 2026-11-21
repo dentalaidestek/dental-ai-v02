@@ -70,7 +70,6 @@ export default function NativePatientVoiceHistory({token,patientId}:{token:strin
    <Text style={{fontSize:11,color:'#718096',marginTop:5}}>Kaynak: Sesli muayene #{row.analysisId}</Text>
   </View>)}
   {!!visible&&rows.length>0&&<Text style={{fontSize:12,color:'#8A5A00',lineHeight:19,marginTop:12}}>{visible.notice}</Text>}
-  {rows.length>0&&<Text style={{fontSize:12,color:'#8A5A00',lineHeight:19,marginTop:8}}>Bu kayıtlar önceki sesli muayenelerden gelir; güncel hastalık durumu ve tedaviler hastayla doğrulanmadan kullanılmamalıdır.</Text>}
   {!visible&&!!error&&<Pressable accessibilityRole="button" onPress={()=>void load()} disabled={busy} style={{padding:12,marginTop:6,backgroundColor:'#E8F0FF',borderRadius:10}}>
    <Text style={{color:'#1769AA',fontWeight:'800',textAlign:'center'}}>Yeniden dene</Text>
   </Pressable>}
