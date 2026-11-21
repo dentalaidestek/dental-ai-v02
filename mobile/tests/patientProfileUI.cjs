@@ -99,7 +99,7 @@ test('mobile patient profile matches the web four-column action palette and comp
   assert.ok(slot.some(style=>style.width==='25%'),'web mobile profile uses four equal quick-action columns');
   assert.ok(tile.some(style=>style.minHeight===70&&style.flexDirection==='column'),'quick actions use the compact 70pt stacked tile');
   assert.ok(tile.some(style=>style.backgroundColor===colors[i]),'quick action colors follow the web blue/purple/red/green order');
-  assert.ok(!text(tiles[i].toJSON()).includes(presentationExports.patientProfileQuickActions()[i].description),'native tiles do not add the web-absent description text');
+  assert.ok(!text(tiles[i]).includes(presentationExports.patientProfileQuickActions()[i].description),'native tiles do not add the web-absent description text');
  }
  const avatar=tree.root.findAllByType('View').find(node=>flatten(node.props.style).some(style=>style.width===50&&style.height===50&&style.borderRadius===25));
  assert.ok(avatar,'the mobile hero uses the web 50pt circular avatar');
