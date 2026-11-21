@@ -642,6 +642,7 @@ function CommentThread({
   token,
   item,
   postId,
+  canDeleteOthers,
   onChange,
   onReply,
   onProfile,
@@ -649,6 +650,7 @@ function CommentThread({
   token: string;
   item: api.SocialComment;
   postId: number;
+  canDeleteOthers: boolean;
   onChange: (c: api.SocialComment | null, id: number) => void;
   onReply: (id: number) => void;
   onProfile: (id: number, name: string) => void;
@@ -717,12 +719,33 @@ function CommentThread({
     }
   }
   function menu() {
-    Alert.alert(
-      "Yorum işlemleri",
-      "",
-      item.owned
+    const remove = () => {
+      Alert.alert("Yorum silinsin mi?", "Bu işlem geri alınamaz.", [
+        { text: "Vazgeç", style: "cancel" },
+        {
+          text: "Sil",
+          style: "destructive",
+          onPress: async () => {
+            if (commentDeleteLock.current) return;
+            commentDeleteLock.current = true;
+            setBusy(true);
+            try {
+              await api.deleteComment(token, item.id);
+              onChange(null, item.id);
+            } catch (e) {
+              setError(message(e));
+            } finally {
+              commentDeleteLock.current = false;
+              setBusy(false);
+            }
+          },
+        },
+      ]);
+    };
+    const actions = [
+      { text: "Vazgeç", style: "cancel" as const },
+      ...(item.owned
         ? [
-            { text: "Vazgeç" },
             {
               text: "Düzenle",
               onPress: () => {
@@ -730,36 +753,13 @@ function CommentThread({
                 setEditing(true);
               },
             },
-            {
-              text: "Sil",
-              style: "destructive",
-              onPress: () => {
-                Alert.alert("Yorum silinsin mi?", "Bu işlem geri alınamaz.", [
-                  { text: "Vazgeç", style: "cancel" },
-                  {
-                    text: "Sil",
-                    style: "destructive",
-                    onPress: async () => {
-                      if (commentDeleteLock.current) return;
-                      commentDeleteLock.current = true;
-                      setBusy(true);
-                      try {
-                        await api.deleteComment(token, item.id);
-                        onChange(null, item.id);
-                      } catch (e) {
-                        setError(message(e));
-                      } finally {
-                        commentDeleteLock.current = false;
-                        setBusy(false);
-                      }
-                    },
-                  },
-                ]);
-              },
-            },
           ]
-        : [
-            { text: "Vazgeç" },
+        : []),
+      ...(item.owned || canDeleteOthers
+        ? [{ text: "Sil", style: "destructive" as const, onPress: remove }]
+        : []),
+      ...(!item.owned
+        ? [
             {
               text: "Bildir",
               onPress: () => {
@@ -769,8 +769,10 @@ function CommentThread({
                   .catch((e) => setError(message(e)));
               },
             },
-          ],
-    );
+          ]
+        : []),
+    ];
+    Alert.alert("Yorum işlemleri", "", actions);
   }
   return (
     <View style={s.comment}>
@@ -828,6 +830,7 @@ function CommentThread({
               token={token}
               item={c}
               postId={postId}
+              canDeleteOthers={canDeleteOthers}
               onProfile={onProfile}
               onReply={onReply}
               onChange={(v, id) =>
@@ -1009,6 +1012,7 @@ function Comments({
             token={token}
             item={item}
             postId={post.id}
+            canDeleteOthers={post.owned}
             onProfile={onProfile}
             onReply={(id) => {
               if (!d.draft.attempted) {
