@@ -85,6 +85,20 @@ test("media navigation never wraps or leaves the current bounded gallery", () =>
   assert.equal(viewer.nextSocialMediaIndex(0, 1, 0), null);
 });
 
+test("media request keys identify retries without ever receiving a bearer token", () => {
+  assert.equal(viewer.socialMediaRequestKey(4, 0), "media:4:attempt:0");
+  assert.equal(viewer.socialMediaRequestKey(4, 1), "media:4:attempt:1");
+  assert.equal(viewer.socialMediaRequestKey(null, 0), "empty");
+  assert.equal(viewer.socialMediaRequestKey(0, 0), "invalid");
+  assert.equal(viewer.socialMediaRequestKey(4, -1), "invalid");
+  const component = fs.readFileSync(
+    require.resolve("../src/NativeSocialMediaViewer.tsx"),
+    "utf8",
+  );
+  assert.ok(component.includes("socialMediaRequestKey(items[index]?.id ?? null, attempt)"));
+  assert.doesNotMatch(component, /\$\{[^}]*token[^}]*\}/i);
+});
+
 test("native Dental Flow viewer wires pinch, pan, swipe, retry and authenticated media loading", () => {
   const component = fs.readFileSync(
     require.resolve("../src/NativeSocialMediaViewer.tsx"),
