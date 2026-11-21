@@ -1,6 +1,6 @@
 import {revalidateSession} from './sessionExpiry';
 import {splitVoiceTranscript,VOICE_TEXT_LIMIT,VOICE_TEXT_BYTE_LIMIT,voiceUtf8Bytes} from './voiceSession';
-const BASE="https://dentalai.tr/api/mobile/v1";
+const BASE="https://dentalai.tr";
 async function send<T>(token:string,path:string,payload?:unknown,method:"GET"|"POST"="POST"):Promise<T>{
  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),150000);
  try{const response=await fetch(BASE+path,{method,credentials:"omit",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token,...(method==="GET"?{"Cache-Control":"no-store"}:{})},...(method==="GET"?{}:{body:JSON.stringify(payload)}),signal:controller.signal});
