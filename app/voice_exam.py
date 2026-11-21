@@ -271,17 +271,24 @@ def reviewed_history_payload(session, main, user, patient_id, fingerprint=None):
     fingerprint = fingerprint or _fingerprint(session, main, patient)
     from sqlalchemy import func
     table = ApprovedAnamnesis.__table__
-    # Aggregate to one latest row per field in SQL; never load the patient's
-    # entire approval history into application memory on a profile refresh.
+    # Analysis IDs are allocated when the clinician's approval transaction
+    # creates its canonical Analysis row. Order by that source identity, not
+    # ledger insertion ID: a legacy backfill can insert an older Analysis after
+    # a newer approval already exists in a partially prepared ledger.
     latest = (
-        select(table.c.field_key, func.max(table.c.id).label("latest_id"))
+        select(table.c.field_key, func.max(table.c.analysis_id).label("latest_analysis_id"))
         .where(table.c.patient_id == patient_id, table.c.owner_user_id == user.id)
         .group_by(table.c.field_key)
         .subquery()
     )
     rows = session.execute(
         select(table.c.field_key, table.c.value, table.c.analysis_id)
-        .join(latest, table.c.id == latest.c.latest_id)
+        .join(
+            latest,
+            (table.c.field_key == latest.c.field_key)
+            & (table.c.analysis_id == latest.c.latest_analysis_id),
+        )
+        .where(table.c.patient_id == patient_id, table.c.owner_user_id == user.id)
         .order_by(table.c.field_key)
     ).mappings()
     fields = {}
