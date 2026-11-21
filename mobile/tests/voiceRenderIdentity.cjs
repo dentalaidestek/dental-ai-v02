@@ -34,3 +34,10 @@ test('opaque voice identities still rotate on account, patient and review scope 
  assert.match(source,/voiceRecorderRenderKey=useMemo\(\(\)=>nextSessionRenderKey\(\),\[token,userId,selected\?\.id\]\)/);
  assert.match(source,/voiceApprovalRenderKey=useMemo\(\(\)=>nextSessionRenderKey\(\),\[token,userId,selected\?\.id,review\?\.revision\]\)/);
 });
+
+test('native voice consent discloses the same Gemini transcription and Claude review boundary as web',()=>{
+ assert.ok(source.includes('Sesin Gemini ile yazıya çevrilmesini'));
+ assert.ok(source.includes('geçici metnin klinik bilgiler ve kaynaklarla Claude tarafından değerlendirilmesini'));
+ assert.ok(source.includes('bu tam anonimleştirme garantisi değildir'));
+ assert.ok(source.includes('Ham ses ve tam konuşma dökümü hasta dosyasına otomatik yazılmaz'));
+});
