@@ -395,6 +395,10 @@ def mobile_me(user: User = Depends(_mobile_user)):
 
 @router.get("/dashboard")
 def mobile_dashboard(response: Response, user: User = Depends(_mobile_user)):
+    # Match the web dashboard feature gate without adding another client request.
+    from app.voice_exam_core import enabled as voice_exam_enabled
+
+    voice_enabled = bool(voice_exam_enabled())
     # The dashboard contains patient identity, clinical-analysis metadata and
     # schedule details. It must never enter a shared or persistent HTTP cache.
     _mobile_private_no_store(response)
@@ -485,6 +489,7 @@ def mobile_dashboard(response: Response, user: User = Depends(_mobile_user)):
             "recent_analyses": recent_analyses,
             "dashboard_event": program_snapshot["dashboard_event"],
             "dashboard_event_label": program_snapshot["dashboard_event_label"],
+            "voice_exam_enabled": voice_enabled,
         }
 
 @router.get("/patients")
