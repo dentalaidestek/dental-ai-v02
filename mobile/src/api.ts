@@ -7,7 +7,7 @@ export const API_BASE = "https://dentalai.tr/api/mobile/v1";
 export type User={id:number;username:string;email?:string|null;display_name:string;role:string;is_active:boolean;email_verified_at?:string|null;professional_title?:string|null;specialty?:string|null;university?:string|null};
 export type Patient={id:number;tc_kimlik_no?:string|null;address?:string|null;anonymous_id:string;first_name?:string|null;last_name?:string|null;phone?:string|null;birth_date?:string|null;age?:number|null;chief_complaint?:string|null;created_at?:string};
 export type DashboardAnalysis={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;status:string;created_at:string};
-export type Dashboard={user:User;stats:{patient_count:number;analysis_count:number;upcoming_event_count:number};recent_patients:Patient[];upcoming_events:Array<{id:number;event_type:string;title:string;start_at:string;end_at?:string|null;patient_id?:number|null;location?:string|null;status:string}>;recent_analyses?:DashboardAnalysis[];dashboard_event?:DashboardProgramEvent|null;dashboard_event_label?:string};
+export type Dashboard={user:User;stats:{patient_count:number;analysis_count:number;upcoming_event_count:number};recent_patients:Patient[];upcoming_events:Array<{id:number;event_type:string;title:string;start_at:string;end_at?:string|null;patient_id?:number|null;location?:string|null;status:string}>;recent_analyses?:DashboardAnalysis[];dashboard_event?:DashboardProgramEvent|null;dashboard_event_label?:string;voice_exam_enabled?:boolean};
 export type PatientTreatment={id:number;tooth_number?:string|null;treatment_name:string;treatment_date?:string|null;material?:string|null;doctor_note?:string|null;result?:string|null;edit_revision:string;analysis_id?:number|null;created_at:string};
 export type PatientDetail={patient:Patient;edit_revision?:string;teeth:Array<{id:number;tooth_number:string;status:string;note?:string|null;updated_at?:string|null;revision:string}>;surfaces:Array<{id:number;tooth_number:string;surface:string;status:string;note?:string|null;updated_at?:string|null;revision:string}>;treatments:PatientTreatment[];treatments_next_cursor?:string|null;media:Array<{id:number;original_filename:string;file_path:string;media_type:string;tooth_number?:string|null;note?:string|null;uploaded_at?:string}>};
 
@@ -70,6 +70,8 @@ export async function getDashboard(token:string){
   throw new ApiError(502,"Ana sayfa program özeti doğrulanamadı.");
  if(result?.dashboard_event_label!==undefined&&!["Bugün","Yaklaşan Program"].includes(result.dashboard_event_label))
   throw new ApiError(502,"Ana sayfa program etiketi doğrulanamadı.");
+ if(result?.voice_exam_enabled!==undefined&&typeof result.voice_exam_enabled!=="boolean")
+  throw new ApiError(502,"Ana sayfa sesli muayene özelliği doğrulanamadı.");
  return result;
 }
 export async function getPatients(token:string,q="",offset=0){
