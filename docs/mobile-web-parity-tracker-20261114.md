@@ -1274,3 +1274,24 @@ Additional voice regressions prove that partial approval of one field does not e
 - db40960 — partial approval retention and stale-revision data-preservation regressions
 
 The new tests are committed but have not yet been executed on this updated head. The only verified green Android run and the one-failure Security run above predate these commits. No local repository checkout or workflow-dispatch action is available through the current GitHub connector, so no new test result is claimed until a workflow run is associated with the new head. No staging or production database was modified; no main merge or live deployment occurred.
+
+
+## 2026-11-22 — Current-head security correction and patient-profile warning parity
+
+Web-first review:
+- Re-read `app/templates/patient_detail.html`: the approved anamnesis card renders the backend-provided `voice_history.notice` once after the field rows.
+- Re-read `mobile/src/NativePatientProfile.tsx` and `NativePatientVoiceHistory.tsx`: native uses the same approved-history endpoint and displays the server notice, but also appended a second native-only current-status warning. Removed the duplicate; the clinical caution remains in the canonical server notice.
+- Rechecked the web profile action inventory (expert support, FDI chart, AI analysis, appointment, treatment, patient edit/delete, clinical media, analysis history, approved anamnesis and treatment history) against the native profile and its existing parity tests. No placeholder or WebView was introduced.
+
+Starting-head CI evidence (PR head `5aa447dc052b60119357b32011b99fea92bc124f`):
+- Android run #4688: TypeScript typecheck, session/auth, realtime/pagination, mobile beta regressions, Android/iOS Hermes export, and internal Android APK assembly/artifact upload all succeeded.
+- Security Recovery run #2387: all six native security jobs succeeded. Python security ran 605 tests: 604 passed and one failed. The only failure was `test_require_schema_fails_closed_if_latest_history_index_is_missing`; its expected stable phrase `approved anamnesis query index` was split by the new error wording (`approved anamnesis owner/patient/field/source query index`). This was a message-contract mismatch, not a migration/index assertion failure.
+- Fixed the production error message to retain the stable phrase and still explain the exact owner/patient/field/source columns. Strengthened the existing regression to assert the actionable detail; no test was weakened or removed.
+
+Commits in this follow-up:
+- `8830412` — keep the approved-anamnesis index error contract stable
+- `96e15ab` — assert the actionable owner/patient/field/source detail
+- `0b47b61` — remove the duplicate native-only anamnesis warning
+- `a4fe29a` — verify the canonical warning is rendered exactly once
+
+The next PR-triggered CI run is expected to execute on this updated head because the changed paths are included in the Android and Security Recovery workflows. Until that run completes, the updated Python regression and native warning test are committed but not claimed as passed. PostgreSQL staging migration/count/provenance/idempotency/rollback acceptance and 60,000-user load testing remain open. No staging or production database was changed; no main merge or live deployment occurred.
