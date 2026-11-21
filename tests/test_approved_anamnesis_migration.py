@@ -328,3 +328,43 @@ def test_startup_rejects_revision21_ledger_without_unique_provenance_even_when_l
     with engine.connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM approvedanamnesis")).scalar_one() == 1
     engine.dispose()
+
+
+
+def test_revision20_precreated_ledger_without_unique_provenance_does_not_advance_revision_or_drop_data():
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"
+        ))
+        connection.execute(text("INSERT INTO dental_schema_revision(id, version) VALUES (1, 20)"))
+        connection.execute(text(
+            "CREATE TABLE patient (id INTEGER PRIMARY KEY, owner_user_id INTEGER NOT NULL)"
+        ))
+        connection.execute(text(
+            "CREATE TABLE analysis (id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, clinical_notes TEXT)"
+        ))
+        connection.execute(text(
+            "CREATE TABLE workjob (id INTEGER PRIMARY KEY, owner_user_id INTEGER NOT NULL, "
+            "resource_id INTEGER NOT NULL, resource_type VARCHAR NOT NULL, kind VARCHAR NOT NULL, status VARCHAR NOT NULL)"
+        ))
+        connection.execute(text(
+            "CREATE TABLE approvedanamnesis (id INTEGER PRIMARY KEY, owner_user_id INTEGER NOT NULL, "
+            "patient_id INTEGER NOT NULL, field_key VARCHAR NOT NULL, value VARCHAR NOT NULL, "
+            "analysis_id INTEGER NOT NULL, created_at DATETIME NOT NULL)"
+        ))
+        connection.execute(text(
+            "INSERT INTO approvedanamnesis "
+            "(id, owner_user_id, patient_id, field_key, value, analysis_id, created_at) "
+            "VALUES (1, 9, 77, 'allergies', 'Mevcut onay', 9001, CURRENT_TIMESTAMP)"
+        ))
+
+    with pytest.raises(RuntimeError, match="unique constraint was not created"):
+        _upgrade_approved_anamnesis_schema(SimpleNamespace(engine=engine))
+
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version FROM dental_schema_revision WHERE id=1")).scalar_one() == 20
+        assert connection.execute(text(
+            "SELECT owner_user_id, patient_id, field_key, value, analysis_id FROM approvedanamnesis"
+        )).all() == [(9, 77, "allergies", "Mevcut onay", 9001)]
+    engine.dispose()
