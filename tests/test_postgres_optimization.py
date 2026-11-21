@@ -149,7 +149,7 @@ def test_release_migration_preserves_existing_records_and_repeats_on_postgres(pg
     with engine.connect() as connection:
         assert connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all() == before
         assert set(connection.execute(text('SELECT id FROM guestanalysis')).scalars()) == {resource.id for resource in resources}
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 19
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 20
         assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('authratebucket')")).scalar_one() is not None
@@ -174,7 +174,7 @@ def test_program_idempotency_migration_upgrades_revision14_without_baseline_repl
         ))}
         assert {'client_request_hash','client_payload_hash'} <= columns
         assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 19
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 20
 
 
 def test_program_create_receipt_is_atomic_under_concurrent_postgres_requests(pg, monkeypatch):
@@ -445,7 +445,7 @@ def test_consultation_receipt_revision_13_upgrade_on_postgres(pg):
     migrate.require_schema(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 19
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 20
         assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
 
 
@@ -464,10 +464,10 @@ def test_consultation_receipt_revision_12_creates_both_receipt_tables(pg):
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('mobilesupportmutationreceipt')")).scalar_one() is not None
         # The study tables are additive revision-12 objects. The receipt upgrade
-        # advances through revisions 14 and 15 to the current revision 19, so they must be created before those bumps.
+        # advances through revisions 14 and 15 to the current revision 20, so they must be created before those bumps.
         for table in ('studylearningstate', 'studyreview', 'studyattempt', 'studyrun'):
             assert connection.execute(text("SELECT to_regclass(:name)"), {'name': table}).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 19
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 20
 
 def test_consultation_message_same_key_replays_once_under_concurrent_postgres_writes(pg, monkeypatch):
     from fastapi.testclient import TestClient
@@ -690,25 +690,224 @@ def test_program_query_index_migration_upgrades_revision15_online(pg):
         'ix_scheduleevent_owner_start_at',
         'ix_scheduleevent_owner_created_at',
         'ix_scheduleevent_owner_updated_at',
-        'ix_programreminderjob_status_run_at',
+        'ix_programreminderjob_pending_run_at',
         'ix_programreminderjob_event_status',
         'ix_programreminderjob_owner_status',
         'ix_treatment_patient_created_id',
     )
+    legacy_reminder_indexes = (
+        'ix_programreminderjob_status_run_at',
+        'ix_programreminderjob_run_at',
+    )
     with engine.begin() as connection:
         connection.execute(text('CREATE TABLE IF NOT EXISTS dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
         connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,15) ON CONFLICT(id) DO UPDATE SET version=15'))
-        for name in index_names:
+        for name in (*index_names, *legacy_reminder_indexes):
             connection.execute(text(f'DROP INDEX IF EXISTS {name}'))
     migrate.apply()
     migrate.require_schema(engine)
     with engine.connect() as connection:
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 19
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 20
         for name in index_names:
             assert connection.execute(
                 text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
                 {'name': name},
             ).scalar_one() is True
+        for name in legacy_reminder_indexes:
+            assert connection.execute(text('SELECT to_regclass(:name)'), {'name': name}).scalar_one() is None
+        definition = connection.execute(
+            text('SELECT indexdef FROM pg_indexes WHERE schemaname=current_schema() AND indexname=:name'),
+            {'name': 'ix_programreminderjob_pending_run_at'},
+        ).scalar_one()
+        assert 'WHERE' in definition.upper()
+        assert 'STATUS' in definition.upper() and 'PENDING' in definition.upper()
+
+
+
+def test_program_pending_reminder_index_migration_upgrades_revision19_and_is_idempotent(pg):
+    from app import migrate
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        # The pg fixture creates application metadata, not the release revision
+        # table. Build the exact pre-revision-20 state this migration test needs.
+        connection.execute(text(
+            'CREATE TABLE IF NOT EXISTS dental_schema_revision '
+            '(id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'
+        ))
+        connection.execute(text(
+            'INSERT INTO dental_schema_revision VALUES (1,19) '
+            'ON CONFLICT(id) DO UPDATE SET version=19'
+        ))
+        connection.execute(text('DROP INDEX IF EXISTS ix_programreminderjob_pending_run_at'))
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_programreminderjob_status_run_at '
+            'ON programreminderjob (status, run_at)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_programreminderjob_run_at '
+            'ON programreminderjob (run_at)'
+        ))
+
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(
+            text('SELECT version FROM dental_schema_revision WHERE id=1')
+        ).scalar_one() == 20
+        assert connection.execute(
+            text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
+            {'name': 'ix_programreminderjob_pending_run_at'},
+        ).scalar_one() is True
+        assert connection.execute(
+            text('SELECT to_regclass(:name)'),
+            {'name': 'ix_programreminderjob_status_run_at'},
+        ).scalar_one() is None
+        assert connection.execute(
+            text('SELECT to_regclass(:name)'),
+            {'name': 'ix_programreminderjob_run_at'},
+        ).scalar_one() is None
+
+    # A second release-migration invocation must validate, not rebuild or fail.
+    migrate.apply()
+    with engine.connect() as connection:
+        assert connection.execute(
+            text('SELECT version FROM dental_schema_revision WHERE id=1')
+        ).scalar_one() == 20
+
+
+def test_program_pending_reminder_index_rebuilds_broader_postgres_predicate(pg):
+    from app import main, migrate
+
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        connection.execute(text(
+            'CREATE TABLE IF NOT EXISTS dental_schema_revision '
+            '(id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'
+        ))
+        connection.execute(text(
+            'INSERT INTO dental_schema_revision VALUES (1,20) '
+            'ON CONFLICT(id) DO UPDATE SET version=20'
+        ))
+        connection.execute(text('DROP INDEX IF EXISTS ix_programreminderjob_pending_run_at'))
+        connection.execute(text(
+            "CREATE INDEX ix_programreminderjob_pending_run_at "
+            "ON programreminderjob (run_at) "
+            "WHERE status IN ('PENDING','FAILED')"
+        ))
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_programreminderjob_status_run_at '
+            'ON programreminderjob (status, run_at)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_programreminderjob_run_at '
+            'ON programreminderjob (run_at)'
+        ))
+
+    # A broad predicate is not a valid revision-20 index even though it
+    # contains both words "status" and "pending".
+    assert migrate._upgrade_program_reminder_pending_index(main) is True
+    with engine.connect() as connection:
+        predicate = connection.execute(text(
+            "SELECT pg_get_expr(indpred, indrelid) FROM pg_index "
+            "WHERE indexrelid=to_regclass('ix_programreminderjob_pending_run_at')"
+        )).scalar_one()
+        normalized = "".join(predicate.lower().split()).replace("(", "").replace(")", "")
+        for cast in ("::character varying", "::charactervarying", "::varchar", "::text"):
+            normalized = normalized.replace(cast, "")
+        assert normalized == "status='pending'"
+        for name in ('ix_programreminderjob_status_run_at', 'ix_programreminderjob_run_at'):
+            assert connection.execute(
+                text('SELECT to_regclass(:name)'), {'name': name}
+            ).scalar_one() is None
+
+
+def test_program_pending_reminder_index_sqlite_migration_is_idempotent(tmp_path):
+    from types import SimpleNamespace
+    from app import migrate
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'program-reminder-index.db'}")
+    with engine.begin() as connection:
+        connection.execute(text(
+            'CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'
+        ))
+        connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,19)'))
+        connection.execute(text(
+            'CREATE TABLE programreminderjob (id INTEGER PRIMARY KEY, status VARCHAR NOT NULL, run_at TIMESTAMP NOT NULL)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX ix_programreminderjob_status_run_at ON programreminderjob (status, run_at)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX ix_programreminderjob_run_at ON programreminderjob (run_at)'
+        ))
+
+    migration_target = SimpleNamespace(engine=engine)
+    assert migrate._upgrade_program_reminder_pending_index(migration_target) is True
+    assert migrate._upgrade_program_reminder_pending_index(migration_target) is True
+    with engine.connect() as connection:
+        assert connection.execute(
+            text('SELECT version FROM dental_schema_revision WHERE id=1')
+        ).scalar_one() == 20
+        definition = connection.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='index' AND name=:name"),
+            {'name': 'ix_programreminderjob_pending_run_at'},
+        ).scalar_one()
+        assert 'where status = \'pending\'' in definition.lower()
+        for name in ('ix_programreminderjob_status_run_at', 'ix_programreminderjob_run_at'):
+            assert connection.execute(
+                text("SELECT 1 FROM sqlite_master WHERE type='index' AND name=:name"),
+                {'name': name},
+            ).scalar_one_or_none() is None
+    # Revision 20 must repair an index that has the right name/column but
+    # accidentally includes FAILED rows in its predicate.
+    with engine.begin() as connection:
+        connection.execute(text('DROP INDEX ix_programreminderjob_pending_run_at'))
+        connection.execute(text(
+            "CREATE INDEX ix_programreminderjob_pending_run_at "
+            "ON programreminderjob (run_at) WHERE status IN ('PENDING','FAILED')"
+        ))
+    assert migrate._upgrade_program_reminder_pending_index(migration_target) is True
+    with engine.connect() as connection:
+        definition = connection.execute(text(
+            "SELECT sql FROM sqlite_master WHERE type='index' "
+            "AND name='ix_programreminderjob_pending_run_at'"
+        )).scalar_one()
+        normalized = "".join(definition.lower().split()).replace("(", "").replace(")", "")
+        assert "wherestatus='pending'" in normalized
+        assert "failed" not in normalized
+    engine.dispose()
+
+def test_program_pending_reminder_migration_refuses_unversioned_sqlite_schema(tmp_path):
+    from types import SimpleNamespace
+    from app import migrate
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'unversioned-reminders.db'}")
+    with engine.begin() as connection:
+        connection.execute(text(
+            'CREATE TABLE programreminderjob '
+            '(id INTEGER PRIMARY KEY, status VARCHAR NOT NULL, run_at TIMESTAMP NOT NULL)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX ix_programreminderjob_run_at '
+            'ON programreminderjob (run_at)'
+        ))
+
+    target = SimpleNamespace(engine=engine)
+    assert migrate._upgrade_program_reminder_pending_index(target) is False
+    with engine.connect() as connection:
+        assert connection.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='dental_schema_revision'"
+        )).scalar_one_or_none() is None
+        assert connection.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='index' "
+            "AND name='ix_programreminderjob_run_at'"
+        )).scalar_one_or_none() == 1
+        assert connection.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='index' "
+            "AND name='ix_programreminderjob_pending_run_at'"
+        )).scalar_one_or_none() is None
+    engine.dispose()
 
 
 def _explain_analyze_index_names(connection, statement, params=None):
@@ -738,8 +937,9 @@ def _explain_analyze_index_names(connection, statement, params=None):
 def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
     engine, _, _ = pg
     # Synthetic only: 60k distinct accounts plus a deliberately busy account.
-    # Terminal reminders remain in the due-time range so the planner must use
-    # the (status, run_at) index to skip history rather than scan DONE rows.
+    # The due scan sees terminal past jobs, pending future jobs and a small due
+    # subset. A pending-only partial run_at index keeps terminal history out of
+    # the ordered LIMIT scan rather than relying on a tiny-table planner choice.
     with engine.begin() as connection:
         connection.execute(text("SET LOCAL TIME ZONE 'UTC'"))
         connection.execute(text("""
@@ -773,6 +973,15 @@ def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
             SELECT 100000+n,100000+n,now()-interval '30 minutes',now()-interval '30 minutes',30,
                    now()-interval '30 days','scale-terminal-' || n,'DONE',0,NULL,
                    now()-interval '30 days',now()-interval '29 minutes'
+            FROM generate_series(1,60000) AS n
+        """))
+        connection.execute(text("""
+            INSERT INTO programreminderjob
+                (schedule_event_id,owner_user_id,occurrence_start_at,run_at,reminder_minutes,
+                 event_updated_at,dedup_key,status,attempts,last_error,created_at,completed_at)
+            SELECT 200000+n,100000+n,now()+interval '2 days',now()+interval '2 days',30,
+                   now()-interval '30 days','scale-future-' || n,'PENDING',0,NULL,
+                   now()-interval '30 days',NULL
             FROM generate_series(1,60000) AS n
         """))
         connection.execute(text("""
@@ -816,17 +1025,33 @@ def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
         """,
         {'owner': 42, 'snapshot': datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)},
     )
+    # Match the real worker query, including row-lock skipping. The partial
+    # index must exclude terminal DONE/FAILED/CANCELLED history before LIMIT.
     reminder_plan = _explain_analyze_index_names(
         engine,
         """
         SELECT id FROM programreminderjob
-        WHERE status='PENDING' AND run_at <= now()
+        WHERE status=:status AND run_at <= now()
         ORDER BY run_at LIMIT 100
+        FOR UPDATE SKIP LOCKED
         """,
+        {'status': 'PENDING'},
+    )
+    wakeup_plan = _explain_analyze_index_names(
+        engine,
+        """
+        SELECT run_at FROM programreminderjob
+        WHERE status=:status
+        ORDER BY run_at LIMIT 1
+        """,
+        {'status': 'PENDING'},
     )
     assert 'ix_scheduleevent_owner_start_at' in range_plan
     assert {'ix_scheduleevent_owner_created_at','ix_scheduleevent_owner_updated_at'} & snapshot_plan
-    assert 'ix_programreminderjob_status_run_at' in reminder_plan
+    assert 'ix_programreminderjob_pending_run_at' in reminder_plan
+    assert 'ix_programreminderjob_pending_run_at' in wakeup_plan
+    assert 'ix_programreminderjob_run_at' not in reminder_plan
+    assert 'ix_programreminderjob_status_run_at' not in reminder_plan
 
 
 def test_treatment_history_index_migration_upgrades_revision18_online(pg):
@@ -845,7 +1070,7 @@ def test_treatment_history_index_migration_upgrades_revision18_online(pg):
     with engine.connect() as connection:
         assert connection.execute(
             text('SELECT version FROM dental_schema_revision WHERE id=1')
-        ).scalar_one() == 19
+        ).scalar_one() == 20
         assert connection.execute(
             text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
             {'name': 'ix_treatment_patient_created_id'},

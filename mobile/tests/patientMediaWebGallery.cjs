@@ -49,3 +49,20 @@ test('web thumbnails are used for cards while the original remains the full-size
   assert.match(template,/src="\/patients\/\{\{ patient\.id \}\}\/media\/\{\{ media\.id \}\}\/thumbnail"/);
   assert.match(galleryScript,/image\.src = item\.thumbnail_url/);
 });
+
+
+test('native clinical archive mirrors the web mobile file picker with camera capture',()=>{
+  const native=fs.readFileSync(path.join(__dirname,'../src/NativePatientMedia.tsx'),'utf8');
+  const presentation=fs.readFileSync(path.join(__dirname,'../src/clinicalMediaPresentation.ts'),'utf8');
+  assert.match(template,/type="file"[^>]*accept="image\/jpeg,image\/png,image\/webp"[^>]*multiple/);
+  assert.match(native,/ImagePicker\.requestCameraPermissionsAsync\(\)/);
+  assert.match(native,/ImagePicker\.launchCameraAsync\(\{mediaTypes:\['images'\],quality:\.9\}\)/);
+  assert.match(native,/Kamerayla Fotoğraf Çek/);
+  assert.match(native,/clinicalMediaImageKey\(imageScope,item\.id,'thumbnail'\)/);
+  assert.match(native,/clinicalMediaImageKey\(imageScope,preview\.id,'original'\)/);
+  assert.match(native,/clinicalMediaImageSource\(item\.thumbnail_url\|\|item\.url,token\)/);
+  assert.match(native,/const imageScope=useMemo/);
+  assert.doesNotMatch(native,/clinicalMediaImageKey\(owner,/);
+  assert.match(presentation,/cache:'reload'/);
+  assert.match(presentation,/Authorization:'Bearer '\+token/);
+});

@@ -312,10 +312,11 @@ def test_native_media_file_enforces_media_owner_as_well_as_patient_owner():
     block = source.split("async def mobile_patient_media_file", 1)[1].split(
         "async def _invoke_patient_web", 1
     )[0]
-    assert "media.patient_id!=patient_id" in block
-    assert "patient.owner_user_id!=user.id" in block
-    assert "media.owner_user_id!=user.id" in block
-    assert "_mobile_private_no_store(result)" in block
+    compact = "".join(block.split())
+    assert "media.patient_id!=patient_id" in compact
+    assert "patient.owner_user_id!=user.id" in compact
+    assert "media.owner_user_id!=user.id" in compact
+    assert "_mobile_private_no_store(result)" in compact
 
 def test_e2ee_message_storage_has_ciphertext_envelopes_without_forcing_plaintext():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")

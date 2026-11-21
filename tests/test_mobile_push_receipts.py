@@ -483,7 +483,7 @@ def test_revision_15_push_tables_bootstrap_without_bypassing_release_guard(tmp_p
     # must not make an older release schema acceptable to the current service.
     migrate._ensure_mobile_push_device_table(engine)
     migrate._ensure_mobile_push_delivery_table(engine)
-    with pytest.raises(RuntimeError, match="Expected schema revision 19"):
+    with pytest.raises(RuntimeError, match="Expected schema revision 20"):
         migrate.require_schema(engine)
 
     inspector = inspect(engine)

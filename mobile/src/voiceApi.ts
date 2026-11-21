@@ -1,5 +1,5 @@
 import {revalidateSession} from './sessionExpiry';
-import {splitVoiceTranscript} from './voiceSession';
+import {splitVoiceTranscript,VOICE_TEXT_LIMIT,VOICE_TEXT_BYTE_LIMIT,voiceUtf8Bytes} from './voiceSession';
 const BASE="https://dentalai.tr/api/mobile/v1";
 async function send<T>(token:string,path:string,payload?:unknown,method:"GET"|"POST"="POST"):Promise<T>{
  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),150000);
@@ -152,10 +152,12 @@ export async function extractVoice(token:string,patientId:number,transcript:stri
  if(!review||!revision)throw Error("Klinik çıkarım tamamlanamadı. Metniniz korunuyor.");
  return {ok:true,revision,review};
 }
-export async function finalizeVoice(token:string,patientId:number,payload:{context:Record<string,unknown>;insights:Record<string,unknown>[];uncertain:string;conversation_text:string}):Promise<Record<string,unknown>>{
+export async function finalizeVoice(token:string,patientId:number,payload:{context:Record<string,unknown>;insights:Record<string,unknown>[];uncertain:string;conversation_text:string;source_fingerprint?:string},expectedRevision?:string):Promise<{ok:true;revision:string;final:Record<string,unknown>}>{
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Son değerlendirme için geçerli bir hasta seçin.");
  if(!payload||!payload.context||typeof payload.context!=="object"||Array.isArray(payload.context)||!Array.isArray(payload.insights)||typeof payload.uncertain!=="string")throw Error("Klinik son değerlendirme bilgileri geçersiz. Metniniz korunuyor.");
- if(typeof payload.conversation_text!=="string"||payload.conversation_text.length>72000)throw Error("Görüşme metni 72.000 karakteri aşamaz. Metniniz korunuyor.");
+ if(typeof payload.conversation_text!=="string"||payload.conversation_text.length>VOICE_TEXT_LIMIT||voiceUtf8Bytes(payload.conversation_text)>VOICE_TEXT_BYTE_LIMIT)throw Error("Görüşme metni 72.000 karakter / 216 KB sınırını aşıyor. Metniniz korunuyor.");
+ if(payload.source_fingerprint!==undefined&&(typeof payload.source_fingerprint!=="string"||!/^[a-f0-9]{64}$/.test(payload.source_fingerprint)))throw Error("Önceki kaynak değerlendirmesi anahtarı doğrulanamadı.");
+ if(expectedRevision!==undefined&&(typeof expectedRevision!=="string"||!/^[a-f0-9]{64}$/.test(expectedRevision)))throw Error("Hasta dosyası sürüm bilgisi doğrulanamadı.");
  const fields=(payload.context as Record<string,unknown>).fields;
  const teeth=(payload.context as Record<string,unknown>).teeth;
  const topics=(payload.context as Record<string,unknown>).literature_topics;
@@ -179,8 +181,10 @@ export async function finalizeVoice(token:string,patientId:number,payload:{conte
  const allowedInsightKeys=new Set(["quote","observation","suggestion","category","question","explanation","response_type"]);
  const allowedResponseTypes=new Set(["CLINICIAN_RESPONSE","PATIENT_RESPONSE","UNATTRIBUTED_RESPONSE"]);
  if(payload.insights.some(item=>!isRecord(item)||Object.entries(item).some(([key,value])=>!allowedInsightKeys.has(key)||typeof value!=="string"||value.length>1000||(key==="response_type"&&!allowedResponseTypes.has(value)))||typeof item.quote!=="string"||!item.quote.trim()||typeof item.observation!=="string"||!item.observation.trim()))throw Error("Hekim iletişimi kanıtları eksik veya geçersiz. Taslağı kontrol edin; metniniz korunuyor.");
-  const result=await send<Record<string,unknown>>(token,`/patients/${patientId}/voice-exam/finalize`,{...payload,consent:true});
- if(!result.final||typeof result.final!=="object"||Array.isArray(result.final))throw Error("Klinik son değerlendirme yanıtı eksik. Metninizi koruyup tekrar deneyin.");
+  const result=await send<{ok:true;revision:string;final:Record<string,unknown>}>(token,`/patients/${patientId}/voice-exam/finalize`,{...payload,consent:true});
+ if(typeof result.revision!=="string"||!/^[a-f0-9]{64}$/.test(result.revision)||!result.final||typeof result.final!=="object"||Array.isArray(result.final)||typeof result.final.source_fingerprint!=="string"||!/^[a-f0-9]{64}$/.test(result.final.source_fingerprint))throw Error("Klinik son değerlendirme yanıtının sürüm veya kaynak kimliği doğrulanamadı. Metninizi koruyup tekrar deneyin.");
+ if(expectedRevision&&result.revision!==expectedRevision)throw Error("Hasta dosyası görüşme sırasında değişti. Kaynaklı değerlendirme gösterilmedi; güncel hasta bilgilerini yeniden kontrol edin.");
+ if(result.final.not_modified===true&&result.final.source_fingerprint!==payload.source_fingerprint)throw Error("Önceki kaynak değerlendirmesi doğrulanamadı. Mevcut taslağı koruyup yeniden deneyin.");
  return result;
 }
 

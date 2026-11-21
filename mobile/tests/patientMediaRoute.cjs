@@ -68,3 +68,65 @@ test('native archive retains web-matched metadata, batch limits, receipts and re
   assert.match(web,/patientMediaAnalyzeSelected/);
   assert.match(web,/media\/delete-all/);
 });
+
+ 
+test('native clinical media paging is owner-scoped, bounded and private',()=>{
+  const mobile=fs.readFileSync(require.resolve('../../app/mobile_api.py'),'utf8');
+  const block=mobile.split('@router.get("/patients/{patient_id}/media")')[1]?.split('@router.delete("/patients/{patient_id}/media/{media_id}")')[0]||'';
+  assert.ok(block,'canonical mobile media page route must remain mounted');
+  assert.match(block,/_mobile_private_no_store\(response\)/);
+  assert.match(block,/not patient or patient\.owner_user_id != user\.id/);
+  assert.match(block,/PatientMedia\.owner_user_id\s*==\s*user\.id/);
+  assert.match(block,/order_by\(PatientMedia\.id\.desc\(\)\)\.limit\(limit\s*\+\s*1\)/);
+  assert.match(block,/PatientMedia\.id\s*<\s*before/);
+  assert.doesNotMatch(block,/\.offset\(/);
+});
+
+test('native thumbnails recheck exact ownership and source identity after R2 generation',()=>{
+  const modern=fs.readFileSync(require.resolve('../../app/mobile_modern_api_v3.py'),'utf8');
+  const main=fs.readFileSync(require.resolve('../../app/main.py'),'utf8');
+  const api=fs.readFileSync(require.resolve('../src/modernApi.ts'),'utf8');
+  const native=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
+  const block=modern.split('@router.get("/patients/{patient_id}/media/{media_id}/thumbnail")')[1]?.split('@router.get("/patients/{patient_id}/media/{media_id}")')[0]||'';
+  assert.ok(block,'native thumbnail route must be mounted');
+  assert.match(block,/patient\.owner_user_id\s*!=\s*user\.id/);
+  assert.match(block,/current_patient\.owner_user_id\s*==\s*user\.id/);
+  assert.match(block,/current_media\.file_path\s*==\s*file_path/);
+  assert.match(block,/current_media\.owner_user_id\s*==\s*user\.id/);
+  assert.match(block,/ensure_thumbnail\(file_path\)/);
+  assert.match(block,/_cleanup_orphan_thumbnail\(delete_thumbnail,\s*file_path,\s*media_id\)/);
+  assert.match(modern,/def _private_clinical_media_error/);
+  assert.match(modern,/"Cache-Control":\s*"private, no-store"/);
+  assert.match(modern,/"Pragma":\s*"no-cache"/);
+  assert.match(modern,/"Vary":\s*"Authorization"/);
+  const tick=String.fromCharCode(96);
+  assert.ok(api.includes('thumbnail_url:'+tick+'${API_BASE}/patients/${p}/media/${media.id}/thumbnail'+tick));
+  assert.match(native,/item\.thumbnail_url\|\|item\.url/);
+  assert.match(native,/source=\{clinicalMediaImageSource\(preview\.url,token\)\}/);
+  assert.match(main,/app\.include_router\(mobile_router\)[\s\S]*app\.include_router\(mobile_modern_router\)/);
+  assert.ok(main.includes("from app.mobile_route_registry import remove_shadowed_routes as _remove_shadowed_mobile_routes"));
+   assert.ok(main.includes("_remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)"));
+   assert.ok(main.indexOf("app.include_router(mobile_router)")<main.indexOf("_remove_shadowed_mobile_routes("));
+   assert.ok(main.indexOf("_remove_shadowed_mobile_routes(")<main.indexOf("app.include_router(mobile_modern_router)"));
+});
+
+test('canonical native original-file route rechecks ownership and exact source after R2 hydration',()=>{
+  const mobile=fs.readFileSync(require.resolve('../../app/mobile_api.py'),'utf8');
+  const block=mobile.split('@router.get("/patients/{patient_id}/media/{media_id}/file")')[1]?.split('async def _invoke_patient_web')[0]||'';
+  assert.ok(block,'canonical native original-file route must remain mounted');
+  assert.match(block,/await run_in_threadpool\(storage_ensure_local, file_path\)/);
+  assert.match(block,/current_patient\.owner_user_id == user\.id/);
+  assert.match(block,/current_media\.patient_id == patient_id/);
+  assert.match(block,/current_media\.owner_user_id == user\.id/);
+  assert.match(block,/current_media\.file_path == file_path/);
+  assert.match(block,/current_media\.original_filename == original_filename/);
+  assert.match(block,/except FileNotFoundError/);
+  assert.match(block,/Clinical media original authorization lookup failed/);
+  assert.match(block,/Clinical media original ownership recheck failed/);
+  assert.match(block,/except Exception/);
+  assert.match(block,/private_error\(\s*503/);
+  assert.match(block,/_mobile_private_no_store\(result\)/);
+  assert.match(block,/X-Content-Type-Options.*nosniff/);
+  assert.doesNotMatch(block,/raise HTTPException\(status_code=503/);
+});
+

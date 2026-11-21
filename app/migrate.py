@@ -1,7 +1,7 @@
 """Explicit, serialized release migration: python -m app.migrate.
 
 The existing idempotent baseline DDL is retained; revision 2 adds durable work, provider reservations and immutable analysis-result pointers;
-revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata; revision 5 adds lazy visual page artifacts; revision 6 adds one-time email verification state; revision 9 adds shared authentication admission counters; revision 10 adds isolated email-change challenges; revision 11 adds consultation chat retention and a committed media-deletion outbox. revision 12 adds private membership-verification records; revision 15 adds native Program idempotency fields; revision 16 adds online owner-scoped Program and reminder queue indexes; revision 17 adds native Academic course-create receipts; revision 18 adds unique tooth-observation indexes; revision 19 adds the patient treatment-history keyset index. Web/workers only
+revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata; revision 5 adds lazy visual page artifacts; revision 6 adds one-time email verification state; revision 9 adds shared authentication admission counters; revision 10 adds isolated email-change challenges; revision 11 adds consultation chat retention and a committed media-deletion outbox. revision 12 adds private membership-verification records; revision 15 adds native Program idempotency fields; revision 16 adds online owner-scoped Program and reminder queue indexes; revision 17 adds native Academic course-create receipts; revision 18 adds unique tooth-observation indexes; revision 19 adds the patient treatment-history keyset index; revision 20 adds a partial pending-reminder queue index. Web/workers only
 check the revision in production, avoiding repeated boot-time DDL/backfills.
 """
 import logging
@@ -15,10 +15,12 @@ PROGRAM_QUERY_INDEX_REVISION = 16
 ACADEMIC_COURSE_RECEIPT_REVISION = 17
 TOOTH_CHART_OBSERVATION_REVISION = 18
 TREATMENT_HISTORY_INDEX_REVISION = 19
-REVISION = TREATMENT_HISTORY_INDEX_REVISION
+PROGRAM_REMINDER_PENDING_INDEX_REVISION = 20
+REVISION = PROGRAM_REMINDER_PENDING_INDEX_REVISION
 PROGRAM_QUERY_INDEX_LOCK = 71048238
 TOOTH_CHART_OBSERVATION_LOCK = 71048240
 TREATMENT_HISTORY_INDEX_LOCK = 71048241
+PROGRAM_REMINDER_PENDING_INDEX_LOCK = 71048242
 
 
 def _ensure_mobile_push_device_table(engine):
@@ -458,7 +460,7 @@ def _upgrade_treatment_history_index(main):
                     text("SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)"),
                     {"name": index_name},
                 ).scalar()
-                if revision == TREATMENT_HISTORY_INDEX_REVISION:
+                if revision in (TREATMENT_HISTORY_INDEX_REVISION, REVISION):
                     columns = inspect(connection).get_indexes("treatment")
                     if valid is not True or not any(
                         item.get("name") == index_name and item.get("column_names") == expected_columns
@@ -513,7 +515,7 @@ def _upgrade_treatment_history_index(main):
             indexes = inspect(connection).get_indexes("treatment")
             present = any(item.get("name") == index_name and item.get("column_names") == expected_columns
                           for item in indexes)
-            if revision == TREATMENT_HISTORY_INDEX_REVISION:
+            if revision in (TREATMENT_HISTORY_INDEX_REVISION, REVISION):
                 if not present:
                     raise RuntimeError("Treatment history index is missing at revision 19")
                 return True
@@ -539,6 +541,180 @@ def _upgrade_treatment_history_index(main):
                     raise RuntimeError("Schema changed during treatment history index migration")
     logger.warning("migration.treatment_history_index complete revision=%s",
                    TREATMENT_HISTORY_INDEX_REVISION)
+    return True
+
+
+
+
+def _program_pending_reminder_index_state(connection, index_name):
+    """Return whether a PostgreSQL index is exactly the pending-only run_at index.
+
+    Checking that an index definition merely contains the words STATUS and
+    PENDING is insufficient: a predicate such as status IN ('PENDING','FAILED')
+    would also pass while retaining terminal jobs in the hot queue.
+    """
+    row = connection.execute(text(
+        "SELECT i.indisvalid, pg_get_expr(i.indpred, i.indrelid), "
+        "pg_get_indexdef(i.indexrelid) "
+        "FROM pg_index i WHERE i.indexrelid=to_regclass(:name)"
+    ), {"name": index_name}).one_or_none()
+    if row is None:
+        return False, None
+    valid, predicate, definition = row
+    normalized_predicate = "".join(
+        (predicate or "").lower().replace('"', "").split()
+    ).replace("(", "").replace(")", "")
+    for cast in ("::character varying", "::charactervarying", "::varchar", "::text"):
+        normalized_predicate = normalized_predicate.replace(cast, "")
+    normalized_definition = "".join(
+        (definition or "").lower().replace('"', "").split()
+    )
+    matches = (
+        valid is True
+        and normalized_predicate == "status='pending'"
+        and "usingbtree(run_at)" in normalized_definition
+    )
+    return matches, valid
+
+
+def _upgrade_program_reminder_pending_index(main):
+    """Install a compact pending-only due-queue index and advance revision 20.
+
+    The worker claims PENDING reminders ordered by run_at. A broad run_at index
+    can walk thousands of old DONE rows before finding a due item when LIMIT is
+    present. The partial index contains only claimable rows. PostgreSQL builds it
+    concurrently under a session advisory lock; SQLite uses a short transaction.
+    """
+    dialect = main.engine.dialect.name
+    if dialect not in ("postgresql", "sqlite"):
+        return False
+
+    index_name = "ix_programreminderjob_pending_run_at"
+    legacy_indexes = (
+        "ix_programreminderjob_status_run_at",
+        "ix_programreminderjob_run_at",
+    )
+
+    if dialect == "postgresql":
+        with main.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+            connection.execute(text("SET lock_timeout = '10s'"))
+            connection.execute(text("SET statement_timeout = '10min'"))
+            connection.execute(
+                text("SELECT pg_advisory_lock(:lock_key)"),
+                {"lock_key": PROGRAM_REMINDER_PENDING_INDEX_LOCK},
+            )
+            try:
+                if not inspect(connection).has_table("dental_schema_revision"):
+                    return False
+                if not inspect(connection).has_table("programreminderjob"):
+                    raise RuntimeError("Program reminder index migration requires programreminderjob")
+                revision = connection.execute(
+                    text("SELECT version FROM dental_schema_revision WHERE id=1")
+                ).scalar()
+                if revision not in (TREATMENT_HISTORY_INDEX_REVISION, PROGRAM_REMINDER_PENDING_INDEX_REVISION):
+                    return False
+
+                expected, valid = _program_pending_reminder_index_state(connection, index_name)
+                if not expected:
+                    if valid is not None:
+                        connection.execute(text(f"DROP INDEX CONCURRENTLY IF EXISTS {index_name}"))
+                    connection.execute(text(
+                        "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_programreminderjob_pending_run_at "
+                        "ON programreminderjob (run_at) WHERE status = 'PENDING'"
+                    ))
+
+                expected, _ = _program_pending_reminder_index_state(connection, index_name)
+                if not expected:
+                    raise RuntimeError("Program pending reminder index is missing, invalid or has the wrong predicate")
+
+                # The partial index replaces both broad indexes for the only hot
+                # status/run_at paths. Build it first, then remove redundant write cost.
+                for legacy_name in legacy_indexes:
+                    connection.execute(text(f"DROP INDEX CONCURRENTLY IF EXISTS {legacy_name}"))
+
+                if revision == TREATMENT_HISTORY_INDEX_REVISION:
+                    result = connection.execute(
+                        text(
+                            "UPDATE dental_schema_revision SET version=:version "
+                            "WHERE id=1 AND version=:prior"
+                        ),
+                        {
+                            "version": PROGRAM_REMINDER_PENDING_INDEX_REVISION,
+                            "prior": TREATMENT_HISTORY_INDEX_REVISION,
+                        },
+                    )
+                    if result.rowcount != 1:
+                        current = connection.execute(
+                            text("SELECT version FROM dental_schema_revision WHERE id=1")
+                        ).scalar()
+                        if current != PROGRAM_REMINDER_PENDING_INDEX_REVISION:
+                            raise RuntimeError("Schema changed during Program pending reminder index migration")
+            finally:
+                connection.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": PROGRAM_REMINDER_PENDING_INDEX_LOCK},
+                )
+    else:
+        with main.engine.begin() as connection:
+            if not inspect(connection).has_table("dental_schema_revision"):
+                return False
+            if not inspect(connection).has_table("programreminderjob"):
+                raise RuntimeError("Program reminder index migration requires programreminderjob")
+            revision = connection.execute(
+                text("SELECT version FROM dental_schema_revision WHERE id=1")
+            ).scalar()
+            if revision not in (TREATMENT_HISTORY_INDEX_REVISION, PROGRAM_REMINDER_PENDING_INDEX_REVISION):
+                return False
+
+            definition = connection.execute(
+                text("SELECT sql FROM sqlite_master WHERE type='index' AND name=:name"),
+                {"name": index_name},
+            ).scalar()
+            normalized = "".join((definition or "").lower().replace('"', "").split())
+            if not (
+                "onprogramreminderjob(run_at)" in normalized
+                and "wherestatus='pending'" in normalized
+            ):
+                connection.execute(text(f"DROP INDEX IF EXISTS {index_name}"))
+                connection.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_programreminderjob_pending_run_at "
+                    "ON programreminderjob (run_at) WHERE status = 'PENDING'"
+                ))
+            definition = connection.execute(
+                text("SELECT sql FROM sqlite_master WHERE type='index' AND name=:name"),
+                {"name": index_name},
+            ).scalar()
+            normalized = "".join((definition or "").lower().replace('"', "").split())
+            if not (
+                "onprogramreminderjob(run_at)" in normalized
+                and "wherestatus='pending'" in normalized
+            ):
+                raise RuntimeError("SQLite Program pending reminder index is missing or has the wrong predicate")
+
+            for legacy_name in legacy_indexes:
+                connection.execute(text(f"DROP INDEX IF EXISTS {legacy_name}"))
+            if revision == TREATMENT_HISTORY_INDEX_REVISION:
+                result = connection.execute(
+                    text(
+                        "UPDATE dental_schema_revision SET version=:version "
+                        "WHERE id=1 AND version=:prior"
+                    ),
+                    {
+                        "version": PROGRAM_REMINDER_PENDING_INDEX_REVISION,
+                        "prior": TREATMENT_HISTORY_INDEX_REVISION,
+                    },
+                )
+                if result.rowcount != 1:
+                    current = connection.execute(
+                        text("SELECT version FROM dental_schema_revision WHERE id=1")
+                    ).scalar()
+                    if current != PROGRAM_REMINDER_PENDING_INDEX_REVISION:
+                        raise RuntimeError("Schema changed during Program pending reminder index migration")
+
+    logger.warning(
+        "migration.program_reminder_pending_index complete revision=%s",
+        PROGRAM_REMINDER_PENDING_INDEX_REVISION,
+    )
     return True
 
 
@@ -658,6 +834,8 @@ def _apply_baseline():
 def apply():
     _apply_baseline()
     from app import main
+    if not _upgrade_program_reminder_pending_index(main):
+        raise RuntimeError("Could not apply Program pending reminder index revision 20")
     from app.expert_social_schema import apply as apply_social_schema
     apply_social_schema(main.engine)
 

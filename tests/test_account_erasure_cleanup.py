@@ -1,12 +1,16 @@
 """Account-erasure scope and durable guest-object cleanup regressions."""
+import base64
+import io
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from PIL import Image
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from app import account_erasure, main, object_storage, work_jobs
+from app.membership_verification import MembershipVerification
 
 
 @pytest.fixture
@@ -249,3 +253,351 @@ def test_guest_upload_finalization_serializes_with_account_erasure():
     erasure_source = Path(account_erasure.__file__).read_text(encoding="utf-8")
     begin = erasure_source.split("def begin_account_erasure", 1)[1]
     assert "erase_account_ai_data(session, user_id)" in begin
+
+
+def test_account_erasure_queues_profile_and_all_identity_documents(erasure_engine):
+    with Session(erasure_engine, expire_on_commit=False) as session:
+        owner = main.User(
+            username="erase-account-assets",
+            email="erase-account-assets@example.test",
+            role="DOCTOR",
+            display_name="Erase Account Assets",
+            is_active=True,
+        )
+        session.add(owner)
+        session.flush()
+        profile_photo = f"uploads/profile_photos/user_{owner.id}_{'a' * 16}.jpg"
+        credential = f"uploads/expert_credentials/user_{owner.id}/credential_{'b' * 32}.pdf"
+        title_change_document = f"uploads/expert_title_changes/user_{owner.id}/title_{'c' * 32}.pdf"
+        membership_document = f"uploads/membership_documents/user_{owner.id}/{'d' * 32}.pdf"
+        owner.profile_photo_path = profile_photo
+        profile = main.ExpertProfile(
+            user_id=owner.id,
+            specialty="Endodonti",
+            credential_document_path=credential,
+            credential_document_name="credential.pdf",
+            credential_document_mime="application/pdf",
+        )
+        title_change = main.ExpertTitleChange(
+            user_id=owner.id,
+            requested_title="Doç. Dr.",
+            status="PENDING_REVIEW",
+            credential_document_path=title_change_document,
+            credential_document_name="title-change.pdf",
+            credential_document_mime="application/pdf",
+        )
+        membership = MembershipVerification(
+            user_id=owner.id,
+            document_type="DIPLOMA",
+            document_path=membership_document,
+            document_name="diploma.pdf",
+            document_mime="application/pdf",
+            name_snapshot="Erase Account Assets",
+            title_snapshot="Diş Hekimi",
+            submitted_at=main._utcnow_naive(),
+        )
+        session.add_all([owner, profile, title_change, membership])
+        session.commit()
+        owner_id = owner.id
+        profile_id = profile.id
+        title_change_id = title_change.id
+        membership_id = membership.id
+
+        fallback = account_erasure.begin_account_erasure(
+            session, user_id=owner_id, actor="SELF"
+        )
+        session.commit()
+
+    assert fallback == []
+    with Session(erasure_engine) as session:
+        erased = session.get(main.User, owner_id)
+        assert erased is not None and erased.is_active is False
+        assert erased.profile_photo_path is None
+        retained_profile = session.get(main.ExpertProfile, profile_id)
+        assert retained_profile.credential_document_path is None
+        retained_title_change = session.get(main.ExpertTitleChange, title_change_id)
+        assert retained_title_change.credential_document_path is None
+        assert retained_title_change.credential_document_name is None
+        assert session.get(MembershipVerification, membership_id) is None
+        queued = {
+            row.reference
+            for row in session.exec(select(work_jobs.WorkGarbage)).all()
+        }
+        assert queued == {
+            profile_photo,
+            credential,
+            title_change_document,
+            membership_document,
+        }
+
+
+def test_account_asset_cleanup_allowlist_is_strict():
+    valid = (
+        "uploads/profile_photos/user_7_" + "a" * 16 + ".jpg",
+        "uploads/expert_credentials/user_7/credential_" + "b" * 32 + ".pdf",
+        "uploads/expert_title_changes/user_7/title_" + "c" * 32 + ".png",
+        "uploads/membership_documents/user_7/" + "d" * 32 + ".jpeg",
+    )
+    assert all(work_jobs.is_account_asset_reference(reference) for reference in valid)
+
+    invalid = (
+        "../uploads/profile_photos/user_7_" + "a" * 16 + ".jpg",
+        "uploads/profile_photos/user_0_" + "a" * 16 + ".jpg",
+        "uploads/profile_photos/user_7_" + "a" * 32 + ".jpg",
+        "uploads/expert_credentials/user_7/credential_" + "b" * 32 + ".exe",
+        "uploads/expert_title_changes/user_7/../title_" + "c" * 32 + ".pdf",
+        "uploads/membership_documents/user_7/" + "D" * 32 + ".pdf",
+        "uploads/patient-media/patient_7_" + "e" * 32 + ".jpg",
+        "r2://bucket/uploads/profile_photos/user_7_" + "a" * 16 + ".jpg",
+    )
+    assert all(not work_jobs.is_account_asset_reference(reference) for reference in invalid)
+
+
+def test_account_asset_cleanup_retries_r2_failure_with_backoff_across_collector_invocations(
+    erasure_engine, monkeypatch
+):
+    reference = "uploads/profile_photos/user_8_" + "f" * 16 + ".jpg"
+    with Session(erasure_engine) as session:
+        assert work_jobs.enqueue_account_asset_cleanup(session, reference)
+        session.commit()
+
+    calls = []
+    def delete_twice_fails(path):
+        calls.append(path)
+        if len(calls) <= 2:
+            raise object_storage.ObjectStorageError("synthetic R2 timeout")
+
+    monkeypatch.setattr(object_storage, "delete", delete_twice_fails)
+    work_jobs.collect_garbage(erasure_engine)
+    with Session(erasure_engine) as session:
+        receipt = session.exec(
+            select(work_jobs.WorkGarbage).where(work_jobs.WorkGarbage.reference == reference)
+        ).one()
+        assert receipt.attempts == 1
+        first_retry_at = receipt.available_at
+        assert first_retry_at > work_jobs.now()
+        receipt.available_at = work_jobs.now() - timedelta(seconds=1)
+        session.add(receipt)
+        session.commit()
+
+    # A second worker invocation still uses only the durable receipt.
+    work_jobs.collect_garbage(erasure_engine)
+    with Session(erasure_engine) as session:
+        receipt = session.exec(
+            select(work_jobs.WorkGarbage).where(work_jobs.WorkGarbage.reference == reference)
+        ).one()
+        assert receipt.attempts == 2
+        assert receipt.available_at > first_retry_at
+        receipt.available_at = work_jobs.now() - timedelta(seconds=1)
+        session.add(receipt)
+        session.commit()
+
+    monkeypatch.setattr(object_storage, "delete", lambda path: calls.append(path))
+    work_jobs.collect_garbage(erasure_engine)
+    assert calls == [reference, reference, reference]
+    with Session(erasure_engine) as session:
+        assert session.exec(
+            select(work_jobs.WorkGarbage).where(work_jobs.WorkGarbage.reference == reference)
+        ).all() == []
+
+
+def test_account_asset_cleanup_preserves_any_still_referenced_identity_object(
+    erasure_engine, monkeypatch
+):
+    references = {
+        "profile": "uploads/profile_photos/user_9_" + "a" * 16 + ".jpg",
+        "credential": "uploads/expert_credentials/user_9/credential_" + "b" * 32 + ".pdf",
+        "title": "uploads/expert_title_changes/user_9/title_" + "c" * 32 + ".pdf",
+        "membership": "uploads/membership_documents/user_9/" + "d" * 32 + ".pdf",
+    }
+    with Session(erasure_engine) as session:
+        owner = main.User(
+            username="retained-asset-owner",
+            email="retained-asset-owner@example.test",
+            role="DOCTOR",
+            display_name="Retained Asset Owner",
+            profile_photo_path=references["profile"],
+        )
+        session.add(owner)
+        session.flush()
+        session.add_all([
+            main.ExpertProfile(
+                user_id=owner.id,
+                specialty="Endodonti",
+                credential_document_path=references["credential"],
+            ),
+            main.ExpertTitleChange(
+                user_id=owner.id,
+                requested_title="Doç. Dr.",
+                credential_document_path=references["title"],
+            ),
+            MembershipVerification(
+                user_id=owner.id,
+                document_type="DIPLOMA",
+                document_path=references["membership"],
+                document_name="diploma.pdf",
+                document_mime="application/pdf",
+                name_snapshot="Retained Asset Owner",
+                submitted_at=main._utcnow_naive(),
+            ),
+        ])
+        for reference in references.values():
+            assert work_jobs.enqueue_account_asset_cleanup(session, reference)
+        session.commit()
+
+    deleted = []
+    monkeypatch.setattr(object_storage, "delete", lambda path: deleted.append(path))
+    for _ in references:
+        work_jobs.collect_garbage(erasure_engine)
+
+    assert deleted == []
+    with Session(erasure_engine) as session:
+        assert session.exec(select(work_jobs.WorkGarbage)).all() == []
+
+
+def test_replaced_account_asset_cleanup_queues_only_a_different_allowlisted_key(erasure_engine):
+    previous = "uploads/profile_photos/user_17_" + "a" * 16 + ".jpg"
+    current = "uploads/profile_photos/user_17_" + "b" * 16 + ".jpg"
+    legacy = "../uploads/profile_photos/user_17_" + "c" * 16 + ".jpg"
+
+    with Session(erasure_engine) as session:
+        assert work_jobs.enqueue_replaced_account_asset_cleanup(session, previous, current)
+        assert not work_jobs.enqueue_replaced_account_asset_cleanup(session, current, current)
+        assert not work_jobs.enqueue_replaced_account_asset_cleanup(session, legacy, current)
+        session.commit()
+
+    with Session(erasure_engine) as session:
+        queued = session.exec(select(work_jobs.WorkGarbage)).all()
+        assert [row.reference for row in queued] == [previous]
+
+
+def test_replaced_profile_and_credential_objects_are_collected_after_metadata_switch(
+    erasure_engine, monkeypatch
+):
+    references = {
+        "old_photo": "uploads/profile_photos/user_18_" + "a" * 16 + ".jpg",
+        "new_photo": "uploads/profile_photos/user_18_" + "b" * 16 + ".jpg",
+        "old_credential": "uploads/expert_credentials/user_18/credential_" + "c" * 32 + ".pdf",
+        "new_credential": "uploads/expert_credentials/user_18/credential_" + "d" * 32 + ".pdf",
+        "old_title": "uploads/expert_title_changes/user_18/title_" + "e" * 32 + ".pdf",
+        "new_title": "uploads/expert_title_changes/user_18/title_" + "f" * 32 + ".pdf",
+    }
+    with Session(erasure_engine, expire_on_commit=False) as session:
+        owner = main.User(
+            username="replace-account-assets",
+            email="replace-account-assets@example.test",
+            role="DOCTOR",
+            display_name="Replace Account Assets",
+            profile_photo_path=references["old_photo"],
+        )
+        session.add(owner)
+        session.flush()
+        profile = main.ExpertProfile(
+            user_id=owner.id,
+            specialty="Endodonti",
+            credential_document_path=references["old_credential"],
+        )
+        title_change = main.ExpertTitleChange(
+            user_id=owner.id,
+            requested_title="Doç. Dr.",
+            status="PENDING_REVIEW",
+            credential_document_path=references["old_title"],
+        )
+        session.add_all([profile, title_change])
+        session.flush()
+        owner.profile_photo_path = references["new_photo"]
+        profile.credential_document_path = references["new_credential"]
+        title_change.credential_document_path = references["new_title"]
+        assert work_jobs.enqueue_replaced_account_asset_cleanup(
+            session, references["old_photo"], references["new_photo"]
+        )
+        assert work_jobs.enqueue_replaced_account_asset_cleanup(
+            session, references["old_credential"], references["new_credential"]
+        )
+        assert work_jobs.enqueue_replaced_account_asset_cleanup(
+            session, references["old_title"], references["new_title"]
+        )
+        session.add_all([owner, profile, title_change])
+        session.commit()
+        owner_id, profile_id, title_id = owner.id, profile.id, title_change.id
+
+    deleted = []
+    monkeypatch.setattr(object_storage, "delete", lambda reference: deleted.append(reference))
+    for _ in range(3):
+        work_jobs.collect_garbage(erasure_engine)
+
+    assert set(deleted) == {
+        references["old_photo"],
+        references["old_credential"],
+        references["old_title"],
+    }
+    with Session(erasure_engine) as session:
+        assert session.get(main.User, owner_id).profile_photo_path == references["new_photo"]
+        assert session.get(main.ExpertProfile, profile_id).credential_document_path == references["new_credential"]
+        assert session.get(main.ExpertTitleChange, title_id).credential_document_path == references["new_title"]
+        assert session.exec(select(work_jobs.WorkGarbage)).all() == []
+
+
+def test_web_account_asset_replacements_use_transactional_cleanup_and_validate_before_write():
+    source = Path(main.__file__).read_text(encoding="utf-8")
+
+    photo = source.split("def account_profile_photo", 1)[1].split(
+        '@app.post("/account/professional-title")', 1
+    )[0]
+    assert "enqueue_replaced_account_asset_cleanup(s, previous_path, path)" in photo
+    assert "_queue_uncommitted_account_asset_cleanup(path)" in photo
+
+    title = source.split("def professional_title_document_upload", 1)[1].split(
+        '@app.post("/account/username"', 1
+    )[0]
+    assert "enqueue_replaced_account_asset_cleanup(s, previous_document_path, str(destination))" in title
+    assert "_queue_uncommitted_account_asset_cleanup(str(destination))" in title
+
+    expert = source.split("def expert_support_profile_save", 1)[1].split(
+        '@app.get("/expert-support/request/', 1
+    )[0]
+    assert "enqueue_replaced_account_asset_cleanup(s, previous_photo_path, new_photo_path)" in expert
+    assert "enqueue_replaced_account_asset_cleanup(s, previous_credential_path, new_credential_path)" in expert
+    assert expert.index("if compact_orcid[-1].upper()") < expert.index(
+        "storage_write_bytes(destination, document_bytes, content_type=document_mime)"
+    )
+    assert "_queue_uncommitted_account_asset_cleanup(new_credential_path)" in expert
+
+def test_profile_photo_keys_are_unique_for_identical_uploads(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main, "UPLOAD_DIR", Path("uploads"))
+    monkeypatch.setattr(main, "storage_persist_file", lambda *args, **kwargs: None)
+    image_bytes = io.BytesIO()
+    Image.new("RGB", (16, 16), (30, 60, 90)).save(image_bytes, format="JPEG")
+    encoded = "data:image/jpeg;base64," + base64.b64encode(image_bytes.getvalue()).decode("ascii")
+
+    first = main._save_profile_photo(23, encoded)
+    second = main._save_profile_photo(23, encoded)
+
+    assert first != second
+    assert work_jobs.is_account_asset_reference(first)
+    assert work_jobs.is_account_asset_reference(second)
+
+def test_profile_photo_storage_failure_creates_durable_cleanup_receipt(
+    monkeypatch, tmp_path, erasure_engine
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main, "UPLOAD_DIR", Path("uploads"))
+    monkeypatch.setattr(main, "engine", erasure_engine)
+
+    def fail_persist(*args, **kwargs):
+        raise RuntimeError("synthetic object-storage write failure")
+
+    monkeypatch.setattr(main, "storage_persist_file", fail_persist)
+    image_bytes = io.BytesIO()
+    Image.new("RGB", (16, 16), (90, 60, 30)).save(image_bytes, format="JPEG")
+    encoded = "data:image/jpeg;base64," + base64.b64encode(image_bytes.getvalue()).decode("ascii")
+
+    with pytest.raises(RuntimeError, match="synthetic object-storage write failure"):
+        main._save_profile_photo(24, encoded)
+
+    with Session(erasure_engine) as session:
+        queued = session.exec(select(work_jobs.WorkGarbage)).all()
+        assert len(queued) == 1
+        assert work_jobs.is_account_asset_reference(queued[0].reference)
+        assert queued[0].reference.startswith("uploads/profile_photos/user_24_")

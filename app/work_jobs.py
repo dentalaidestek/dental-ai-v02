@@ -282,10 +282,10 @@ _GUEST_ANALYSIS_OBJECT = re.compile(
 )
 _ACCOUNT_ASSET_OBJECT = re.compile(
     r"uploads/(?:"
-    r"profile_photos/user_[1-9][0-9]*_[0-9a-f]{16}\\.jpg|"
-    r"expert_credentials/user_[1-9][0-9]*/credential_[0-9a-f]{32}\\.(?:pdf|jpg|jpeg|png)|"
-    r"expert_title_changes/user_[1-9][0-9]*/title_[0-9a-f]{32}\\.(?:pdf|jpg|jpeg|png)|"
-    r"membership_documents/user_[1-9][0-9]*/[0-9a-f]{32}\\.(?:pdf|jpg|jpeg|png)"
+    r"profile_photos/user_[1-9][0-9]*_[0-9a-f]{16}\.jpg|"
+    r"expert_credentials/user_[1-9][0-9]*/credential_[0-9a-f]{32}\.(?:pdf|jpg|jpeg|png)|"
+    r"expert_title_changes/user_[1-9][0-9]*/title_[0-9a-f]{32}\.(?:pdf|jpg|jpeg|png)|"
+    r"membership_documents/user_[1-9][0-9]*/[0-9a-f]{32}\.(?:pdf|jpg|jpeg|png)"
     r")"
 )
 
@@ -390,10 +390,28 @@ def enqueue_patient_media_cleanup(session: Session, reference: str) -> bool:
     return _enqueue_cleanup_reference(session, reference, delay_seconds=0)
 
 def enqueue_account_asset_cleanup(session: Session, reference: str) -> bool:
-    """Queue a private account-owned profile/verification object after metadata commit."""
+    """Queue a private account-owned profile/verification object in its metadata transaction."""
     if not is_account_asset_reference(reference):
         return False
     return _enqueue_cleanup_reference(session, reference, delay_seconds=0)
+
+
+def enqueue_replaced_account_asset_cleanup(
+    session: Session,
+    previous_reference: str | None,
+    current_reference: str | None,
+) -> bool:
+    """Queue only a superseded allowlisted account asset in the caller's transaction.
+
+    The collector re-checks every supported metadata owner before deleting. A
+    same-path replacement is a no-op for idempotent callers and legacy references.
+    New profile-photo uploads use unique keys so an old receipt cannot target a
+    later upload of identical image bytes.
+    """
+    if not previous_reference or previous_reference == current_reference:
+        return False
+    return enqueue_account_asset_cleanup(session, str(previous_reference))
+
 
 def collect_garbage(engine):
     from app.object_storage import delete
@@ -406,8 +424,11 @@ def collect_garbage(engine):
         garbage = session.exec(query).first()
         if garbage is None:
             return
-        garbage.available_at = now() + timedelta(minutes=5)
         garbage.attempts += 1
+        # Bounded exponential backoff prevents a storage outage from turning
+        # the shared cleanup worker into a constant retry loop.
+        retry_minutes = min(360, 5 * (2 ** min(max(0, garbage.attempts - 1), 7)))
+        garbage.available_at = now() + timedelta(minutes=retry_minutes)
         claim_attempts = garbage.attempts
         session.add(garbage)
         session.commit()

@@ -979,7 +979,15 @@ class ProgramReminderJob(SQLModel, table=True):
     __table_args__ = (
         # The worker claims due jobs in run_at order and cancels jobs by event
         # or owner. Keep these hot paths indexable as the durable queue grows.
-        Index("ix_programreminderjob_status_run_at", "status", "run_at"),
+        # The reminder worker and wakeup query only read PENDING rows. A partial
+        # ordered index excludes terminal history and avoids scanning old DONE rows
+        # before the first due reminder when LIMIT is used.
+        Index(
+            "ix_programreminderjob_pending_run_at",
+            "run_at",
+            postgresql_where=text("status = 'PENDING'"),
+            sqlite_where=text("status = 'PENDING'"),
+        ),
         Index("ix_programreminderjob_event_status", "schedule_event_id", "status"),
         Index("ix_programreminderjob_owner_status", "owner_user_id", "status"),
     )
@@ -987,7 +995,7 @@ class ProgramReminderJob(SQLModel, table=True):
     schedule_event_id: int = Field(index=True)
     owner_user_id: int = Field(index=True)
     occurrence_start_at: datetime = Field(index=True)
-    run_at: datetime = Field(index=True)
+    run_at: datetime
     reminder_minutes: int
     event_updated_at: datetime
     dedup_key: str = Field(index=True, unique=True)
@@ -3404,13 +3412,37 @@ def _profile_photo_url(user: Optional[User]) -> Optional[str]:
     return f"/profile-photo/{user.id}?v={_profile_photo_version(user.profile_photo_path)}"
 
 
+def _queue_uncommitted_account_asset_cleanup(reference: Optional[str]) -> None:
+    """Persist cleanup for a newly written account asset whose DB transaction failed.
+
+    Do not delete directly: the failed write may still share a legacy or
+    idempotently reused key with current metadata. The collector performs the
+    authoritative reference check before touching object storage.
+    """
+    if not reference:
+        return
+    try:
+        from app.work_jobs import enqueue_account_asset_cleanup, is_account_asset_reference
+        if not is_account_asset_reference(str(reference)):
+            logger.warning("Uncommitted account asset is outside the cleanup allowlist")
+            return
+        with Session(engine, expire_on_commit=False) as cleanup_session:
+            if enqueue_account_asset_cleanup(cleanup_session, str(reference)):
+                cleanup_session.commit()
+    except Exception:
+        logger.warning("Uncommitted account asset cleanup could not be queued", exc_info=True)
+
+
 def _remove_replaced_profile_photo(previous: Optional[str], current: Optional[str]) -> None:
-    """Remove only the superseded object, after the DB points at the new object."""
+    """Legacy fallback only; current generated keys are queued in the metadata transaction."""
     if previous and previous != current:
+        from app.work_jobs import is_account_asset_reference
+        if is_account_asset_reference(previous):
+            return
         try:
             storage_delete(previous)
         except Exception:
-            logger.warning("Superseded profile photo could not be removed", exc_info=True)
+            logger.warning("Legacy superseded profile photo could not be removed", exc_info=True)
 
 
 @app.get("/profile-photo/{user_id}")
@@ -3451,13 +3483,15 @@ def account_profile_photo(request: Request, profile_photo_data: str = Form(...))
             db_user = s.get(User, user.id)
             previous_path = db_user.profile_photo_path
             db_user.profile_photo_path = path
+            from app.work_jobs import enqueue_replaced_account_asset_cleanup
+            enqueue_replaced_account_asset_cleanup(s, previous_path, path)
             s.add(db_user)
             photo_version=_profile_photo_version(path)
             photo_event=_record_realtime_event(s,user.id,"PROFILE_PHOTO_UPDATED","user",user.id,
                 {"user_id":user.id,"photo_url":f"/profile-photo/{user.id}?v={photo_version}","version":photo_version})
             s.commit()
     except Exception:
-        storage_delete(path)
+        _queue_uncommitted_account_asset_cleanup(path)
         raise
     _remove_replaced_profile_photo(previous_path, path)
     on_loop(_publish_realtime_event, photo_event)
@@ -3564,23 +3598,31 @@ def professional_title_document_upload(request: Request, credential_document: Up
             return HTMLResponse("Bekleyen bir unvan değişikliği bulunamadı.", status_code=409)
         destination = UPLOAD_DIR / "expert_title_changes" / f"user_{user.id}" / f"title_{uuid.uuid4().hex}{suffix}"
         destination.parent.mkdir(parents=True, exist_ok=True)
-        storage_write_bytes(destination, document_bytes, content_type=allowed[suffix])
-        pending.credential_document_path = str(destination)
-        pending.credential_document_name = Path(credential_document.filename).name[:240]
-        pending.credential_document_mime = allowed[suffix]
-        pending.status = "PENDING_REVIEW"
-        pending.submitted_at = _utcnow_naive()
-        pending.updated_at = _utcnow_naive()
-        s.add(pending)
-        _, notice_event, _ = _notify_user(
-            s, user_id=user.id, actor_user_id=user.id, notice_type="EXPERT_TITLE_CHANGE_SUBMITTED",
-            title="Yeni unvan belgeniz incelemede",
-            message=f"{pending.requested_title} için gönderdiğiniz belge incelemeye alındı. Mevcut doğrulanmış unvanınızla vaka almaya devam edebilirsiniz.",
-            related_type="expert_title_change", related_id=pending.id,
-            dedup_key=f"expert-title-change-submitted:{pending.id}:{pending.submitted_at.isoformat()}",
-            target_url="/expert-support/profile",
-        )
-        s.commit()
+        previous_document_path = pending.credential_document_path
+        try:
+            storage_write_bytes(destination, document_bytes, content_type=allowed[suffix])
+            pending.credential_document_path = str(destination)
+            pending.credential_document_name = Path(credential_document.filename).name[:240]
+            pending.credential_document_mime = allowed[suffix]
+            pending.status = "PENDING_REVIEW"
+            pending.submitted_at = _utcnow_naive()
+            pending.updated_at = _utcnow_naive()
+            s.add(pending)
+            from app.work_jobs import enqueue_replaced_account_asset_cleanup
+            enqueue_replaced_account_asset_cleanup(s, previous_document_path, str(destination))
+            _, notice_event, _ = _notify_user(
+                s, user_id=user.id, actor_user_id=user.id, notice_type="EXPERT_TITLE_CHANGE_SUBMITTED",
+                title="Yeni unvan belgeniz incelemede",
+                message=f"{pending.requested_title} için gönderdiğiniz belge incelemeye alındı. Mevcut doğrulanmış unvanınızla vaka almaya devam edebilirsiniz.",
+                related_type="expert_title_change", related_id=pending.id,
+                dedup_key=f"expert-title-change-submitted:{pending.id}:{pending.submitted_at.isoformat()}",
+                target_url="/expert-support/profile",
+            )
+            s.commit()
+        except Exception:
+            s.rollback()
+            _queue_uncommitted_account_asset_cleanup(str(destination))
+            raise
     if notice_event:
         on_loop(_publish_realtime_event, notice_event)
     return RedirectResponse("/account?section=professional#professional-info", status_code=303)
@@ -6681,6 +6723,7 @@ def _save_profile_photo(user_id: int, encoded: str) -> str:
         raise ValueError("Profil fotoğrafı okunamadı.") from exc
     if not raw or len(raw) > 8 * 1024 * 1024:
         raise ValueError("Profil fotoğrafı en fazla 8 MB olabilir.")
+    destination = None
     try:
         with Image.open(io.BytesIO(raw)) as source:
             source.verify()
@@ -6689,11 +6732,17 @@ def _save_profile_photo(user_id: int, encoded: str) -> str:
             image = ImageOps.fit(image, (512, 512), method=Image.Resampling.LANCZOS)
             photo_dir = UPLOAD_DIR / "profile_photos"
             photo_dir.mkdir(parents=True, exist_ok=True)
-            destination = photo_dir / ("user_" + str(user_id) + "_" + hashlib.sha256(raw).hexdigest()[:16] + ".jpg")
+            destination = photo_dir / ("user_" + str(user_id) + "_" + uuid.uuid4().hex[:16] + ".jpg")
             image.save(destination, "JPEG", quality=90, optimize=True)
             storage_persist_file(destination, content_type="image/jpeg")
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        if destination is not None:
+            _queue_uncommitted_account_asset_cleanup(str(destination))
         raise ValueError("Geçerli bir profil fotoğrafı yükleyin.") from exc
+    except Exception:
+        if destination is not None:
+            _queue_uncommitted_account_asset_cleanup(str(destination))
+        raise
     return str(destination)
 
 
@@ -7736,6 +7785,8 @@ def expert_support_profile_save(
         if not db_user.profile_photo_path and not profile_photo_data:
             return HTMLResponse("Uzman başvurusu için yüzünüzün net göründüğü profil fotoğrafı zorunludur.", status_code=400)
         document_changed = False
+        credential_upload = None
+        previous_credential_path = profile.credential_document_path
         if credential_document and credential_document.filename:
             suffix = Path(credential_document.filename).suffix.lower()
             allowed = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
@@ -7743,16 +7794,18 @@ def expert_support_profile_save(
                 return HTMLResponse("e-Devlet belgesi PDF, JPG veya PNG olmalıdır.", status_code=400)
             document_bytes = credential_document.file.read(EXPERT_CREDENTIAL_MAX_BYTES + 1)
             if not document_bytes or len(document_bytes) > EXPERT_CREDENTIAL_MAX_BYTES:
-                return HTMLResponse("e-Devlet belgesi boş olamaz ve 10 MB sınırını aşamaz.", status_code=400)
+                return HTMLResponse("Belge boş olamaz ve 10 MB sınırını aşamaz.", status_code=400)
             document_dir = UPLOAD_DIR / "expert_credentials" / f"user_{user.id}"
             document_dir.mkdir(parents=True, exist_ok=True)
             destination = document_dir / f"credential_{uuid.uuid4().hex}{suffix}"
-            storage_write_bytes(destination, document_bytes, content_type=allowed[suffix])
-            profile.credential_document_path = str(destination)
-            profile.credential_document_name = Path(credential_document.filename).name[:240]
-            profile.credential_document_mime = allowed[suffix]
+            credential_upload = (
+                destination,
+                document_bytes,
+                allowed[suffix],
+                Path(credential_document.filename).name[:240],
+            )
             document_changed = True
-        if not profile.credential_document_path:
+        if not profile.credential_document_path and credential_upload is None:
             return HTMLResponse("Unvan ve branşınızı gösteren e-Devlet belgesi zorunludur.", status_code=400)
         next_academic_title = title if title in {"Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."} else None
         verification_sensitive_change = bool(
@@ -7804,27 +7857,39 @@ def expert_support_profile_save(
         # Profil değişiklikleri doğrulamayı otomatik olarak geçemez.
         if profile.verification_status != "VERIFIED":
             profile.verification_status = "PENDING"
-        if profile_photo_data:
-            try:
-                new_photo_path = _save_profile_photo(user.id, profile_photo_data)
-            except ValueError as exc:
-                return HTMLResponse(str(exc), status_code=400)
-            previous_photo_path = db_user.profile_photo_path
-            db_user.profile_photo_path = new_photo_path
-            s.add(db_user)
-            photo_version = _profile_photo_version(new_photo_path)
-            photo_event = _record_realtime_event(
-                s, user.id, "PROFILE_PHOTO_UPDATED", "user", user.id,
-                {"user_id": user.id, "photo_url": f"/profile-photo/{user.id}?v={photo_version}", "version": photo_version},
-            )
-        s.add(profile)
-        s.flush()
-        profile_events = _record_expert_profile_realtime_events(s, profile)
+        new_credential_path = None
         try:
+            if profile_photo_data:
+                try:
+                    new_photo_path = _save_profile_photo(user.id, profile_photo_data)
+                except ValueError as exc:
+                    return HTMLResponse(str(exc), status_code=400)
+                previous_photo_path = db_user.profile_photo_path
+                db_user.profile_photo_path = new_photo_path
+                s.add(db_user)
+                photo_version = _profile_photo_version(new_photo_path)
+                photo_event = _record_realtime_event(
+                    s, user.id, "PROFILE_PHOTO_UPDATED", "user", user.id,
+                    {"user_id": user.id, "photo_url": f"/profile-photo/{user.id}?v={photo_version}", "version": photo_version},
+                )
+            if credential_upload is not None:
+                destination, document_bytes, document_mime, document_name = credential_upload
+                new_credential_path = str(destination)
+                storage_write_bytes(destination, document_bytes, content_type=document_mime)
+                profile.credential_document_path = new_credential_path
+                profile.credential_document_name = document_name
+                profile.credential_document_mime = document_mime
+            from app.work_jobs import enqueue_replaced_account_asset_cleanup
+            enqueue_replaced_account_asset_cleanup(s, previous_photo_path, new_photo_path)
+            enqueue_replaced_account_asset_cleanup(s, previous_credential_path, new_credential_path)
+            s.add(profile)
+            s.flush()
+            profile_events = _record_expert_profile_realtime_events(s, profile)
             s.commit()
         except Exception:
-            if new_photo_path:
-                storage_delete(new_photo_path)
+            s.rollback()
+            _queue_uncommitted_account_asset_cleanup(new_photo_path)
+            _queue_uncommitted_account_asset_cleanup(new_credential_path)
             raise
     if new_photo_path:
         _remove_replaced_profile_photo(previous_photo_path, new_photo_path)
@@ -15276,9 +15341,8 @@ app.include_router(mobile_router)
 from app.mobile_analysis_api import router as mobile_analysis_router
 app.include_router(mobile_analysis_router)
 from app.mobile_modern_api_v3 import router as mobile_modern_router
-_mobile_mounted_routes = {(method, route.path) for route in app.routes for method in getattr(route, "methods", ())}
-mobile_modern_router.routes[:] = [route for route in mobile_modern_router.routes
-    if not any((method, route.path) in _mobile_mounted_routes for method in getattr(route, "methods", ()))]
+from app.mobile_route_registry import remove_shadowed_routes as _remove_shadowed_mobile_routes
+_remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)
 app.include_router(mobile_modern_router)
 
 

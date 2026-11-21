@@ -210,7 +210,7 @@ test('clinical media archive rejects malformed records and stale pagination',asy
    global.fetch=async()=>new Response(JSON.stringify(payload),{status:200});
    await assert.rejects(()=>getMedia('secret',7,10),/geçersiz liste/);
   }
-  global.fetch=async()=>new Response(JSON.stringify({items:[{id:8,original_filename:'scan.png'}],next_before:8}),{status:200});
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:8,original_filename:'scan.png',media_type:'RADIOGRAPH'}],next_before:8}),{status:200});
   const page=await getMedia('secret',7,10);
   assert.equal(page.items[0].filename,'scan.png');
   assert.equal(page.items[0].url,'https://dentalai.tr/api/mobile/v1/patients/7/media/8/file');
@@ -295,7 +295,12 @@ test('active mobile media routes and analysis pagination contracts',()=>{
  const active=fs.readFileSync(require('node:path').join(__dirname,'../../app/mobile_api.py'),'utf8');
  const extended=fs.readFileSync(require('node:path').join(__dirname,'../../app/mobile_modern_api_v3.py'),'utf8');
  const main=fs.readFileSync(require('node:path').join(__dirname,'../../app/main.py'),'utf8');
- assert.match(main,/_mobile_mounted_routes/);
+ assert.ok(main.includes("from app.mobile_route_registry import remove_shadowed_routes as _remove_shadowed_mobile_routes"));
+ assert.ok(main.includes("_remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)"));
+ assert.ok(main.indexOf('app.include_router(mobile_router)')<main.indexOf('_remove_shadowed_mobile_routes('));
+ assert.ok(main.indexOf('_remove_shadowed_mobile_routes(')<main.indexOf('app.include_router(mobile_modern_router)'));
+ assert.ok(active.includes('@router.get("/patients/{patient_id}/media/{media_id}/file")'));
+ assert.ok(extended.includes('@router.get("/patients/{patient_id}/media/{media_id}/file")'));
  assert.match(client,/body\.append\("file",\{uri:file\.uri/);
  // mobile_api.py formatter emits `file: UploadFile = File(None)`; spacing is a style detail, the contract is unchanged.
  assert.match(active,/file:\s*UploadFile\s*=\s*File\(None\)/);
@@ -475,4 +480,44 @@ test('Dental Flow feed moderation metadata is bounded before it reaches native t
   {...moderation,job_id:'not-a-uuid'},
   {...moderation,revision:-1}
  ]) assert.throws(()=>api.normalizeSocialFeedPost({...base,moderation:bad}),error=>error.status===502);
+});
+
+
+test('comment page normalizer binds rows to the post/thread and requires a strictly advancing ID cursor',()=>{
+ const row=(id,parent_id=null)=>({id,post_id:9,parent_id,author_id:7,author_name:'Expert',text:'Clinical comment',status:'PUBLISHED',version:1,owned:false,liked:false,like_count:0,reply_count:0,created_at:'2026-11-21T06:00:00Z'});
+ const root={items:[row(11)],next_cursor:11,comment_count:3};
+ const normalized=api.normalizeSocialCommentPage(root,9,10,undefined,30);
+ assert.equal(normalized.items[0].id,11);
+ assert.equal(normalized.comment_count,3);
+ const replies=api.normalizeSocialCommentPage({items:[row(21,20)],next_cursor:null,comment_count:3,reply_count:1},9,20,20,10);
+ assert.equal(replies.items[0].parent_id,20);
+ assert.equal(replies.reply_count,1);
+ assert.throws(()=>api.normalizeSocialCommentPage({...root,items:[row(9)]},9,10,undefined,30),/Yorum sayfası doğrulanamadı/);
+ assert.throws(()=>api.normalizeSocialCommentPage({...root,items:[row(11),row(11)],next_cursor:11},9,10,undefined,30),/Yorum sayfası doğrulanamadı/);
+ assert.throws(()=>api.normalizeSocialCommentPage({...root,items:[row(11,20)]},9,10,undefined,30),/Yorum sayfası doğrulanamadı/);
+ assert.throws(()=>api.normalizeSocialCommentPage({...root,next_cursor:12},9,10,undefined,30),/Yorum sayfası doğrulanamadı/);
+ assert.throws(()=>api.normalizeSocialCommentPage({...root,comment_count:-1},9,10,undefined,30),/Yorum sayfası doğrulanamadı/);
+ assert.throws(()=>api.normalizeSocialCommentPage({items:[row(21,19)],next_cursor:null,comment_count:3,reply_count:1},9,20,20,10),/Yorum sayfası doğrulanamadı/);
+});
+
+test('native reply pagination requests ten rows while root comments retain thirty',async()=>{
+ const original=global.fetch,calls=[];
+ const row=(id,parent_id=null)=>({id,post_id:9,parent_id,author_id:7,author_name:'Expert',text:'Clinical comment',status:'PUBLISHED',version:1,owned:false,liked:false,like_count:0,reply_count:0,created_at:'2026-11-21T06:00:00Z'});
+ try{
+  global.fetch=async(url,init)=>{
+   calls.push({url:String(url),init});
+   const parent=String(url).includes('parent_id=20');
+   return new Response(JSON.stringify(parent
+    ? {items:[row(21,20)],next_cursor:null,comment_count:3,reply_count:1}
+    : {items:[row(11)],next_cursor:null,comment_count:3}),{status:200});
+  };
+  const roots=await api.getComments('secret',9,0);
+  assert.equal(roots.items.length,1);
+  assert.equal(calls[0].url,'https://dentalai.tr/api/expert-social/posts/9/comments?threaded=true&limit=30&after=0');
+  const replies=await api.getComments('secret',9,20,20,10);
+  assert.equal(replies.items[0].parent_id,20);
+  assert.equal(calls[1].url,'https://dentalai.tr/api/expert-social/posts/9/comments?threaded=true&limit=10&after=20&parent_id=20');
+  await assert.rejects(()=>api.getComments('secret',9,0,20,0),/sayfalama bilgisi/);
+  assert.equal(calls.length,2,'invalid limits are rejected before network access');
+ }finally{global.fetch=original;}
 });

@@ -121,7 +121,7 @@ test('clinical media rejects malformed private image pages and stale cursors',as
    global.fetch=async()=>new Response(JSON.stringify(body),{status:200});
    await assert.rejects(()=>modern.getMedia('current',1,42),/geçersiz liste/);
   }
-  global.fetch=async()=>new Response(JSON.stringify({items:[{id:41,original_filename:'x.jpg'}],next_before:null}),{status:200});
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:41,original_filename:'x.jpg',media_type:'RADIOGRAPH'}],next_before:null}),{status:200});
   const page=await modern.getMedia('current',1,42);
   assert.equal(page.items[0].filename,'x.jpg');
   assert.equal(page.next_before,null);

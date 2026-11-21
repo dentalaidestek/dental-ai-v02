@@ -1,7 +1,7 @@
 name: Mobile Android CI
 
 # Scope automatic checks to the mobile parity branch and its PR target.
-# The workflow-file path ensures this change itself produces a fresh runner result.
+# PR synchronize events run once per head update; avoid duplicate push/PR builds.
 on:
   pull_request:
     branches:

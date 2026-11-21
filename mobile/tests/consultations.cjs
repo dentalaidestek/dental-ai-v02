@@ -123,7 +123,7 @@ test('clinical media rejects foreign cursor and duplicate images',async()=>{
  });
 });
 test('clinical media preserves patient-scoped authenticated file URL',async()=>{
- await withFetch(async()=>json({items:[{id:11,filename:'film.png'}],next_before:null}),async()=>{
+ await withFetch(async()=>json({items:[{id:11,filename:'film.png',media_type:'PHOTO'}],next_before:null}),async()=>{
   const result=await api.getMedia('token',3);
   assert.match(result.items[0].url,/\/patients\/3\/media\/11\/file$/);
  });

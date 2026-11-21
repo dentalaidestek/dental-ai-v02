@@ -12,6 +12,8 @@ require.extensions['.ts']=(module,filename)=>module._compile(
 
 const webOptions=require('../../static/tooth-chart/surface-options.js');
 const {toothSurfaceOptionsForTooth}=require('../src/toothSurfaceOptions.ts');
+const {toothChartSurfaceForTooth,toothChartSurfaceSelection}=require('../src/toothChartSurfaceSelection.ts');
+const native=fs.readFileSync(require.resolve('../src/NativeToothChart.tsx'),'utf8');
 const web=fs.readFileSync(require.resolve('../../app/templates/tooth_chart.html'),'utf8');
 const codes=number=>toothSurfaceOptionsForTooth(number).map(([code])=>code);
 
@@ -55,4 +57,24 @@ test('web chart loads the shared contract and builds safe tooth-specific control
  assert.match(web,/\.preview-tooth\[data-surface="INCISAL"\] \.status-mark/);
  assert.doesNotMatch(web,/<button[^>]+data-surface=/);
  assert.doesNotMatch(web,/grid\.innerHTML\s*=/);
+});
+
+
+test('native preview maps the fixed web occlusal pin to INCISAL for anterior FDI teeth',()=>{
+ for(const number of ['11','13','21','23','31','43','51','53','61','83'])assert.equal(toothChartSurfaceForTooth(number,'OCCLUSAL'),'INCISAL',number);
+ for(const number of ['14','18','24','28','34','48','54','55','64','85'])assert.equal(toothChartSurfaceForTooth(number,'OCCLUSAL'),'OCCLUSAL',number);
+ assert.equal(toothChartSurfaceForTooth('14','INCISAL'),null);
+ assert.equal(toothChartSurfaceForTooth('56','OCCLUSAL'),null);
+});
+
+test('native surface selection matches web setSurface: same tap stays selected and new tap replaces it',()=>{
+ assert.deepEqual(toothChartSurfaceSelection('MESIAL'),['MESIAL']);
+ assert.deepEqual(toothChartSurfaceSelection('MESIAL'),['MESIAL']);
+ assert.deepEqual(toothChartSurfaceSelection('BUCCAL'),['BUCCAL']);
+});
+
+test('native map pins clear the independent editor and show its active surface without stale highlights',()=>{
+ assert.match(native,/const chosen=surfaceEditor\?surfaceEditor===actualCode:surfaces\.includes\(actualCode\)/);
+ assert.match(native,/setSurfaceEditor\(null\);setSurfaces\(toothChartSurfaceSelection\(actualCode\)\)/);
+ assert.match(native,/setSurfaceEditor\(null\);setSurfaces\(toothChartSurfaceSelection\(v\)\)/);
 });

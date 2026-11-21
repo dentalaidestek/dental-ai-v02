@@ -1042,3 +1042,91 @@ Web-first review re-read `patient_detail.html`, `patient_treatment_history_items
 - Current head `754d2be90ac0576b3f639b40db5e57e5f580b822` had zero status checks and zero PR workflow runs. Historical Android/Security jobs still have null/empty steps; no compiler, Gradle or pytest execution is evidenced. The independent audit's 13 Python patient-history failures remain unverified because the pytest trace and checkout environment are unavailable.
 
 Details and safety limits: `docs/mobile-patient-history-treatment-parity-20261120.md`. A concurrent manual `app/mobile_analysis_api.py` cursor-validation change made after the initial read was preserved; the native work did not overwrite that file. No merge, deployment, migration or patient-data mutation.
+
+
+## 2026-11-20 — media CI regression repair and patient-profile field parity
+
+Starting head: `1b41c7f621b64efd5b74e0b613c922e8d036751d`.
+
+The Android workflow at run `44790786839` completed successfully: TypeScript typecheck, session/auth, realtime/pagination, beta regression, Expo Android/iOS export and ARM64 internal APK all passed. The Security Recovery workflow `44790786710` ran its Python suite and reported `560 passed, 2 failed`; five native security jobs passed.
+
+The two Python failures were test-contract defects, not a demonstrated authorization bypass:
+- The original-media route test compared one formatted path in `main.app.routes` and found zero matches, despite the canonical router endpoint and request-level media tests being present. It now verifies the canonical endpoint identity in the source router and mounted application, and rejects a duplicate modern-router shadow.
+- The media-owner security source assertion searched for whitespace-free text while the implementation uses normal Python spacing. It now normalizes whitespace before checking the patient/media owner predicates and private response helper.
+
+The active original-file handler was inspected before editing. It checks both patient and media ownership, verifies `media.patient_id`, hydrates R2 outside the database session, then rechecks patient ownership, media ownership, patient relation, file path and original filename before returning a private/no-store response. No authorization condition was removed or weakened.
+
+Patient profile web references were re-read first: `app/templates/patient_detail.html` defines the ordered editable fields `first_name`, `last_name`, `phone`, `tc_kimlik_no`, `birth_date`, `address`, and `chief_complaint`. The native screen already exposed these fields, but duplicated their metadata inline. The order, labels, date/text control choice, keyboard type, length limit and multiline behavior are now centralized in `patientProfilePresentation.ts`, consumed by `NativePatientProfile.tsx`, and compared directly with the web template by `patientProfileUI.cjs`.
+
+Commits added in this pass:
+- `6532440` canonical original-media route test by endpoint identity
+- `d2a8496` whitespace-normalized media-owner assertion
+- `66da0ea` centralized patient-profile edit field contract
+- `23663b0` native profile renders the shared field contract
+- `8d13ecc` web/native profile field parity regression
+
+The source changes and new tests are committed. A fresh CI run for the final head is still required; no new test pass is claimed until the hosted jobs execute. No main merge, production deploy, patient-data mutation or production migration was performed.
+
+
+## 2026-11-20 — latest-head CI root causes and tooth-history parity
+
+Starting head: `887c35a794ca0ab3584ab4e159c643084319495e`.
+
+The actual job logs for Android CI #4346 and Security Recovery #2045 were inspected:
+
+- Android TypeScript typecheck passed; session/auth and realtime/pagination passed; Android/iOS Expo export passed; the ARM64 internal APK job passed.
+- The beta regression suite had 249/250 passing. Its only failure was `native patient edit controls match the web patient_detail field contract`: the test's regular expression used a double-escaped word boundary and therefore parsed zero web input names. The native field contract itself returned the expected seven ordered fields.
+- Python security had 561 passing and one failing. The failing assertion searched `main.app.routes` for a flattened endpoint. FastAPI's included-router representation did not expose the route as a direct endpoint item even though `app.include_router(mobile_router)` is present. The assertion now uses the public OpenAPI path surface, retains the canonical APIRouter endpoint identity check, and still rejects a duplicate modern-router shadow.
+- The native clinical-security job repeated the same beta-suite profile parser failure (249/250); it was not a separate clinical authorization regression. Native Program, Voice, Social and Academic security jobs passed.
+
+Web-first tooth-history comparison re-read `app/templates/tooth_chart.html` and the mounted native `NativeToothChart.tsx` flow. Both sides expose the selected tooth's surface observations, analysis history and separately persisted treatment records. Native treatment history has cursor continuation; selected-tooth analysis history receives the current FDI tooth. A new pure presentation helper centralizes Turkish labels for persisted surface/status codes while preserving unknown future values. New Node regressions cover all supported codes, forward-compatible unknown codes, the three web history sources and rendered selected-tooth cursor scoping.
+
+Commits in this pass:
+- fix the profile test's escaped word boundary
+- verify the mounted original-media route through FastAPI OpenAPI
+- centralize native tooth-history labels
+- add the web/native tooth-history presentation contract tests
+- add rendered selected-tooth history cursor coverage
+- record this CI and parity evidence
+
+The new tests are committed but their post-fix workflow result is still required. No clinical records, owner predicates, database schema, provider, dependency, main branch or production environment were changed. No merge, deploy, migration or APK/IPA publication.
+
+
+## 2026-11-21 — clinical media camera parity and private image cache scope
+
+Starting PR head: `e3b7b72b4571651cd162efbc4b2a8c5f2937e660`.
+
+### CI evidence inspected before changes
+
+- Android CI run [44840473644](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44840473644): the `npm run typecheck` step completed successfully; Android internal APK build succeeded. The job later failed in beta regression at 900/901 because the rendered voice-retry fixture did not publish the recorder's completed-session state.
+- Security Recovery [44840473660](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44840473660): Python security passed; Native Program, Academic and Social passed. Native Clinical (253/254) and Native Voice (76/77) repeated the same voice workflow fixture failure.
+- The failing assertion was the second source-only finalization call. `NativeVoiceRecorder` persists `ended: true` and publishes `finished: true` through `onSessionState`; the test called `onFinished` without reproducing that state callback. The fixture now emits the finished state before the final transcript callback. No production voice guard was weakened.
+
+### Web-first clinical media comparison
+
+Re-read `app/templates/patient_detail.html` and its inline gallery/upload scripts before changing native behavior. The web archive provides:
+- a multi-file image input that can expose the mobile browser's camera/gallery picker;
+- distinct PHOTO/RADIOGRAPH intent;
+- bounded 12-file / 12 MiB per-file / 96 MiB batch validation;
+- cursor-paged gallery, selection capped at four images, thumbnail cards and original-file preview;
+- delete confirmation and explicit retry after gallery read errors.
+
+Compared `NativePatientMedia.tsx`, `modernApi.ts`, `mobile_api.py`, and `mobile_modern_api_v3.py`. Native archive already had encrypted local drafts, per-file request receipts, batch reconciliation, byte progress, owner-scoped APIs, and thumbnail/original endpoints. Two parity/security gaps remained:
+1. The archive only opened the photo library. The separate AI analysis composer already supported camera capture, but the patient archive did not. Added a camera action that uses the same normalization, encryption, 12/96 MiB checks, version-3 secure draft, batch ID and per-file request keys as gallery selection. It does not upload until the clinician explicitly presses Save.
+2. Remote archive images used media-ID-only React keys and inline image sources. After an account/session switch, the same media ID could reuse an image component/cache identity. Added opaque per-component session-scope keys (without embedding bearer tokens in React keys) and a private source helper that validates canonical mobile media URLs, attaches the current Bearer token, and requests image cache revalidation.
+
+Also removed the second hard-coded API base in `modernApi.ts`; it now imports the exported `API_BASE` from `api.ts`, keeping media and other modern endpoints on the same canonical origin.
+
+### Added regression coverage
+
+- camera capture is staged into an encrypted, account/patient-scoped draft before network upload;
+- denied camera permission creates no draft and performs no encryption;
+- owner/session/variant changes produce distinct image keys;
+- private image source rejects external, malformed, query-bearing and unscoped URLs;
+- private image source carries the current Authorization header and `cache: reload`;
+- web/native archive camera and thumbnail/original behavior remains explicitly compared;
+- modern API base import is checked against the shared API module.
+
+- Rendered account-switch fixtures now use canonical mobile media URLs, so the private-source guard is exercised rather than bypassed with external test URLs.
+
+The new HEAD must still run Android typecheck, all beta tests, Security Recovery and the native clinical/voice suites. No post-change pass is claimed before those jobs complete. No production patient data, database, migration, main branch or live deployment was touched.

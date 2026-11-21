@@ -1,6 +1,6 @@
 import {reportSessionExpiry,revalidateSession} from './sessionExpiry';
 import {normalizePatientDirectorySearch} from './patientDirectoryPresentation';
-const API_BASE = "https://dentalai.tr/api/mobile/v1";
+export const API_BASE = "https://dentalai.tr/api/mobile/v1";
 
 export type User={id:number;username:string;email?:string|null;display_name:string;role:string;is_active:boolean;email_verified_at?:string|null;professional_title?:string|null;specialty?:string|null;university?:string|null};
 export type Patient={id:number;tc_kimlik_no?:string|null;address?:string|null;anonymous_id:string;first_name?:string|null;last_name?:string|null;phone?:string|null;birth_date?:string|null;age?:number|null;chief_complaint?:string|null;created_at?:string};
@@ -170,9 +170,12 @@ export async function deletePatient(token:string,id:number,requestKey?:string):P
   throw new ApiError(502,"Hasta silme işlem fişi doğrulanamadı. Aynı güvenli taslak korunuyor.");
  return result;
 }
-export async function editPatient(token:string,id:number,payload:{first_name:string;last_name:string;phone?:string;birth_date?:string;tc_kimlik_no?:string;address?:string;chief_complaint?:string;expected_revision?:string}){
- if(payload.expected_revision!==undefined&&!/^[a-f0-9]{64}$/.test(payload.expected_revision))throw new Error("Hasta kayıt sürümü geçersiz.");
- return request<{ok:boolean;patient:Patient;edit_revision?:string}>(`/patients/${id}`,token,{method:"PUT",body:JSON.stringify(payload)});
+export async function editPatient(token:string,id:number,payload:{first_name:string;last_name:string;phone?:string;birth_date?:string;tc_kimlik_no?:string;address?:string;chief_complaint?:string;expected_revision:string}){
+ if(!/^[a-f0-9]{64}$/.test(payload.expected_revision))throw new Error("Hasta kayıt sürümü geçersiz.");
+ const result=await request<{ok:boolean;patient:Patient;edit_revision:string}>(`/patients/${id}`,token,{method:"PUT",body:JSON.stringify(payload)});
+ if(!result||result.ok!==true||!result.patient||result.patient.id!==id||typeof result.edit_revision!=="string"||!/^[a-f0-9]{64}$/.test(result.edit_revision))
+  throw new ApiError(502,"Hasta güncelleme yanıtı doğrulanamadı. Profili yenileyin.");
+ return result;
 }
 
 export type ScheduleEvent={id:number;event_type:string;title:string;start_at:string;end_at?:string|null;patient_id?:number|null;location?:string|null;notes?:string|null;status:string;reminder_minutes?:number|null;notification_enabled?:boolean;recurrence_rule?:string};

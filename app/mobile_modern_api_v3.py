@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import json, uuid
 import os
+import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
@@ -36,6 +37,31 @@ def _user_owned_patient(session, user, patient_id):
     if not p or (user.role != "ADMIN" and p.owner_user_id != user.id):
         raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
     return p
+
+_PRIVATE_CLINICAL_MEDIA_HEADERS = {
+    "Cache-Control": "private, no-store",
+    "Pragma": "no-cache",
+    "Vary": "Authorization",
+    "X-Content-Type-Options": "nosniff",
+}
+
+
+def _private_clinical_media_error(status_code: int, detail: str, retry_after: str | None = None):
+    headers = dict(_PRIVATE_CLINICAL_MEDIA_HEADERS)
+    if retry_after:
+        headers["Retry-After"] = retry_after
+    return JSONResponse({"detail": detail}, status_code=status_code, headers=headers)
+
+
+def _cleanup_orphan_thumbnail(delete_thumbnail, file_path: str, media_id: int) -> bool:
+    try:
+        delete_thumbnail(file_path)
+        return True
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Failed to clean orphan clinical thumbnail for media_id=%s", media_id
+        )
+        return False
 
 
 @router.get("/analyses")
@@ -106,34 +132,92 @@ def mobile_media_file(patient_id:int,media_id:int,user=Depends(_mobile_user)):
 
 
 @router.get("/patients/{patient_id}/media/{media_id}/thumbnail")
-def mobile_media_thumbnail(patient_id:int,media_id:int,user=Depends(_mobile_user)):
-    with Session(engine,expire_on_commit=False) as s:
-        _user_owned_patient(s,user,patient_id)
-        row=s.get(PatientMedia,media_id)
-        if not row or row.patient_id!=patient_id or row.owner_user_id!=user.id:
-            raise HTTPException(status_code=404,detail="Medya bulunamadı.")
-        file_path=row.file_path
+def mobile_media_thumbnail(patient_id: int, media_id: int, user=Depends(_mobile_user)):
+    # Only the owner may resolve a private derivative. Do not use a storage
+    # URL or a shared cache key as an authorization boundary.
+    with Session(engine, expire_on_commit=False) as session:
+        patient = session.get(Patient, patient_id)
+        media = session.get(PatientMedia, media_id)
+        if (
+            not patient
+            or patient.owner_user_id != user.id
+            or not media
+            or media.patient_id != patient_id
+            or media.owner_user_id != user.id
+            or not media.file_path
+        ):
+            return _private_clinical_media_error(404, "Klinik görüntü bulunamadı.")
+        file_path = media.file_path
+
     from app.clinical_media_thumbnail import ensure_thumbnail, delete_thumbnail
+
     try:
-        path=ensure_thumbnail(file_path)
-        # A delete may commit while R2 generation is in flight. Recheck the
-        # owner-scoped row before serving and remove any just-created orphan.
-        with Session(engine,expire_on_commit=False) as verify:
-            current=_user_owned_patient(verify,user,patient_id)
-            media=verify.get(PatientMedia,media_id)
-            still_owned=bool(media and media.patient_id==patient_id and media.owner_user_id==user.id and current.id==patient_id)
-        if not still_owned:
-            delete_thumbnail(file_path)
-            raise HTTPException(status_code=404,detail="Medya bulunamadı.")
-    except HTTPException:
-        raise
+        path = ensure_thumbnail(file_path)
     except FileNotFoundError:
-        raise HTTPException(status_code=404,detail="Klinik görüntü bulunamadı.")
-    except ValueError as exc:
-        raise HTTPException(status_code=415,detail="Klinik görüntü önizlemesi oluşturulamadı.") from exc
-    except Exception as exc:
-        raise HTTPException(status_code=503,detail="Önizleme deposuna şu anda erişilemiyor.",headers={"Retry-After":"2"}) from exc
-    return FileResponse(path,media_type="image/jpeg",filename=f"clinical-{media_id}-thumbnail.jpg",content_disposition_type="inline",headers={"Cache-Control":"private, no-store","Pragma":"no-cache","Vary":"Authorization","X-Content-Type-Options":"nosniff","Content-Security-Policy":"default-src 'none'; sandbox"})
+        return _private_clinical_media_error(404, "Klinik görüntü dosyası bulunamadı.")
+    except ValueError:
+        return _private_clinical_media_error(415, "Klinik görüntü önizlemesi oluşturulamadı.")
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Clinical media thumbnail generation failed for media_id=%s", media_id
+        )
+        return _private_clinical_media_error(
+            503,
+            "Önizleme deposuna şu anda erişilemiyor.",
+            retry_after="2",
+        )
+
+    # R2 hydration and thumbnail generation happen outside the DB session.
+    # Recheck both ownership and the exact source reference before serving:
+    # deletion, patient reassignment, or a replaced file must not expose a
+    # derivative created from a stale clinical object.
+    try:
+        with Session(engine, expire_on_commit=False) as verify:
+            current_patient = verify.get(Patient, patient_id)
+            current_media = verify.get(PatientMedia, media_id)
+            still_owned = bool(
+                current_patient
+                and current_patient.owner_user_id == user.id
+                and current_media
+                and current_media.patient_id == patient_id
+                and current_media.owner_user_id == user.id
+                and current_media.file_path == file_path
+            )
+    except Exception:
+        if not _cleanup_orphan_thumbnail(delete_thumbnail, file_path, media_id):
+            return _private_clinical_media_error(
+                503,
+                "Önizleme temizliği tamamlanamadı; lütfen yeniden deneyin.",
+                retry_after="2",
+            )
+        logging.getLogger(__name__).exception(
+            "Clinical media thumbnail ownership recheck failed for media_id=%s", media_id
+        )
+        return _private_clinical_media_error(
+            503,
+            "Önizleme güvenli biçimde doğrulanamadı; lütfen yeniden deneyin.",
+            retry_after="2",
+        )
+
+    if not still_owned:
+        if not _cleanup_orphan_thumbnail(delete_thumbnail, file_path, media_id):
+            return _private_clinical_media_error(
+                503,
+                "Önizleme temizliği tamamlanamadı; lütfen yeniden deneyin.",
+                retry_after="2",
+            )
+        return _private_clinical_media_error(404, "Klinik görüntü bulunamadı.")
+
+    headers = dict(_PRIVATE_CLINICAL_MEDIA_HEADERS)
+    headers["Content-Security-Policy"] = "default-src 'none'; sandbox"
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        filename=f"clinical-{media_id}-thumbnail.jpg",
+        content_disposition_type="inline",
+        headers=headers,
+    )
+
 
 @router.get("/patients/{patient_id}/media/{media_id}")
 def mobile_media_meta(patient_id:int,media_id:int,user=Depends(_mobile_user)):

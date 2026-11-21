@@ -96,8 +96,17 @@ export type SocialComment = {
   like_count: number;
   reply_count: number;
   parent_id: number | null;
+  post_id?: number;
+  created_at?: string;
+  comment_count?: number;
+  parent_reply_count?: number;
 };
-export type SocialPage<T> = { items: T[]; next_cursor: number | null };
+export type SocialPage<T> = {
+  items: T[];
+  next_cursor: number | null;
+  comment_count?: number;
+  reply_count?: number;
+};
 export type SocialFeedPage = SocialPage<SocialPost> & { specialties: string[] };
 export type SocialLinkPreviewData = {
   url?: string;
@@ -847,16 +856,76 @@ export const uploadSocialImage = (
   body.append("file", file as any);
   return socialRequest<{ id: number }>(t, "/media", { method: "POST", body });
 };
-export const getComments = (
+export function normalizeSocialCommentPage(
+  value: unknown,
+  postId: number,
+  after: number,
+  parent: number | undefined,
+  limit: number,
+): SocialPage<SocialComment> & { comment_count: number; reply_count?: number } {
+  const invalid = () => new ApiError(502, "Yorum sayfası doğrulanamadı. Yeniden deneyin.");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw invalid();
+  const page = value as Record<string, unknown>;
+  const validId = (item: unknown) => Number.isSafeInteger(item) && (item as number) > 0;
+  const validCount = (item: unknown) => Number.isSafeInteger(item) && (item as number) >= 0;
+  if (
+    !Array.isArray(page.items) ||
+    page.items.length > limit ||
+    !validCount(page.comment_count) ||
+    !(page.next_cursor === null ||
+      (validId(page.next_cursor) && (page.next_cursor as number) > after)) ||
+    (parent !== undefined && !validCount(page.reply_count))
+  ) throw invalid();
+  let previous = after;
+  for (const raw of page.items) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw invalid();
+    const item = raw as Record<string, unknown>;
+    if (
+      !validId(item.id) || (item.id as number) <= previous ||
+      item.post_id !== postId ||
+      !validId(item.author_id) ||
+      typeof item.author_name !== "string" || !item.author_name.trim() || item.author_name.length > 160 ||
+      typeof item.text !== "string" || item.text.length > 1500 ||
+      typeof item.status !== "string" || !item.status.trim() || item.status.length > 32 ||
+      !Number.isSafeInteger(item.version) || (item.version as number) < 1 ||
+      typeof item.owned !== "boolean" ||
+      typeof item.liked !== "boolean" ||
+      !validCount(item.like_count) ||
+      !validCount(item.reply_count) ||
+      typeof item.created_at !== "string" ||
+      (item.parent_id !== null && !validId(item.parent_id)) ||
+      (parent === undefined ? item.parent_id !== null : item.parent_id !== parent) ||
+      (item.author_verified !== undefined && typeof item.author_verified !== "boolean")
+    ) throw invalid();
+    previous = item.id as number;
+  }
+  if (page.next_cursor !== null &&
+      (page.items.length === 0 || page.next_cursor !== previous)) throw invalid();
+  return {
+    items: page.items as SocialComment[],
+    next_cursor: page.next_cursor as number | null,
+    comment_count: page.comment_count as number,
+    ...(parent !== undefined ? { reply_count: page.reply_count as number } : {}),
+  };
+}
+
+export const getComments = async (
   t: string,
   id: number,
   after = 0,
   parent?: number,
-) =>
-  socialRequest<SocialPage<SocialComment>>(
-    t,
-    `/posts/${id}/comments?threaded=true&limit=30&after=${after}${parent ? "&parent_id=" + parent : ""}`,
-  );
+  limit = 30,
+): Promise<SocialPage<SocialComment> & { comment_count: number; reply_count?: number }> => {
+  if (
+    !Number.isSafeInteger(id) || id < 1 ||
+    !Number.isSafeInteger(after) || after < 0 ||
+    (parent !== undefined && (!Number.isSafeInteger(parent) || parent < 1)) ||
+    !Number.isSafeInteger(limit) || limit < 1 || limit > 50
+  ) throw new Error("Geçersiz yorum sayfalama bilgisi.");
+  const query = `?threaded=true&limit=${limit}&after=${after}${parent !== undefined ? "&parent_id=" + parent : ""}`;
+  const value = await socialRequest<unknown>(t, `/posts/${id}/comments${query}`);
+  return normalizeSocialCommentPage(value, id, after, parent, limit);
+};
 export const createComment = (
   t: string,
   id: number,
@@ -883,8 +952,27 @@ export const patchComment = (t: string, c: SocialComment, text: string) =>
     method: "PATCH",
     body: JSON.stringify({ text, version: c.version }),
   });
-export const deleteComment = (t: string, id: number) =>
-  socialRequest(t, `/comments/${id}`, { method: "DELETE" });
+export const deleteComment = async (
+  t: string,
+  id: number,
+): Promise<{ ok: true; comment_count: number; removed_count: number }> => {
+  if (!Number.isSafeInteger(id) || id < 1) throw new Error("Geçersiz yorum kimliği.");
+  const value = await socialRequest<unknown>(t, `/comments/${id}`, { method: "DELETE" });
+  if (
+    !value || typeof value !== "object" || Array.isArray(value) ||
+    (value as Record<string, unknown>).ok !== true ||
+    !Number.isSafeInteger((value as Record<string, unknown>).comment_count) ||
+    ((value as Record<string, unknown>).comment_count as number) < 0 ||
+    !Number.isSafeInteger((value as Record<string, unknown>).removed_count) ||
+    ((value as Record<string, unknown>).removed_count as number) < 1
+  ) throw new ApiError(502, "Yorum silme yanıtı doğrulanamadı.");
+  const result = value as Record<string, unknown>;
+  return {
+    ok: true,
+    comment_count: result.comment_count as number,
+    removed_count: result.removed_count as number,
+  };
+};
 export const reportSocial = (
   t: string,
   target_type: "POST" | "COMMENT",

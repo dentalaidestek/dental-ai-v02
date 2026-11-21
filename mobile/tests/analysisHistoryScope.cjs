@@ -17,7 +17,7 @@ function loadModernApi(payload){
   exports:moduleExports,
   require:name=>{
    if(name==='./chatFiles')return {validateChatFile:()=>true};
-   if(name==='./api')return {ApiError};
+   if(name==='./api')return {ApiError,API_BASE:'https://dentalai.tr/api/mobile/v1'};
    if(name==='./sessionExpiry')return {revalidateSession:async()=>{}};
    if(name==='./notificationState')return {normalizeNotificationReadAt:value=>value};
    throw new Error('Unexpected import '+name);

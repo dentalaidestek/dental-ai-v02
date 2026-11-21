@@ -15,6 +15,7 @@ import {
   normalizeSocialMediaItems,
   pinchSocialZoom,
   socialSwipeDirection,
+  socialMediaRequestKey,
 } from "./socialMediaViewer";
 import type { SocialMediaItem, SocialPan } from "./socialMediaViewer";
 
@@ -76,7 +77,7 @@ export default function NativeSocialMediaViewer({
   const stageRef = useRef({ width: 0, height: 0 });
   const imageRef = useRef({ width: 0, height: 0 });
   const gesture = useRef<Gesture | null>(null);
-  const requestKey = items[index] ? `${items[index].id}:${attempt}:${token}` : "empty";
+  const requestKey = socialMediaRequestKey(items[index]?.id ?? null, attempt);
   const requestKeyRef = useRef(requestKey);
   requestKeyRef.current = requestKey;
   const active = items[index];
