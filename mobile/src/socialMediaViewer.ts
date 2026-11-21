@@ -1,3 +1,15 @@
+/**
+ * Non-secret child-image key. Account/token rotation is handled by the
+ * parent session-scoped viewer key; bearer credentials never belong in React keys.
+ */
+export function socialMediaRequestKey(mediaId: number | null, attempt: number): string {
+  if (mediaId === null) return "empty";
+  if (!Number.isSafeInteger(mediaId) || mediaId < 1 || !Number.isSafeInteger(attempt) || attempt < 0) {
+    return "invalid";
+  }
+  return `media:${mediaId}:attempt:${attempt}`;
+}
+
 export type SocialMediaItem = { id: number; url: string };
 
 export type SocialPan = { x: number; y: number };
