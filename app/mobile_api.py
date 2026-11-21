@@ -45,6 +45,7 @@ from app.auth import create_session_token, hash_session_token, verify_password
 from app.auth_rate import LOGIN_WINDOW_SECONDS, LOGIN_MAX_FAILURES, admit as admit_auth_attempt, clear as clear_auth_attempt, bucket_key
 from app.main import (
     Analysis,
+    ApprovedAnamnesis,
     MobilePushDevice,
     ImageAsset,
     PatientProfile,
@@ -1063,7 +1064,10 @@ def mobile_delete_patient(
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
         # Never leave clinical history orphaned by deleting a patient with dependent records.
         # Full clinical-data erasure needs a separate audited, transactional workflow.
-        dependent_models = (Analysis, Treatment, ToothStatus, ToothSurfaceStatus, PatientMedia, ScheduleEvent, ConsultationCase)
+        dependent_models = (
+            Analysis, ApprovedAnamnesis, Treatment, ToothStatus, ToothSurfaceStatus,
+            PatientMedia, ScheduleEvent, ConsultationCase,
+        )
         for model in dependent_models:
             if session.exec(select(model.id).where(model.patient_id == patient_id).limit(1)).first() is not None:
                 raise HTTPException(status_code=409, detail="Hastanın ilişkili klinik kayıtları var. Güvenli silme işlemi henüz desteklenmiyor.")

@@ -1005,7 +1005,12 @@ def test_mobile_patient_delete_is_owner_scoped_and_refuses_clinical_dependents(c
             main.Patient(id=8, anonymous_id="SYNTHETIC-DELETE-8", owner_user_id=1),
             main.Patient(id=9, anonymous_id="SYNTHETIC-DELETE-9", owner_user_id=2),
             main.Patient(id=10, anonymous_id="SYNTHETIC-DELETE-10", owner_user_id=1),
+            main.Patient(id=11, anonymous_id="SYNTHETIC-DELETE-11", owner_user_id=1),
             main.Analysis(id=108, patient_id=8, tooth_number="36", status="DRAFT"),
+            main.ApprovedAnamnesis(
+                owner_user_id=1, patient_id=11, field_key="allergies",
+                value="Orphaned approval must block deletion", analysis_id=1111,
+            ),
             main.PatientProfile(patient_id=10, address="Synthetic address"),
         ])
         session.commit()
@@ -1015,6 +1020,16 @@ def test_mobile_patient_delete_is_owner_scoped_and_refuses_clinical_dependents(c
     blocked = client.delete("/api/mobile/v1/patients/8")
     assert blocked.status_code == 409, blocked.text
     assert "Güvenli silme" in blocked.json()["detail"]
+
+    # A ledger row must also block deletion if its original Analysis row is
+    # unexpectedly missing; the native endpoint must never orphan this data.
+    orphaned = client.delete("/api/mobile/v1/patients/11")
+    assert orphaned.status_code == 409, orphaned.text
+    with Session(engine) as session:
+        assert session.get(main.Patient, 11) is not None
+        assert session.exec(select(main.ApprovedAnamnesis).where(
+            main.ApprovedAnamnesis.patient_id == 11,
+        )).first() is not None
 
     # Another clinician's patient is indistinguishable from a missing record.
     assert client.delete("/api/mobile/v1/patients/9").status_code == 404
