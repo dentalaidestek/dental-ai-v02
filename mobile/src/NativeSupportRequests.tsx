@@ -13,6 +13,7 @@ export default function NativeSupportRequests({token,userId,initialTicketId}:{to
  const{lastEvent}=useRealtime();
  const[items,setItems]=useState<SupportTicket[]>([]),[reports,setReports]=useState<SupportReport[]>([]),[cases,setCases]=useState<SupportConversationOption[]>([]),[caseId,setCaseId]=useState<number|undefined>(undefined),[nextBefore,setNextBefore]=useState<number|null>(null),[moreTickets,setMoreTickets]=useState(false),[moreMessages,setMoreMessages]=useState(false),[filter,setFilter]=useState("ALL"),[selected,setSelected]=useState<number|null>(null);
  const[detail,setDetail]=useState<any>(null),[subject,setSubject]=useState(""),[message,setMessage]=useState(""),[reply,setReply]=useState("");
+ const[loading,setLoading]=useState(false),[error,setError]=useState(""),[sending,setSending]=useState(false),[createKey,setCreateKey]=useState(""),[replyKey,setReplyKey]=useState("");
  const scope=String(userId)+":"+token;
  const scopeRef=useRef(scope);scopeRef.current=scope;
  const mounted=useRef(true),selectedRef=useRef<number|null>(selected);
