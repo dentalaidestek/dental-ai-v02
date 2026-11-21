@@ -82,21 +82,32 @@ def checkpoint(engine,run_id,*,stage,partial=None):
 
 
 def generation(engine,run_id,iterator,*,pdf=False):
+    # Fail before opening the provider stream if the user canceled during retrieval.
     checkpoint(engine,run_id,stage='PDF hazırlanıyor' if pdf else 'Yanıt hazırlanıyor')
-    collected='';last=time.monotonic()
-    for part in iterator:
-        collected+=part
-        if time.monotonic()-last>=2:
-            hidden=pdf or collected.lstrip().startswith(('<!--ACADEMIC_', '### Soru ')) 
-            checkpoint(engine,run_id,stage='PDF hazırlanıyor' if hidden else 'Yanıt hazırlanıyor',
-                partial=None if hidden else collected)
-            last=time.monotonic()
-        yield part
-    # Persist the final streamed chunk even when it arrived within the last
-    # two-second checkpoint interval. Do not expose structured/private payloads.
-    hidden=pdf or collected.lstrip().startswith(('<!--ACADEMIC_', '### Soru '))
-    if collected and not hidden:
-        checkpoint(engine,run_id,stage='Yanıt hazırlanıyor',partial=collected)
+    collected='';last=time.monotonic();completed=False
+    try:
+        for part in iterator:
+            collected+=part
+            if time.monotonic()-last>=2:
+                hidden=pdf or collected.lstrip().startswith(('<!--ACADEMIC_', '### Soru '))
+                checkpoint(engine,run_id,stage='PDF hazırlanıyor' if hidden else 'Yanıt hazırlanıyor',
+                    partial=None if hidden else collected)
+                last=time.monotonic()
+            yield part
+        # Persist the final streamed chunk even when it arrived within the last
+        # two-second checkpoint interval. Do not expose structured/private payloads.
+        hidden=pdf or collected.lstrip().startswith(('<!--ACADEMIC_', '### Soru '))
+        if collected and not hidden:
+            checkpoint(engine,run_id,stage='Yanıt hazırlanıyor',partial=collected)
+        completed=True
+    finally:
+        # A failed checkpoint means cancellation won. Explicitly close the provider
+        # iterator so its HTTP/SSE response and upstream generation are released.
+        if not completed:
+            close=getattr(iterator,'close',None)
+            if callable(close):
+                try: close()
+                except Exception: pass
 
 
 def _drain(engine):
