@@ -44,10 +44,6 @@ def _ensure_mobile_push_device_table(engine):
             connection.execute(text(f"ALTER TABLE {table.name} ADD COLUMN device_proof_hash VARCHAR"))
         for index in table.indexes:
             index.create(connection, checkfirst=True)
-        if not _approved_anamnesis_has_query_index(connection):
-            raise RuntimeError(
-                "Approved anamnesis query index is missing, invalid or has the wrong columns"
-            )
 
 
 def _ensure_mobile_push_delivery_table(engine):
@@ -826,6 +822,10 @@ def _upgrade_approved_anamnesis_schema(main):
             )
         for index in table.indexes:
             index.create(connection, checkfirst=True)
+        if not _approved_anamnesis_has_query_index(connection):
+            raise RuntimeError(
+                "Approved anamnesis query index is missing, invalid or has the wrong columns"
+            )
         for legacy_index in (
             "ix_approvedanamnesis_owner_patient_field_id",
                 "ix_approvedanamnesis_patient_field_id",
