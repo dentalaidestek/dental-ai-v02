@@ -14,6 +14,7 @@ from sqlmodel import SQLModel, Field, Session, create_engine, select
 
 from app import voice_exam_core as core
 from app import voice_exam as voice
+from app.approved_anamnesis import ApprovedAnamnesis
 from app.work_jobs import WorkJob as ProductionWorkJob
 
 
@@ -98,6 +99,7 @@ class StudyCourse(VoiceTestModel, table=True):
 def app_client(monkeypatch):
     monkeypatch.setenv('VOICE_EXAM_ENABLED', '1')
     engine = create_engine('sqlite://', poolclass=StaticPool, connect_args={'check_same_thread': False})
+    ApprovedAnamnesis.__table__.to_metadata(VoiceTestModel.metadata)
     VoiceTestModel.metadata.create_all(engine)
     monkeypatch.setattr("app.work_jobs.WorkJob", WorkJob)
     main = ModuleType('app.main');main.engine = engine
@@ -250,6 +252,65 @@ def test_reviewed_voice_history_reads_only_explicitly_saved_anamnesis(app_client
         assert body['fields'][name]['analysis_id'] == analysis_id
     assert 'Güncel kullanım' in body['notice']
     assert client.get('/patients/2/voice-exam/history').status_code == 404
+
+
+def test_reviewed_history_keeps_old_field_after_more_than_twelve_newer_reviews(app_client):
+    client, engine = app_client
+    old_value = 'Penisilin alerjisi olduğunu belirtti'
+    first = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='b' * 32, fields={'allergies': old_value}))
+    assert first.status_code == 200
+    old_analysis_id = first.json()['analysis_id']
+
+    for index in range(12):
+        result = client.post('/patients/1/voice-exam/apply', json=payload(
+            engine, request_key=f'{index + 1:032x}',
+            fields={'medical_history': f'Sistemik öykü güncellemesi {index + 1}'}))
+        assert result.status_code == 200
+
+    history = client.get('/patients/1/voice-exam/history')
+    assert history.status_code == 200
+    fields = history.json()['fields']
+    assert fields['allergies']['value'] == old_value
+    assert fields['allergies']['analysis_id'] == old_analysis_id
+    assert fields['medical_history']['value'] == 'Sistemik öykü güncellemesi 12'
+    with Session(engine) as session:
+        rows = session.execute(select(ApprovedAnamnesis.__table__)).mappings().all()
+        assert len(rows) == 13
+
+
+def test_reapproving_field_preserves_prior_provenance_and_returns_latest_value(app_client):
+    client, engine = app_client
+    first = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='c' * 32, fields={'medications': 'İlaç A kullandığını belirtti'}))
+    second = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='d' * 32, fields={'medications': 'İlaç B kullandığını belirtti'}))
+    assert first.status_code == second.status_code == 200
+    history = client.get('/patients/1/voice-exam/history').json()['fields']['medications']
+    assert history['value'] == 'İlaç B kullandığını belirtti'
+    assert history['analysis_id'] == second.json()['analysis_id']
+    with Session(engine) as session:
+        rows = session.execute(
+            select(ApprovedAnamnesis.__table__).where(
+                ApprovedAnamnesis.__table__.c.field_key == 'medications'
+            ).order_by(ApprovedAnamnesis.__table__.c.id)
+        ).mappings().all()
+        assert [row['analysis_id'] for row in rows] == [
+            first.json()['analysis_id'], second.json()['analysis_id']
+        ]
+
+
+def test_idempotent_review_does_not_duplicate_approved_anamnesis_rows(app_client):
+    client, engine = app_client
+    data = payload(engine, request_key='e' * 32, fields={'allergies': 'Alerji yok beyanı'})
+    first = client.post('/patients/1/voice-exam/apply', json=data)
+    second = client.post('/patients/1/voice-exam/apply', json=data)
+    assert first.status_code == second.status_code == 200
+    assert second.json()['already_saved'] is True
+    with Session(engine) as session:
+        rows = session.execute(select(ApprovedAnamnesis.__table__)).mappings().all()
+        assert len(rows) == 1
+
 
 
 @pytest.mark.parametrize('path', ['audio', 'text', 'apply'])
