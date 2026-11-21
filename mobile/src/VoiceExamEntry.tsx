@@ -92,7 +92,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  scope.current=token+":"+(selected?.id||0);accountScope.current=token+":"+(userId||0);
  useEffect(()=>{const routePatientSelected=typeof initialPatientId==="number"&&selected?.id===initialPatientId;const enterExam=startAfterSelection.current||routePatientSelected;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);invalidateSourceReview();setClinicalError("");setTranscript("");setConsent(false);setHistoryFields({});setHistoryNotice("");setHistoryError("");setHistoryLoading(false);setHistoryConfirmed(false);setHistoryApplied(false);setStage(enterExam?"exam":"select")},[token,selected?.id,initialPatientId]);
  useEffect(()=>{setCreatingAnonymous(false);setSelected(null);setAudioBusy(false);setApplyBusy(false)},[token]);
- useEffect(()=>{let active=true;if(initialPatientId){void getPatient(token,initialPatientId).then(r=>{if(active)setSelected(r.patient)}).catch(()=>{if(active)setError("Seçili hasta bulunamadı veya erişim izni yok.")})}return()=>{active=false}},[token,initialPatientId]);
+ useEffect(()=>{let active=true;if(initialPatientId){void getPatient(token,initialPatientId).then(r=>{if(active){startAfterSelection.current=true;setSelected(r.patient);setStage("exam")}}).catch(()=>{if(active)setError("Seçili hasta bulunamadı veya erişim izni yok.")})}return()=>{active=false}},[token,initialPatientId]);
  async function createAnonymousPatient(){
   if(!userId)return;
   const requestScope=token+":"+userId;
