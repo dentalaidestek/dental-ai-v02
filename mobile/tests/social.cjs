@@ -481,3 +481,43 @@ test('Dental Flow feed moderation metadata is bounded before it reaches native t
   {...moderation,revision:-1}
  ]) assert.throws(()=>api.normalizeSocialFeedPost({...base,moderation:bad}),error=>error.status===502);
 });
+
+
+test('comment page normalizer binds rows to the post/thread and requires a strictly advancing ID cursor',()=>{
+ const row=(id,parent_id=null)=>({id,post_id:9,parent_id,author_id:7,author_name:'Expert',text:'Clinical comment',status:'PUBLISHED',version:1,owned:false,liked:false,like_count:0,reply_count:0,created_at:'2026-11-21T06:00:00Z'});
+ const root={items:[row(11)],next_cursor:11,comment_count:3};
+ const normalized=api.normalizeSocialCommentPage(root,9,10,undefined,30);
+ assert.equal(normalized.items[0].id,11);
+ assert.equal(normalized.comment_count,3);
+ const replies=api.normalizeSocialCommentPage({items:[row(21,20)],next_cursor:null,comment_count:3,reply_count:1},9,20,20,10);
+ assert.equal(replies.items[0].parent_id,20);
+ assert.equal(replies.reply_count,1);
+ assert.throws(()=>api.normalizeSocialCommentPage({...root,items:[row(9)]},9,10,undefined,30),/Yorum sayfası doğrulanamadı/);
+ assert.throws(()=>api.normalizeSocialCommentPage({...root,items:[row(11),row(11)],next_cursor:11},9,10,undefined,30),/Yorum sayfası doğrulanamadı/);
+ assert.throws(()=>api.normalizeSocialCommentPage({...root,items:[row(11,20)]},9,10,undefined,30),/Yorum sayfası doğrulanamadı/);
+ assert.throws(()=>api.normalizeSocialCommentPage({...root,next_cursor:12},9,10,undefined,30),/Yorum sayfası doğrulanamadı/);
+ assert.throws(()=>api.normalizeSocialCommentPage({...root,comment_count:-1},9,10,undefined,30),/Yorum sayfası doğrulanamadı/);
+ assert.throws(()=>api.normalizeSocialCommentPage({items:[row(21,19)],next_cursor:null,comment_count:3,reply_count:1},9,20,20,10),/Yorum sayfası doğrulanamadı/);
+});
+
+test('native reply pagination requests ten rows while root comments retain thirty',async()=>{
+ const original=global.fetch,calls=[];
+ const row=(id,parent_id=null)=>({id,post_id:9,parent_id,author_id:7,author_name:'Expert',text:'Clinical comment',status:'PUBLISHED',version:1,owned:false,liked:false,like_count:0,reply_count:0,created_at:'2026-11-21T06:00:00Z'});
+ try{
+  global.fetch=async(url,init)=>{
+   calls.push({url:String(url),init});
+   const parent=String(url).includes('parent_id=20');
+   return new Response(JSON.stringify(parent
+    ? {items:[row(21,20)],next_cursor:null,comment_count:3,reply_count:1}
+    : {items:[row(11)],next_cursor:null,comment_count:3}),{status:200});
+  };
+  const roots=await api.getComments('secret',9,0);
+  assert.equal(roots.items.length,1);
+  assert.equal(calls[0].url,'https://dentalai.tr/api/expert-social/posts/9/comments?threaded=true&limit=30&after=0');
+  const replies=await api.getComments('secret',9,20,20,10);
+  assert.equal(replies.items[0].parent_id,20);
+  assert.equal(calls[1].url,'https://dentalai.tr/api/expert-social/posts/9/comments?threaded=true&limit=10&after=20&parent_id=20');
+  await assert.rejects(()=>api.getComments('secret',9,0,20,0),/sayfalama bilgisi/);
+  assert.equal(calls.length,2,'invalid limits are rejected before network access');
+ }finally{global.fetch=original;}
+});
