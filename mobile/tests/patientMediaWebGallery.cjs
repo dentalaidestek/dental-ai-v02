@@ -58,9 +58,11 @@ test('native clinical archive mirrors the web mobile file picker with camera cap
   assert.match(native,/ImagePicker\.requestCameraPermissionsAsync\(\)/);
   assert.match(native,/ImagePicker\.launchCameraAsync\(\{mediaTypes:\['images'\],quality:\.9\}\)/);
   assert.match(native,/Kamerayla Fotoğraf Çek/);
-  assert.match(native,/clinicalMediaImageKey\(owner,item\.id,'thumbnail'\)/);
-  assert.match(native,/clinicalMediaImageKey\(owner,preview\.id,'original'\)/);
+  assert.match(native,/clinicalMediaImageKey\(imageScope,item\.id,'thumbnail'\)/);
+  assert.match(native,/clinicalMediaImageKey\(imageScope,preview\.id,'original'\)/);
   assert.match(native,/clinicalMediaImageSource\(item\.thumbnail_url\|\|item\.url,token\)/);
+  assert.match(native,/const imageScope=useMemo/);
+  assert.doesNotMatch(native,/clinicalMediaImageKey\(owner,/);
   assert.match(presentation,/cache:'reload'/);
   assert.match(presentation,/Authorization:'Bearer '\+token/);
 });

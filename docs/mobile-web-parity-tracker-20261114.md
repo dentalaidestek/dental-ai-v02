@@ -1113,7 +1113,7 @@ Re-read `app/templates/patient_detail.html` and its inline gallery/upload script
 
 Compared `NativePatientMedia.tsx`, `modernApi.ts`, `mobile_api.py`, and `mobile_modern_api_v3.py`. Native archive already had encrypted local drafts, per-file request receipts, batch reconciliation, byte progress, owner-scoped APIs, and thumbnail/original endpoints. Two parity/security gaps remained:
 1. The archive only opened the photo library. The separate AI analysis composer already supported camera capture, but the patient archive did not. Added a camera action that uses the same normalization, encryption, 12/96 MiB checks, version-3 secure draft, batch ID and per-file request keys as gallery selection. It does not upload until the clinician explicitly presses Save.
-2. Remote archive images used media-ID-only React keys and inline image sources. After an account/session switch, the same media ID could reuse an image component/cache identity. Added owner/session-scoped keys and a private source helper that validates canonical mobile media URLs, attaches the current Bearer token, and requests image cache revalidation.
+2. Remote archive images used media-ID-only React keys and inline image sources. After an account/session switch, the same media ID could reuse an image component/cache identity. Added opaque per-component session-scope keys (without embedding bearer tokens in React keys) and a private source helper that validates canonical mobile media URLs, attaches the current Bearer token, and requests image cache revalidation.
 
 Also removed the second hard-coded API base in `modernApi.ts`; it now imports the exported `API_BASE` from `api.ts`, keeping media and other modern endpoints on the same canonical origin.
 

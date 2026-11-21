@@ -18,11 +18,12 @@ function loadPresentation(){
 
 test('private clinical image cache identity changes across authenticated owner and session scopes',()=>{
  const api=loadPresentation();
- const oldKey=api.clinicalMediaImageKey('1:old-token:8',42,'thumbnail');
- const newKey=api.clinicalMediaImageKey('2:new-token:8',42,'thumbnail');
- const originalKey=api.clinicalMediaImageKey('1:old-token:8',42,'original');
+ const oldKey=api.clinicalMediaImageKey('opaque-scope-1',42,'thumbnail');
+ const newKey=api.clinicalMediaImageKey('opaque-scope-2',42,'thumbnail');
+ const originalKey=api.clinicalMediaImageKey('opaque-scope-1',42,'original');
  assert.notEqual(oldKey,newKey);
  assert.notEqual(oldKey,originalKey);
+ assert.equal(oldKey.includes('token'),false,'React image keys must never contain a bearer token');
  assert.throws(()=>api.clinicalMediaImageKey('owner',0,'thumbnail'),/kapsamı doğrulanamadı/);
  assert.throws(()=>api.clinicalMediaImageKey('owner',42,'unknown'),/kapsamı doğrulanamadı/);
 });
@@ -51,8 +52,8 @@ test('private clinical image source rejects external, malformed and unscoped URL
 
 test('native clinical gallery uses scoped keys and private image source helper on every remote image',()=>{
  const native=fs.readFileSync(path.join(__dirname,'../src/NativePatientMedia.tsx'),'utf8');
- assert.match(native,/clinicalMediaImageKey\(owner,item\.id,'thumbnail'\)/);
- assert.match(native,/clinicalMediaImageKey\(owner,preview\.id,'original'\)/);
+ assert.match(native,/clinicalMediaImageKey\(imageScope,item\.id,'thumbnail'\)/);
+ assert.match(native,/clinicalMediaImageKey\(imageScope,preview\.id,'original'\)/);
  assert.match(native,/clinicalMediaImageSource\(preview\.url,token\)/);
- assert.match(native,/keyExtractor=\{item=>clinicalMediaImageKey\(owner,item\.id,'thumbnail'\)\}/);
+ assert.match(native,/keyExtractor=\{item=>clinicalMediaImageKey\(imageScope,item\.id,'thumbnail'\)\}/);
 });
