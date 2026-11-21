@@ -439,3 +439,21 @@ def test_cancelled_generation_closes_provider_iterator(monkeypatch):
     with pytest.raises(ValueError):
         list(runs.generation(None,1,ProviderIterator()))
     assert closed==[True]
+
+
+def test_academic_provider_stream_closes_when_consumer_cancels():
+    from app.academic_long_answer import stream_complete_answer
+    closed=[]
+    class Provider:
+        last_finish_reason='UNKNOWN'
+        def generate_stream(self,**options):
+            try:
+                yield 'first chunk'
+                yield 'second chunk'
+            finally:
+                closed.append(True)
+    retrieval=SimpleNamespace(study_task={})
+    stream=stream_complete_answer(Provider(),{'prompt':'test','max_output_tokens':10},retrieval)
+    assert next(stream)=='first chunk'
+    stream.close()
+    assert closed==[True]
