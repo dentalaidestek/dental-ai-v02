@@ -72,7 +72,7 @@ def require_schema(engine,*,require_study=False):
     if not inspector.has_table("approvedanamnesis"):
         raise RuntimeError("Run python -m app.migrate to create the approved anamnesis ledger")
     approved_indexes = {item.get("name") for item in inspector.get_indexes("approvedanamnesis")}
-    if "ix_approvedanamnesis_owner_patient_field_id" not in approved_indexes:
+    if "ix_approvedanamnesis_owner_patient_field_analysis" not in approved_indexes:
         raise RuntimeError("Run python -m app.migrate to install the approved anamnesis query index")
     # Additive admin MFA tables: the production startup only checks schema revision,
     # so the original init_db() DDL never runs on Render. Serialize this small
@@ -753,6 +753,7 @@ def _upgrade_approved_anamnesis_schema(main):
             for index in table.indexes:
                 index.create(connection, checkfirst=True)
             for legacy_index in (
+                "ix_approvedanamnesis_owner_patient_field_id",
                 "ix_approvedanamnesis_patient_field_id",
                 "ix_approvedanamnesis_owner_patient",
                 "ix_approvedanamnesis_owner_user_id",
@@ -774,7 +775,8 @@ def _upgrade_approved_anamnesis_schema(main):
         for index in table.indexes:
             index.create(connection, checkfirst=True)
         for legacy_index in (
-            "ix_approvedanamnesis_patient_field_id",
+            "ix_approvedanamnesis_owner_patient_field_id",
+                "ix_approvedanamnesis_patient_field_id",
             "ix_approvedanamnesis_owner_patient",
             "ix_approvedanamnesis_owner_user_id",
             "ix_approvedanamnesis_patient_id",
