@@ -1130,3 +1130,50 @@ Also removed the second hard-coded API base in `modernApi.ts`; it now imports th
 - Rendered account-switch fixtures now use canonical mobile media URLs, so the private-source guard is exercised rather than bypassed with external test URLs.
 
 The new HEAD must still run Android typecheck, all beta tests, Security Recovery and the native clinical/voice suites. No post-change pass is claimed before those jobs complete. No production patient data, database, migration, main branch or live deployment was touched.
+
+
+## 2026-11-21 — runner-backed CI triage and regression repair
+
+### Web-first source comparison
+
+Before touching the failing parity tests, re-read the canonical web sources and compared their native counterparts:
+
+- Dashboard program card and recent patient/search flow: `app/templates/dashboard.html`, `app/templates/patients_all.html`, `app/templates/patient_search.html`, `mobile/App.tsx`.
+- Notification badge/read behavior: `app/templates/base.html`, `mobile/App.tsx`, `mobile/src/notificationRefresh.ts`, `mobile/src/ModernScreens.tsx`.
+- FDI tooth chart entry and surface controls: `app/templates/tooth_chart.html`, `app/static/tooth-chart/surface-options.js`, `mobile/src/NativeToothChart.tsx`, `mobile/src/api.ts`.
+
+### CI evidence at head `0ea3ad2`
+
+The new runner-backed checks did execute; this was not the earlier zero-step/BlobNotFound runner-allocation failure:
+
+- Android typecheck: passed.
+- Session/auth and realtime/pagination checks: passed.
+- Expo Android + iOS JS bundle export: passed.
+- Internal Android release APK assembly: passed.
+- Native security regressions: 558/558 passed across clinical (259), voice (77), social (86), program (45), support (19), and academic (72); zero skipped.
+- Python security/identity recovery: 573 passed; PostgreSQL migration/concurrency: 29 passed; zero test failures.
+- Mobile beta suite: 938/945 passed, seven failed. The failures were source-contract/test-harness drift, not TypeScript errors or demonstrated clinical-flow defects.
+
+### Seven beta failures and exact repairs
+
+1. Dashboard program navigation test expected the earlier `eventId`-only route params. The current native card intentionally adds `openRequestId` so tapping the same event can reopen its editor. Updated the assertion to the current route contract.
+2. Notification badge test expected the old inline `loadUnread()` statement. The home screen now explicitly discards the promise with `void`, and the read-event predicate moved to `notificationRefresh.ts`. Updated the test to verify the focused refresh and effect dependencies.
+3. Patient-directory test expected stale placeholder copy and did not read the web directory template. It now checks both canonical web search entry points and the current native copy, including name, patient number, phone and TC fields.
+4–7. All four tooth-chart focus tests failed before reaching their assertions because `api.ts` now imports the shared `dashboardPresentation` validator. The isolated VM loader mocked the directory helper but treated the new, legitimate import as unexpected. The test now loads the real shared helper instead of weakening the API contract.
+5. The Python dashboard security test previously caught every exception while importing Starlette `TestClient` and silently skipped itself. The security workflow explicitly installs `httpx`; removed the broad catch and skip so a broken test environment now fails visibly. The runner-backed Python suite at the preceding head imported TestClient and completed the dashboard test; this change removes the future false-green path.
+
+### Commits on the development branch
+
+- `2750ad0` — dashboard program open-intent assertion
+- `64b35b6` — focused notification unread refresh assertion
+- `1e26207` — compare native patient search fields with web templates
+- `e9861cf` — load the shared dashboard validator in tooth-chart API tests
+- `cd9a13a` — stop silently skipping the Python dashboard security test
+
+These five commits change regression coverage/test harnesses only; they do not claim new production feature behavior. The seven failures have not yet been re-run against the repaired head.
+
+### Current head and release boundary
+
+Current branch head after these five commits: `cd9a13ae6fa81903b9ff4deb0036100a60c3233b`. Fresh PR-triggered Android and Security Recovery runs were created (Android run `44889780018`, Security Recovery run `44889780057`) and were still pending when this note was written; no green result is claimed for the repaired head yet.
+
+No `main` merge, production deploy, database migration, store release, APK publication, patient-record mutation, or clinical audio upload was performed. Remaining next gate: complete both current-head workflows, then continue the next web-first native feature audit and real two-account/device acceptance. The 60,000-user target remains un-certified; this run did not execute load testing.
