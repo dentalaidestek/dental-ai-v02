@@ -252,6 +252,11 @@ def test_reviewed_voice_history_reads_only_explicitly_saved_anamnesis(app_client
         assert body['fields'][name]['analysis_id'] == analysis_id
     assert 'Güncel kullanım' in body['notice']
     assert client.get('/patients/2/voice-exam/history').status_code == 404
+    with Session(engine) as session:
+        rows = session.execute(select(ApprovedAnamnesis.__table__)).mappings().all()
+        assert len(rows) == 3
+        assert all(row['owner_user_id'] == 1 and row['patient_id'] == 1 for row in rows)
+        assert all(row['analysis_id'] == saved.json()['analysis_id'] for row in rows)
 
 
 def test_reviewed_history_keeps_old_field_after_more_than_twelve_newer_reviews(app_client):
