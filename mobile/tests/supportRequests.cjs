@@ -2,6 +2,8 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
+const vm=require('node:vm');
+const ts=require('typescript');
 
 const root=path.join(__dirname,'..');
 const api=fs.readFileSync(path.join(root,'src/modernApi.ts'),'utf8');
@@ -61,7 +63,8 @@ test('native support exposes optional expert conversation linking and persists i
  assert.ok(api.includes('getSupportConversationOptions'));
  assert.ok(api.includes('case_id:caseId??null'));
  assert.ok(screen.includes('İlgili uzman konuşması (isteğe bağlı)'));
- assert.ok(screen.includes('caseId:caseId??null'));
+ assert.ok(screen.includes('case_id:caseId??null'));
+ assert.ok(screen.includes('createSupportTicket(token,subject,message,key,caseId)'));
  assert.ok(screen.includes('Konuşma yalnızca destek ekibiyle ilişkilendirilir'));
 });
 test('native support exposes reports and cursor pagination for tickets and messages',()=>{
@@ -88,7 +91,11 @@ test('support notifications open the exact ticket through the authenticated owne
 });
 
 test('support recovery storage is isolated by account and ticket',()=>{
- const scope=require('../src/supportDraftScope.ts');
+ const scopeSource=fs.readFileSync(path.join(root,'src/supportDraftScope.ts'),'utf8');
+ const compiled=ts.transpileModule(scopeSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+ const scopeModule={exports:{}};
+ vm.runInNewContext(compiled,{module:scopeModule,exports:scopeModule.exports});
+ const scope=scopeModule.exports;
  const createA=scope.supportCreateIntentStorageKey(7),createB=scope.supportCreateIntentStorageKey(8);
  const replyA=scope.supportReplyIntentStorageKey(7,42),replyB=scope.supportReplyIntentStorageKey(8,42);
  const replyOtherTicket=scope.supportReplyIntentStorageKey(7,43);
