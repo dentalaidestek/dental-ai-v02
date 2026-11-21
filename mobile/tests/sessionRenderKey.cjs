@@ -187,3 +187,8 @@ test('patient, Program, Academic and relationship renderers share the production
  assert.ok(academicHarness.includes("n==='./useSessionRenderKey'?require('./helpers/useSessionRenderKeyModule.cjs')"));
  assert.ok(relationshipsHarness.includes("n==='./useSessionRenderKey'?require('./helpers/useSessionRenderKeyModule.cjs')"));
 });
+
+
+test('VM bridge exposes a callable production hook default export',()=>{
+ assert.equal(typeof useSessionRenderKey,'function');
+});
