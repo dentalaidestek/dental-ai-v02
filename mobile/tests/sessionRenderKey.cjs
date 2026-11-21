@@ -45,6 +45,13 @@ test('all VM component harnesses resolve the opaque session-key helper',()=>{
 });
 
 
+test('voice entry VM harnesses map the opaque session-key helper in every rendered path',()=>{
+ const source=fs.readFileSync(require.resolve('./voiceWorkflow.cjs'),'utf8');
+ assert.ok(source.includes("const sessionRenderKeyExports=require('./helpers/sessionRenderKeyModule.cjs');"));
+ const mappings=source.split("n==='./sessionRenderKey'?sessionRenderKeyExports").length-1;
+ assert.equal(mappings,6,'all voice and approval VM loaders must resolve the helper imported by VoiceExamEntry');
+});
+
 test('patient profile child sections use an opaque key across token and patient scope changes',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientProfile.tsx'),'utf8');
  const parsed=ts.createSourceFile('NativePatientProfile.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
