@@ -332,7 +332,7 @@ export const getMedia=async(t:string,p:number,before?:number):Promise<{items:Pat
   throw Error("Klinik medya sunucusundan geçersiz liste alındı. Sayfalama imleci doğrulanamadı.");
  return {items:items.map(media=>({...media,filename:media.filename||media.original_filename||"",url:`${API_BASE}/patients/${p}/media/${media.id}/file`,thumbnail_url:`${API_BASE}/patients/${p}/media/${media.id}/thumbnail`})),next_before:cursor};
 };
-export const getExperts=(t:string,q="")=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q),t);
+export const getExperts=(t:string,q="",opts?:{specialty?:string;available?:boolean})=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q)+(opts&&opts.specialty?"&specialty="+encodeURIComponent(opts.specialty):"")+(opts&&opts.available?"&available=true":""),t);
 export type ConsultationRequestPayload={expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string;request_key?:string};
 export function createConsultation(t:string,payload:ConsultationRequestPayload){
  if(!Number.isSafeInteger(payload.expert_user_id)||payload.expert_user_id<=0||!payload.question?.trim()||!payload.clinical_summary?.trim()||

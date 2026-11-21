@@ -125,10 +125,11 @@ export function ExpertDirectory({token,navigation,patientId}:{token:string;navig
  const{lastEvent}=useRealtime();
  const[data,setData]=useState<{items:Expert[];accountToken:string}|null>(null);
  const[q,setQ]=useState(""),[busy,setBusy]=useState(true),[error,setError]=useState("");
+ const[specialtyPick,setSpecialtyPick]=useState(""),[availableOnly,setAvailableOnly]=useState(false);
  const[watches,setWatches]=useState<AvailabilityWatch[]>([]),[watchNotice,setWatchNotice]=useState(""),[watchBusy,setWatchBusy]=useState(false);
  useEffect(()=>{Promise.resolve().then(()=>getAvailabilityWatch(token)).then(v=>{if(activeToken.current===token)setWatches(v)}).catch(()=>{})},[token]);
  function requestWatch(){
-  const specialty=q.trim();if(!specialty||watchBusy)return;
+  const specialty=q.trim()||specialtyPick;if(!specialty||watchBusy)return;
   setWatchBusy(true);setWatchNotice("");setError("");
   createAvailabilityWatch(token,specialty).then(v=>{if(activeToken.current===token){setWatches(v.watches||[]);setWatchNotice("Bu branşta uzman müsait olduğunda bildirim isteğiniz kaydedildi.")}}).catch(e=>{if(activeToken.current===token)setError(e instanceof Error?e.message:"Bildirim isteği kaydedilemedi.")}).finally(()=>{if(activeToken.current===token)setWatchBusy(false)});
  }
@@ -137,14 +138,14 @@ export function ExpertDirectory({token,navigation,patientId}:{token:string;navig
   const request=++seq.current;
   setBusy(true);setError("");
   try{
-   const result=await getExperts(token,q.trim());
+   const result=await getExperts(token,q.trim(),{specialty:specialtyPick,available:availableOnly});
    if(request===seq.current&&activeToken.current===token)setData({items:result.items,accountToken:token});
   }catch(e){
    if(request===seq.current&&activeToken.current===token)setError(e instanceof Error?e.message:"Uzmanlar yüklenemedi.");
   }finally{
    if(request===seq.current&&activeToken.current===token)setBusy(false);
   }
- },[token,q]);
+ },[token,q,specialtyPick,availableOnly]);
  useEffect(()=>{setData(null);setError("");setBusy(true)},[token]);
  useEffect(()=>{
   const timeout=setTimeout(()=>{void load()},q.trim()?300:0);
@@ -158,10 +159,13 @@ export function ExpertDirectory({token,navigation,patientId}:{token:string;navig
    <Text style={s.big}>Uzmandan Destek Al</Text>
    <Text style={s.muted}>Doğrulanmış uzmanlarla vaka danışmanlığı.</Text>
    <TextInput value={q} onChangeText={setQ} onSubmitEditing={()=>void load()} returnKeyType="search" placeholder="Uzman, branş veya kurum ara" placeholderTextColor={C.muted} style={s.input}/>
+   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginVertical:10}}>{["",...(Array.isArray(EXPERT_SPECIALTIES)?EXPERT_SPECIALTIES:[])].map(value=><Pressable key={value||"all"} accessibilityRole="radio" accessibilityState={{checked:specialtyPick===value}} disabled={busy} onPress={()=>setSpecialtyPick(current=>current===value?"":value)} style={{paddingVertical:7,paddingHorizontal:12,borderRadius:16,borderWidth:1,borderColor:specialtyPick===value?C.navy:C.line,backgroundColor:specialtyPick===value?C.soft:C.white,marginRight:8}}><Text style={{color:C.navy,fontSize:12,fontWeight:"700"}}>{value||"Tümü"}</Text></Pressable>)}</ScrollView>
+   <Pressable accessibilityRole="switch" accessibilityState={{checked:availableOnly}} disabled={busy} onPress={()=>setAvailableOnly(v=>!v)} style={{flexDirection:"row",alignItems:"center",marginBottom:10}}><Text style={[s.meta,{fontWeight:"800",color:availableOnly?C.navy:C.muted}]}>{availableOnly?"✓ Yalnız müsait uzmanlar":"Yalnız müsait uzmanlar"}</Text></Pressable>
    {!!error&&<View><Text style={{color:C.red,marginBottom:8}}>{error}</Text><Btn title="Tekrar dene" onPress={()=>void load()}/></View>}
   </View>
   {busy?<View style={s.center}><ActivityIndicator color={C.navy}/></View>:
   <FlatList keyboardShouldPersistTaps="handled" contentContainerStyle={s.pad} data={data?.accountToken===token?data.items:[]} keyExtractor={x=>String(x.user_id)}
+   refreshControl={typeof RefreshControl!=="undefined"?<RefreshControl refreshing={busy} onRefresh={()=>void load()} tintColor={C.navy}/>:undefined}
    ListEmptyComponent={<View>{(()=>{const inList=Array.isArray(EXPERT_SPECIALTIES)&&EXPERT_SPECIALTIES.includes(q.trim());return <><Empty title={inList?"Bu branşta şu an müsait uzman bulunamadı":"Uzman bulunamadı"} sub="Arama kelimelerini değiştirebilirsin."/>{inList&&<Btn title={watchBusy?"Kaydediliyor…":"Müsait olduğunda haber ver"} disabled={watchBusy} onPress={requestWatch}/>}{!!watchNotice&&<Text style={[s.muted,{textAlign:"center",marginTop:8}]}>{watchNotice}</Text>}{!!watches.length&&!inList&&<Text style={[s.muted,{textAlign:"center",marginTop:8}]}>Aktif bildirim abonelikleriniz: {watches.map(w=>w.specialty).join(", ")}</Text>}</>})()}</View>}
    renderItem={({item})=><Pressable accessibilityRole="button" style={card} onPress={()=>navigation.navigate("ExpertProfile",{id:item.user_id,name:item.display_name,patientId})}>
     <View style={s.row}><View style={{flex:1}}>
@@ -219,10 +223,13 @@ export function Consultations({token,userId,navigation}:{token:string;userId:num
  renderItem={({item})=><Pressable accessibilityRole="button" accessibilityLabel={item.other_display_name+" görüşmesini aç"} style={[card,{flexDirection:"row",alignItems:"center",gap:12,paddingVertical:14}]} onPress={()=>navigation.navigate("ConsultationChat",{id:item.id})}><View style={{height:46,width:46,borderRadius:23,backgroundColor:"#E8F0F8",alignItems:"center",justifyContent:"center"}}><Text style={{color:C.navy,fontSize:19,fontWeight:"800"}}>{(item.other_display_name||"U").slice(0,1).toLocaleUpperCase("tr-TR")}</Text></View><View style={{flex:1}}><View style={{flexDirection:"row",justifyContent:"space-between",alignItems:"center",gap:6}}><Text style={[s.title,{flexShrink:1}]} numberOfLines={1}>{item.other_display_name||"Kullanıcı"}</Text><Text style={s.meta}>{item.last_message_at?new Date(item.last_message_at).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"}):""}</Text></View><Text style={s.meta} numberOfLines={1}>{item.specialty} · Vaka #{item.id}</Text><Text style={s.body} numberOfLines={2}>{item.last_message||item.question||"Klinik içerik"}</Text><View style={{flexDirection:"row",alignItems:"center",marginTop:5,gap:8}}><Text style={[s.pill,String(item.status_key||item.status).toUpperCase()==="ACTIVE"&&{backgroundColor:"#ECFDF5",color:"#047857"},["NEW_REQUEST","ACTION_REQUIRED"].includes(String(item.status_key||item.status).toUpperCase())&&{backgroundColor:"#FFF7ED",color:"#C2410C"},["MISSED","DELAYED"].includes(String(item.status_key||item.status).toUpperCase())&&{backgroundColor:"#FEF2F2",color:"#B91C1C"}]}>{item.status_label||item.status}</Text>{Number(item.unread_count||0)>0&&<Text style={{color:C.navy,fontWeight:"900"}}>{Number(item.unread_count||0)}</Text>}</View></View></Pressable>}
  ListEmptyComponent={<Empty title={search||filter!=="all"?"Eşleşen görüşme yok":"Henüz görüşmeniz yok"} sub={pages.hasMore?"Diğer görüşmeleri yükleyerek aramaya devam edin.":"Uzman desteği görüşmeleriniz burada görünecek."}/>}/>;
 }
+const CHAT_REPORT_REASONS=[["HARASSMENT","Taciz"],["PROFANITY","Hakaret veya küfür"],["SPAM","İstenmeyen içerik"],["INAPPROPRIATE","Uygunsuz davranış"],["OTHER","Diğer"]] as const;
+type ChatReportReason=(typeof CHAT_REPORT_REASONS)[number][0];
 export function ConsultationChat({token,route,userId}:{token:string;route:any;userId:number}){
  const navigation:any=useNavigation();const id=Number(route.params.id),{lastEvent,lastEventId,connected}=useRealtime(),isFocused=useIsFocused();
  const[data,setData]=useState<any>(),[text,setText]=useState(""),[replyTo,setReplyTo]=useState<number|null>(null),[olderBusy,setOlderBusy]=useState(false),[sendBusy,setSendBusy]=useState(false),[sendError,setSendError]=useState("");
  const[annotateMessage,setAnnotateMessage]=useState<ChatMessage|null>(null),[annotateText,setAnnotateText]=useState(""),[annotateBusy,setAnnotateBusy]=useState(false);
+ const[safetyOpen,setSafetyOpen]=useState(false),[safetyBusy,setSafetyBusy]=useState(false),[reportReason,setReportReason]=useState<ChatReportReason|"" >(""),[reportDetail,setReportDetail]=useState("");
  const activeScope=useRef(token+":"+userId+":"+id);activeScope.current=token+":"+userId+":"+id;
  const [preparedAttachment,setPreparedAttachment]=useState<{file:ChatFile;nonce:string;scope:string}|null>(null);
  const requestSeq=useRef(0),sending=useRef(false),draftRevision=useRef(0),pending=useRef<{content:string;id:string;scope:string;replyTo:number|null}|null>(null);
@@ -393,6 +400,24 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
   }catch(e){if(scope===activeScope.current)setSendError(e instanceof Error?e.message:"İşaretleme eklenemedi.")}
   finally{if(scope===activeScope.current)setAnnotateBusy(false)}
  }
+ async function submitSafety(kind:"block"|"unblock"|"report"){
+  const scope=activeScope.current;
+  if(safetyBusy)return;
+  setSafetyBusy(true);setSendError("");
+  try{
+   if(kind==="report"){
+    if(reportReason==="")return;
+    await performChatAction(token,id,{action:"report",reason:reportReason,detail:reportDetail.trim().slice(0,500)});
+   }else await performChatAction(token,id,{action:kind});
+   if(scope!==activeScope.current)return;
+   setSafetyOpen(false);setReportReason("");setReportDetail("");
+   await load();
+  }catch(e){if(scope===activeScope.current)setSendError(e instanceof Error?e.message:"Güvenlik işlemi tamamlanamadı.")}
+  finally{if(scope===activeScope.current)setSafetyBusy(false)}
+ }
+ function confirmBlock(){
+  Alert.alert("Karşılıklı mesajlaşma kapatılsın mı?","Bu görüşmede mesajlar iki taraf için de kapatılır. Bloklama rapor yerine geçmez; uygunsuz davranışı ayrıca raporlayabilirsin.",[{text:"Vazgeç",style:"cancel"},{text:"Kapat",style:"destructive",onPress:()=>void submitSafety("block")}]);
+ }
  return <KeyboardAvoidingView style={s.page} behavior={Platform.OS==="ios"?"padding":"height"}>
  <View style={{backgroundColor:C.white,padding:14,borderBottomWidth:1,borderBottomColor:C.line}}><Text style={s.title}>{visibleData?.case?.other_display_name||"Güvenli görüşme"} · Vaka #{id}</Text><ChatActions key={token+":"+id} token={token} userId={userId} conversation={visibleData?.case} onChanged={load} onDeleted={()=>navigation.goBack()}/><Text style={s.muted}>{visibleData?.case?.specialty||"Uzman desteği"} · {consultationStatusLabel(visibleData?.case?.status)}</Text></View>
  {!!visibleData?.case?.shared_media?.length&&<View style={{padding:12}}><Text style={s.title}>Vakaya eklenen klinik görseller</Text><ScrollView horizontal>{visibleData.case.shared_media.map((media:{id:number;media_type:string})=><ChatImage key={token+":"+id+":"+media.id} token={token} caseId={id} message={{id:media.id} as ChatMessage} sourceOverride={sharedCaseImageSource(token,id,media.id)} canEdit={canCompose} onEdited={file=>{setReplyTo(null);setPreparedAttachment({file,nonce:file.uri,scope:activeScope.current})}}/>)}</ScrollView></View>}
@@ -400,10 +425,12 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
  ListEmptyComponent={<Empty title={visibleData?"Henüz mesaj yok":"Görüşme yükleniyor"} sub="Bu görüşmenin mesajları yalnızca yetkili katılımcılara gösterilir."/>}
  renderItem={({item}:any)=><View style={[s.msg,item.sender_user_id===userId?s.mine:s.theirs]}>{!!item.reply_to_message_id&&<Text style={[s.meta,{color:C.navy,fontWeight:"700"}]}>↩ {consultationMessagePreview(visibleData?.messages?.find((m:ChatMessage)=>m.id===item.reply_to_message_id))}</Text>}{item.message_type==="IMAGE"?<ChatImage token={token} caseId={id} message={item} canEdit={canCompose} onEdited={file=>{setReplyTo(item.id);setPreparedAttachment({file,nonce:file.uri,scope:activeScope.current})}}/>:item.message_type==="ANNOTATION"?<Text style={s.body}>✎ İşaretlenmiş görüntü{(()=>{try{const a=JSON.parse(String((item as any).annotation_json||""));return a&&typeof a.text==="string"&&a.text?" · "+a.text:""}catch{return ""}})()}</Text>:item.message_type==="VOICE"||item.message_type==="FILE"?<NativeChatDocument key={token+":"+id+":"+item.id} token={token} caseId={id} message={item}/>:<Text style={s.body}>{item.content||"Klinik içerik"}</Text>}{item.sender_user_id===userId&&<Text style={s.meta}>{visibleData?.case?.other_read_at&&Date.parse(item.created_at)<=Date.parse(visibleData.case.other_read_at)?"✓✓ Okundu":"✓ Gönderildi"}</Text>}<View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:12}}><Text style={s.meta}>{new Date(item.created_at).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}</Text><Pressable accessibilityRole="button" accessibilityLabel="Mesajı yanıtla" onPress={()=>setReplyTo(item.id)}><Text style={[s.meta,{color:C.navy,fontWeight:"800"}]}>↩ Yanıtla</Text></Pressable>{item.message_type==="IMAGE"&&canCompose&&<Pressable accessibilityRole="button" accessibilityLabel="Görüntüye işaretleme ekle" onPress={()=>{setAnnotateText("");setAnnotateMessage(item)}}><Text style={[s.meta,{color:C.navy,fontWeight:"800"}]}>✎ İşaretle</Text></Pressable>}</View></View>}/>
  {annotateMessage&&<View style={{position:"absolute",left:0,right:0,top:0,bottom:0,backgroundColor:"rgba(7,27,53,.6)",justifyContent:"flex-end"}}><View style={{backgroundColor:C.white,padding:16,borderTopLeftRadius:18,borderTopRightRadius:18}}><Text style={s.title}>Görüntüye işaretleme ekle</Text><Text style={s.muted}>Mesaj #{annotateMessage.id} için kısa bir işaretleme notu ekleyin; not sunucuda görüntüyle ilişkilendirilir.</Text><TextInput accessibilityLabel="İşaretleme notu" multiline maxLength={2000} value={annotateText} onChangeText={setAnnotateText} placeholder="İşaretleme notu (ör. sağ alt bölgede lezyon)" placeholderTextColor={C.muted} style={[s.input,{height:90,textAlignVertical:"top"}]}/><Btn title={annotateBusy?"Kaydediliyor…":"İşaretlemeyi Kaydet"} disabled={annotateBusy||!annotateText.trim()} onPress={()=>void submitAnnotation()}/><Btn title="Vazgeç" disabled={annotateBusy} onPress={()=>{setAnnotateMessage(null);setAnnotateText("")}}/></View></View>}
+ {safetyOpen&&<View style={{position:"absolute",left:0,right:0,top:0,bottom:0,backgroundColor:"rgba(7,27,53,.6)",justifyContent:"flex-end"}}><View style={{backgroundColor:C.white,padding:16,borderTopLeftRadius:18,borderTopRightRadius:18}}><Text style={s.title}>Güvenlik ve Bloklama</Text>{!!visibleData?.case?.blocked_either?<><Text style={s.muted}>Bu görüşmede karşılıklı mesajlaşma kapatıldı. Bloklamayı yalnız siz koymuşsanız kaldırabilirsiniz; karşı tarafın bloklaması kaldırılamaz.</Text><Btn title={safetyBusy?"İşleniyor…":"Bloklamayı Kaldır"} disabled={safetyBusy} onPress={()=>void submitSafety("unblock")}/></>:<><Text style={s.muted}>Uygunsuz davranışı raporlayın; rapor destek sürecine eklenir. Gerekirse karşılıklı mesajlaşmayı da kapatabilirsiniz.</Text><View style={{flexDirection:"row",flexWrap:"wrap",gap:8,marginVertical:10}}>{CHAT_REPORT_REASONS.map(([value,label])=><Pressable key={value} accessibilityRole="radio" accessibilityState={{checked:reportReason===value}} disabled={safetyBusy} onPress={()=>setReportReason(value)} style={{paddingVertical:8,paddingHorizontal:12,borderRadius:16,borderWidth:1,borderColor:reportReason===value?C.navy:C.line,backgroundColor:reportReason===value?C.soft:C.white}}><Text style={{color:C.navy,fontSize:12,fontWeight:"700"}}>{reportReason===value?"✓ ":""}{label}</Text></Pressable>)}</View><TextInput accessibilityLabel="Rapor detayı" multiline maxLength={500} value={reportDetail} onChangeText={setReportDetail} placeholder="Kısa açıklama (isteğe bağlı, en fazla 500 karakter)" placeholderTextColor={C.muted} style={[s.input,{height:80,textAlignVertical:"top"}]}/><Btn title={safetyBusy?"Gönderiliyor…":"Raporu Gönder"} disabled={safetyBusy||!reportReason} onPress={()=>void submitSafety("report")}/><Text style={s.muted}>Karşılıklı mesajlaşmayı kapatmak rapor yerine geçmez.</Text><Btn title="Karşılıklı Mesajlaşmayı Kapat" disabled={safetyBusy} onPress={confirmBlock}/></>}<Btn title="Vazgeç" disabled={safetyBusy} onPress={()=>setSafetyOpen(false)}/></View></View>}
  {waitingStart&&<Text style={{color:C.muted,paddingHorizontal:16,paddingVertical:8}}>Mesajlaşma, belirlenen görüşme başlangıcında açılacak.</Text>}
  {!!visibleData?.case?.messages_deleted_at&&<Text style={{color:C.red,paddingHorizontal:16,paddingVertical:8}}>Bu görüşmenin mesajları kaldırılmış.</Text>}
  {!!pendingMessage&&<Text style={{color:C.muted,paddingHorizontal:16,paddingVertical:5}}>Gönderim sonucu doğrulanıyor; aynı istek anahtarı korunuyor.</Text>}
  {!!sendError&&<Pressable accessibilityRole="button" onPress={()=>void reconcilePending().then(()=>load())}><Text style={{color:C.red,paddingHorizontal:16}}>{sendError} · Gönderim sonucunu kontrol et</Text></Pressable>}
+ <View style={{flexDirection:"row",justifyContent:"space-between",alignItems:"center",paddingHorizontal:16,paddingVertical:6}}><Pressable accessibilityRole="button" accessibilityLabel="Güvenlik ve bloklama seçenekleri" disabled={safetyBusy} onPress={()=>setSafetyOpen(true)}><Text style={[s.meta,{color:C.navy,fontWeight:"800"}]}>🛡 Güvenlik ve Bloklama</Text></Pressable>{!!visibleData?.case?.blocked_either&&<Text style={[s.meta,{color:C.red,fontWeight:"800"}]}>Karşılıklı mesajlaşma kapalı</Text>}</View>
  {!!replyTo&&<View style={{backgroundColor:C.soft,padding:10,flexDirection:"row",alignItems:"center",justifyContent:"space-between"}}><Text style={{flex:1,color:C.navy}} numberOfLines={2}>↩ {consultationMessagePreview(visibleData?.messages?.find((m:ChatMessage)=>m.id===replyTo))}</Text><Pressable accessibilityRole="button" accessibilityLabel="Yanıtı kaldır" onPress={()=>setReplyTo(null)}><Text style={{fontWeight:"800",color:C.red}}>✕</Text></Pressable></View>}<ChatPhotoComposer key={token+":"+id} token={token} userId={userId} caseId={id} replyTo={replyTo} prepared={preparedAttachment?.scope===activeScope.current?preparedAttachment:null} deleted={!!visibleData?.case?.messages_deleted_at} disabled={!canCompose||!draftReady||sendBusy} onRefresh={load} onSent={async(message?:ChatMessage)=>{
  setReplyTo(null);
  if(message){

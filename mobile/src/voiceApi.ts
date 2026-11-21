@@ -119,6 +119,7 @@ function contextFromVoiceReview(review:VoiceExtraction["review"]):Record<string,
   ...(review.appointment?{appointment:{quote:review.appointment.quote||"",acceptance_quote:review.appointment.acceptance_quote||""}}:{})
  };
 }
+export const voiceClinicalContext=contextFromVoiceReview;
 
 export async function extractVoice(token:string,patientId:number,transcript:string,options:ExtractVoiceOptions={}):Promise<VoiceExtraction>{
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Klinik değerlendirme için geçerli bir hasta seçin.");
@@ -224,4 +225,45 @@ export async function applyVoiceReview(token:string,patientId:number,payload:Voi
  if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error('Hasta kimliği geçersiz.');validateVoiceApply(payload);
  const {request}=await import('./api');const result=await request<{ok:boolean;analysis_id:number;already_saved?:boolean}>(`/patients/${patientId}/voice-exam/apply`,token,{method:'POST',body:JSON.stringify(payload)});
  if(result.ok!==true||!Number.isSafeInteger(result.analysis_id)||result.analysis_id<=0)throw Error('Muayene kayıt sonucu doğrulanamadı. Aynı işlem anahtarı korunuyor.');return result;
+}
+
+// Resmî kaynak dizini ve kaynaklı klinik kontrol noktaları — web voice-exam session akışının birebir mobil karşılığı.
+export type VoiceSourceReference={institution:string;title:string;url:string};
+export type VoiceSourceResult={ok:true;notice:string;references:VoiceSourceReference[]};
+export async function searchVoiceSources(token:string,patientId:number,query:string):Promise<VoiceSourceResult>{
+ if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Kaynak araması için geçerli bir hasta seçin.");
+ if(typeof query!=="string"||query.trim().length<3||query.trim().length>400)throw Error("Kaynak araması 3-400 karakter olmalıdır.");
+ const result=await send<Record<string,unknown>>(token,`/patients/${patientId}/voice-exam/sources`,{query:query.trim()});
+ if(typeof result.notice!=="string"||result.notice.length>2000||!Array.isArray(result.references))throw Error("Kaynak dizini yanıtı doğrulanamadı; tekrar deneyin.");
+ const references:VoiceSourceReference[]=[];
+ for(const item of result.references as unknown[]){
+  if(!item||typeof item!=="object"||Array.isArray(item))continue;
+  const record=item as Record<string,unknown>;
+  if(record.clinical_use===false)continue;
+  const url=typeof record.url==="string"?record.url:"";
+  const safe=url&&/^https?:\/\//.test(url)&&!url.includes("@")?url:null;
+  references.push({institution:typeof record.institution==="string"?record.institution:"Resmî kaynak",title:typeof record.title==="string"?record.title:"",url:safe||""});
+ }
+ return {ok:true,notice:result.notice,references};
+}
+export type VoiceClinicalItem={consideration:string;patient_quote:string;missing_information:string;alternative:string};
+export type VoiceClinicalResult={ok:true;notice:string;items:VoiceClinicalItem[];unavailable:unknown[]};
+export async function assessVoiceClinical(token:string,patientId:number,context:Record<string,unknown>):Promise<VoiceClinicalResult>{
+ if(!Number.isSafeInteger(patientId)||patientId<=0)throw Error("Klinik kontrol için geçerli bir hasta seçin.");
+ if(!context||typeof context!=="object"||Array.isArray(context))throw Error("Klinik kontrol bağlamı geçersiz. Taslağı kontrol edin.");
+ // Web panel ile aynı temizlik: kimlik ve randevu alanları değerlendirmeye girmez.
+ const clean:Record<string,unknown>=JSON.parse(JSON.stringify(context));
+ delete clean.appointment;
+ if(clean.fields&&typeof clean.fields==="object"&&!Array.isArray(clean.fields)){
+  delete (clean.fields as Record<string,unknown>).first_name;
+  delete (clean.fields as Record<string,unknown>).last_name;
+ }
+ const result=await send<Record<string,unknown>>(token,`/patients/${patientId}/voice-exam/clinical`,{context:clean,consent:true});
+ if(typeof result.notice!=="string"||result.notice.length>2000||!Array.isArray(result.items))throw Error("Klinik kontrol yanıtı doğrulanamadı; tekrar deneyin.");
+ const items:VoiceClinicalItem[]=result.items.map(item=>{const record=(item||{}) as Record<string,unknown>;return {
+  consideration:typeof record.consideration==="string"?record.consideration:"",
+  patient_quote:typeof record.patient_quote==="string"?record.patient_quote:"",
+  missing_information:typeof record.missing_information==="string"?record.missing_information:"",
+  alternative:typeof record.alternative==="string"?record.alternative:""}});
+ return {ok:true,notice:result.notice,items,unavailable:Array.isArray(result.unavailable)?result.unavailable:[]};
 }

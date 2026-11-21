@@ -3564,6 +3564,69 @@ async def mobile_voice_audio(request: Request, patient_id: int, user: User = Dep
         _mobile_voice_audio_slots.release()
 
 
+class MobileVoiceSourceRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    query: str = RequestField(min_length=3, max_length=400)
+
+class MobileVoiceClinicalRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    context: dict
+    consent: bool = False
+
+@router.post("/patients/{patient_id}/voice-exam/sources")
+async def mobile_voice_sources(patient_id: int, payload: MobileVoiceSourceRequest,
+                               user: User = Depends(_mobile_user)):
+    """Web voice_exam.source_references'in mobil karşılığı: resmî kaynak dizini araması."""
+    from app.voice_exam import core
+    from starlette.concurrency import run_in_threadpool
+
+    def reply(status: int, code: str, detail: str):
+        return JSONResponse(
+            {"ok": False, "code": code, "detail": detail},
+            status_code=status,
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    if not core.enabled():
+        return reply(503, "VOICE_CLINICAL_NOT_READY", "Sesli muayene etkin değil.")
+    await run_in_threadpool(_mobile_voice_patient, user, patient_id)
+    from app.voice_exam_sources import retrieve
+    data = await run_in_threadpool(retrieve, payload.query)
+    return JSONResponse(
+        {"ok": True, **data},
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+@router.post("/patients/{patient_id}/voice-exam/clinical")
+async def mobile_voice_clinical(patient_id: int, payload: MobileVoiceClinicalRequest,
+                                user: User = Depends(_mobile_user)):
+    """Web voice_exam.clinical_review'in mobil karşılığı: kaynaklı klinik kontrol noktaları."""
+    from app.voice_exam import core
+    from starlette.concurrency import run_in_threadpool
+
+    def reply(status: int, code: str, detail: str):
+        return JSONResponse(
+            {"ok": False, "code": code, "detail": detail},
+            status_code=status,
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    if not core.enabled():
+        return reply(503, "VOICE_CLINICAL_NOT_READY", "Sesli muayene etkin değil.")
+    if not payload.consent:
+        return reply(400, "VOICE_CLINICAL_CONSENT_REQUIRED", "Klinik işleme onayı gerekli.")
+    await run_in_threadpool(_mobile_voice_patient, user, patient_id)
+    from app.voice_exam_clinical import assess
+    try:
+        data = await run_in_threadpool(assess, payload.context)
+    except core.VoiceError as exc:
+        return reply(422, "VOICE_CLINICAL_UNAVAILABLE", str(exc))
+    return JSONResponse(
+        {"ok": True, **data},
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
 # Native adapters reuse the existing web consultation rules; no second case lifecycle.
 from typing import Literal as _ChatLiteral
 from pydantic import Field as _ChatField
