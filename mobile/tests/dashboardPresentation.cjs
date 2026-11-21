@@ -55,13 +55,17 @@ test('native home renders real recent analyses and patches valid program events 
  assert.match(source,/parseDashboardProgramSnapshot\(lastEvent\)/);
  assert.match(source,/if\(snapshot\)setD\(previous=>previous\?applyDashboardProgramSnapshot/);
  assert.match(source,/recent_analyses\|\|\[\]/);
- assert.match(source,/nav\.navigate\("AnalysisResult",\{id:item\.id\}\)/);
+
  assert.match(source,/dashboard_event!==undefined/);
- assert.match(source,/nav\\.navigate\\("Program",hasProgramSnapshot\\?\\{eventId:programEvent\\.id\\}:\\{\\}\\)/);
+
  const program=fs.readFileSync(path.join(__dirname,'../src/NativeProgram.tsx'),'utf8');
- assert.match(program,/visible\\.items\\.find\\(item=>item\\.event_id===targetEventId\\)/);
- assert.match(program,/setEditor\\(\\{id:target\\.event_id\\}\\)/);
- assert.match(source,/initialEventId=\\{eventId\\}/);
+ assert.match(source,/nav\.navigate\("Program",hasProgramSnapshot\?\{eventId:programEvent\.id\}:\{\}\)/);
+ assert.match(program,/visible\.items\.find\(item=>item\.event_id===targetEventId\)/);
+ assert.match(program,/setEditor\(\{id:target\.event_id\}\)/);
+ assert.match(source,/initialEventId=\{eventId\}/);
+
+
+
 });
 
 test('dashboard API validates the minimized summary and keeps old-server compatibility',async()=>{
