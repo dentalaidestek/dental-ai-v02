@@ -29,7 +29,13 @@ from sqlmodel import SQLModel, Session, func, select, Field as SQLField
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_, or_, text
 from app.clinical_media import sanitize_clinical_media_image
-from app.tooth_surface_status import observation_revision, upsert_tooth_observation, upsert_tooth_surface_observation
+from app.tooth_surface_status import (
+    observation_revision,
+    upsert_tooth_observation,
+    upsert_tooth_surface_observation,
+    valid_fdi_tooth_number,
+    is_applicable_tooth_surface,
+)
 from app.upload_limits import (MAX_PATIENT_MEDIA_FILES, MAX_PATIENT_MEDIA_FILE_BYTES, MAX_PATIENT_MEDIA_BATCH_BYTES, MAX_ANALYSIS_IMAGE_BYTES, MAX_ANALYSIS_BATCH_BYTES)
 from app.work_jobs import WorkJob
 from starlette.requests import Request
@@ -808,8 +814,8 @@ def mobile_update_tooth_surface(
     """Update one clinical surface without changing the whole-tooth observation."""
     if not _valid_fdi_tooth_number(tooth_number):
         raise HTTPException(status_code=422, detail="Geçersiz FDI diş numarası.")
-    if surface_name not in {"OCCLUSAL", "INCISAL", "MESIAL", "DISTAL", "BUCCAL", "LINGUAL"}:
-        raise HTTPException(status_code=422, detail="Geçersiz diş yüzeyi.")
+    if not is_applicable_tooth_surface(tooth_number, surface_name):
+        raise HTTPException(status_code=422, detail="Bu diş için anatomik olarak uygun olmayan yüzey.")
     if payload.status not in {"HEALTHY", "CARIES", "FILLING", "CROWN", "ROOT_CANAL", "EXTRACTED", "IMPLANT", "OTHER"}:
         raise HTTPException(status_code=422, detail="Geçersiz diş durumu.")
     if payload.note is not None and len(payload.note) > 2000:
@@ -876,6 +882,8 @@ def mobile_update_tooth(
     if payload.surface and payload.surfaces is not None:
         raise HTTPException(status_code=422, detail="Tekil ve çoklu yüzey birlikte gönderilemez.")
     requested_surfaces = payload.surfaces if payload.surfaces is not None else ([payload.surface] if payload.surface else [])
+    if any(not is_applicable_tooth_surface(tooth_number, surface) for surface in requested_surfaces):
+        raise HTTPException(status_code=422, detail="Seçilen yüzeylerden biri bu diş için anatomik olarak uygun değil.")
     if requested_surfaces:
         if payload.surface_revisions is None or set(payload.surface_revisions) != set(requested_surfaces):
             raise HTTPException(status_code=422, detail="Seçilen diş yüzeylerinin sürüm bilgisi eksik.")
@@ -1088,11 +1096,8 @@ def mobile_delete_patient(
 
 
 def _valid_fdi_tooth_number(tooth_number: str) -> bool:
-    """FDI two-digit adult (11-48) or primary (51-85) tooth identifiers."""
-    return len(tooth_number) == 2 and (
-        (tooth_number[0] in "1234" and tooth_number[1] in "12345678")
-        or (tooth_number[0] in "5678" and tooth_number[1] in "12345")
-    )
+    """Keep existing mobile call sites on the shared FDI identifier contract."""
+    return valid_fdi_tooth_number(tooth_number)
 
 
 class MobileTreatmentCreate(BaseModel):
