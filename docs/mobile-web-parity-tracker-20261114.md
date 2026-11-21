@@ -1219,3 +1219,10 @@ Commits on this work package: `f3d2194` (restore helper), `30e15ca` (recorder fa
 Latest verified starting-head CI before this work: PR HEAD `ecc024c` had Android typecheck, 77/77 native voice tests, Android APK, Expo Android/iOS bundles, Python security/PostgreSQL and six native security jobs all successful (Android run 44899242820; Security Recovery run 44899242833). The current branch HEAD has advanced; new runs 44902342039 (Android) and 44902342087 (Security Recovery) were created but their job lists are still empty/pending at the time of this note. No passing result is claimed for the new audio-mode regressions until those latest-head jobs complete.
 
 Physical Android/iOS audio-route acceptance remains open, including Bluetooth, phone/notification interruption, app background/foreground and playback after stopping. No main merge, live deployment, APK/IPA publication or production patient-data operation.
+
+
+## 2026-11-21 — session-key CI root cause
+
+PR head `857feb3d9342e0af74244348cf4335af4b6e4b9a` had a passing `npm run typecheck` step, but the Android workflow failed later in realtime/recovery and beta tests; Security Recovery failed only in Native Clinical. The common runtime error was `nextSessionRenderKey is not a function`: the three VM-based CJS test harnesses for `NativeDentalAI` and `NativeClinicalReview` did not map the newly imported `./sessionRenderKey` module. This is a test harness integration defect; it does not establish a production component failure. The Native Clinical viewer test additionally asserted the obsolete user-ID-based key after the app had moved to opaque session keys.
+
+Added a shared test-only TypeScript bridge and explicit module mappings in `analysisRefresh.cjs`, `analysisRecovery.cjs` and `clinicalWorkflow.cjs`; updated the stale key assertion; and added a regression requiring all harnesses to resolve the helper. Latest-head rerun is pending after these commits. Do not mark the Android beta/recovery suites green until the new CI jobs complete. No main merge, production deploy or clinical record mutation.
