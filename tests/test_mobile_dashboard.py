@@ -87,6 +87,7 @@ def test_dashboard_is_private_owner_scoped_and_returns_only_three_minimal_analys
         lambda conn, cursor, statement, params, context, many:
             queries.append(statement) if statement.lstrip().upper().startswith("SELECT") else None,
     )
+    monkeypatch.setenv("VOICE_EXAM_ENABLED", "1")
     response = client.get(
         BASE + "/dashboard",
         headers={"Authorization": "Bearer " + owner_token},
@@ -113,6 +114,7 @@ def test_dashboard_is_private_owner_scoped_and_returns_only_three_minimal_analys
     assert all("tc_kimlik_no" not in item and "phone" not in item for item in analyses)
     assert body["dashboard_event"] is None
     assert body["dashboard_event_label"] == "Bugün"
+    assert body["voice_exam_enabled"] is True
     # A larger account does not turn the dashboard into a per-analysis query loop.
     assert len(queries) <= 12
 
@@ -127,4 +129,12 @@ def test_dashboard_is_private_owner_scoped_and_returns_only_three_minimal_analys
 
     unauthenticated = client.get(BASE + "/dashboard")
     assert unauthenticated.status_code == 401
+
+    monkeypatch.setenv("VOICE_EXAM_ENABLED", "0")
+    disabled_feature = client.get(
+        BASE + "/dashboard",
+        headers={"Authorization": "Bearer " + owner_token},
+    )
+    assert disabled_feature.status_code == 200
+    assert disabled_feature.json()["voice_exam_enabled"] is False
     engine.dispose()
