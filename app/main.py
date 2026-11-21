@@ -127,6 +127,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from sqlalchemy import Index, String, cast, delete, func, or_ as sa_or, text
+from app.approved_anamnesis import ApprovedAnamnesis
 from sqlalchemy.exc import IntegrityError
 
 try:
@@ -11268,6 +11269,9 @@ def delete_patient(request: Request, patient_id: int):
         profile = s.exec(select(PatientProfile).where(PatientProfile.patient_id == patient.id)).first()
         if profile:
             s.delete(profile)
+        # The ledger is append-only for audit purposes, but patient erasure is
+        # explicit and must remove every owner-scoped approval in this transaction.
+        s.exec(delete(ApprovedAnamnesis).where(ApprovedAnamnesis.patient_id == patient.id))
         s.delete(patient)
         s.commit()
     for patient_event in patient_events:
