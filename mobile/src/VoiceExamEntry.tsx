@@ -12,6 +12,7 @@ import * as Crypto from "expo-crypto";
 import {chunkedDraftStore} from "./socialDraft";
 import {parseVoiceExtractionCheckpoint,splitVoiceTranscript} from "./voiceSession";
 import {voiceEvidencePresentation} from "./voiceEvidencePresentation";
+import {nextSessionRenderKey} from "./sessionRenderKey";
 
 const navy="#071B35",muted="#63748A",line="#E1E7EF";
 const fieldLabels:Record<string,string>={first_name:"Ad",last_name:"Soyad",age:"Yaş",chief_complaint:"Başvuru şikâyeti",medical_history:"Sağlık geçmişi",family_history:"Aile sağlık öyküsü",materials:"Konuşulan materyaller",dental_history:"Önceki diş tedavileri",oral_habits:"Ağız bakımı ve alışkanlıklar",medications:"İlaç bilgileri",allergies:"Alerji bilgileri",clinical_findings:"Muayene bulguları",plan:"Konuşulan tedavi planı"};
@@ -79,6 +80,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  const [extractionProgress,setExtractionProgress]=useState("");
  const [historyFields,setHistoryFields]=useState<Record<string,VoiceHistoryField>>({}),[historyNotice,setHistoryNotice]=useState(""),[historyError,setHistoryError]=useState(""),[historyLoading,setHistoryLoading]=useState(false),[historyConfirmed,setHistoryConfirmed]=useState(false),[historyApplied,setHistoryApplied]=useState(false);
  const extractionStore=useMemo(()=>chunkedDraftStore(SecureStore,Crypto.randomUUID,512),[]);
+ const patientSelectRenderKey=useMemo(()=>nextSessionRenderKey(),[token]);
  usePreventRemove(processing||audioBusy||deviceCheckBusy||applyBusy,()=>Alert.alert("İşlem sürüyor","Muayene veya kayıt tamamlanana kadar bekleyin."));
  const [lastRemoved,setLastRemoved]=useState<{key:"teeth"|"literature_topics"|"source_requests"|"communication"|"decision_barriers"|"follow_up_questions";index:number;item:unknown}|null>(null);
  const processingLock=useRef(false),processingOwner=useRef(0),generation=useRef(0),scope=useRef(token+":"+(selected?.id||0)),anonymousLock=useRef<string|null>(null),startAfterSelection=useRef(false),accountScope=useRef(token+":"+(userId||0));
@@ -364,7 +366,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
     {creatingAnonymous?<ActivityIndicator color="white"/>:<Text style={{color:"white",fontWeight:"800"}}>Yeni hastayla başla →</Text>}
    </Pressable>
    <Text style={{color:muted,textAlign:"center",marginVertical:12}}>veya mevcut hastayı seç</Text>
-   <NativePatientSelect key={token} token={token} value={selected} onChange={setSelected} disabled={creatingAnonymous}/>
+   <NativePatientSelect key={patientSelectRenderKey} token={token} value={selected} onChange={setSelected} disabled={creatingAnonymous}/>
    {!!error&&<Text accessibilityRole="alert" style={{color:"#B42318",marginTop:10,lineHeight:20}}>{error}</Text>}
    <Pressable accessibilityRole="button" disabled={creatingAnonymous} onPress={()=>{if(selected)setStage("exam");else setError("Önce bir hasta seçin.")}} style={{marginTop:18,backgroundColor:navy,padding:15,borderRadius:13,alignItems:"center",opacity:creatingAnonymous?0.5:1}}><Text style={{color:"white",fontWeight:"800"}}>{selected?"Muayeneye Devam Et":"Hasta Seçerek Devam Et"}</Text></Pressable>
    <Text style={{fontSize:12,color:muted,marginTop:10,lineHeight:18}}>Muayene bilgileri yalnızca hekim onayıyla hasta dosyasına kaydedilir. Yeni hasta kaydı boş bir klinik dosya açar; bilgileri yalnızca hekim onayıyla eklersiniz.</Text>
