@@ -141,7 +141,7 @@ function Home({token,user}:{token:string;user:User}){
    <Pressable accessibilityRole="button" accessibilityLabel="Hastaları ara" onPress={()=>nav.navigate("Patients",{screen:"PatientsList",params:{search:normalizePatientDirectorySearch(homeSearch)}})}><Text style={{color:"#0878F9",fontWeight:"800"}}>Ara</Text></Pressable>
   </View>
   <View style={{gap:6}}>
-   {["DOCTOR","ADMIN"].includes(String(user.role||"").toUpperCase())&&<VisualFeature title="Sesli Muayene" description="Hasta seç, görüşmeyi başlat ve muayene özetini kontrol et." asset="voice_exam.webp" tint="#F1F5FD" onPress={()=>nav.navigate("VoiceExam")} photo/>}
+   {["DOCTOR","ADMIN"].includes(String(user.role||"").toUpperCase())&&d?.voice_exam_enabled===true&&<VisualFeature title="Sesli Muayene" description="Hasta seç, görüşmeyi başlat ve muayene özetini kontrol et." asset="voice_exam.webp" tint="#F1F5FD" onPress={()=>nav.navigate("VoiceExam")} photo/>}
    <VisualFeature title="Hastalar" description="Hasta kayıtlarını yönetin, yeni hasta ekleyin." asset="patients_clinic.webp" tint="#EDF8F5" onPress={()=>nav.navigate("Patients")}/>
    <VisualFeature title="Dental AI ile Analiz" description="Röntgen ve klinik görüntüleri yapay zeka ile analiz edin." asset="ai_xray.webp" tint="#EEF4FD" onPress={()=>nav.navigate("AI")}/>
    <VisualFeature title="Diş Şeması" description="Etkileşimli diş şeması ile kayıt ve planlama yapın. Hasta seçin." asset="tooth_chart.webp" tint="#F2F4FF" onPress={()=>nav.navigate("Patients",{screen:"ToothChartBrowser"})}/>
