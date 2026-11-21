@@ -2,9 +2,11 @@ import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {ActivityIndicator,AppState,FlatList,Image,Modal,Pressable,StyleSheet,Text,View} from 'react-native';
 import {getSocialRelationships,setFollow,socialImageSource,SocialRelationship} from './socialApi';
 import {usePagedRecords} from './usePagedRecords';
+import useSessionRenderKey from './useSessionRenderKey';
 export default function NativeRelationships({token,ownerId,followers,following,showFollowers=false,onExpert,onChanged}:{token:string;ownerId:number;followers?:number;following?:number;showFollowers?:boolean;onExpert:(id:number)=>void;onChanged?:()=>void}){
  const [open,setOpen]=useState<'followers'|'following'|null>(null);
- return <View><View style={s.row}>{showFollowers&&<Pressable accessibilityRole="button" onPress={()=>setOpen('followers')} style={s.button}><Text style={s.action}>{followers??0} Takipçi</Text></Pressable>}<Pressable accessibilityRole="button" onPress={()=>setOpen('following')} style={s.button}><Text style={s.action}>{following===undefined?'Takip Ettiklerim':following+' Takip'}</Text></Pressable></View><Modal visible={open!==null} onRequestClose={()=>setOpen(null)}>{open&&<RelationshipList key={token+':'+ownerId+':'+open} token={token} ownerId={ownerId} kind={open} close={()=>setOpen(null)} onExpert={id=>{setOpen(null);onExpert(id)}} onChanged={onChanged}/>}</Modal></View>
+ const relationshipRenderKey=useSessionRenderKey(`${token}:${ownerId}:${open||'closed'}`);
+ return <View><View style={s.row}>{showFollowers&&<Pressable accessibilityRole="button" onPress={()=>setOpen('followers')} style={s.button}><Text style={s.action}>{followers??0} Takipçi</Text></Pressable>}<Pressable accessibilityRole="button" onPress={()=>setOpen('following')} style={s.button}><Text style={s.action}>{following===undefined?'Takip Ettiklerim':following+' Takip'}</Text></Pressable></View><Modal visible={open!==null} onRequestClose={()=>setOpen(null)}>{open&&<RelationshipList key={relationshipRenderKey} token={token} ownerId={ownerId} kind={open} close={()=>setOpen(null)} onExpert={id=>{setOpen(null);onExpert(id)}} onChanged={onChanged}/>}</Modal></View>
 }
 function RelationshipList({token,ownerId,kind,close,onExpert,onChanged}:{token:string;ownerId:number;kind:'followers'|'following';close:()=>void;onExpert:(id:number)=>void;onChanged?:()=>void}){
  const fetchPage=useCallback((before?:number)=>getSocialRelationships(token,ownerId,kind,before),[token,ownerId,kind]);
