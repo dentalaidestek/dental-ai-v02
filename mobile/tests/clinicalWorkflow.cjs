@@ -45,7 +45,7 @@ test('legacy radiograph appears in native clinical review and opens a dedicated 
  assert.equal(modal().props.visible,true);
  assert.ok(t.root.findAllByType('Image').some(node=>node.props.style?.flex===1),'full-screen preview renders the private image');
  await renderer.act(async()=>button(t,'Kapat').props.onPress());
- assert.equal(modal().props.visible,false);
+ assert.equal(t.root.findAllByType('Modal').length,0,'closing the preview unmounts the modal');
  await renderer.act(async()=>t.unmount());
 });
 
