@@ -41,7 +41,7 @@ def enqueue(session,*,owner,course,question,key):
         if existing.question!=question:raise ValueError('İstek anahtarı başka bir çalışma için kullanılmış.')
         return existing
     active=session.exec(select(StudyRun).where(StudyRun.owner_user_id==owner,
-        StudyRun.status.in_(['QUEUED','RUNNING']))).all()
+        StudyRun.status.in_(['QUEUED','RUNNING','CANCEL_REQUESTED']))).all()
     if any(row.course_id==course for row in active) or len(active)>=2:
         raise ValueError('Önce devam eden çalışmanın bitmesini bekle.')
     if session.exec(select(func.count()).select_from(StudyRun).where(StudyRun.status=='QUEUED')).one()>=64:
@@ -187,6 +187,10 @@ def recover(engine):
         session.execute(update(StudyRun).where(StudyRun.status=='RUNNING',
             StudyRun.updated_at<now()-timedelta(minutes=15)).values(status='INTERRUPTED',
             error='Sunucu yeniden başladı. Çalışma otomatik tekrarlanmadı; kaydedilmiş ilerleme korunuyor.',stage='Kesildi — ilerleme korundu'))
+        session.execute(update(StudyRun).where(StudyRun.status=='CANCEL_REQUESTED',
+            StudyRun.updated_at<now()-timedelta(minutes=15)).values(status='CANCEL_FAILED',
+            error='Durdurma isteği zaman aşımına uğradı; sağlayıcı bağlantısının kapandığı doğrulanamadı.',
+            stage='Durdurma doğrulanamadı'))
         session.commit()
     wake(engine)
 
@@ -228,6 +232,10 @@ def payload(session,row):
     if row.status=='RUNNING' and row.updated_at<now()-timedelta(minutes=15):
         row.status='INTERRUPTED';row.stage='Kesildi — ilerleme korundu'
         row.error='Çalışma kesildi. Kaydedilmiş ilerleme korunuyor; otomatik tekrarlanmadı.'
+        session.add(row);session.commit()
+    elif row.status=='CANCEL_REQUESTED' and row.updated_at<now()-timedelta(minutes=15):
+        row.status='CANCEL_FAILED';row.stage='Durdurma doğrulanamadı'
+        row.error='Durdurma isteği zaman aşımına uğradı; sağlayıcı bağlantısının kapandığı doğrulanamadı.'
         session.add(row);session.commit()
     result={'id':row.id,'status':row.status,'stage':row.stage,'question':row.question,
         'partial':row.partial_text,'error':row.error}
