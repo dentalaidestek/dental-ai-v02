@@ -51,7 +51,7 @@ test('home unread badge refreshes when returning from notification center',()=>{
  const start=source.indexOf('function Home('),end=source.indexOf('\nfunction ',start+10);
  const home=source.slice(start,end);
  assert.ok(home.includes('useIsFocused()'));
- assert.ok(home.includes('if(focused)loadUnread()'));
+ assert.match(home,/if\(focused\)void loadUnread\(\)/);\n assert.match(home,/\[load,loadUnread,focused\]/);
 });
 
 test('native onboarding does not request OS permission before push token registration exists',()=>{

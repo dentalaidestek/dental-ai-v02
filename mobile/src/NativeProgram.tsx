@@ -22,9 +22,11 @@ function errorText(error:unknown,fallback:string){
  return typeof message==='string'&&message?message:fallback;
 }
 
-export default function NativeProgram({token,userId}:{token:string;userId:number}){
- const navigation:any=useNavigation(),focused=useIsFocused(),{lastEvent}=useRealtime(),[view,setView]=useState<ProgramView>('week'),[day,setDay]=useState(''),[data,setData]=useState<{scope:string;page:ProgramPage}|null>(null),[loading,setLoading]=useState(false),[moreBusy,setMoreBusy]=useState(false),[error,setError]=useState(''),[editor,setEditor]=useState<{id?:number;type?:string;initialDate?:string}|null>(null),[actionId,setActionId]=useState<number|null>(null),[copy,setCopy]=useState<ProgramOccurrence|null>(null),[copyDays,setCopyDays]=useState<string[]>([]),[mutationBusy,setMutationBusy]=useState(false),[uncertain,setUncertain]=useState(false);
+export default function NativeProgram({token,userId,initialEventId}:{token:string;userId:number;initialEventId?:number}){
+ const targetEventId=Number.isSafeInteger(initialEventId)&&Number(initialEventId)>0?initialEventId:undefined;
+ const navigation:any=useNavigation(),focused=useIsFocused(),{lastEvent}=useRealtime(),[view,setView]=useState<ProgramView>(targetEventId?'today':'week'),[day,setDay]=useState(''),[data,setData]=useState<{scope:string;page:ProgramPage}|null>(null),[loading,setLoading]=useState(false),[moreBusy,setMoreBusy]=useState(false),[error,setError]=useState(''),[editor,setEditor]=useState<{id?:number;type?:string;initialDate?:string}|null>(null),[actionId,setActionId]=useState<number|null>(null),[copy,setCopy]=useState<ProgramOccurrence|null>(null),[copyDays,setCopyDays]=useState<string[]>([]),[mutationBusy,setMutationBusy]=useState(false),[uncertain,setUncertain]=useState(false);
  const scope=`${token}:${view}:${day}`,activeScope=useRef(scope),sequence=useRef(0),mounted=useRef(true),moreLock=useRef(false),mutationLock=useRef(false),previousFocus=useRef(focused),pendingActionRef=useRef<ProgramActionIntent|null>(null),[actionIntentReady,setActionIntentReady]=useState(false);
+ const initialEventHandled=useRef(false);
  if(activeScope.current!==scope){activeScope.current=scope;sequence.current++}
  const visible=data?.scope===scope?data.page:null;
  const canLoadMore=!!visible&&(visible.next_cursor!==undefined?!!visible.next_cursor:visible.next_offset!==null);
@@ -41,6 +43,7 @@ export default function NativeProgram({token,userId}:{token:string;userId:number
  }),[actionIntentReady,mutationBusy,uncertain,copy,visible?.next_day,visible?.previous_day]);
  useEffect(()=>{mounted.current=true;setData(null);setError('');setEditor(null);setCopy(null);setActionId(null);mutationLock.current=false;setMutationBusy(false);void loader.current();return()=>{mounted.current=false;sequence.current++}},[scope]);
  useEffect(()=>{let live=true;setActionIntentReady(false);pendingActionRef.current=null;setUncertain(false);void loadProgramActionIntent(userId).then(intent=>{if(!live)return;pendingActionRef.current=intent;if(intent){setUncertain(true);setError('Önceki Program işlemi sunucuda doğrulanmadan yeni işlem başlatılamaz.')}}).catch(e=>{if(live){setUncertain(true);setError(errorText(e,'Bekleyen Program işlemi okunamadı.'))}}).finally(()=>{if(live)setActionIntentReady(true)});return()=>{live=false}},[token,userId]);
+ useEffect(()=>{if(!targetEventId||initialEventHandled.current||!visible||!actionIntentReady||uncertain)return;const target=visible.items.find(item=>item.event_id===targetEventId);if(target){initialEventHandled.current=true;setActionId(null);setEditor({id:target.event_id});navigation.setParams?.({eventId:undefined});return;}if(!loading&&canLoadMore){void loader.current(true);return;}if(!loading&&!canLoadMore){initialEventHandled.current=true;setError('Açılmak istenen program kaydı artık görünür değil. Programı yenileyin.')}},[targetEventId,visible,loading,canLoadMore,actionIntentReady,uncertain]);
  useEffect(()=>{
   if(focused&&!previousFocus.current)void loader.current();
   previousFocus.current=focused;
