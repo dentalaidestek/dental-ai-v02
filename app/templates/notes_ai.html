@@ -688,7 +688,7 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
             setWorking(false);
         } catch(error) {
             status.textContent=error.message || 'İşlem durdurulamadı.';
-            setWorking(true);
+            setWorking(!!activeRun);
         } finally {cancelInFlight=false;}
     }
     async function followRun(id,pending,userMessage) {
