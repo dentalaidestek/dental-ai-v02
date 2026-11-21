@@ -564,3 +564,35 @@ Yeni test `messagesBadgeParity.cjs` (4 test); `consultationRealtime.cjs` tab gir
 ### 31.3 Deploy sonrası beklenen davranış
 
 Deploy ile birlikte: ek gönderimi çalışır (`/attachments` rotası), Mesajlar badge'i gerçek sayımla tohumlanır (`/messages/unread-count`), zil badge'i çalışır (`/notifications/unread-count`), tüm 404 hataları Türkçe akar. Badge'in canlı olayla artması için realtime akışı (SSE/socket) mevcut; eski backend'de olay tipleri uyuşmuyorsa badge yalnız tohum değeriyle çalışır ve deploy ile tam canlanır.
+
+## 32. Güncel web-mobil fark durumu (doğrulanmış envanter, §31 sonrası)
+
+Soru: "Şu an web'de olup mobilde eksik olan neler var?" Cevap üç kategoride; envanter boşluğu yok (§28.2 başlık matrisi hâlâ geçerli), kalemler bunlar:
+
+### 32.1 Cihazda eksik GÖRÜNEN ama repoda hazır — deploy + APK bekleme listesi
+
+| Kalem | Cihazda neden yok | Ne zaman kapanır |
+|---|---|---|
+| Hesap/profil güncellemeleri (ad, e-posta, kullanıcı adı, şifre, foto, unvan+belge) | `/account/*` rotaları canlıda 404 (eski backend) | Deploy (runbook §30) |
+| Vaka görüşmesinde ek gönderimi (Fotoğraf/Kamera/PDF-Ses) | `/consultations/{id}/attachments` canlıda 404 (probe §31.1) | Deploy |
+| Mesajlar sekmesi badge'inin tohum sayımı | `/messages/unread-count` repoya bu turda eklendi (§31.2), canlıda yok | Deploy |
+| Zil (bildirim) badge sayımı | `/notifications/unread-count` canlıda 404 | Deploy |
+| Menü öğeleri + Uzman Profilim girişi + ses kartı görünürlüğü | account/menu rotaları canlıda yok (§30) | Deploy |
+| Kompakt ek önizleme kartı, Türkçe 404 metinleri, tab badge UI | İstemci tarafı değişiklik (§31.2) | **Yeni APK** (android-test-apk) |
+| Akademik AI "yüklenmiyor" izi | Uçlar canlıda VAR (401); kök neden deploy sonrası trace edilecek | Deploy sonrası doğrulama |
+
+### 32.2 Gerçek kalan farklar (iş kalemi olarak açık)
+
+1. **Canlı transkript modu (Gemini Live WS)** — mikrofon→canlı metin. Mobilde tam alternatif akış zaten var (kaydet→yükle→finalize, VoiceExam); canlı bağlantı P3 backlog.
+2. **Görsel palet** — mobil palet lacivert ağırlıklı; web paletine yaklaştırma daraldı ama küçük fark kalıyor (P2 görsel tutarlılık).
+
+### 32.3 Bilinçli web-only (mobilde karşılığı farklı kanaldan)
+
+1. **Admin paneli (25+ bölüm)** → mobilde NativeSocialAdmin (sosyal moderasyon + step-up doğrulaması); tam panel masaüstü işi.
+2. **Misafir (hızlı) analiz** (`/analysis/guest/new`) → oturum zorunlu uygulama tasarımı; istenirse "misafir modu" ekranı ayrı iş kalemi.
+3. **Kurumsal/yasal sayfalar** (`/about /features /legal /contact`) → mobilde karşılık: Destek talepleri ekranı + KVKK silme akışı NativeAccount içinde.
+4. **Web-push (Service Worker)** → mobilde aynı işlev Expo OS push ile (NativePushSettings).
+5. **Geliştirici/ara sayfaları** (`/analysis/diagnostics/trace`, `/jobs/{job_id}` polling sayfası) → mobilde analiz akışının içinde.
+6. **Canvas çizim anotasyonu** — §28.3'te "yok" yazmıştım, düzeltildi: NativeImageEditor web'in tam karşılığı (ek kartındaki ✎ Görseli düzenle ile çalışıyor).
+
+Kod değişikliği bu bölümde yok; envanter güncellemesidir.
