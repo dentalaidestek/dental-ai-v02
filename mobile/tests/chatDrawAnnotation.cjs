@@ -6,8 +6,12 @@ test('chat image editor reproduces the web canvas annotation composite contract'
  assert.ok(editor.includes('name:"isaretlenmis-gorsel.jpg"'),'composite filename must match the web room');
  assert.ok(editor.includes('format:"jpg"')&&editor.includes('quality:.9'),'composite must be JPEG quality .9 like web toBlob(...,0.9)');
  assert.ok(editor.includes('captureRef'),'composite must snapshot the staged image+strokes like web canvas drawImage');
- assert.ok(editor.includes('Geri al')&&editor.includes('Temizle'),'undo and clear tools match the web annotation dialog');
- assert.ok(editor.includes('Görseli düzenle'),'editor title matches the web Görseli Düzenle dialog');
+ assert.ok(editor.includes('↶ Geri al')&&editor.includes('⌫ Temizle'),'undo and clear tools match the web annotation dialog');
+ assert.ok(editor.includes('Görseli Düzenle'),'editor title matches the web Görseli Düzenle dialog');
+ assert.ok(editor.includes('useState("#ef4444")'),'default pen color matches the web color input value #ef4444');
+ assert.ok(editor.includes('✎ Kalem'),'pen tool chip matches the web editor tools row');
+ assert.ok(editor.includes('accessibilityLabel="Gönder"'),'send control matches the web image-editor-send Gönder');
+ assert.ok(editor.includes('>Kapat</Text>'),'close control matches the web dialog Kapat');
  assert.ok(editor.includes('clampChatPoint'),'pen points are clamped to the image box');
  assert.ok(editor.includes('pointCount.current>=2000'),'pen stroke budget guards runaway input');
  assert.ok(editor.includes('Asıl görüntü korunur'),'user copy states the original image is preserved, like the web room');

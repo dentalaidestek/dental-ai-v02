@@ -485,6 +485,8 @@ Canlı **hâlâ eski backend**. Ekran görüntülerindeki tüm sorunların kod k
 | Kompozit çözünürlük cap'ı 1600→4096 | chatFiles.ts `fitChatImage` | web `EDITOR_MAX_DIMENSION=4096` |
 | Yeni regresyon testi: composite→reply sözleşme zinciri (4 test) | mobile/tests/chatDrawAnnotation.cjs | buildEditedFile + sendAttachment(replyId) |
 
+**Görünüm paritesi cilası (ikinci push):** editör UI metinleri/renkleri web dialog ile hizalandı — başlık `Görseli Düzenle`, varsayılan kalem rengi `#ef4444` (web color input değeri), `✎ Kalem` araç çipi, `↶ Geri al`/`⌫ Temizle` glyph'leri, gönder düğmesi web'deki gibi `Gönder` (aria dahil) ve kapatma `Kapat`. Bilinçli kalan görünüm farkları: web'in tam-RGB renk girdisi yerine 4 renk paleti (yeni bağımlılık istenmedi) ve kalınlıkta 3/6/10 hızlı adımlar (web 2-14 sürekli slider).
+
 ### 29.3 Tip'te var olan hataların çözülmesi (bu tur başında 984/985 + bozuk dosya)
 
 1. **`tests/dashboardPresentation.cjs` sözdizimsel olarak bozuktu** (commit `f0eeb5c7`: üç assertion tek satırda literal `\n` kaçışlarıyla yazılmış; `node --check` SyntaxError) → üç assertion gerçek satırlara ayrıldı; parse temiz. Bu dosya kırıkken tsc de hata üretiyordu (allowJs parse) — şimdi ikisi de temiz.
