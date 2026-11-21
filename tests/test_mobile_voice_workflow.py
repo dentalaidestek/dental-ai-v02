@@ -123,6 +123,23 @@ def test_native_voice_history_returns_only_owned_completed_voice_approvals(chat,
             kind='VOICE_REVIEW',status='DONE',source_hash='a'*64,
             dedupe_key='voice-review:1:history-approved',payload_json='{}',result_ref=str(approved.id),
         ))
+        # The profile reader now consumes the append-only approved ledger.
+        # These rows model the result of revision-21 legacy backfill; raw
+        # clinical_notes are not read directly by the native endpoint.
+        session.add_all([
+            main.ApprovedAnamnesis(
+                owner_user_id=1, patient_id=8, field_key='medical_history',
+                value='Astım', analysis_id=approved_id,
+            ),
+            main.ApprovedAnamnesis(
+                owner_user_id=1, patient_id=8, field_key='medications',
+                value='Düzenli sentetik ilaç', analysis_id=approved_id,
+            ),
+            main.ApprovedAnamnesis(
+                owner_user_id=1, patient_id=8, field_key='allergies',
+                value='Penisilin beyanı', analysis_id=approved_id,
+            ),
+        ])
         non_voice=main.Analysis(patient_id=8,status='DRAFT',clinical_notes='Sistemik hastalık / hasta beyanı: Must not leak')
         session.add(non_voice);session.flush()
         session.add(WorkJob(
