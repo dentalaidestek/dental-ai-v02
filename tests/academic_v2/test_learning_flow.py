@@ -457,3 +457,23 @@ def test_academic_provider_stream_closes_when_consumer_cancels():
     assert next(stream)=='first chunk'
     stream.close()
     assert closed==[True]
+
+
+def test_structured_quiz_generation_yields_cancel_heartbeat_and_closes_provider(monkeypatch):
+    from app import academic_long_answer as long_answer
+    closed=[]
+    class Provider:
+        last_finish_reason='UNKNOWN'
+        def generate_stream(self,**options):
+            try:
+                yield '{"questions":['
+                yield '{}]}'
+            finally:
+                closed.append(True)
+    ticks=iter([0.0,2.0,2.0])
+    monkeypatch.setattr(long_answer.time,'monotonic',lambda:next(ticks))
+    stream=long_answer.stream_complete_structured_answer(
+        Provider(),{'prompt':'test','max_output_tokens':10},expected_count=1)
+    assert next(stream)==''
+    stream.close()
+    assert closed==[True]
