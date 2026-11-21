@@ -15,6 +15,10 @@ def test_revision_21_backfills_all_completed_voice_reviews_in_bounded_pages():
         ))
         connection.execute(text("INSERT INTO dental_schema_revision(id, version) VALUES (1, 20)"))
         connection.execute(text(
+            "CREATE TABLE patient (id INTEGER PRIMARY KEY, owner_user_id INTEGER NOT NULL)"
+        ))
+        connection.execute(text("INSERT INTO patient(id, owner_user_id) VALUES (77, 9), (78, 10)"))
+        connection.execute(text(
             "CREATE TABLE analysis (id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, clinical_notes TEXT)"
         ))
         connection.execute(text(
@@ -36,6 +40,14 @@ def test_revision_21_backfills_all_completed_voice_reviews_in_bounded_pages():
         connection.execute(text(
             "INSERT INTO workjob(id, owner_user_id, resource_id, resource_type, kind, status) "
             "VALUES (900, 9, 900, 'ANALYSIS', 'VISION', 'DONE')"
+        ))
+        # Even a completed voice receipt must not cross a patient ownership boundary.
+        connection.execute(text(
+            "INSERT INTO analysis(id, patient_id, clinical_notes) VALUES (901, 78, 'Alerji / hasta beyanı: Başka hasta')"
+        ))
+        connection.execute(text(
+            "INSERT INTO workjob(id, owner_user_id, resource_id, resource_type, kind, status) "
+            "VALUES (901, 9, 901, 'ANALYSIS', 'VOICE_REVIEW', 'DONE')"
         ))
 
     assert _upgrade_approved_anamnesis_schema(SimpleNamespace(engine=engine)) is True
@@ -65,6 +77,9 @@ def test_fresh_revision_21_database_still_creates_the_ledger():
             "CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"
         ))
         connection.execute(text("INSERT INTO dental_schema_revision(id, version) VALUES (1, 21)"))
+        connection.execute(text(
+            "CREATE TABLE patient (id INTEGER PRIMARY KEY, owner_user_id INTEGER NOT NULL)"
+        ))
         connection.execute(text(
             "CREATE TABLE analysis (id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, clinical_notes TEXT)"
         ))
