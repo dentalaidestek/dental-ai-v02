@@ -67,6 +67,12 @@ def test_revision_21_backfills_all_completed_voice_reviews_in_bounded_pages():
         assert all(row["created_at"] is not None for row in rows)
         indexes = inspect(connection).get_indexes("approvedanamnesis")
         assert any(item["name"] == "ix_approvedanamnesis_owner_patient_field_analysis" for item in indexes)
+        unique_constraints = inspect(connection).get_unique_constraints("approvedanamnesis")
+        assert any(
+            item["name"] == "uq_approvedanamnesis_analysis_field"
+            and item["column_names"] == ["analysis_id", "field_key"]
+            for item in unique_constraints
+        )
 
     # A retry after interruption/redeploy is safe and cannot duplicate records.
     assert _upgrade_approved_anamnesis_schema(SimpleNamespace(engine=engine)) is True
@@ -270,4 +276,55 @@ def test_require_schema_fails_closed_if_latest_history_index_is_missing():
         ))
     with pytest.raises(RuntimeError, match="approved anamnesis query index"):
         require_schema(engine)
+    engine.dispose()
+
+
+
+def _revision21_ledger_without_unique(engine):
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"
+        ))
+        connection.execute(text("INSERT INTO dental_schema_revision(id, version) VALUES (1, 21)"))
+        connection.execute(text(
+            "CREATE TABLE approvedanamnesis (id INTEGER PRIMARY KEY, owner_user_id INTEGER NOT NULL, "
+            "patient_id INTEGER NOT NULL, field_key VARCHAR NOT NULL, value VARCHAR NOT NULL, "
+            "analysis_id INTEGER NOT NULL, created_at DATETIME NOT NULL)"
+        ))
+        connection.execute(text(
+            "CREATE INDEX ix_approvedanamnesis_owner_patient_field_analysis "
+            "ON approvedanamnesis (owner_user_id, patient_id, field_key, analysis_id)"
+        ))
+        connection.execute(text(
+            "INSERT INTO approvedanamnesis "
+            "(id, owner_user_id, patient_id, field_key, value, analysis_id, created_at) "
+            "VALUES (1, 9, 77, 'allergies', 'Penisilin beyanı', 9001, CURRENT_TIMESTAMP)"
+        ))
+
+
+def test_revision21_existing_ledger_without_unique_provenance_fails_closed_and_preserves_rows():
+    engine = create_engine("sqlite://")
+    _revision21_ledger_without_unique(engine)
+
+    with pytest.raises(RuntimeError, match="source/field unique constraint"):
+        _upgrade_approved_anamnesis_schema(SimpleNamespace(engine=engine))
+
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT version FROM dental_schema_revision WHERE id=1")).scalar_one() == 21
+        rows = connection.execute(text(
+            "SELECT owner_user_id, patient_id, field_key, value, analysis_id FROM approvedanamnesis"
+        )).all()
+        assert rows == [(9, 77, "allergies", "Penisilin beyanı", 9001)]
+    engine.dispose()
+
+
+def test_startup_rejects_revision21_ledger_without_unique_provenance_even_when_lookup_index_exists():
+    from app.migrate import require_schema
+
+    engine = create_engine("sqlite://")
+    _revision21_ledger_without_unique(engine)
+    with pytest.raises(RuntimeError, match="source/field unique constraint"):
+        require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM approvedanamnesis")).scalar_one() == 1
     engine.dispose()
