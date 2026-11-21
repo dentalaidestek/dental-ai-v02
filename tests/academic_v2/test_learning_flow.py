@@ -406,3 +406,36 @@ def test_clicked_quiz_anchor_is_not_replaced_by_newer_unselected_set():
     interpret_request('Seçtiğim şık neden yanlış?',history,call=call,
         source_outline={'learning':{'active_quiz':selected,'quiz_answers':[{'number':1,'choice':'B'}]}})
     assert captured[0]['recent_quiz']==selected
+
+
+
+def test_cancel_endpoint_stops_queued_academic_work_without_provider_call(course_env,monkeypatch):
+    main,engine,client=course_env
+    calls=fake_generation(main,monkeypatch)
+    ident=client.post('/notes/courses/6/ai/runs',
+        data={'message':'Risk nedir?','request_key':'d'*32}).json()['run']['id']
+    response=client.post(f'/notes/courses/6/ai/runs/{ident}/cancel')
+    assert response.status_code==200 and response.json()['run']['status']=='CANCELLED'
+    runs._drain(engine)
+    assert calls==[]
+    assert client.get(f'/notes/courses/6/ai/runs/{ident}').json()['run']['status']=='CANCELLED'
+    with Session(engine) as session:
+        assert not session.exec(select(main.StudyChatMessage)).all()
+
+
+def test_cancelled_generation_closes_provider_iterator(monkeypatch):
+    closed=[]
+    class ProviderIterator:
+        def __iter__(self):return self
+        def __next__(self):return 'partial chunk'
+        def close(self):closed.append(True)
+    calls=[]
+    def checkpoint(*args,**kwargs):
+        calls.append(1)
+        if len(calls)>1:raise ValueError('cancelled')
+    ticks=iter([0.0,3.0])
+    monkeypatch.setattr(runs,'checkpoint',checkpoint)
+    monkeypatch.setattr(runs.time,'monotonic',lambda:next(ticks))
+    with pytest.raises(ValueError):
+        list(runs.generation(None,1,ProviderIterator()))
+    assert closed==[True]
