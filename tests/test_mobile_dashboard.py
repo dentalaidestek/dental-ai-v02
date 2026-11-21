@@ -87,9 +87,7 @@ def test_dashboard_is_private_owner_scoped_and_returns_only_three_minimal_analys
         engine,
         "before_cursor_execute",
         lambda conn, cursor, statement, params, context, many:
-            queries.append(statement)
-            if statement.lstrip().upper().startswith("SELECT")
-            else None,
+            queries.append(statement) if statement.lstrip().upper().startswith("SELECT") else None,
     )
     response = client.get(
         BASE + "/dashboard",
