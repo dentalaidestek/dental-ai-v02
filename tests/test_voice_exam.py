@@ -254,7 +254,8 @@ def test_reviewed_voice_history_reads_only_explicitly_saved_anamnesis(app_client
     assert client.get('/patients/2/voice-exam/history').status_code == 404
     with Session(engine) as session:
         rows = session.execute(select(ApprovedAnamnesis.__table__)).mappings().all()
-        assert len(rows) == 3
+        assert len(rows) == len(approved) == 4
+        assert {(row['field_key'], row['value']) for row in rows} == set(approved.items())
         assert all(row['owner_user_id'] == 1 and row['patient_id'] == 1 for row in rows)
         assert all(row['analysis_id'] == saved.json()['analysis_id'] for row in rows)
 
