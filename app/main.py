@@ -30,7 +30,13 @@ from dental_rag.rag import (
 )
 from app.clinical_rag_router import route_clinical_case
 from app.clinical_media import sanitize_clinical_media_image
-from app.tooth_surface_status import observation_revision, upsert_tooth_observation, upsert_tooth_surface_observation
+from app.tooth_surface_status import (
+    observation_revision,
+    upsert_tooth_observation,
+    upsert_tooth_surface_observation,
+    valid_fdi_tooth_number,
+    is_applicable_tooth_surface,
+)
 from app.vision_llm_context import structured_vision_payload
 from app.modality_classifier import classify_dental_image
 from vision_service.tooth_evidence import build_tooth_evidence_package
@@ -10859,14 +10865,12 @@ def update_tooth_status(
     if status not in allowed_statuses:
         return HTMLResponse("Geçersiz diş durumu", status_code=400)
 
-    valid_fdi = ((len(tooth_number) == 2 and tooth_number[0] in "1234" and tooth_number[1] in "12345678")
-                 or (len(tooth_number) == 2 and tooth_number[0] in "5678" and tooth_number[1] in "12345"))
-    if not valid_fdi:
+    if not valid_fdi_tooth_number(tooth_number):
         return HTMLResponse("Geçersiz FDI diş numarası", status_code=422)
     if note is not None and len(note) > 2000:
         return HTMLResponse("Diş notu 2000 karakteri aşamaz", status_code=422)
-    if surface and surface not in {"OCCLUSAL", "INCISAL", "MESIAL", "DISTAL", "BUCCAL", "LINGUAL"}:
-        return HTMLResponse("Geçersiz diş yüzeyi", status_code=422)
+    if surface and not is_applicable_tooth_surface(tooth_number, surface):
+        return HTMLResponse("Geçersiz veya bu diş için anatomik olarak uygun olmayan yüzey", status_code=422)
 
     user = get_current_user(request)
     if not user:
