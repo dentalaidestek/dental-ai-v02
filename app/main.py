@@ -11265,13 +11265,17 @@ def delete_patient(request: Request, patient_id: int):
         patient = _owned_patient(s, user, patient_id)
         if not patient:
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+        if s.exec(select(ApprovedAnamnesis.id).where(
+            ApprovedAnamnesis.patient_id == patient.id
+        ).limit(1)).first() is not None:
+            return HTMLResponse(
+                "Hastanın hekim onaylı anamnez kayıtları var. Güvenli silme işlemi henüz desteklenmiyor.",
+                status_code=409,
+            )
         patient_events = _record_patient_realtime_events(s, patient, "PATIENT_DELETED")
         profile = s.exec(select(PatientProfile).where(PatientProfile.patient_id == patient.id)).first()
         if profile:
             s.delete(profile)
-        # The ledger is append-only for audit purposes, but patient erasure is
-        # explicit and must remove every owner-scoped approval in this transaction.
-        s.exec(delete(ApprovedAnamnesis).where(ApprovedAnamnesis.patient_id == patient.id))
         s.delete(patient)
         s.commit()
     for patient_event in patient_events:

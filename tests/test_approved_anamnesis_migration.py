@@ -154,7 +154,7 @@ def test_require_schema_fails_closed_if_revision21_ledger_is_missing():
     engine.dispose()
 
 
-def test_patient_delete_removes_approved_anamnesis_only_after_owner_authorization(monkeypatch):
+def test_web_patient_delete_refuses_approved_anamnesis_until_audited_erasure(monkeypatch):
     from types import SimpleNamespace
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -194,11 +194,14 @@ def test_patient_delete_removes_approved_anamnesis_only_after_owner_authorizatio
             assert len(session.exec(select(ApprovedAnamnesis)).all()) == 1
 
         deleted = client.post("/patients/77/delete", headers={"x-user": "9"}, follow_redirects=False)
-        assert deleted.status_code == 303
+        assert deleted.status_code == 409
+        assert "Güvenli silme" in deleted.text
 
     with Session(engine) as session:
-        assert session.get(main.Patient, 77) is None
-        assert session.exec(select(ApprovedAnamnesis)).all() == []
+        assert session.get(main.Patient, 77) is not None
+        rows = session.exec(select(ApprovedAnamnesis)).all()
+        assert len(rows) == 1
+        assert rows[0].analysis_id == 9001
     engine.dispose()
 
 def test_require_schema_fails_closed_if_latest_history_index_is_missing():
