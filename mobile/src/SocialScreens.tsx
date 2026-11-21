@@ -647,6 +647,7 @@ function CommentThread({
   onChange,
   onReply,
   onProfile,
+  onCountChange,
 }: {
   token: string;
   item: api.SocialComment;
@@ -656,6 +657,7 @@ function CommentThread({
   onChange: (c: api.SocialComment | null, id: number) => void;
   onReply: (id: number) => void;
   onProfile: (id: number, name: string) => void;
+  onCountChange: (count: number) => void;
 }) {
   const [editing, setEditing] = useState(false),
     [editText, setEditText] = useState(item.text);
@@ -732,8 +734,9 @@ function CommentThread({
             commentDeleteLock.current = true;
             setBusy(true);
             try {
-              await api.deleteComment(token, item.id);
+              const result = await api.deleteComment(token, item.id);
               onChange(null, item.id);
+              onCountChange(result.comment_count);
             } catch (e) {
               setError(message(e));
             } finally {
@@ -845,6 +848,7 @@ function CommentThread({
                     : old.filter((x) => x.id !== id),
                 )
               }
+              onCountChange={onCountChange}
             />
           ))}
           {next && (
@@ -890,6 +894,9 @@ function CommentThread({
                 try {
                   const next = await api.patchComment(token, item, editText.trim());
                   onChange(next, item.id);
+                  if (typeof next.comment_count === "number" && Number.isSafeInteger(next.comment_count)) {
+                    onCountChange(next.comment_count);
+                  }
                   setEditing(false);
                   setError("");
                 } catch (e) {
@@ -912,15 +919,18 @@ function Comments({
   post,
   onClose,
   onProfile,
+  onCountChange,
 }: {
   token: string;
   userId: number;
   post: api.SocialPost;
   onClose: () => void;
   onProfile: (id: number, name: string) => void;
+  onCountChange: (postId: number, count: number) => void;
 }) {
   const [items, setItems] = useState<api.SocialComment[]>([]),
     [next, setNext] = useState<number | null>(null),
+    [commentCount, setCommentCount] = useState(post.comment_count),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [parent, setParent] = useState<number | undefined>(),
@@ -955,6 +965,10 @@ function Comments({
             ? page.next_cursor
             : null,
         );
+        if (typeof page.comment_count === "number" && Number.isSafeInteger(page.comment_count) && page.comment_count >= 0) {
+          setCommentCount(page.comment_count);
+          onCountChange(post.id, page.comment_count);
+        }
         setError("");
       } catch (e) {
         if (request === commentLoadGeneration.current) setError(message(e));
@@ -965,7 +979,7 @@ function Comments({
         if (request === commentLoadGeneration.current) setBusy(false);
       }
     },
-    [post.id, token],
+    [onCountChange, post.id, token],
   );
   useEffect(() => {
     commentPageRequest.current = null;
@@ -981,7 +995,7 @@ function Comments({
     setBusy(true);
     setError("");
     try {
-      await d.send((v) =>
+      const created = await d.send((v) =>
         api.createComment(
           token,
           post.id,
@@ -990,6 +1004,10 @@ function Comments({
           v.link ? Number(v.link) : undefined,
         ),
       );
+      if (typeof created.comment_count === "number" && Number.isSafeInteger(created.comment_count)) {
+        setCommentCount(created.comment_count);
+        onCountChange(post.id, created.comment_count);
+      }
       setParent(undefined);
       await load();
     } catch (e) {
@@ -1001,7 +1019,7 @@ function Comments({
   }
   return (
     <Sheet
-      title="Yorumlar"
+      title={`Yorumlar · ${commentCount}`}
       onClose={() => {
         if (!lock.current) onClose();
       }}
@@ -1020,6 +1038,7 @@ function Comments({
             canDeleteOthers={post.owned}
             commentsClosed={post.comments_closed}
             onProfile={onProfile}
+            onCountChange={(count) => onCountChange(post.id, count)}
             onReply={(id) => {
               if (!d.draft.attempted) {
                 setParent(id);
@@ -1561,6 +1580,15 @@ export function DentalFlow({
   const moderationResumeGate = useRef(createModerationResumeGate());
   const sessionScope = useRef({ userId: user.id, token });
   sessionScope.current = { userId: user.id, token };
+  const updateCommentCount = useCallback((postId: number, count: number) => {
+    if (!isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) return;
+    pages.setItems((current) =>
+      current.map((item) => item.id === postId ? { ...item, comment_count: count } : item),
+    );
+    setComments((current) =>
+      current && current.id === postId ? { ...current, comment_count: count } : current,
+    );
+  }, [pages.setItems, token, user.id]);
   const observedSession = useRef({ userId: user.id, token });
   useEffect(() => {
     // Advance only on a real identity change; do not duplicate the initial feed request.
@@ -1950,6 +1978,7 @@ export function DentalFlow({
           token={token}
           userId={user.id}
           post={comments}
+          onCountChange={updateCommentCount}
           onClose={() => {
             if (!isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) return;
             setComments(null);
