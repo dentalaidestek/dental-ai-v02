@@ -26,6 +26,7 @@ The native screen already had the same six primary feature destinations and a bo
 - Updated `mobile_api.mobile_dashboard` to set `Cache-Control: private, no-store`, `Pragma: no-cache` and `Vary: Authorization`.
 - The dashboard API now returns at most three recent analyses from one owner-scoped Analysis/Patient join. The response deliberately excludes clinical notes, file paths, phone numbers and TCKN; the full result remains behind the existing patient-scoped analysis endpoint.
 - The same timezone- and recurrence-aware dashboard program snapshot used by the web route is returned on initial native dashboard load.
+- Selecting the dashboard program row now passes its event ID to the native Program screen, opens the existing event editor (paging only if the event is outside the first result page), and consumes the one-shot route parameter. Auto-open waits for the existing pending-action recovery gate, so it cannot bypass an uncertain Program mutation.
 - Added native presentation/API tests and a backend privacy, owner-isolation and bounded-query regression. Wired them into the normal mobile beta suite and Security Recovery.
 
 ## Validation boundary
