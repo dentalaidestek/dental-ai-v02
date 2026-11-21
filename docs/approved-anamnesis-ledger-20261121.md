@@ -37,3 +37,19 @@ The migration uses a transaction-scoped PostgreSQL advisory lock, bounded lock/s
 ## Validation boundary
 
 The changes are committed to `feature/mobile-web-parity-20261110` / PR #257. Security Recovery now includes `tests/test_approved_anamnesis_migration.py`. The repository's hosted Actions results must be checked against the final pushed HEAD before this work is accepted. No claim is made that production PostgreSQL migration, real-user concurrency or full CI has been executed locally. No main merge, production deploy, or patient-record mutation was performed.
+
+## Follow-up CI diagnosis — 21 November 2026
+
+The Android run attached to the pre-fix PR head completed successfully: TypeScript typecheck, session/auth tests, realtime/pagination tests, all 985 mobile beta regressions, Hermes exports, and the internal ARM64 APK build passed (run #4659). No Android compiler failure is present in that run.
+
+Security Recovery run #2358 executed Python tests and reported 6 failures / 587 passes. Five were stale test contracts exposed by revision 21 and the ledger read-model transition:
+- Two push-schema tests still expected the release guard to report revision 20.
+- The support migration source assertion still expected revision 20 to own the final release schema.
+- The web history test expected 3 rows although it explicitly approved 4 allowlisted fields.
+- The native history fixture inserted legacy Analysis/WorkJob rows but did not model the revision-21 backfilled ledger rows now read by the endpoint.
+
+Those assertions/fixtures were updated to preserve the current revision and ledger contract; no production behavior or security assertions were removed. The remaining Bearer-auth test was made hermetic by disabling its cookie stub and directly asserting the non-doctor, unverified, and expired token identities. A separate regression now proves that an Authorization header is authoritative and cannot fall back to a different valid browser-cookie user. The voice resolver was changed accordingly.
+
+The follow-up commits are on `feature/mobile-web-parity-20261110`, latest recorded head at this update: `3a122361d9a58850105c69c8f15c55ac326112d3`. New Android run #4667 and Security Recovery run #2366 were created for this head but were still pending when this note was written; no result is inferred from pending jobs. PostgreSQL migration/concurrency acceptance remains blocked until the security workflow reaches its PostgreSQL step.
+
+No production database migration, patient-data mutation, main merge, or live deployment was performed.
