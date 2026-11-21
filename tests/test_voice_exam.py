@@ -1,8 +1,9 @@
+import hashlib
 import json
 import sys
 from contextlib import nullcontext
 from types import SimpleNamespace, ModuleType
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi import FastAPI
@@ -37,6 +38,19 @@ class User(VoiceTestModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     role: str = 'DOCTOR'
     is_active: bool = True
+    email: str | None = None
+    email_verified_at: datetime | None = Field(default_factory=datetime.utcnow)
+
+
+class SessionToken(VoiceTestModel, table=True):
+    token_hash: str = Field(primary_key=True)
+    user_id: int
+    expires_at: datetime
+
+
+class AdminVerifiedSession(VoiceTestModel, table=True):
+    token_hash: str = Field(primary_key=True)
+    user_id: int
 
 
 class Patient(VoiceTestModel, table=True):
@@ -88,7 +102,8 @@ def app_client(monkeypatch):
     monkeypatch.setattr("app.work_jobs.WorkJob", WorkJob)
     main = ModuleType('app.main');main.engine = engine
     main._user_schedule_occurrences = lambda *args: []
-    for model in (User, Patient, Analysis, ToothStatus, ScheduleEvent, StudyCourse):setattr(main, model.__name__, model)
+    for model in (User, SessionToken, AdminVerifiedSession, Patient, Analysis, ToothStatus, ScheduleEvent, StudyCourse):setattr(main, model.__name__, model)
+    main.hash_session_token = lambda token: hashlib.sha256(token.encode('utf-8')).hexdigest()
     main.get_current_user = lambda request: (SimpleNamespace(id=1, role=request.headers.get('x-role', 'DOCTOR'), is_active=True)
         if request.headers.get('x-login', '1') == '1' else None)
     main._record_patient_realtime_events = lambda *a: []
@@ -122,6 +137,68 @@ def payload(engine, **updates):
         revision = voice._fingerprint(session, sys.modules['app.main'], session.get(Patient, 1))
     return {'request_key': 'a' * 32, 'revision': revision, 'confirmed': True,
             'fields': {'clinical_findings': 'Hekim gözlemi'}, **updates}
+
+
+def _bearer_headers(engine, token='native-voice-token', user_id=1, expires_at=None):
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    with Session(engine) as session:
+        session.add(SessionToken(token_hash=token_hash, user_id=user_id,
+            expires_at=expires_at or datetime.utcnow() + timedelta(days=1)))
+        session.commit()
+    # The x-login=0 test switch proves that the request succeeds without a web cookie.
+    return {'authorization': f'Bearer {token}', 'x-login': '0'}, token_hash
+
+
+def test_native_bearer_session_can_apply_and_read_only_its_own_approved_anamnesis(app_client):
+    client, engine = app_client
+    headers, _ = _bearer_headers(engine)
+    saved = client.post('/patients/1/voice-exam/apply', headers=headers,
+        json=payload(engine, fields={'medical_history': 'Astım beyanı',
+                                     'medications': 'Metformin kullandığını belirtti',
+                                     'allergies': 'Penisilin alerjisi olmadığını belirtti'}))
+    assert saved.status_code == 200
+    history = client.get('/patients/1/voice-exam/history', headers=headers)
+    assert history.status_code == 200
+    assert set(history.json()['fields']) == {'medical_history', 'medications', 'allergies'}
+    assert history.json()['fields']['medical_history']['quote'] == ''
+    assert client.get('/patients/2/voice-exam/history', headers=headers).status_code == 404
+
+
+def test_native_bearer_voice_auth_rejects_unverified_expired_and_non_doctor_sessions(app_client):
+    client, engine = app_client
+    with Session(engine) as session:
+        session.add(User(id=3, role='PATIENT', email_verified_at=datetime.utcnow()))
+        session.add(User(id=4, role='DOCTOR', email_verified_at=None))
+        session.commit()
+    patient_headers, _ = _bearer_headers(engine, 'patient-token', user_id=3)
+    unverified_headers, _ = _bearer_headers(engine, 'unverified-token', user_id=4)
+    expired_headers, expired_hash = _bearer_headers(engine, 'expired-token', expires_at=datetime.utcnow()-timedelta(seconds=1))
+    for headers in (patient_headers, unverified_headers, expired_headers):
+        assert client.get('/patients/1/voice-exam/history', headers=headers).status_code == 401
+    with Session(engine) as session:
+        assert session.get(SessionToken, expired_hash) is None
+
+
+def test_native_bearer_admin_requires_the_existing_second_factor_marker(app_client):
+    client, engine = app_client
+    with Session(engine) as session:
+        session.add(User(id=5, role='ADMIN', email='dentalaidestek@gmail.com',
+                         email_verified_at=datetime.utcnow()))
+        session.commit()
+    headers, token_hash = _bearer_headers(engine, 'admin-token', user_id=5)
+    assert client.get('/patients/1/voice-exam/history', headers=headers).status_code == 401
+    with Session(engine) as session:
+        session.add(AdminVerifiedSession(token_hash=token_hash, user_id=5))
+        session.commit()
+    assert client.get('/patients/1/voice-exam/history', headers=headers).status_code == 200
+
+
+def test_native_bearer_voice_mutations_keep_cross_site_origin_protection(app_client):
+    client, engine = app_client
+    headers, _ = _bearer_headers(engine)
+    headers = {**headers, 'origin': 'https://foreign.example'}
+    assert client.post('/patients/1/voice-exam/apply', headers=headers,
+                       json=payload(engine)).status_code == 401
 
 
 def test_review_changes_only_selected_fields_and_is_idempotent(app_client):
