@@ -61,7 +61,7 @@
 </section>
 <section id="panel" class="detail-sheet" style="display:none">
 <div class="sheet-grab"></div><div class="sheet-head"><div class="sheet-number" id="selectedTooth"></div><div class="sheet-title" id="selectedToothName"></div><button class="sheet-close" type="button" aria-label="Paneli kapat" onclick="closeSheet()">×</button></div>
-<div class="sheet-body"><aside class="tooth-preview"><button type="button" class="surface-pin pin-o" data-pin="OCCLUSAL">O</button><button type="button" class="surface-pin pin-m" data-pin="MESIAL">M</button><button type="button" class="surface-pin pin-d" data-pin="DISTAL">D</button><button type="button" class="surface-pin pin-l" data-pin="LINGUAL">L</button><button type="button" class="surface-pin pin-b" data-pin="BUCCAL">B</button><div id="previewTooth" class="preview-tooth tooth-btn" aria-hidden="true"></div></aside>
+<div class="sheet-body"><aside class="tooth-preview"><button type="button" class="surface-pin pin-o" data-pin="OCCLUSAL" aria-label="Oklüzal yüzeyini seç">O</button><button type="button" class="surface-pin pin-m" data-pin="MESIAL" aria-label="Mesial yüzeyini seç">M</button><button type="button" class="surface-pin pin-d" data-pin="DISTAL" aria-label="Distal yüzeyini seç">D</button><button type="button" class="surface-pin pin-l" data-pin="LINGUAL" aria-label="Lingual / palatinal yüzeyini seç">L</button><button type="button" class="surface-pin pin-b" data-pin="BUCCAL" aria-label="Bukkal / vestibül yüzeyini seç">B</button><div id="previewTooth" class="preview-tooth tooth-btn" aria-hidden="true"></div></aside>
 <div><div class="tabs"><button type="button" class="tab active" data-tab="info">🦷 Diş Bilgisi</button><button type="button" class="tab" data-tab="history">◷ Tedavi Geçmişi</button><button type="button" class="tab" data-tab="notes">▤ Notlar</button></div>
 <form id="toothForm" method="post">
 <input type="hidden" name="expected_revision" id="toothExpectedRevision" value="">
@@ -110,7 +110,7 @@ function renderSurfaceOptions(number){
   const first=options[0]||"";
   pin.dataset.pin=first;
   pin.textContent=first==="INCISAL"?"İ":"O";
-  pin.setAttribute("aria-label",labels[first]||"Yüzey seç");
+  pin.setAttribute("aria-label",first?labels[first]+" yüzeyini seç":"Bu diş için uygun yüzey yok");
   pin.disabled=!first;
  }
 }
