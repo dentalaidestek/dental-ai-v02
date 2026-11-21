@@ -281,7 +281,7 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
     function applyIndexReadiness() {
         const blocked = materialCount > 0 && !v2Ready;
         input.disabled = !materialCount || blocked || uploading;
-        send.disabled = !materialCount || blocked || uploading || !!activeRun;
+        send.disabled = activeRun ? cancelInFlight : (!materialCount || blocked || uploading);
     
     // Render the menu at document level: the chat shell clips absolute descendants.
     const academicMenu=document.getElementById('studyAcademicOverflow');
