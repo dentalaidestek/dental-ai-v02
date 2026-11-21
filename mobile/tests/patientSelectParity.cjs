@@ -46,3 +46,15 @@ test('appointment patient selector advertises bounded web-compatible search and 
  assert.match(source,/patientSelectEmptyState\(query,pages\.busy,pages\.error\|\|queryError\)/);
  assert.doesNotMatch(source,/item\.tc_kimlik_no/);
 });
+
+test('patient selector keeps appointment defaults and accepts voice-specific search copy',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../src/NativePatientSelect.tsx'),'utf8');
+ assert.match(source,/searchTitle='Hasta Seç'/);
+ assert.match(source,/searchHint='Randevuya bağlanacak hastayı bulun'/);
+ assert.match(source,/emptyLabel='Hasta seç \(isteğe bağlı\)/);
+ assert.match(source,/searchPlaceholder='Ad, soyad, hasta no, telefon veya TC ile ara'/);
+ assert.match(source,/<Text style=\{\{fontSize:22,fontWeight:'800',color:'#102033'\}\}>\{searchTitle\}<\/Text>/);
+ assert.match(source,/<Text style=\{\{fontSize:12,color:'#64748B',marginTop:3\}\}>\{searchHint\}<\/Text>/);
+ assert.match(source,/placeholder=\{searchPlaceholder\}/);
+ assert.match(source,/emptyLabel\}/);
+});
