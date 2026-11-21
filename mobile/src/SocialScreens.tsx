@@ -1961,7 +1961,7 @@ export function DentalFlow({
       />
       {compose && sessionReady && (
         <Composer
-          key={`${user.id}:${token}`}
+          key={`${sessionKey}:composer`}
           token={token}
           userId={user.id}
           onClose={() => { if (isSocialSessionCurrent(sessionScope.current, { userId: user.id, token })) setCompose(false); }}
