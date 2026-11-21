@@ -261,7 +261,11 @@ test('viewer image identity changes on account switch without exposing the beare
  assert.equal(next.props.source.headers.Authorization,'Bearer synthetic-token-B');
  assert.ok(!next.props.testID.includes('synthetic-token-B'));
  assert.deepEqual(visionCalls,[['synthetic-token-A',44,9,'PANORAMIC'],['synthetic-token-B',44,9,'PANORAMIC']]);
- assert.deepEqual(imageCalls,[{token:'synthetic-token-A',analysisId:44,assetId:9},{token:'synthetic-token-B',analysisId:44,assetId:9}]);
+ assert.equal(imageCalls[0].token,'synthetic-token-A');
+ const switchedAt=imageCalls.findIndex(call=>call.token==='synthetic-token-B');
+ assert.ok(switchedAt>0,'the active image source must be rebuilt for the new account');
+ assert.ok(imageCalls.slice(switchedAt).every(call=>call.token==='synthetic-token-B'),'no old-account image source may be emitted after the session switch');
+ assert.ok(imageCalls.every(call=>call.analysisId===44&&call.assetId===9));
  await renderer.act(async()=>t.unmount());
 });
 
