@@ -21,7 +21,7 @@ function harness(store) {
  const cursorModule={exports:{}};
  vm.runInNewContext(cursorCode,{exports:cursorModule.exports});
  const exports={};
- vm.runInNewContext(code,{exports,WebSocket:Socket,require:name=>name==='react'?react:name==='expo-secure-store'?store:cursorModule.exports,setTimeout:f=>{timers.push(f);return timers.length},clearTimeout:()=>{}});
+ vm.runInNewContext(code,{exports,WebSocket:Socket,require:name=>name==='react'?react:name==='expo-secure-store'?store:name==='./api'?{API_BASE:'https://dentalai.tr/api/mobile/v1'}:cursorModule.exports,setTimeout:f=>{timers.push(f);return timers.length},clearTimeout:()=>{}});
  return {render:(token,userId)=>exports.RealtimeProvider({token,userId,children:null}),sockets,cleanups,states,timers};
 }
 test('session replacement cancels delayed storage restore and stale socket reconnect',async()=>{

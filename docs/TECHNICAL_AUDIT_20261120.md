@@ -596,3 +596,41 @@ Soru: "Şu an web'de olup mobilde eksik olan neler var?" Cevap üç kategoride; 
 6. **Canvas çizim anotasyonu** — §28.3'te "yok" yazmıştım, düzeltildi: NativeImageEditor web'in tam karşılığı (ek kartındaki ✎ Görseli düzenle ile çalışıyor).
 
 Kod değişikliği bu bölümde yok; envanter güncellemesidir.
+
+## 33. Tam kapsamlı paralel denetim dalgası (6 denetim ajanı → 3 uygulama ajanı)
+
+Yöntem: 6 paralel denetim ajanı (A kimlik/hesap/push, B hasta/klinik, C AI analiz/akademik, D Dental Akış/destek/bildirim/realtime, E program/sesli muayene, F sosyal/uzman + TR kopya taraması) her akışı web şablonu → mobil ekran → backend route üçgeninde file:line kanıtıyla taradı; bulgular 3 uygulama ajanına (P1: mobile_api/mobile_push/mobile_professional, P2: main.py+result.html, P3: mobile/src) dağıtıldı.
+
+### 33.1 Kapatılan P1 bulgular (kullanımı engelleyen)
+1. **voiceApi BASE regresyonu (commit 7a26b1de):** temel URL mount'suz kalmıştı → anonim muayene 404, her metin çözümleme 422. `/api/mobile/v1` restore + Türkçe 404 haritası (voiceApi.ts).
+2. **Mobil hasta silme gerçek hastalarda hep 409:** 8-model bağımlılık engeli → web paritesi (yalnız onaylı anamnez engelli) (mobile_api.py).
+3. **Web sonuç sayfası VISION aşamasında sahte "AI analiz ediyor" 2s sonsuz reload:** dürüst durum panelleri (VISION_READY→"Klinik AI'yi Başlat", VISION_ERROR→retry) + 4→10s backoff (main.py, result.html).
+4. **Uzman dizini filtreleri no-op + puanlar hep 0:** specialty/available parametreleri ve ExpertReview agregasyonu (mobile_api.py).
+
+### 33.2 Kapatılan seçilmiş P2/P3 bulguları
+- Badge doğruluğu: kendi mesajı/replay şişirmesi gate'i (`is_outgoing===false`, `!replay`) + CASE_READ'te sunucudan yeniden tohumlama (App.tsx, realtime.ts).
+- Realtime dayanıklılık: status_key/label yayılımı, CASE_MESSAGES_DELETED işleme, replay guard, okundu-retry (2 deneme + arka plan yeniden kurma), catch-up soketten bağımsız, WS URL API_BASE'den.
+- Klinik bağlam: Vaka bilgisi kartı (soru/klinik özet/görüş), chat_reported banner'ı (_mobile_chat_context yeni alanları).
+- TR yüzeyi: 9 ekran/dinleyicide enum→Türkçe etiket; login hataları; rapor 1000 karakter; bildirimler açılışta otomatik okundu.
+- Hesap akışı: pendingNotice (şifre/e-posta/silme sonrası ekran mesajı), admin 403 bilgi kartı, kullanıcı adı ipucu, push "Tekrar dene", parseRecoveryLink origin gevşetme.
+- Web: telefonla hasta arama, create_analysis sessiz dosya düşürme→422 (öncü kontrol), PROGRAM_REMINDER push metni eşlemesi.
+- Diğer: akademik dosya indirme timeout ölçekleme, setWall boş tarih guard'ı, hafta şeridi çift gün numarası, ToothChartBrowser geri düğmesi, phantom ANALYSIS_COMPLETED/VISION_READY temizliği + foreground yenileme, /experts/performance-info ucu.
+
+### 33.3 Backlog'a ertelenen (bilinçli)
+ModernScreens.Academic ölü bileşen + legacy /ask rotası; akademik sohbet ekleri (flag'li mobil uç); web patients sayfalama; web çoklu-diş girdisi; AnalysisHistory stable-cursor dönüşümü; web admin-notices ölü rotaları; Android profil foto kırpma; push state readback; canlı transkript (P3); palet yaklaştırma.
+
+## 34. Diş hekimi / işletme perspektifi dalgası (2 denetim ajanı → 1 uygulama ajanı)
+
+Klinik yolculuk (kayıt→anamnez→muayene→analiz→tedavi→randevu→takip) ve işletme akışları hekim/resepsiyon personasıyla yürütüldü. **KLİNİK-P1 (akışı kesen) bulgu yok** — fiş/taslak kurtarma katmanı sağlam. 17 bulgunun 15'i uygulandı:
+
+1. Sandalye güvenliği: sesli muayene başında okunur alerji/ilaç/sağlık geçmişi rozetleri (birleştirme hâlâ "hastayla doğruladım" onayı arkasında) + başlıkta yaş/şikâyet.
+2. Profil içi analiz geçmişi: klinik not önizlemesi + modalda AI ön değerlendirme (most_likely + 3 bulgu).
+3. AI sekmesinde 300ms canlı hasta arama ("Hasta ara" dokunuşu kalktı); diş seçimi 4 çeyrek gruplu (Sağ/Sol üst/alt) — 11↔21 karışması riski kapandı (ClinicalReview + VisionViewer).
+4. Ana sayfa: Son Analizler getAnalysisHistory'den (is_voice_review Türkçe etiketli) + Bugünkü Program altında yaklaşan 3 randevu satırı.
+5. Program operasyonu: "Diğer güne kopyala" çakışma ön kontrolü ("Hedef günlerde N kayıt çakışıyor"), çakışan kayıt listesi Alert'te, hatırlatma oluşmayacaksa "Saatinde seçin" uyarısı, hastalı kayıt tamamlanınca "Kontrol randevusu ekle" (+7 gün prefilled editör).
+6. Resepsiyon/KVKK: telefon sorgusunda rakam normalizasyonu ("0532 123 45 67" artık bulur), oturum süresi dolunca push cihaz kaydı düşürülür, /account/verification→ExpertManagement ve admin-social→SocialAdmin bildirim hedefleri.
+7. Atlanan tek kalem: profilde "Sesli Muayene" hızlı eylemi — patientProfileUI.cjs kontratları bilinçli olarak profildeki sesli muayene girişini yasaklıyor (özel ekrana ait); uygulama geri alındı, kural korundu.
+
+Değerlendirme: klinik omurga (işlem anahtarlı mutasyonlar, şifreli cihaz taslakları, "nihai karar hekime aittir" çerçevesi) üretim kalitesinde; eksikler sandalye ergonomisi ve karar-anı arayüzleriydi, tamamı mevcut payload'larla istemci tarafında kapatıldı.
+
+Test durumu (bu iki dalga sonrası): `tsc --noEmit` temiz; 108 mobil test dosyasının tamamı yeşil (dosya-dosya `node --test` koşumu; kirilen 4 dosyanın 10 testi yeni kontratlara güncellendi: realtime WS URL türetme stub'ı, akademik Türkçe durum etiketleri, rapor 1000, kurtarma bağlantısı gevşek origin + SecureStore getItemAsync stub'ı); backend `py_compile` temiz; yeni kontrat dosyaları: mobileBackendParityContracts.cjs, flowAuditParity.cjs, dentistWorkflowParity.cjs.

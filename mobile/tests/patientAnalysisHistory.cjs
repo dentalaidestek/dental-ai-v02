@@ -63,6 +63,7 @@ function loadHistory({assets,legacy=true,fetchPage,getAnalysis}={}){
    if(name==='./appResumeRefresh')return appResumeRefreshExports;
    if(name==='./patientHistoryPresentation')return historyPresentationExports;
    if(name==='./patientAnalysisHistoryImages')return patientHistoryImageExports;
+   if(name==='./clinicalApi')return {getClinical:async()=>{throw new Error('Synthetic clinical preview unavailable')}};
    throw new Error('Unexpected import '+name);
   },
   Date,Math,Number,String,Error,Promise,Array,Object

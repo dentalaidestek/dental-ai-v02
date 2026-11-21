@@ -79,6 +79,8 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  const [privacyExpanded,setPrivacyExpanded]=useState(false),[processing,setProcessing]=useState(false),[editingFields,setEditingFields]=useState(false),[review,setReview]=useState<VoiceExtraction|null>(null),[finalResult,setFinalResult]=useState<Record<string,unknown>|null>(null),[clinicalError,setClinicalError]=useState(""),[stage,setStage]=useState<"select"|"exam">("select"),[consent,setConsent]=useState(false),[transcript,setTranscript]=useState(""),[creatingAnonymous,setCreatingAnonymous]=useState(false),[error,setError]=useState(""),[selected,setSelected]=useState<Patient|null>(null);
  const [extractionProgress,setExtractionProgress]=useState("");
  const [historyFields,setHistoryFields]=useState<Record<string,VoiceHistoryField>>({}),[historyNotice,setHistoryNotice]=useState(""),[historyError,setHistoryError]=useState(""),[historyLoading,setHistoryLoading]=useState(false),[historyConfirmed,setHistoryConfirmed]=useState(false),[historyApplied,setHistoryApplied]=useState(false);
+ const [safetyFields,setSafetyFields]=useState<Record<string,VoiceHistoryField>>({}),[safetyOpen,setSafetyOpen]=useState(false);
+ const safetyLoaded=useRef("");
  const extractionStore=useMemo(()=>chunkedDraftStore(SecureStore,Crypto.randomUUID,512),[]);
  const patientSelectRenderKey=useMemo(()=>nextSessionRenderKey(),[token]);
  const voiceRecorderRenderKey=useMemo(()=>nextSessionRenderKey(),[token,userId,selected?.id]);
@@ -90,9 +92,22 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  const [sourceRetryable,setSourceRetryable]=useState(false);
  function invalidateSourceReview(){sourceFingerprint.current="";sourceSnapshot.current="";setSourceRetryable(false);}
  scope.current=token+":"+(selected?.id||0);accountScope.current=token+":"+(userId||0);
- useEffect(()=>{const routePatientSelected=typeof initialPatientId==="number"&&selected?.id===initialPatientId;const enterExam=startAfterSelection.current||routePatientSelected;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);invalidateSourceReview();setClinicalError("");setTranscript("");setConsent(false);setHistoryFields({});setHistoryNotice("");setHistoryError("");setHistoryLoading(false);setHistoryConfirmed(false);setHistoryApplied(false);setStage(enterExam?"exam":"select")},[token,selected?.id,initialPatientId]);
+ useEffect(()=>{const routePatientSelected=typeof initialPatientId==="number"&&selected?.id===initialPatientId;const enterExam=startAfterSelection.current||routePatientSelected;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);invalidateSourceReview();setClinicalError("");setTranscript("");setConsent(false);setHistoryFields({});setHistoryNotice("");setHistoryError("");setHistoryLoading(false);setHistoryConfirmed(false);setHistoryApplied(false);setSafetyFields({});setSafetyOpen(false);setStage(enterExam?"exam":"select")},[token,selected?.id,initialPatientId]);
  useEffect(()=>{setCreatingAnonymous(false);setSelected(null);setAudioBusy(false);setApplyBusy(false)},[token]);
  useEffect(()=>{let active=true;if(initialPatientId){void getPatient(token,initialPatientId).then(r=>{if(active){startAfterSelection.current=true;setSelected(r.patient);setStage("exam")}}).catch(()=>{if(active)setError("Seçili hasta bulunamadı veya erişim izni yok.")})}return()=>{active=false}},[token,initialPatientId]);
+ // Read-only safety context: one silent history fetch when the exam stage opens.
+ // Display only — merging into extractable fields stays behind the manual
+ // "hastayla doğruladım" confirmation below; fetch failures never surface UI.
+ useEffect(()=>{if(stage!=="exam"||!selected)return;const patientId=selected.id,requestScope=scope.current,scopeKey=requestScope+":"+patientId;if(safetyLoaded.current===scopeKey)return;let active=true;void getVoiceHistory(token,patientId).then(result=>{if(active&&requestScope===scope.current){safetyLoaded.current=scopeKey;setSafetyFields(result.fields)}}).catch(()=>{});return()=>{active=false}},[stage,selected?.id,token]);
+ const safetySummary=useMemo(()=>{
+  const primary:[string,string][]=[["allergies","Alerji"],["medications","İlaç"],["medical_history","Sağlık"]];
+  const parts=primary.filter(([name])=>safetyFields[name]?.value?.trim()).map(([name,label])=>label+": "+(safetyFields[name] as VoiceHistoryField).value.trim());
+  for(const [name,label] of Object.entries(fieldLabels)){
+   if(name==="allergies"||name==="medications"||name==="medical_history")continue;
+   if(safetyFields[name]?.value?.trim())parts.push(label+": "+(safetyFields[name] as VoiceHistoryField).value.trim());
+  }
+  return parts;
+ },[safetyFields]);
  async function createAnonymousPatient(){
   if(!userId)return;
   const requestScope=token+":"+userId;
@@ -290,7 +305,20 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  if(stage==="exam")return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:42}}>
   <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>{const back=()=>{generation.current++;processingLock.current=false;setProcessing(false);setStage("select")};if(transcript.trim())Alert.alert("Muayeneden ayrıl","Muayene metni bu hesaba ve hastaya bağlı cihaz taslağında korunur. Hasta dosyasına yalnız onaylanan alanlar kaydedilir.",[{text:"Vazgeç",style:"cancel"},{text:"Geri dön",style:"destructive",onPress:back}]);else back()}}><Text style={{color:navy,fontWeight:"700"}}>‹ Hasta seçimine dön</Text></Pressable>
   <Text style={{fontSize:25,fontWeight:"800",color:navy,marginTop:16}}>Sesli Muayene</Text>
-  <Text style={{color:muted,marginTop:8}}>{selected?[selected.first_name,selected.last_name].filter(Boolean).join(" ")||selected.anonymous_id:"Hasta seçilmedi"}</Text>
+  <Text style={{color:muted,marginTop:8}}>{selected?[selected.first_name,selected.last_name].filter(Boolean).join(" ")||selected.anonymous_id:"Hasta seçilmedi"}{selected&&selected.age!==null&&selected.age!==undefined?" · "+selected.age+" yaş":""}{selected?.chief_complaint?.trim()?" · "+selected.chief_complaint.trim():""}</Text>
+  {!!safetySummary.length&&<View style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,backgroundColor:"white",overflow:"hidden"}}>
+   <Pressable accessibilityRole="button" accessibilityState={{expanded:safetyOpen}} onPress={()=>setSafetyOpen(v=>!v)} style={{padding:12,flexDirection:"row",justifyContent:"space-between",alignItems:"center"}}>
+    <Text style={{fontWeight:"800",color:navy,flex:1}}>Hasta güvenlik özeti (salt okunur)</Text><Text style={{color:navy}}>{safetyOpen?"−":"+"}</Text>
+   </Pressable>
+   <Text numberOfLines={safetyOpen?undefined:2} selectable style={{color:muted,lineHeight:19,paddingHorizontal:12,paddingBottom:safetyOpen?0:12}}>{safetySummary.join(" / ")}</Text>
+   {safetyOpen&&<View style={{paddingHorizontal:12,paddingBottom:10}}>
+    {Object.entries(safetyFields).map(([name,item])=><View key={name} style={{paddingVertical:6,borderBottomWidth:1,borderBottomColor:line}}>
+     <Text style={{fontWeight:"700",color:navy}}>{fieldLabels[name]||name.replace(/_/g," ")}</Text>
+     <Text selectable style={{color:muted,marginTop:2}}>{item.value} · Önceki muayene #{item.analysis_id}</Text>
+    </View>)}
+    <Text style={{color:muted,fontSize:12,lineHeight:18,marginTop:8}}>Bu özet yalnızca görüntülenir. Alanların muayeneye aktarılması için aşağıdaki "hastayla doğruladım" onayı gerekir.</Text>
+   </View>}
+  </View>}
   <View style={{backgroundColor:"white",borderRadius:18,padding:16,borderWidth:1,borderColor:line,marginTop:20}}>
    <Text style={{fontSize:17,fontWeight:"800",color:navy}}>Muayene hazırlığı</Text>
    <Text style={{color:muted,marginTop:8}}>Hazırlık · Metin · Klinik değerlendirme · Hekim onayı</Text>

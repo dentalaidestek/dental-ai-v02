@@ -9674,7 +9674,12 @@ async def _deliver_mobile_push_for_event(event: RealtimeEvent) -> None:
                 notice = session.get(AdminNotice, int(event.entity_id)) if event.entity_id else None
                 if not notice or notice.user_id != event.user_id or notice.status != "ACTIVE":
                     return
-                title, body = "Dental AI", "Yeni bir bildiriminiz var."
+                if notice.notice_type == "PROGRAM_REMINDER":
+                    # Keep the exact web push copy for program reminders; the
+                    # title/body pair is allowlisted in mobile_push content checks.
+                    title, body = "Dental AI", "Programınızdaki yaklaşan kayıt için hatırlatmanız var."
+                else:
+                    title, body = "Dental AI", "Yeni bir bildiriminiz var."
                 route = {"kind": "notification", "notice_id": notice.id}
             else:
                 title, body = "Dental AI", "Yeni bir uzman mesajınız var."
@@ -10754,6 +10759,7 @@ def search_patients(request: Request, q: str = ""):
                         | (Patient.first_name.like(pattern))
                         | (Patient.last_name.like(pattern))
                         | (Patient.anonymous_id.like(pattern))
+                        | (Patient.phone.ilike(pattern))
                     )
                     & (
                         (Patient.owner_user_id == user.id)
@@ -12231,6 +12237,13 @@ def _latest_work(session, resource_type, resource_id):
     ).order_by(work_jobs.WorkJob.id.desc()).limit(1)).first()
 
 
+def _latest_vision_work(session, resource_type, resource_id):
+    return session.exec(select(work_jobs.WorkJob).where(
+        work_jobs.WorkJob.resource_type == resource_type, work_jobs.WorkJob.resource_id == resource_id,
+        work_jobs.WorkJob.kind == "VISION",
+    ).order_by(work_jobs.WorkJob.id.desc()).limit(1)).first()
+
+
 def _pending_result(request, analysis, guest=False):
     with Session(engine, expire_on_commit=False) as session:
         job = _latest_work(session, "GUEST" if guest else "ANALYSIS", analysis.id)
@@ -13036,6 +13049,26 @@ def create_analysis(
         if len(requested_media_ids) + new_image_count > MAX_ANALYSIS_IMAGES:
             return HTMLResponse(f"Tek analizde kayıtlı ve yeni görüntülerin toplamı en fazla {MAX_ANALYSIS_IMAGES} olabilir.", status_code=400)
 
+        allowed_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+
+        # Never silently drop a disallowed image from a clinical batch: mirror
+        # the mobile API and reject the upload before any Analysis row exists.
+        skipped_images = [
+            Path(image.filename).name
+            for image in images
+            if image
+            and image.filename
+            and Path(image.filename).suffix.lower() not in allowed_extensions
+        ]
+        if skipped_images:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Yalnızca JPEG, PNG veya WebP görüntüler yüklenebilir. "
+                    f"Atlanan dosyalar: {', '.join(skipped_images)}"
+                ),
+            )
+
         selected_media_items: list[tuple[PatientMedia, Path]] = []
         selected_media_rows = []
         for selected_id in requested_media_ids:
@@ -13086,10 +13119,6 @@ def create_analysis(
         s.refresh(analysis)
         s.close()
         pending_assets = []
-
-        allowed_extensions = {
-            ".jpg", ".jpeg", ".png", ".webp"
-        }
 
         for selected_media, selected_media_path in selected_media_items:
             source_ext = selected_media_path.suffix.lower()
@@ -14731,6 +14760,8 @@ def analysis_result(request: Request, analysis_id: int):
             )
         ).first()
 
+        vision_job = _latest_vision_work(s, "ANALYSIS", analysis.id)
+
     # -----------------------------------------------------
     # ÖNEMLİ:
     # BURADA GEMINI ÇALIŞMIYOR.
@@ -14785,7 +14816,8 @@ def analysis_result(request: Request, analysis_id: int):
             "patient": patient,
             "dx": dx,
             "ai_result": ai_result,
-            "ai_text": ai_text
+            "ai_text": ai_text,
+            "vision_job": vision_job
         }
     )
 

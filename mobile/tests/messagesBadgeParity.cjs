@@ -18,7 +18,7 @@ test('messages tab badge mirrors the web paintMessageBadge contract',()=>{
  assert.ok(source.includes('getMessagesUnreadCount(token)'),'the badge seeds from the unread endpoint');
  assert.ok(source.includes('tabBarBadge:msgUnread>0?(msgUnread>99?"99+":msgUnread):undefined'),'badge hides under 1 and caps at 99+ like paintMessageBadge');
  assert.ok(source.includes('backgroundColor:"#D92D20"'),'the badge is red like the web count bubble');
- assert.ok(source.includes('type==="MESSAGE_CREATED"&&Number(lastEvent.payload?.case_id||0)>0&&!messagesFocused.current'),'only consultation messages bump while the tab is closed');
+ assert.ok(source.includes('type==="MESSAGE_CREATED"&&Number(lastEvent.payload?.case_id||0)>0&&lastEvent.payload?.is_outgoing===false&&!lastEvent.replay&&!messagesFocused.current'),'only consultation messages bump while the tab is closed');
  assert.ok(source.includes('onClear={()=>setMsgUnread(0)}'),'opening the tab clears the badge');
  assert.ok(app().includes('function MessagesTabScreen'),'the messages tab wraps consultations with focus tracking');
 });

@@ -42,6 +42,7 @@ function loadHistory(getPatientAnalysisHistoryPage){
    if(name==='./patientHistoryPresentation')return historyPresentation;
    if(name==='./appResumeRefresh')return appResumeRefresh;
    if(name==='./patientAnalysisHistoryImages')return historyImages;
+   if(name==='./clinicalApi')return {getClinical:async()=>{throw new Error('Synthetic clinical preview unavailable')}};
    throw new Error('Unexpected import '+name);
   },
   Date,Math,Number,String,Error,Promise,Array,Object,Set

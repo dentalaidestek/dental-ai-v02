@@ -3,7 +3,7 @@ export type ConsultationRealtimeEvent={
 };
 export type ConsultationInboxRow={
  id:number;status?:string;last_message?:string|null;last_message_at?:string|null;
- last_message_id?:number;unread_count?:number;
+ last_message_id?:number;unread_count?:number;status_key?:string;status_label?:string;
 };
 export function applyConsultationInboxEvent<T extends ConsultationInboxRow>(
  items:T[],event:ConsultationRealtimeEvent,userId:number
@@ -28,6 +28,8 @@ export function applyConsultationInboxEvent<T extends ConsultationInboxRow>(
    last_message:payload.preview.slice(0,90),
    last_message_at:createdAt,
    status:typeof payload.case_status==="string"?payload.case_status:current.status,
+   status_key:typeof payload.status_key==="string"?payload.status_key:current.status_key,
+   status_label:typeof payload.status_label==="string"?payload.status_label:current.status_label,
    unread_count:Math.max(0,Number(current.unread_count)||0)+(payload.is_outgoing?0:1),
   } as T;
  }else if(type==="CASE_READ"){
@@ -36,8 +38,9 @@ export function applyConsultationInboxEvent<T extends ConsultationInboxRow>(
   next={...current,unread_count:0} as T;
  }else if(type==="CASE_STATUS_UPDATED"){
   if(typeof payload.status!=="string"||!payload.status)return {items,changed:false,refresh:true};
-  if(current.status===payload.status)return {items,changed:false,refresh:false};
-  next={...current,status:payload.status} as T;
+  const keyChanged=typeof payload.status_key==="string"&&current.status_key!==payload.status_key;
+  if(current.status===payload.status&&!keyChanged)return {items,changed:false,refresh:false};
+  next={...current,status:payload.status,status_key:typeof payload.status_key==="string"?payload.status_key:current.status_key,status_label:typeof payload.status_label==="string"?payload.status_label:current.status_label} as T;
  }else{
   return {items,changed:false,refresh:false};
  }

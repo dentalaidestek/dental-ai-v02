@@ -78,6 +78,7 @@ def _safe_notification_content(title, body):
     allowed = {
         ("Dental AI", "Yeni bir bildiriminiz var."),
         ("Dental AI", "Yeni bir uzman mesajınız var."),
+        ("Dental AI", "Programınızdaki yaklaşan kayıt için hatırlatmanız var."),
     }
     pair = (title, body)
     return pair if pair in allowed else ("Dental AI", "Yeni bir bildiriminiz var.")

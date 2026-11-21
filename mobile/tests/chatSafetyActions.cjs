@@ -19,7 +19,7 @@ test('chat exposes the five report reasons web sends',()=>{
 });
 
 test('report payload matches the web form fields exactly',()=>{
- assert.ok(src.screens.includes('{action:"report",reason:reportReason,detail:reportDetail.trim().slice(0,500)}'));
+ assert.ok(src.screens.includes('{action:"report",reason:reportReason,detail:reportDetail.trim().slice(0,1000)}'));
  // Blok/kaldır ve backend delegasyonu değişmeden korunuyor.
  assert.ok(src.screens.includes('void submitSafety("unblock")'));
  assert.ok(src.screens.includes('confirmBlock()'));

@@ -68,7 +68,7 @@ from app.main import (
     _run_preliminary_ai,
     classify_dental_image,
     AdminNotice, SupportTicket, SupportTicketMessage, SupportTicketReadState, StudyCourse, StudyMaterial, StudyChatMessage,
-    ConsultationCase, ConsultationMessage, ConsultationInboxState, ExpertProfile, E2EEDeviceKey,
+    ConsultationCase, ConsultationMessage, ConsultationInboxState, ExpertProfile, ExpertReview, E2EEDeviceKey,
     _consultation_display_status, _socket_case_authorized,
     expert_support_request_create, expert_support_message, study_ai_ask,
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, storage_delete, _record_patient_realtime_events,
@@ -339,12 +339,12 @@ def mobile_login(payload: LoginRequest, request: Request = None):
 
         _clear_login_failures(login)
         if not user.email:
-            raise HTTPException(status_code=403, detail='EMAIL_REQUIRED')
+            raise HTTPException(status_code=403, detail='Hesabınızda e-posta adresi bulunmuyor.')
         if not user.email_verified_at:
             try:
                 challenge = _ensure_email_verification_challenge(session, user, renew=payload.renew_email_code)
             except Exception:
-                raise HTTPException(status_code=503, detail='EMAIL_VERIFICATION_SEND_FAILED')
+                raise HTTPException(status_code=503, detail='Doğrulama e-postası gönderilemedi. Lütfen daha sonra tekrar deneyin.')
             return MobileToken(access_token=None, token_type='Bearer', expires_at=challenge.expires_at, challenge_token=challenge.public_token)
         token = create_session_token()
         expires_at = datetime.utcnow().replace(microsecond=0)
@@ -1062,15 +1062,12 @@ def mobile_delete_patient(
         patient = session.get(Patient, patient_id)
         if not patient or patient.owner_user_id != user.id:
             raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
-        # Never leave clinical history orphaned by deleting a patient with dependent records.
-        # Full clinical-data erasure needs a separate audited, transactional workflow.
-        dependent_models = (
-            Analysis, ApprovedAnamnesis, Treatment, ToothStatus, ToothSurfaceStatus,
-            PatientMedia, ScheduleEvent, ConsultationCase,
-        )
-        for model in dependent_models:
-            if session.exec(select(model.id).where(model.patient_id == patient_id).limit(1)).first() is not None:
-                raise HTTPException(status_code=409, detail="Hastanın ilişkili klinik kayıtları var. Güvenli silme işlemi henüz desteklenmiyor.")
+        # Web POST /patients/{id}/delete parity: only an approved anamnesis blocks
+        # deletion; dependent clinical rows go with the deleted patient row.
+        if session.exec(select(ApprovedAnamnesis.id).where(
+            ApprovedAnamnesis.patient_id == patient_id
+        ).limit(1)).first() is not None:
+            raise HTTPException(status_code=409, detail="Hastanın hekim onaylı anamnez kayıtları var. Güvenli silme işlemi henüz desteklenmiyor.")
 
         if request_key is not None:
             session.add(WorkJob(
@@ -3066,13 +3063,20 @@ def mobile_academic_ask(course_id:int,payload:MobileAcademicAsk,background_tasks
             on_loop(_publish_realtime_event,event)
     return data
 @router.get("/experts")
-def mobile_experts_alias(user:User=Depends(_mobile_user),q:str=Query("",max_length=120)):
+def mobile_experts_alias(user:User=Depends(_mobile_user),q:str=Query("",max_length=120),specialty:str=Query("",max_length=100),available:bool=False):
     with Session(engine,expire_on_commit=False) as session:
-        profiles=session.exec(select(ExpertProfile).where(
+        stmt=select(ExpertProfile).where(
             ExpertProfile.user_id!=user.id,ExpertProfile.application_status=="APPROVED",
             ExpertProfile.verification_status=="VERIFIED",ExpertProfile.specialty_verified==True,
             ExpertProfile.credential_document_path!=None,ExpertProfile.phone!=None
-        ).order_by(ExpertProfile.updated_at.desc()).limit(50)).all()
+        )
+        spec=specialty.strip()
+        if spec:stmt=stmt.where(ExpertProfile.specialty.ilike(f"%{spec}%"))
+        if available:stmt=stmt.where(ExpertProfile.availability=="AVAILABLE")
+        profiles=session.exec(stmt.order_by(ExpertProfile.updated_at.desc()).limit(50)).all()
+        # Same review aggregation as the web expert directory: count + rating sum per expert.
+        expert_ids=[p.user_id for p in profiles]
+        review_stats={row[0]:row[1:] for row in session.exec(select(ExpertReview.expert_user_id,func.count(ExpertReview.id),func.sum(ExpertReview.rating)).where(ExpertReview.expert_user_id.in_(expert_ids)).group_by(ExpertReview.expert_user_id)).all()} if expert_ids else {}
         items=[]
         needle=q.strip().casefold()
         for p in profiles:
@@ -3080,10 +3084,13 @@ def mobile_experts_alias(user:User=Depends(_mobile_user),q:str=Query("",max_leng
             if not u: continue
             hay=" ".join(filter(None,[u.display_name,p.specialty,p.institution,p.academic_title])).casefold()
             if needle and needle not in hay: continue
+            review_count,rating_sum=review_stats.get(p.user_id,(0,None))
             items.append({"user_id":u.id,"id":u.id,"display_name":u.display_name,"specialty":p.specialty,
                 "academic_title":p.academic_title,"institution":p.institution,
                 "availability":p.availability,"consultation_price":p.consultation_price,
-                "bio":getattr(p,"bio",None),"rating_avg":None,"review_count":0})
+                "bio":getattr(p,"bio",None),
+                "rating_avg":round(rating_sum/review_count,1) if review_count else None,
+                "review_count":review_count})
         return {"items":items}
 
 @router.get("/patients/{patient_id}/media")
@@ -3797,6 +3804,11 @@ def _mobile_chat_context(session, case, user):
             PatientMedia, PatientMedia.id == web.ConsultationCaseMedia.patient_media_id).where(
             web.ConsultationCaseMedia.case_id == case.id).order_by(web.ConsultationCaseMedia.id)).all()
         shared_media = [{"id": link.id, "media_type": media.media_type} for link, media in selected]
+    chat_reported = web._consultation_has_report(session, case)
+    visible_report = session.exec(select(web.UserReport).where(
+        web.UserReport.case_id == case.id, web.UserReport.reporter_user_id == other_id,
+        web.UserReport.reported_user_id == user.id, web.UserReport.status != "CLOSED",
+    ).order_by(web.UserReport.created_at.desc())).first()
     return {
         "shared_media": shared_media,
         "other_display_name": peer.display_name if peer else "Kullanıcı",
@@ -3806,6 +3818,10 @@ def _mobile_chat_context(session, case, user):
         "completed_at": case.completed_at, "expert_completed_at": case.expert_completed_at,
         "proposed_start_label": case.proposed_start_label, "expert_proposal_note": case.expert_proposal_note,
         "review_submitted": review is not None,
+        "chat_reported": chat_reported,
+        "visible_report": None if visible_report is None else {
+            "id": visible_report.id, "status": visible_report.status,
+            "reason": visible_report.reason, "created_at": visible_report.created_at},
         "can_report": web._support_case_is_selectable(session, case, user.id, now) and not case.messages_deleted_at and
             (case.status != "COMPLETED" or (user.id == case.requester_user_id and case.completed_at is not None and
              now <= web._consultation_retention_start(case) + timedelta(days=web.CONSULTATION_REPORT_DAYS))),

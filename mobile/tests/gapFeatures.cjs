@@ -60,7 +60,7 @@ test('professional document viewer exposes the same storage-backed document',()=
 });
 
 test('expert performance screen explains the evaluation rules like the web page',async()=>{
- const api={getExpertPerformance:async()=>({
+ const api={getExpertPerformanceInfo:async()=>({ok:true,content:''}),getExpertPerformance:async()=>({
   owner_id:1,availability:'AVAILABLE',capacity:5,open_cases:1,
   performance:{rating_avg:4.5,review_count:2,completed_count:3,avg_response_minutes:7,missed_30:0},
   policy:{blocked:false,blocked_until:null,reason:null,rules_accepted:true},events:[]})};
@@ -71,7 +71,7 @@ test('expert performance screen explains the evaluation rules like the web page'
   View:props=>React.createElement('view',null,props.children)};
  const code=ts.transpileModule(src.nativePerformance,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.React}}).outputText;
  const exports={};
- const sandbox={exports,module:{exports},console,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='./professionalApi'?api:null,setTimeout,clearTimeout};
+ const sandbox={exports,module:{exports},console,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='./professionalApi'?api:n==='./useSessionRenderKey'?{default:()=>0}:null,setTimeout,clearTimeout};
  vm.runInNewContext(code,sandbox);
  const Component=exports.default;
  let tree;

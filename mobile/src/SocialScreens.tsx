@@ -798,7 +798,7 @@ function CommentThread({
         {item.text}
       </Text>
       {item.status !== "PUBLISHED" && (
-        <Text style={s.meta}>İnceleme durumu: {item.status}</Text>
+        <Text style={s.meta}>İnceleme durumu: {(() => { const m: any = (item as any).moderation; return m?.wait_type === "OWNER_CHANGES" ? "Düzenleme gerekli" : item.status === "PENDING" ? (m?.state === "FAILED" ? (m?.retryable ? "Otomatik kontrol yeniden denenecek" : "Yönetici müdahalesi gerekiyor") : "İnceleme bekliyor") : "Yayınlanmadı"; })()}</Text>
       )}
       <View style={s.row}>
         <Pressable disabled={busy || item.status !== "PUBLISHED"} onPress={() => void like()}>

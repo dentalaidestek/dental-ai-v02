@@ -104,6 +104,19 @@ async def accept_rules(payload:RulesAcceptance,token:str=Depends(_mobile_access_
     return {'ok':True}
 
 
+@router.get('/experts/performance-info')
+def performance_info(token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    """Web /expert-support/performance-info metninin mobil karşılığı; uzman kurallarıyla aynı okuma/temizleme deseni."""
+    import re
+    from app import main as web
+    from app.mobile_account_api import PlainLegal
+    source=web.templates.env.loader.get_source(web.templates.env,'expert_performance_info.html')[0]
+    parts=re.findall(r'<section class="expert-rule-card">(.*?)</section>',source,re.S)
+    if not parts:raise HTTPException(status_code=503,detail='Performans açıklaması alınamadı.')
+    plain=PlainLegal();plain.feed('\n'.join(parts))
+    return {'ok':True,'content':plain.text()}
+
+
 class Availability(BaseModel):
     availability:Literal['AVAILABLE','BUSY']
 

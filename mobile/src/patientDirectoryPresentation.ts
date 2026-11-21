@@ -7,8 +7,13 @@ export type PatientDirectoryFields = {
 // behavior without sending one request per keystroke.
 export const PATIENT_DIRECTORY_SEARCH_DEBOUNCE_MS=300;
 
+// A bare phone number is typed with spaces, dots, dashes or parentheses
+// ("0532 123 45 67"); the stored value is the bare 11-digit number, so the
+// separators are stripped before the query reaches the server. Name search is
+// untouched.
 export function normalizePatientDirectorySearch(value:string):string{
- return value.trim().replace(/\s+/g," ");
+ const normalized=value.trim().replace(/\s+/g," ");
+ return /^\d[\d\s().-]{6,}$/.test(normalized)?normalized.replace(/\D/g,""):normalized;
 }
 
 export function patientDirectoryDetails(patient:PatientDirectoryFields):string[]{

@@ -10,6 +10,7 @@ import NativePatientProfile from "./src/NativePatientProfile";
 import NativePatientMedia from "./src/NativePatientMedia";
 import useSessionRenderKey from "./src/useSessionRenderKey";
 import {resolvePatientMediaRouteId} from "./src/patientMediaRoute";
+import {patientAnalysisHistoryStatus} from "./src/patientHistoryPresentation";
 import React,{useCallback,useEffect,useRef,useState}from"react";
 import{ActivityIndicator,Alert,AppState,FlatList,KeyboardAvoidingView,Linking,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View,Image}from"react-native";
 import{NavigationContainer,createNavigationContainerRef,useNavigation,useIsFocused}from"@react-navigation/native";
@@ -35,9 +36,9 @@ import NativeSupportRequests from "./src/NativeSupportRequests";
 import{Academic,AnalysisHistory,ConsultationChat,Consultations,ExpertDirectory,Notifications,NewConsultation}from"./src/ModernScreens";
 import{RealtimeProvider,useRealtime}from"./src/realtime";
 
-import{getNotificationUnreadCount,getMessagesUnreadCount}from"./src/modernApi";
+import{getNotificationUnreadCount,getMessagesUnreadCount,getAnalysisHistory,AnalysisHistory as AnalysisHistoryItem}from"./src/modernApi";
 import {shouldRefreshHomeUnread} from "./src/notificationRefresh";
-import {dashboardGreetingForHour,dashboardProfessionalName,parseDashboardProgramSnapshot,applyDashboardProgramSnapshot} from "./src/dashboardPresentation";
+import {dashboardGreetingForHour,dashboardProfessionalName,parseDashboardProgramSnapshot,applyDashboardProgramSnapshot,dashboardUpcomingRows} from "./src/dashboardPresentation";
 import{claimNativePushDeviceForSession,refreshNativePushRegistration,subscribeToNativePushResponses,unregisterNativePushForLogout}from"./src/nativePush";
 
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",red:"#B42318",green:"#16803C"};
@@ -90,6 +91,7 @@ function Home({token,user}:{token:string;user:User}){
  const focused=useIsFocused();
  const{lastEvent}=useRealtime();
  const[d,setD]=useState<Dashboard|null>(null);
+ const[recentAnalyses,setRecentAnalyses]=useState<AnalysisHistoryItem[]>([]);
  const[homeSearch,setHomeSearch]=useState("");
  const[menuOpen,setMenuOpen]=useState(false);
  const[refreshing,setRefreshing]=useState(false);
@@ -101,10 +103,15 @@ function Home({token,user}:{token:string;user:User}){
   try{setD(await getDashboard(token));setHomeError("")}
   catch(e:any){setHomeError(e?.message||"Ana sayfa yüklenemedi.")}
  },[token]);
+ // "Son Analizler" reads the real analysis-history first page so the voice-review
+ // flag and TR status labels work; the dashboard snapshot stays as fallback.
+ const loadRecentAnalyses=useCallback(async()=>{
+  try{const page=await getAnalysisHistory(token);setRecentAnalyses(page.items.slice(0,3))}catch{}
+ },[token]);
  const loadUnread=useCallback(async()=>{
   try{setUnread(await getNotificationUnreadCount(token))}catch{}
  },[token]);
- useEffect(()=>{void load();if(focused)void loadUnread()},[load,loadUnread,focused]);
+ useEffect(()=>{void load();void loadRecentAnalyses();if(focused)void loadUnread()},[load,loadUnread,focused]);
  useEffect(()=>{if(shouldRefreshHomeUnread(lastEvent))void loadUnread()},[lastEvent,loadUnread]);
  useEffect(()=>{
   if(!lastEvent)return;
@@ -115,8 +122,8 @@ function Home({token,user}:{token:string;user:User}){
    else void load();
    return;
   }
-  if(["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED","ANALYSIS_CREATED","ANALYSIS_UPDATED"].includes(type))void load();
- },[lastEvent,load]);
+  if(["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED","ANALYSIS_CREATED","ANALYSIS_UPDATED"].includes(type)){void load();void loadRecentAnalyses()}
+ },[lastEvent,load,loadRecentAnalyses]);
  const hasProgramSnapshot=d?.dashboard_event!==undefined;
  const programEvent:any=hasProgramSnapshot?d?.dashboard_event:d?.upcoming_events?.[0]||null;
  const programTitle=hasProgramSnapshot?(d?.dashboard_event_label==="Bugün"?"Bugünkü Program":"Yaklaşan Program"):"Yaklaşan Program";
@@ -124,6 +131,12 @@ function Home({token,user}:{token:string;user:User}){
   ?(typeof programEvent.start_time==="string"?programEvent.start_time:programEvent.start_at?new Date(programEvent.start_at).toLocaleString("tr-TR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"Saat belirtilmedi")
   :"";
  const programDetail=programEvent?[programEvent.patient_name,programEvent.type_label||programEvent.event_type].filter(Boolean).join(" · "):"";
+ // Compact "gg.aa · aa:ss · başlık" rows for the next upcoming events; the event
+ // already shown on the program card is excluded so nothing is listed twice.
+ const shownProgramEvent=hasProgramSnapshot
+  ?(d?.dashboard_event?{title:d.dashboard_event.title,start_time:d.dashboard_event.start_time}:null)
+  :(programEvent&&typeof programEvent.title==="string"?{title:programEvent.title,start_at:typeof programEvent.start_at==="string"?programEvent.start_at:undefined}:null);
+ const upcomingRows=dashboardUpcomingRows(d?.upcoming_events,shownProgramEvent);
  // Web topbar menu-toggle parity (base.html #mainMenu): same entries mapped to native screens.
  const menuItems:Array<[string,()=>void]>=[["Hesabım (Profil)",()=>nav.navigate("Profile")],["Programım",()=>nav.navigate("Program")],["Dental Akış",()=>nav.navigate("DentalFlow")],["Diş Şemaları",()=>nav.navigate("Patients",{screen:"ToothChartBrowser"})],["Analiz Geçmişi",()=>nav.navigate("AnalysisHistory")],["Destek Taleplerim",()=>nav.navigate("SupportRequests")]];
  if(String(user.role||"").toUpperCase()==="ADMIN")menuItems.push(["Dental Akış Yönetimi",()=>nav.navigate("SocialAdmin")]);
@@ -178,6 +191,11 @@ function Home({token,user}:{token:string;user:User}){
    <Text style={s.cardSub}>{hasProgramSnapshot?"Bugün için program bulunmuyor.":"Yaklaşan program bulunmuyor."}</Text>
    <Pressable accessibilityRole="button" onPress={()=>nav.navigate("Program")} style={{marginTop:12}}><Text style={{color:"#0878F9",fontWeight:"800"}}>Programa Ekle ›</Text></Pressable>
   </View>}
+  {upcomingRows.map(row=><Pressable accessibilityRole="button" accessibilityLabel={row.title+" yaklaşan program kaydını aç"} key={row.key} onPress={()=>nav.navigate("Program")} style={s.event}>
+   <View style={s.eventIcon}><Icon n="clock"/></View>
+   <Text numberOfLines={1} style={[s.cardTitle,{flex:1}]}>{row.day} · {row.time} · {row.title}</Text>
+   <Icon n="chevron"/>
+  </Pressable>)}
   <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between"}}>
    <Text style={s.section}>Son Hastalar</Text>
    <Pressable accessibilityRole="button" onPress={()=>nav.navigate("Patients")}><Text style={{color:"#0878F9",fontWeight:"800"}}>Tümünü Gör ›</Text></Pressable>
@@ -191,16 +209,16 @@ function Home({token,user}:{token:string;user:User}){
    <Text style={s.section}>Son Analizler</Text>
    <Pressable accessibilityRole="button" onPress={()=>nav.navigate("AnalysisHistory")}><Text style={{color:"#0878F9",fontWeight:"800"}}>Tümünü Gör ›</Text></Pressable>
   </View>
-  {(d?.recent_analyses||[]).slice(0,3).map(item=><Pressable accessibilityRole="button" accessibilityLabel={item.patient_name+" analiz sonucunu aç"} key={item.id} onPress={()=>nav.navigate("AnalysisResult",{id:item.id})} style={s.event}>
+  {(recentAnalyses.length?recentAnalyses:(d?.recent_analyses||[]).slice(0,3)).map(item=><Pressable accessibilityRole="button" accessibilityLabel={item.patient_name+" analiz sonucunu aç"} key={item.id} onPress={()=>nav.navigate("AnalysisResult",{id:item.id})} style={s.event}>
    <View style={s.eventIcon}><Text style={{fontSize:12,fontWeight:"900",color:C.navy}}>AI</Text></View>
    <View style={{flex:1}}>
     <Text style={s.cardTitle}>{item.patient_name||"Hasta"}</Text>
-    <Text style={s.cardSub}>{item.tooth_number?"Diş "+item.tooth_number+" · ":""}{item.status}</Text>
+    <Text style={s.cardSub}>{item.tooth_number?"Diş "+item.tooth_number+" · ":""}{patientAnalysisHistoryStatus({status:item.status,is_voice_review:(item as any).is_voice_review})}</Text>
     <Text style={s.cardSub}>{new Date(item.created_at).toLocaleString("tr-TR")}</Text>
    </View>
    <Icon n="chevron"/>
   </Pressable>)}
-  {!(d?.recent_analyses||[]).length&&<View style={s.card}>
+  {!recentAnalyses.length&&!(d?.recent_analyses||[]).length&&<View style={s.card}>
    <Text style={s.cardSub}>Henüz klinik analiz yok.</Text>
    <Pressable accessibilityRole="button" onPress={()=>nav.navigate("AI")} style={{marginTop:12}}><Text style={{color:"#0878F9",fontWeight:"800"}}>Dental AI ile Analiz Başlat ›</Text></Pressable>
   </View>}
@@ -307,7 +325,7 @@ function Program({token,userId,route}:{token:string;userId:number;route?:any}){c
 function Profile({user,signOut,token,onUserChanged}:{user:User;signOut:()=>void;token:string;onUserChanged:(user:User)=>void}){const nav:any=useNavigation();const accountRenderKey=useSessionRenderKey(`${token}:${user.id}`);return <NativeAccount key={accountRenderKey} token={token} user={user} onChanged={onUserChanged} signOut={signOut} onMessages={()=>nav.navigate("Consultations")} onNotifications={()=>nav.navigate("Notifications")} onExperts={()=>nav.navigate("ExpertDirectory")} onAcademic={()=>nav.navigate("Academic")} onHistory={()=>nav.navigate("AnalysisHistory")} onPublicProfile={()=>nav.navigate("ExpertProfile",{id:user.id,name:user.display_name})} onExpertProfile={id=>nav.navigate("ExpertProfile",{id})}/>;}
 
 const Tabs=createBottomTabNavigator(),Stack=createNativeStackNavigator();
-function PatientStack({token,userId}:{token:string;userId:number}){return <Stack.Navigator screenOptions={{headerTintColor:C.navy,headerShadowVisible:false,headerTitleStyle:{fontWeight:"800"}}}><Stack.Screen name="PatientsList" options={{title:"Hastalar",headerShown:false}}>{(p:any)=> <Patients token={token} route={p.route}/>}</Stack.Screen><Stack.Screen name="ToothChartBrowser" options={{title:"Diş Şeması",headerShown:false}}>{(p:any)=><Patients token={token} route={p.route} chartMode/>}</Stack.Screen><Stack.Screen name="PatientDetail" options={{title:"Hasta"}}>{(p:any)=><PatientDetailScreen {...p} token={token} userId={userId}/>}</Stack.Screen><Stack.Screen name="ToothChart" options={{title:"Diş Şeması"}}>{(p:any)=><View style={[s.page,{padding:0}]}><NativeToothChart token={token} userId={userId} patientId={p.route.params.id}/></View>}</Stack.Screen><Stack.Screen name="NewPatient" options={{title:"Yeni Hasta"}}>{({navigation}:any)=><NewPatient token={token} onCreated={(p)=>{navigation.replace("PatientDetail",{id:p.id})}}/>}</Stack.Screen></Stack.Navigator>}
+function PatientStack({token,userId}:{token:string;userId:number}){return <Stack.Navigator screenOptions={{headerTintColor:C.navy,headerShadowVisible:false,headerTitleStyle:{fontWeight:"800"}}}><Stack.Screen name="PatientsList" options={{title:"Hastalar",headerShown:false}}>{(p:any)=> <Patients token={token} route={p.route}/>}</Stack.Screen><Stack.Screen name="ToothChartBrowser" options={{title:"Diş Şeması"}}>{(p:any)=><Patients token={token} route={p.route} chartMode/>}</Stack.Screen><Stack.Screen name="PatientDetail" options={{title:"Hasta"}}>{(p:any)=><PatientDetailScreen {...p} token={token} userId={userId}/>}</Stack.Screen><Stack.Screen name="ToothChart" options={{title:"Diş Şeması"}}>{(p:any)=><View style={[s.page,{padding:0}]}><NativeToothChart token={token} userId={userId} patientId={p.route.params.id}/></View>}</Stack.Screen><Stack.Screen name="NewPatient" options={{title:"Yeni Hasta"}}>{({navigation}:any)=><NewPatient token={token} onCreated={(p)=>{navigation.replace("PatientDetail",{id:p.id})}}/>}</Stack.Screen></Stack.Navigator>}
 function MessagesTabScreen({token,userId,navigation,onClear,onFocusRef}:{token:string;userId:number;navigation:any;onClear:()=>void;onFocusRef:{current:boolean}}){
  const focused=useIsFocused();
  useEffect(()=>{onFocusRef.current=focused;if(focused)onClear()},[focused,onClear,onFocusRef]);
@@ -323,8 +341,15 @@ function TabShell({token,user,signOut,onUserChanged}:{token:string;user:User;sig
  useEffect(()=>{
   if(!lastEvent)return;
   const type=String(lastEvent.event_type||lastEvent.type||"");
-  if(type==="MESSAGE_CREATED"&&Number(lastEvent.payload?.case_id||0)>0&&!messagesFocused.current)setMsgUnread(value=>Math.min(99,value+1));
+  // Web parity (base.html): only incoming, non-replay MESSAGE_CREATED bumps the badge.
+  if(type==="MESSAGE_CREATED"&&Number(lastEvent.payload?.case_id||0)>0&&lastEvent.payload?.is_outgoing===false&&!lastEvent.replay&&!messagesFocused.current)setMsgUnread(value=>Math.min(99,value+1));
  },[lastEvent]);
+ useEffect(()=>{
+  if(!lastEvent||String(lastEvent.event_type||lastEvent.type||"")!=="CASE_READ")return;
+  // CASE_READ: re-seed from the authoritative unread-count endpoint.
+  let live=true;getMessagesUnreadCount(token).then(r=>{if(live)setMsgUnread(Math.min(99,Number(r.count)||0))}).catch(()=>{});
+  return()=>{live=false};
+ },[lastEvent,token]);
  return <Tabs.Navigator screenOptions={{headerShown:false,tabBarActiveTintColor:C.navy,tabBarInactiveTintColor:C.muted,tabBarHideOnKeyboard:true,tabBarStyle:{paddingTop:7,borderTopColor:C.line},tabBarLabelStyle:{fontSize:11,fontWeight:"700"}}}>
  <Tabs.Screen name="Home" options={{tabBarLabel:"Ana Sayfa",tabBarIcon:({focused})=><Icon n="home" a={focused}/>}}>{()=> <Home token={token} user={user}/>}</Tabs.Screen>
  <Tabs.Screen name="Patients" options={{tabBarLabel:"Hastalar",tabBarIcon:({focused})=><Icon n="patients" a={focused}/>}}>{()=> <PatientStack token={token} userId={user.id}/>}</Tabs.Screen>
@@ -379,7 +404,7 @@ function AppContent(){
   finally{setBoot(false)}
  },[]);
  useEffect(()=>{void restore()},[restore]);
- useEffect(()=>{if(!session)return;let active=true;const token=session.token;const stop=subscribeSessionExpiry(token,()=>{pendingNativeNotificationRoute=null;setBoot(true);void SecureStore.deleteItemAsync("dentalai_token").catch(()=>{}).finally(()=>{if(active){setSession(current=>current?.token===token?null:current);setBoot(false)}})});return()=>{active=false;stop()}},[session?.token]);
+ useEffect(()=>{if(!session)return;let active=true;const token=session.token,userId=session.user.id;const stop=subscribeSessionExpiry(token,()=>{void unregisterNativePushForLogout(token,userId).catch(()=>{});pendingNativeNotificationRoute=null;setBoot(true);void SecureStore.deleteItemAsync("dentalai_token").catch(()=>{}).finally(()=>{if(active){setSession(current=>current?.token===token?null:current);setBoot(false)}})});return()=>{active=false;stop()}},[session?.token,session?.user.id]);
  async function finishSignOut(){
   pendingNativeNotificationRoute=null;
   if(session){try{await logout(session.token)}catch{}}

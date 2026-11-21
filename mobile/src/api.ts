@@ -21,7 +21,7 @@ export async function request<T>(path:string,token?:string,options:RequestInit={
  // A stalled mobile connection must not leave clinical screens loading forever.
  const controller=new AbortController();
  // Academic answers can take longer than a normal list request.
- const deadlineMs=/^\/academic\/courses\/\d+\/ask$/.test(path)?180000:30000;
+ const deadlineMs=/^\/academic\/courses\/\d+\/ask$/.test(path)||/^\/patients\/\d+\/voice-exam\/apply$/.test(path)?180000:30000;
  const timeout=setTimeout(()=>controller.abort(),deadlineMs);
  const externalSignal=options.signal;
  const abort=()=>controller.abort();

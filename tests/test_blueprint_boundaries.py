@@ -301,6 +301,30 @@ def test_realtime_listener_delivers_late_lower_id_and_resync(database, monkeypat
     assert seen[-1] == {'type': 'resync'}
 
 
+def test_web_create_analysis_rejects_disallowed_extensions_with_422(database, monkeypatch, tmp_path):
+    # Web must mirror the mobile contract: a disallowed extension rejects the
+    # whole upload with the skipped filenames, instead of being silently dropped.
+    engine, ids = database
+    with Session(engine) as s:
+        user = s.get(main.User, ids.user)
+    monkeypatch.setattr(main, 'get_current_user', lambda request: user)
+    monkeypatch.setattr(main, 'UPLOAD_DIR', tmp_path)
+    from fastapi.testclient import TestClient
+    client = TestClient(main.app)
+    response = client.post(
+        f'/analysis/new/{ids.patient}',
+        data={},
+        files={'images': ('klinik_notu.txt', b'not an image', 'text/plain')},
+        follow_redirects=False,
+    )
+    assert response.status_code == 422
+    detail = response.json()['detail']
+    assert 'Yalnızca JPEG, PNG veya WebP' in detail
+    assert 'klinik_notu.txt' in detail
+    with Session(engine) as s:
+        assert s.exec(select(main.Analysis)).all() == []
+
+
 @pytest.mark.parametrize('guest', [False, True])
 def test_upload_queues_atomically_and_closes_db_for_storage(database, monkeypatch, tmp_path, guest):
     import io

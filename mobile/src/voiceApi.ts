@@ -1,6 +1,10 @@
 import {revalidateSession} from './sessionExpiry';
 import {splitVoiceTranscript,VOICE_TEXT_LIMIT,VOICE_TEXT_BYTE_LIMIT,voiceUtf8Bytes} from './voiceSession';
-const BASE="https://dentalai.tr";
+// Voice endpoints live under the mobile mount only (web spellings differ:
+// /voice-exams/anonymous vs /voice-exam/anonymous; the web text endpoint rejects
+// request_key). Hitting the bare origin 404'd anonymous creation and 422'd every
+// chunk extraction — commit 7a26b1de regression.
+const BASE="https://dentalai.tr/api/mobile/v1";
 async function send<T>(token:string,path:string,payload?:unknown,method:"GET"|"POST"="POST"):Promise<T>{
  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),150000);
  try{const response=await fetch(BASE+path,{method,credentials:"omit",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token,...(method==="GET"?{"Cache-Control":"no-store"}:{})},...(method==="GET"?{}:{body:JSON.stringify(payload)}),signal:controller.signal});
@@ -12,7 +16,8 @@ async function send<T>(token:string,path:string,payload?:unknown,method:"GET"|"P
  try {body=raw?JSON.parse(raw):{};} catch {throw Error("Sunucudan geçersiz klinik değerlendirme yanıtı alındı. Metniniz bu ekranda korunuyor.");}
  if(!body||typeof body!=="object"||Array.isArray(body))throw Error("Sunucudan geçersiz klinik değerlendirme yanıtı alındı.");
  if(!response.ok||body.ok===false){
-  const detail=typeof body.detail==="string"?body.detail:typeof body.error==="string"?body.error:Array.isArray(body.detail)?"Gönderilen muayene bilgileri sunucu tarafından doğrulanamadı. Metninizi koruyup tekrar deneyin.":"Klinik değerlendirme başarısız.";
+  const rawDetail=typeof body.detail==="string"?body.detail:typeof body.error==="string"?body.error:"";
+  const detail=(response.status===404&&(!rawDetail||rawDetail==="Not Found"))?"Sunucuda istenen kayıt bulunamadı (404). Uygulama ile sunucu sürümü uyumsuz olabilir; güncellemeyi kontrol edip tekrar deneyin.":(rawDetail||(Array.isArray(body.detail)?"Gönderilen muayene bilgileri sunucu tarafından doğrulanamadı. Metninizi koruyup tekrar deneyin.":"Klinik değerlendirme başarısız."));
   throw Error(detail);
  }
  if(body.ok!==true)throw Error("Klinik değerlendirme yanıtı beklenen başarı durumunu içermiyor. Metninizi koruyup tekrar deneyin.");

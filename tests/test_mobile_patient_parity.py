@@ -1655,6 +1655,12 @@ def test_mobile_patient_directory_search_matches_web_tckn_owner_scope_and_no_sto
     assert 'data-patient-id="901"' in web.text
     assert 'data-patient-id="902"' not in web.text
 
+    # The web search must also match phone numbers, same as the mobile directory.
+    web_phone = client.get("/patients/search?q=05553333333")
+    assert web_phone.status_code == 200, web_phone.text
+    assert 'data-patient-id="903"' in web_phone.text
+    assert 'data-patient-id="902"' not in web_phone.text
+
     mobile = client.get("/api/mobile/v1/patients?q=11111111111")
     assert mobile.status_code == 200, mobile.text
     assert mobile.headers.get("cache-control") == "private, no-store"

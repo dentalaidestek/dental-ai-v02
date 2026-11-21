@@ -103,6 +103,11 @@ export default function NativePushSettings({ token, userId }: { token: string; u
         </Pressable>
       )}
       {!!error && <Text accessibilityRole="alert" style={{ color: "#B42318", lineHeight: 20, marginTop: 10 }}>{error}</Text>}
+      {!!error && (
+        <Pressable accessibilityRole="button" onPress={() => void refresh()} style={{ marginTop: 8 }}>
+          <Text style={{ color: "#071B35", fontWeight: "800" }}>Tekrar dene</Text>
+        </Pressable>
+      )}
       {!!notice && <Text accessibilityRole="alert" style={{ color: "#16803C", lineHeight: 20, marginTop: 10 }}>{notice}</Text>}
     </View>
   );

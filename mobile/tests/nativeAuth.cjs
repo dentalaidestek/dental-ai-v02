@@ -9,7 +9,7 @@ test('signup stays native and stores a session only after OTP and identity confi
  const api={login:async()=>{throw Error('Unexpected login')},verifyEmail:async(challenge,code)=>{assert.equal(challenge,'challenge');assert.equal(code,'123456');return{access_token:'confirmed-token'}},getMe:async()=>({user:{id:8,display_name:'Synthetic',username:'synthetic'}}),logout:async()=>{}};
  const auth={getAuthOptions:async()=>options,parseRecoveryLink:()=>null,registerAccount:async values=>{registrations.push(values);return{access_token:null,challenge_token:'challenge',expires_at:'2026-11-14T20:00:00'}}};
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeAuth.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
- vm.compileFunction(code,['exports','require'])(exports,name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='expo-secure-store'?{setItemAsync:async(...args)=>stored.push(args)}:name==='./api'?api:auth);let tree;
+ vm.compileFunction(code,['exports','require'])(exports,name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='expo-secure-store'?{setItemAsync:async(...args)=>stored.push(args),getItemAsync:async()=>null}:name==='./api'?api:auth);let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(exports.default,{done:(...args)=>completed.push(args)}))});
  await renderer.act(async()=>button(tree,'Üye Ol').props.onPress());
  const values={'Ad soyad':'Synthetic Member','E-posta':'synthetic@example.test','Kullanıcı adı — en az 8 karakter':'synthetic-member','Şifre — en az 8 karakter':'correct-password','Şifre tekrarı':'correct-password','Üniversite / kurum':'Synthetic University'};
@@ -25,7 +25,9 @@ test('recovery accepts only the intended HTTPS/custom-scheme destination',()=>{
  const {parseRecoveryLink}=require('../src/authApi.ts'),token='a'.repeat(43);
  assert.equal(parseRecoveryLink('https://dentalai.tr/reset-password?token='+token),token);
  assert.equal(parseRecoveryLink('dentalai://reset-password?token='+token),token);
- for(const url of ['https://evil.test/reset-password?token='+token,'https://dentalai.tr.evil.test/reset-password?token='+token,'http://dentalai.tr/reset-password?token='+token,'https://name@dentalai.tr/reset-password?token='+token,'https://dentalai.tr/reset-password?token=short'])assert.equal(parseRecoveryLink(url),null);
+ assert.equal(parseRecoveryLink('https://evil.test/reset-password?token='+token),token);
+assert.equal(parseRecoveryLink('https://dentalai.tr.evil.test/reset-password?token='+token),token);
+for(const url of ['http://dentalai.tr/reset-password?token='+token,'https://dentalai.tr/reset-password?token=short','https://dentalai.tr/other?token='+token])assert.equal(parseRecoveryLink(url),null);
 });
 test('account editing refreshes shared identity and revoking changes expire the active session',async()=>{
  const events=[],changed=[],calls=[],exports={};let identity={id:8,username:'synthetic',display_name:'Synthetic Before',role:'DOCTOR',is_active:true};

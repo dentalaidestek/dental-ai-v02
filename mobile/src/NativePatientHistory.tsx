@@ -3,6 +3,7 @@ import {ActivityIndicator,AppState,Image,Modal,Pressable,ScrollView,Text,View} f
 import {useIsFocused} from '@react-navigation/native';
 import {AnalysisHistory,PatientAnalysisHistoryCursor,getPatientAnalysisHistoryPage} from './modernApi';
 import {getAnalysis,MobileAnalysis} from './analysisApi';
+import {getClinical,ClinicalWorkspace} from './clinicalApi';
 import {useRealtime} from './realtime';
 import { shouldRefreshOnAppResume } from './appResumeRefresh';
 import {groupPatientAnalysisAssets,shouldShowLegacyPatientRadiograph} from './patientAnalysisPresentation';
@@ -18,13 +19,13 @@ export default function NativePatientHistory({token,patientId,toothNumber,onOpen
  const imageScope=useRef<{token:string;scope:string}|null>(null);
  if(!imageScope.current||imageScope.current.token!==token)imageScope.current={token,scope:createPatientAnalysisHistoryImageScope()};
  if(active.current!==scope){active.current=scope;generation.current++;detailRequest.current++}
- const [data,setData]=useState<{scope:string;items:AnalysisHistory[];next:PatientAnalysisHistoryCursor|null}|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[errorMore,setErrorMore]=useState(false),[selected,setSelected]=useState<number|null>(null),[detail,setDetail]=useState<MobileAnalysis|null>(null),[detailError,setDetailError]=useState(''),[zoom,setZoom]=useState(1),[legacyRadiographError,setLegacyRadiographError]=useState(false),[historyImageError,setHistoryImageError]=useState(false),[imageRetryRevision,setImageRetryRevision]=useState(0);
+ const [data,setData]=useState<{scope:string;items:AnalysisHistory[];next:PatientAnalysisHistoryCursor|null}|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[errorMore,setErrorMore]=useState(false),[selected,setSelected]=useState<number|null>(null),[detail,setDetail]=useState<MobileAnalysis|null>(null),[detailError,setDetailError]=useState(''),[zoom,setZoom]=useState(1),[clinical,setClinical]=useState<ClinicalWorkspace|null>(null),[legacyRadiographError,setLegacyRadiographError]=useState(false),[historyImageError,setHistoryImageError]=useState(false),[imageRetryRevision,setImageRetryRevision]=useState(0);
  const visible=data?.scope===scope?data:null;
  const assetGroups=groupPatientAnalysisAssets(detail?.assets);
  const showLegacyRadiograph=detail?shouldShowLegacyPatientRadiograph(detail.analysis.legacy_radiograph_available,detail.assets):false;
  const load=useCallback(async(more=false)=>{if(locked.current){if(!more)refreshPending.current=true;return;}locked.current=true;const seq=++generation.current,owner=scope;setBusy(true);setError('');setErrorMore(false);try{const page=await getPatientAnalysisHistoryPage(token,patientId,toothNumber,more?visible?.next??undefined:undefined);if(active.current!==owner||generation.current!==seq)return;setData(previous=>({scope:owner,items:more&&previous?.scope===owner?[...previous.items,...page.items.filter(x=>!previous.items.some(y=>y.id===x.id))]:page.items,next:page.next}));setError('');setErrorMore(false)}catch(e){if(active.current===owner&&generation.current===seq){setError(e instanceof Error?e.message:'Analiz geçmişi alınamadı.');setErrorMore(more)}}finally{if(active.current===owner&&generation.current===seq){locked.current=false;setBusy(false);if(refreshPending.current){refreshPending.current=false;void Promise.resolve().then(()=>{if(active.current===owner)void loader.current()})}}}},[token,patientId,toothNumber,scope,visible?.next]);
  const loader=useRef(load);loader.current=load;
- useEffect(()=>{locked.current=false;refreshPending.current=false;setData(null);setSelected(null);setDetail(null);setError('');setErrorMore(false);setLegacyRadiographError(false);setHistoryImageError(false);setImageRetryRevision(0);void loader.current();return()=>{generation.current++;detailRequest.current++}},[scope]);
+ useEffect(()=>{locked.current=false;refreshPending.current=false;setData(null);setSelected(null);setDetail(null);setClinical(null);setError('');setErrorMore(false);setLegacyRadiographError(false);setHistoryImageError(false);setImageRetryRevision(0);void loader.current();return()=>{generation.current++;detailRequest.current++}},[scope]);
  useEffect(()=>{if(!focusInitialized.current){focusInitialized.current=true;return;}if(focused)void loader.current()},[focused]);
  useEffect(()=>{
   let previousState=AppState.currentState;
@@ -41,11 +42,13 @@ export default function NativePatientHistory({token,patientId,toothNumber,onOpen
   if(lastEvent&&['ANALYSIS_CREATED','ANALYSIS_UPDATED','PATIENT_UPDATED'].includes(String(lastEvent.event_type||lastEvent.type))&&Number(lastEvent.payload?.patient_id||lastEvent.entity_id)===patientId)void loader.current();
  },[lastEvent,patientId]);
  async function open(id:number){
-  const seq=++detailRequest.current,owner=scope;setSelected(id);setDetail(null);setDetailError('');setZoom(1);setLegacyRadiographError(false);setHistoryImageError(false);setImageRetryRevision(0);
+  const seq=++detailRequest.current,owner=scope;setSelected(id);setDetail(null);setDetailError('');setZoom(1);setLegacyRadiographError(false);setHistoryImageError(false);setImageRetryRevision(0);setClinical(null);
+  // AI ön izleme: best-effort read; a failure must never block the detail modal.
+  void getClinical(token,id).then(result=>{if(active.current===owner&&detailRequest.current===seq&&result.analysis_id===id)setClinical(result)}).catch(()=>{});
   try{const result=await getAnalysis(token,id);if(result.analysis.patient_id!==patientId)throw Error('Analiz bu hastaya ait değil.');if(active.current===owner&&detailRequest.current===seq)setDetail(result)}
   catch(e){if(active.current===owner&&detailRequest.current===seq)setDetailError(e instanceof Error?e.message:'Analiz ayrıntısı alınamadı.')}
  }
- function close(){detailRequest.current++;setSelected(null);setDetail(null);setLegacyRadiographError(false);setHistoryImageError(false);setImageRetryRevision(0)}
+ function close(){detailRequest.current++;setSelected(null);setDetail(null);setClinical(null);setLegacyRadiographError(false);setHistoryImageError(false);setImageRetryRevision(0)}
  return <View>
   <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center'}}>
    <Text style={{fontSize:20,fontWeight:'800',color:'#102033'}}>Analiz Geçmişi</Text>
@@ -59,6 +62,7 @@ export default function NativePatientHistory({token,patientId,toothNumber,onOpen
     <View style={{flexDirection:'row',alignItems:'flex-start',justifyContent:'space-between'}}>
      <View style={{flex:1,paddingRight:10}}>
       <Text style={{fontWeight:'800',fontSize:15,color:'#102033'}}>{patientAnalysisHistoryTitle(item)}</Text>
+      <Text numberOfLines={2} style={{color:'#53657B',fontSize:13,marginTop:3}}>{item.clinical_notes?.trim()||'Görüntü analizi'}</Text>
       <View style={{flexDirection:'row',flexWrap:'wrap',alignItems:'center',marginTop:8}}>
        {!!tooth&&<View style={{backgroundColor:'#F1F5F9',borderRadius:7,paddingHorizontal:8,paddingVertical:5,marginRight:6,marginBottom:5}}><Text style={{fontSize:12,color:'#344054'}}>{tooth}</Text></View>}
        <View style={{backgroundColor:'#F8FAFC',borderRadius:7,paddingHorizontal:8,paddingVertical:5,marginBottom:5}}><Text style={{fontSize:12,color:'#53657B'}}>{patientAnalysisHistoryDate(item.created_at)}</Text></View>
@@ -88,6 +92,11 @@ export default function NativePatientHistory({token,patientId,toothNumber,onOpen
      {!!detailError&&<><Text style={{color:'#B42318'}}>{detailError}</Text><Pressable onPress={()=>selected&&void open(selected)} style={{padding:12}}><Text>Yeniden dene</Text></Pressable></>}
      {detail&&<>
       <Text style={{color:'#53657B',marginVertical:12}}>{analysisStatus(detail.analysis)} · {detail.analysis.created_at?new Date(detail.analysis.created_at).toLocaleString('tr-TR'):''}</Text>
+      {(()=>{const result=clinical&&clinical.result;const mostLikely=result&&typeof result.most_likely==='string'?result.most_likely.trim():'';const findings=result&&Array.isArray(result.findings)?result.findings.filter((line):line is string=>typeof line==='string'&&!!line.trim()).slice(0,3):[];if(!mostLikely&&!findings.length)return null;return <View>
+       <Text style={{fontSize:18,fontWeight:'800',color:'#102033',marginTop:12}}>AI ön değerlendirme</Text>
+       {!!mostLikely&&<Text selectable style={{fontWeight:'800',color:'#102033',marginTop:6}}>{mostLikely}</Text>}
+       {findings.map((line,index)=><Text key={index} selectable style={{color:'#53657B',marginTop:4}}>• {line}</Text>)}
+      </View>})()}
       {!!detail.analysis.clinical_notes&&<><Text style={{fontWeight:'800',color:'#102033'}}>Klinik notlar</Text><Text selectable style={{color:'#102033',lineHeight:23,marginVertical:10}}>{detail.analysis.clinical_notes}</Text></>}
       <Text style={{fontSize:18,fontWeight:'800',color:'#102033'}}>Yüklenen görüntüler</Text>
       <View style={{flexDirection:'row'}}>

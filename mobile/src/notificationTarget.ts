@@ -6,7 +6,8 @@ export type NativeNotificationRoute =
   | { screen: "ExpertDirectory" }
   | { screen: "ExpertManagement" }
   | { screen: "SupportRequests"; params: { ticketId?: number } }
-  | { screen: "Notifications"; params: { noticeId: number } };
+  | { screen: "Notifications"; params: { noticeId: number } }
+  | { screen: "SocialAdmin" };
 
 export type NativeNotificationTarget =
   | { kind: "none" }
@@ -110,6 +111,14 @@ export function resolveNativeNotificationTarget(value: unknown): NativeNotificat
     return ticketId
       ? { kind: "navigate", route: { screen: "SupportRequests", params: { ticketId } } }
       : { kind: "unsupported", path };
+  }
+  if (path === "/account/verification") {
+    // The verification notice links to the admin panel login; the native
+    // equivalent is the expert management screen.
+    return { kind: "navigate", route: { screen: "ExpertManagement" } };
+  }
+  if ((path.startsWith("/admin") && path.includes("social")) || path === "/social") {
+    return { kind: "navigate", route: { screen: "SocialAdmin" } };
   }
   if (path === "/program") {
     return { kind: "navigate", route: { screen: "Program" } };

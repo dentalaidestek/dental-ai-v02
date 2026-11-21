@@ -109,3 +109,52 @@ export function applyDashboardProgramSnapshot<
     dashboard_event_label: snapshot.label,
   };
 }
+
+export type DashboardUpcomingEvent = { title: string; start_at: string };
+export type DashboardUpcomingRow = { key: string; day: string; time: string; title: string };
+
+const compactDayMonth = (value: Date): string =>
+  String(value.getDate()).padStart(2, "0") + "." + String(value.getMonth() + 1).padStart(2, "0");
+const compactClock = (value: Date): string =>
+  String(value.getHours()).padStart(2, "0") + ":" + String(value.getMinutes()).padStart(2, "0");
+
+function wallTimeKey(value: { start_time?: string; start_at?: string }): string {
+  if (typeof value.start_time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value.start_time)) {
+    return value.start_time;
+  }
+  if (typeof value.start_at === "string") {
+    const parsed = new Date(value.start_at);
+    if (!Number.isNaN(parsed.getTime())) return compactClock(parsed);
+  }
+  return "";
+}
+
+/**
+ * Home "Bugünkü Program" companion rows: the first upcoming events as compact
+ * "gg.aa · aa:ss · başlık" lines. The event already shown on the program card
+ * (snapshot event with its wall time, or the raw first upcoming event) is
+ * removed so it is never listed twice. Unparsable entries are skipped.
+ */
+export function dashboardUpcomingRows(
+  events: DashboardUpcomingEvent[] | undefined,
+  shown: { title: string; start_time?: string; start_at?: string } | null,
+  limit = 3,
+): DashboardUpcomingRow[] {
+  const shownKey = shown && typeof shown.title === "string" && shown.title.trim()
+    ? shown.title + "|" + wallTimeKey(shown)
+    : null;
+  const rows: DashboardUpcomingRow[] = [];
+  for (const event of Array.isArray(events) ? events : []) {
+    if (!event || typeof event.title !== "string" || !event.title.trim() ||
+        typeof event.start_at !== "string") continue;
+    const when = new Date(event.start_at);
+    if (Number.isNaN(when.getTime())) continue;
+    const time = compactClock(when);
+    const key = event.title + "|" + event.start_at;
+    if (shownKey && shownKey === event.title + "|" + time) continue;
+    if (rows.some((row) => row.key === key)) continue;
+    rows.push({ key, day: compactDayMonth(when), time, title: event.title });
+    if (rows.length >= limit) break;
+  }
+  return rows;
+}
