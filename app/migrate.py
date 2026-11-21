@@ -104,7 +104,7 @@ def require_schema(engine,*,require_study=False):
             raise RuntimeError("Run python -m app.migrate to create the approved anamnesis ledger")
         if not _approved_anamnesis_has_query_index(connection):
             raise RuntimeError(
-                "Run a reviewed migration to install the exact approved anamnesis owner/patient/field/source query index"
+                "Run a reviewed migration to install the approved anamnesis query index with exact owner/patient/field/source columns"
             )
         if not _approved_anamnesis_has_unique_provenance(connection):
             raise RuntimeError(
