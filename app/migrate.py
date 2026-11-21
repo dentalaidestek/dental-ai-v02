@@ -60,6 +60,16 @@ def _ensure_mobile_push_delivery_table(engine):
             index.create(connection, checkfirst=True)
 
 
+def _approved_anamnesis_has_unique_provenance(connection):
+    """Require one immutable source-analysis/field pair per ledger entry."""
+    constraints = inspect(connection).get_unique_constraints("approvedanamnesis")
+    return any(
+        item.get("name") == "uq_approvedanamnesis_analysis_field"
+        and item.get("column_names") == ["analysis_id", "field_key"]
+        for item in constraints
+    )
+
+
 def require_schema(engine,*,require_study=False):
     try:
         with engine.connect() as connection:
@@ -74,6 +84,10 @@ def require_schema(engine,*,require_study=False):
     approved_indexes = {item.get("name") for item in inspector.get_indexes("approvedanamnesis")}
     if "ix_approvedanamnesis_owner_patient_field_analysis" not in approved_indexes:
         raise RuntimeError("Run python -m app.migrate to install the approved anamnesis query index")
+    if not _approved_anamnesis_has_unique_provenance(engine):
+        raise RuntimeError(
+            "Run a reviewed migration to restore the approved anamnesis source/field unique constraint"
+        )
     # Additive admin MFA tables: the production startup only checks schema revision,
     # so the original init_db() DDL never runs on Render. Serialize this small
     # compatibility migration across concurrent web instances.
@@ -750,6 +764,10 @@ def _upgrade_approved_anamnesis_schema(main):
         ).scalar()
         table_exists = inspect(connection).has_table(table.name)
         if revision == APPROVED_ANAMNESIS_REVISION and table_exists:
+            if not _approved_anamnesis_has_unique_provenance(connection):
+                raise RuntimeError(
+                    "Approved anamnesis source/field unique constraint is missing; refusing unsafe repair"
+                )
             for index in table.indexes:
                 index.create(connection, checkfirst=True)
             for legacy_index in (
@@ -772,6 +790,10 @@ def _upgrade_approved_anamnesis_schema(main):
             if not inspect(connection).has_table(required):
                 raise RuntimeError(f"Approved anamnesis migration requires {required}")
         table.create(connection, checkfirst=True)
+        if not _approved_anamnesis_has_unique_provenance(connection):
+            raise RuntimeError(
+                "Approved anamnesis source/field unique constraint was not created"
+            )
         for index in table.indexes:
             index.create(connection, checkfirst=True)
         for legacy_index in (
