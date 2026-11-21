@@ -205,17 +205,17 @@ def cancel_run(session, *, run_id, owner, course):
         # No worker/provider has claimed this request; cancel it immediately.
         row.status='CANCELLED';row.stage='Sıradaki çalışma iptal edildi'
         row.error='Bu çalışma iptal edildi; AI çağrısı başlatılmadı.'
-        row.partial_text='';row.updated_at=now();session.add(row)
+        row.updated_at=now();session.add(row)
     elif row.status=='RUNNING':
         # The worker must observe this state, unwind its generators and close the
         # provider stream before it transitions the run to CANCELLED.
         row.status='CANCEL_REQUESTED';row.stage='AI akışı durduruluyor'
         row.error='Durdurma isteği alındı; sağlayıcı bağlantısı kapatılıyor.'
-        row.partial_text='';row.updated_at=now();session.add(row)
+        row.updated_at=now();session.add(row)
     elif row.status=='INTERRUPTED':
         row.status='CANCELLED';row.stage='Kesilmiş çalışma iptal edildi'
         row.error='Kesilmiş çalışma iptal edildi; yeniden başlatılmadı.'
-        row.partial_text='';row.updated_at=now();session.add(row)
+        row.updated_at=now();session.add(row)
     return row
 
 
