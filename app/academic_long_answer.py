@@ -12,6 +12,10 @@ class LongAnswerError(ValueError):
     pass
 
 
+class ProviderStreamCloseError(RuntimeError):
+    pass
+
+
 def _provider_chunks(provider, options):
     """Yield provider tokens and close the upstream stream on cancellation."""
     stream=provider.generate_stream(**options)
@@ -23,7 +27,7 @@ def _provider_chunks(provider, options):
             try:
                 close()
             except Exception as exc:
-                raise RuntimeError('Akademik AI sağlayıcı akışı kapatılamadı.') from exc
+                raise ProviderStreamCloseError('Akademik AI sağlayıcı akışı kapatılamadı.') from exc
 
 
 def _without_repeated_tail(previous, following):
