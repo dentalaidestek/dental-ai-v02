@@ -373,4 +373,54 @@ Hesap: `scripts/capacity_model_69k.py` (parametrik; Kasım 2026 liste fiyatları
 
 **Sonuç:** mobil node süiti tam koşum yeşil; hedef paket (chatComposerParity + consultations + chatFiles + chatSafetyActions + academicComposer/Workflow/AnswerActions + consultationRealtime) **108/108**; `tsc --noEmit` **0**. Yeni test `tests/chatComposerParity.cjs` (4 vaka) package test:beta'ya kayıtlı.
 
+**Merge sonrası onarım (b25c19a2).** Uzak dala gelen opak render-key commit'leri kendi ağacında kırmızıydı: `NativeToothChart.tsx` tanımsız `historyRenderKey` kullanıyordu (tsc TS2304) ve `sessionRenderKey.cjs` profil testindeki visitor, `.map()` liste anahtarlarını da sayarak 3 çocuk beklentisiyle çelişiyordu. Onarım: diş şeması artık `historyScope` (kullanıcı/token/hasta/seçili diş) üzerinden `historyRenderIdentity`'yi `nextSessionRenderKey` ile döndürür (profil ekranındaki desenle aynı — hesap/oturum değişiminde tedavi geçmişi remount olur, token anahtarına sızmaz); profil testi visitor'ı yalnız `NativePatientMedia`/`NativePatientHistory`/`NativePatientVoiceHistory` anahtarlarını sayar. Kanıt: `tsc` **0**, `sessionRenderKey` **6/6**, render-key paketi **133/133**.
+
 **Canlıya deploy edilmedi — kompozitör paritesi ve 404 akılları cihaza yeni uygulama build'i ile, Not Found'ların kökü ise backend deploy'u ile kapanır.**
+
+## 27. On altıncı geçiş — dürüst doğrulama: "Not Found çözüldü mü, web birebir aktarıldı mı?"
+
+**Soru:** Kullanıcı ekran görüntülerindeki Not Found'ların gerçekten çözülüp çözülmediğini ve web'in birebir uygulamaya aktarılıp aktarılmadığını kanıtla sordu. Cevap iki katmanda verildi: **kod katmanı** (branch, testler, CI) ve **canlı katman** (dentalai.tr probe).
+
+### 27.1 Kod katmanı — fixler gerçekten branch'te (kanıt)
+
+| İddia | Kanıt |
+|---|---|
+| ＋ Dosya ekle butonu + mavi ↑ gönder butonu | `git grep 'accessibilityLabel="Dosya ekle"'` + `sendArrow` → origin/branch ModernScreens.tsx'te 2 eşleşme |
+| Ek seçenekleri toggle arkasında | `optionsOpen` → ChatAttachmentComposer.tsx 3 eşleşme |
+| Akademik 404 kilit açma | `status===404` → NativeAcademic.tsx 2 eşleşme |
+| Türkçe 404 mesajı | "Sunucuda istenen kayıt bulunamadı" → api.ts 1 eşleşme |
+| Fixler branch tipinde hâlâ var | `git merge-base --is-ancestor b25c19a2 <tip>` ✓ (tip `bcb482c1`, sonradan gelen radiograph parite commit'leri fixleri bozmadı) |
+| CI | `Mobile Android CI` @ `bcb482c1` → **success**; artifact `dental-ai-beta-arm64` **18.6 MB** (2026-12-05'e kadar indirilebilir) → **tüm fixleri içeren kurulum yapılabilir beta APK üretildi** |
+
+### 27.2 Canlı katman — dürüst cevap: HAYIR, ekrandaki Not Found'lar canlıda HÂLÂ var
+
+Canlı sunucu probe (2026-11-21, kimliksiz):
+
+```
+GET /api/mobile/v1/me → 401 {"detail":"Oturum geçersiz veya süresi dolmuş."}   (kontrol: her iki sürümde de var, auth çalışıyor)
+GET /api/mobile/v1/academic/library/receipt?request_key=probecheck12345678
+   → 404 {"detail":"Not Found"}   (YENİ backend'e özel uç → canlı ESKİ build)
+```
+
+Yorum: canlı dentalai.tr **hâlâ eski backend'i çalıştırıyor**. Bu yüzden telefon ekranındaki **tüm Not Found'lar (vaka mesaj gönderimi, Akademik AI ders oluşturma, destek talepleri) deploy edilene kadar aynen devam eder**. İstemci tarafındaki düzeltmeler bu 404'leri ortadan kaldırmaz; yalnız (a) ham İngilizce "Not Found" yerine net Türkçe açıklama gösterir, (b) Akademik AI'da formu kilitlemez, (c) güvenli aynı-anahtar yeniden deneme sunar. **404'lerin kökten kalkması tek şeye bağlıdır: bu branch'in backend tarafının canlıya deploy edilmesi.** Bu adımın anahtarı bende değil; deploy gerçekleştirilmeden "çözüldü" denemez ve bu raporda çözülmüş DENMEZ.
+
+### 27.3 Web↔mobil parite — dürüst matris
+
+| Alan | Durum | Kanıt |
+|---|---|---|
+| Giriş/kayıt/şifre, hesap | ✓ parite | NativeAuth/NativeAccount + süit |
+| Mesajlar & vaka görüşmesi | ✓ çekirdek parite; kompozitör bu turda web ile birebir (＋ + ↑) | §26 + chatComposerParity.cjs |
+| Ekler (fotoğraf/kamera/PDF-ses, bekleyen ek makbuzu) | ✓ parite | chatFiles/consultations süitleri |
+| Uzman destek, talep, müsaitlik aboneliği | ✓ (§21'de native tamamlandı) | gapFeatures.cjs + test_mobile_gap_features.py |
+| Program + editör | ✓ | program parite testleri |
+| Hastalar, diş şeması, tedavi geçmişi, sesli geçmiş | ✓ | patientProfileUI/toothChartLifecycle |
+| Analiz yükleme/klinik inceleme/görüntüleyici not | ✓ (viewer-analyze adapter'ı §21'de doğrulandı) | clinicalWorkflow |
+| Akademik AI (ders, kaynak, soru-cevap, dosya) | ✓ çekirdek; 404 akılları bu turda eklendi | academicComposer/Workflow |
+| Sesli muayene (kaydet→yükle→finalize) | ✓ alternatif akış; **canlı transkript modu (P3) eksik** | §21 |
+| Mesaj görsel anotasyonu | not-bazlı ✓; **web'deki canvas çizim aracı UX'i mobilde yok** | §21 |
+| Admin paneli, misafir analiz, web-push, yasal sayfalar | bilinçli web-only (mobilde karşılığı farklı kanaldan: Expo push) | §20 envanter |
+| **Cihaz düzeyi "birebir" doğrulama** | 🔶 yapılmadı — tüm parite kanıtı kaynak + süit düzeyindedir; gerçek cihaz ekranı kanıtı ancak yeni APK kurulup gerçek kullanımla olur | §20'deki dürüst sınır |
+
+**Net cevap:** Çekirdek hastane/uzman akışları web ile fonksiyon düzeyinde birebir (test kanıtlı) ve iki bilinen UX eksiği (canvas çizim anotasyonu, canlı transkript) dışında envanter boşluğu yok. Ancak (1) bu birebirlik **kullanıcının telefonuna ancak beta APK kurulduğunda** ulaşır, (2) ekran görüntülerindeki Not Found'lar **backend deploy edilmeden** kaybolmaz, (3) cihaz düzeyinde birebir doğrulama ancak gerçek kullanımla yapılabilir.
+
+**Tip süit kanıtı:** `bcb482c1` (radiograph parite commit'leri dahil) yerel tam koşum **971/971 pass, 0 fail** — branch tipi yeşil; CI `Mobile Android CI` success ile tutarlı.
