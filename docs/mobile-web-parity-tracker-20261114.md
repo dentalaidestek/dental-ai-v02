@@ -1127,4 +1127,6 @@ Also removed the second hard-coded API base in `modernApi.ts`; it now imports th
 - web/native archive camera and thumbnail/original behavior remains explicitly compared;
 - modern API base import is checked against the shared API module.
 
+- Rendered account-switch fixtures now use canonical mobile media URLs, so the private-source guard is exercised rather than bypassed with external test URLs.
+
 The new HEAD must still run Android typecheck, all beta tests, Security Recovery and the native clinical/voice suites. No post-change pass is claimed before those jobs complete. No production patient data, database, migration, main branch or live deployment was touched.
