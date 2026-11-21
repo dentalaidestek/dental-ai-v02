@@ -1,5 +1,5 @@
 import {useRef} from 'react';
-import {resolveSessionRenderIdentity,SessionRenderIdentity} from './sessionRenderKey';
+import {resolveSessionRenderIdentity,type SessionRenderIdentity} from './sessionRenderKey';
 
 /**
  * Rotate component identity when an account/session scope changes without
