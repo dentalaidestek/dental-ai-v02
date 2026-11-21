@@ -1,5 +1,6 @@
 const fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),assert=require('node:assert/strict'),{test}=require('node:test'),React=require('react'),renderer=require('react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
+const sessionRenderKeyExports=require('./helpers/sessionRenderKeyModule.cjs');
 const compile=f=>ts.transpileModule(fs.readFileSync(require.resolve(f),'utf8'),{fileName:f,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.React}}).outputText;
 const text=n=>typeof n==='string'?n:!n?'':(n.children||[]).map(text).join('');
 const button=(t,label)=>t.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(c=>text(c)===label));
@@ -10,7 +11,7 @@ function api(request=async()=>({})){const exports={};vm.runInNewContext(compile(
 function harness(overrides={},saved,initialFocused=true){const exports={},storage=new Map(),calls=[],a=api(),focus={current:initialFocused};if(saved)storage.set('dai.clinical.final.1.1',JSON.stringify(saved));const secure={getItemAsync:async k=>storage.get(k)||null,setItemAsync:async(k,v)=>storage.set(k,v),deleteItemAsync:async k=>storage.delete(k)},native={StyleSheet:{create:x=>x},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
  const endpoint={...a,getClinical:async()=>base,submitClinical:async(_t,intent)=>{calls.push(intent);return{ok:true,job:{id:7,kind:'FINAL',status:'QUEUED'}}},saveClinicalNote:async()=>({ok:true}),...overrides};
  const finding={};vm.runInNewContext(compile('../src/findings.ts'),{exports:finding});const presentation={};vm.runInNewContext(compile('../src/clinicalResultPresentation.ts'),{exports:presentation});
- vm.runInNewContext(compile('../src/NativeClinicalReview.tsx'),{exports,setTimeout,clearTimeout,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{useIsFocused:()=>focus.current}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=> 'synthetic-key'}:n==='./socialDraft'?{chunkedDraftStore:()=>secure}:n==='./clinicalApi'?endpoint:n==='./findings'?finding:n==='./clinicalResultPresentation'?presentation:{default:props=>React.createElement('Text',null,props.value)}});return{Component:exports.default,calls,storage,endpoint,focus};}
+ vm.runInNewContext(compile('../src/NativeClinicalReview.tsx'),{exports,setTimeout,clearTimeout,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{useIsFocused:()=>focus.current}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=> 'synthetic-key'}:n==='./socialDraft'?{chunkedDraftStore:()=>secure}:n==='./clinicalApi'?endpoint:n==='./findings'?finding:n==='./clinicalResultPresentation'?presentation:n==='./sessionRenderKey'?sessionRenderKeyExports:{default:props=>React.createElement('Text',null,props.value)}});return{Component:exports.default,calls,storage,endpoint,focus};}
 async function open(h,props={}){let t;await renderer.act(async()=>t=renderer.create(React.createElement(h.Component,{token:'A',userId:1,analysisId:1,...props})));return t}
 test('clinical image source rejects invalid analysis and asset IDs before building a private URL',()=>{
  const {clinicalImage}=api();
@@ -38,7 +39,9 @@ test('clinical image thumbnails use the canonical API base, reload privately and
  assert.ok(first,'clinical asset thumbnail is rendered');
  assert.equal(first.props.source.cache,'reload');
  assert.equal(first.props.source.headers.Authorization,'Bearer A');
- assert.ok(fs.readFileSync(require.resolve('../src/NativeClinicalReview.tsx'),'utf8').includes("key={userId+':'+analysisId+':'+asset.id}"),'thumbnail Image must remount for a different authenticated account');
+ const clinicalSource=fs.readFileSync(require.resolve('../src/NativeClinicalReview.tsx'),'utf8');
+ assert.ok(clinicalSource.includes("key={viewerSessionKey+':'+analysisId+':'+asset.id}"),'thumbnail Image must remount with an opaque session identity');
+ assert.ok(!clinicalSource.includes("key={userId+':'+analysisId+':'+asset.id}")&&!clinicalSource.includes("key={token+':'+analysisId+':'+asset.id}"),'thumbnail key must not expose account identifiers or credentials');
  await renderer.act(async()=>{t.update(React.createElement(h.Component,{token:'B',userId:2,analysisId:1}));});
  const second=image();
  assert.ok(second,'thumbnail remains available after authenticated account change');
