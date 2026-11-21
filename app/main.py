@@ -5413,7 +5413,7 @@ def study_run_active(request:Request,course_id:int,background_tasks:BackgroundTa
     with Session(engine) as session:
         if not _owned_study_course(session,user,course_id):return JSONResponse({'ok':False},status_code=404)
         row=session.exec(select(StudyRun).where(StudyRun.owner_user_id==user.id,StudyRun.course_id==course_id,
-            StudyRun.status.in_(['QUEUED','RUNNING','INTERRUPTED']))
+            StudyRun.status.in_(['QUEUED','RUNNING','CANCEL_REQUESTED','INTERRUPTED']))
             .order_by(StudyRun.id.desc()).limit(1)).first()
         result=payload(session,row) if row else None
     if row and row.status=='QUEUED':background_tasks.add_task(wake,engine)
@@ -5445,7 +5445,7 @@ def study_run_cancel(request:Request,course_id:int,run_id:int):
             return JSONResponse({'ok':False},status_code=404)
         row=cancel_run(session,run_id=run_id,owner=user.id,course=course_id)
         if row is None:return JSONResponse({'ok':False},status_code=404)
-        if row.status not in ('CANCELLED',):
+        if row.status not in ('CANCELLED','CANCEL_REQUESTED','CANCEL_FAILED'):
             return JSONResponse({'ok':False,'error':'Çalışma zaten tamamlandı veya artık iptal edilemiyor.','run':payload(session,row)},status_code=409)
         session.commit()
         result=payload(session,row)

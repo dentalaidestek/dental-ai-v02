@@ -41,7 +41,7 @@ def enqueue(session,*,owner,course,question,key):
         if existing.question!=question:raise ValueError('İstek anahtarı başka bir çalışma için kullanılmış.')
         return existing
     active=session.exec(select(StudyRun).where(StudyRun.owner_user_id==owner,
-        StudyRun.status.in_(['QUEUED','RUNNING']))).all()
+        StudyRun.status.in_(['QUEUED','RUNNING','CANCEL_REQUESTED']))).all()
     if any(row.course_id==course for row in active) or len(active)>=2:
         raise ValueError('Önce devam eden çalışmanın bitmesini bekle.')
     if session.exec(select(func.count()).select_from(StudyRun).where(StudyRun.status=='QUEUED')).one()>=64:
@@ -138,14 +138,28 @@ def _drain(engine):
             payload=json.loads(response.body)
             with Session(engine) as session:
                 row=session.get(StudyRun,run.id)
-                if row is not None and row.status=='RUNNING':
+                if row is not None and row.status=='CANCEL_REQUESTED':
+                    # The request returned, so its provider stream has already ended.
+                    row.status='CANCELLED';row.stage='AI akışı kapatıldı'
+                    row.error='Çalışma iptal edildi; yeni yanıt kaydedilmedi.'
+                    row.partial_text='';row.updated_at=now();session.add(row);session.commit()
+                elif row is not None and row.status=='RUNNING':
                     row.status='FAILED';row.error=payload.get('error','Çalışma tamamlanamadı. Yeniden deneyebilirsin.')
                     row.stage='Tamamlanamadı';row.updated_at=now();session.add(row);session.commit()
-        except Exception:
-            # Do not store provider/user exception text or restart a paid call.
+        except Exception as exc:
+            # Cancellation is acknowledged only after the worker unwinds and closes
+            # the nested provider stream; never report success at request time alone.
             with Session(engine) as session:
                 row=session.get(StudyRun,run.id)
-                if row is not None and row.status=='RUNNING':
+                if row is not None and row.status=='CANCEL_REQUESTED':
+                    if type(exc).__name__=='ProviderStreamCloseError':
+                        row.status='CANCEL_FAILED';row.stage='AI akışının kapanması doğrulanamadı'
+                        row.error='Durdurma isteği alındı ancak sağlayıcı bağlantısının kapandığı doğrulanamadı.'
+                    else:
+                        row.status='CANCELLED';row.stage='AI akışı kapatıldı'
+                        row.error='Çalışma iptal edildi; sağlayıcı akışı kapatıldı.'
+                    row.partial_text='';row.updated_at=now();session.add(row);session.commit()
+                elif row is not None and row.status=='RUNNING':
                     row.status='FAILED';row.error='Çalışma tamamlanamadı. Önceki kayıtların korunuyor.'
                     row.updated_at=now();session.add(row);session.commit()
 
@@ -173,6 +187,10 @@ def recover(engine):
         session.execute(update(StudyRun).where(StudyRun.status=='RUNNING',
             StudyRun.updated_at<now()-timedelta(minutes=15)).values(status='INTERRUPTED',
             error='Sunucu yeniden başladı. Çalışma otomatik tekrarlanmadı; kaydedilmiş ilerleme korunuyor.',stage='Kesildi — ilerleme korundu'))
+        session.execute(update(StudyRun).where(StudyRun.status=='CANCEL_REQUESTED',
+            StudyRun.updated_at<now()-timedelta(minutes=15)).values(status='CANCEL_FAILED',
+            error='Durdurma isteği zaman aşımına uğradı; sağlayıcı bağlantısının kapandığı doğrulanamadı.',
+            stage='Durdurma doğrulanamadı'))
         session.commit()
     wake(engine)
 
@@ -183,10 +201,21 @@ def cancel_run(session, *, run_id, owner, course):
     row=session.exec(select(StudyRun).where(StudyRun.id==run_id,
         StudyRun.owner_user_id==owner,StudyRun.course_id==course).with_for_update()).first()
     if row is None:return None
-    if row.status in ('QUEUED','RUNNING','INTERRUPTED'):
-        row.status='CANCELLED';row.stage='Kullanıcı tarafından iptal edildi'
-        row.error='Bu çalışma iptal edildi.';row.partial_text='';row.updated_at=now()
-        session.add(row)
+    if row.status=='QUEUED':
+        # No worker/provider has claimed this request; cancel it immediately.
+        row.status='CANCELLED';row.stage='Sıradaki çalışma iptal edildi'
+        row.error='Bu çalışma iptal edildi; AI çağrısı başlatılmadı.'
+        row.updated_at=now();session.add(row)
+    elif row.status=='RUNNING':
+        # The worker must observe this state, unwind its generators and close the
+        # provider stream before it transitions the run to CANCELLED.
+        row.status='CANCEL_REQUESTED';row.stage='AI akışı durduruluyor'
+        row.error='Durdurma isteği alındı; sağlayıcı bağlantısı kapatılıyor.'
+        row.updated_at=now();session.add(row)
+    elif row.status=='INTERRUPTED':
+        row.status='CANCELLED';row.stage='Kesilmiş çalışma iptal edildi'
+        row.error='Kesilmiş çalışma iptal edildi; yeniden başlatılmadı.'
+        row.updated_at=now();session.add(row)
     return row
 
 
@@ -203,6 +232,10 @@ def payload(session,row):
     if row.status=='RUNNING' and row.updated_at<now()-timedelta(minutes=15):
         row.status='INTERRUPTED';row.stage='Kesildi — ilerleme korundu'
         row.error='Çalışma kesildi. Kaydedilmiş ilerleme korunuyor; otomatik tekrarlanmadı.'
+        session.add(row);session.commit()
+    elif row.status=='CANCEL_REQUESTED' and row.updated_at<now()-timedelta(minutes=15):
+        row.status='CANCEL_FAILED';row.stage='Durdurma doğrulanamadı'
+        row.error='Durdurma isteği zaman aşımına uğradı; sağlayıcı bağlantısının kapandığı doğrulanamadı.'
         session.add(row);session.commit()
     result={'id':row.id,'status':row.status,'stage':row.stage,'question':row.question,
         'partial':row.partial_text,'error':row.error}
