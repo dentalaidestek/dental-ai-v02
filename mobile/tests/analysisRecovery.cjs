@@ -1,6 +1,6 @@
 const ts=require('typescript'),fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),{test}=require('node:test');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-let renderKeySeq=0;
+const sessionRenderKeyExports=require('./helpers/sessionRenderKeyModule.cjs');
 const patient={id:42,anonymous_id:'synthetic-42',first_name:'Test',last_name:'Patient'};
 const result={analysis:{id:7,patient_id:42,status:'AI_ANALYZED'},patient,assets:[]};
 const refreshExports={};
@@ -11,15 +11,7 @@ function harness({props={},fetchAnalysis=async()=>result,fetchPatient=async()=>(
  const same=(a,b)=>a&&a.length===b.length&&b.every((v,i)=>Object.is(v,a[i]));
  const react={useState:value=>{const i=si++;if(!(i in states))states[i]=value;return[states[i],v=>{states[i]=typeof v==='function'?v(states[i]):v}]},useRef:value=>{const i=ri++;return refs[i]??(refs[i]={current:value})},useCallback:(f,deps)=>{const i=ci++;if(!same(callbacks[i]?.deps,deps))callbacks[i]={f,deps};return callbacks[i].f},useEffect:(f,deps)=>{const i=ei++;if(!same(previous[i]?.deps,deps))effects.push(()=>{previous[i]?.cleanup?.();previous[i]={deps,cleanup:f()}})},createElement:(type,props,...children)=>({type,props,children})};react.default=react;
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeDentalAI.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
- const exports={};const shim={react,"react-native":{AppState:{addEventListener:()=>({remove(){}}),currentState:"active"}},
-  "expo-secure-store":{getItemAsync:async()=>saved,deleteItemAsync:async()=>{}},
-  "./api":{getPatients:async()=>({items:[{id:1,anonymous_id:"synthetic-1",first_name:"Other Patient"}],total:1}),getPatient:fetchPatient},
-  "./analysisApi":{getAnalysis:fetchAnalysis,analysisPatientLabel:patient=>{const n=[patient.first_name,patient.last_name].map(v=>typeof v==="string"?v.trim():"").filter(Boolean).join(" ");return n||patient.anonymous_id||"Hasta #"+patient.id}},
-  "./realtime":{useRealtime:()=>({lastEvent:event})},
-  "./analysisRefresh":refreshExports,
-  "./findings":{displayFindings:()=>[]},
-  "./sessionRenderKey":{nextSessionRenderKey:()=>String(++renderKeySeq)}};
- vm.runInNewContext(code,{exports,setTimeout:()=>0,clearTimeout:()=>{},require:name=>shim[name]||{}});
+ const exports={};vm.runInNewContext(code,{exports,setTimeout:()=>0,clearTimeout:()=>{},require:name=>name==='react'?react:name==='react-native'?{AppState:{addEventListener:()=>({remove(){}}),currentState:'active'}}:name==='expo-secure-store'?{getItemAsync:async()=>saved,deleteItemAsync:async()=>{}}:name==='./api'?{getPatients:async()=>({items:[{id:1,anonymous_id:'synthetic-1',first_name:'Other Patient'}],total:1}),getPatient:fetchPatient}:name==='./analysisApi'?{getAnalysis:fetchAnalysis,analysisPatientLabel:patient=>{const name=[patient.first_name,patient.last_name].map(value=>typeof value==='string'?value.trim():'').filter(Boolean).join(' ');return name||patient.anonymous_id||'Hasta #'+patient.id}}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:name==='./analysisRefresh'?refreshExports:name==='./sessionRenderKey'?sessionRenderKeyExports:name==='./findings'?{displayFindings:()=>[]}:{} });
  const render=()=>{si=ri=ci=ei=0;const tree=exports.default(values);while(effects.length)effects.shift()();return tree};
  const flush=async()=>{for(let i=0;i<4;i++){await tick();render()}};
  return {states,render,flush,change:next=>{values={...values,...next};render()},event:value=>{event=value;render()},unmount:()=>previous.forEach(e=>e.cleanup?.())};

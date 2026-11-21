@@ -2,8 +2,7 @@ const fs=require('node:fs');
 const ts=require('typescript');
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
-require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{fileName:filename,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,filename);
-const {nextSessionRenderKey}=require('../src/sessionRenderKey.ts');
+const {nextSessionRenderKey}=require('./helpers/sessionRenderKeyModule.cjs');
 
 test('session render keys are opaque, unique and do not encode credentials',()=>{
  const first=nextSessionRenderKey(),second=nextSessionRenderKey();
@@ -29,5 +28,18 @@ test('analysis and clinical viewer components never interpolate credentials into
   assert.ok(keys.length>0,name+' should retain keyed identity boundaries');
   assert.ok(keys.every(value=>!/(?:^|[^A-Za-z0-9_])token(?:[^A-Za-z0-9_]|$)/.test(value)),name+' contains a credential-derived React key');
   assert.ok(keys.some(value=>value.includes('renderSessionKey')||value.includes('viewerSessionKey')),name+' must use an opaque session identity');
+ }
+});
+
+test('all VM component harnesses resolve the opaque session-key helper',()=>{
+ const cases=[
+  ['analysisRefresh.cjs',"name==='./sessionRenderKey'?sessionRenderKeyExports"],
+  ['analysisRecovery.cjs',"name==='./sessionRenderKey'?sessionRenderKeyExports"],
+  ['clinicalWorkflow.cjs',"n==='./sessionRenderKey'?sessionRenderKeyExports"],
+ ];
+ for(const [file,contract] of cases){
+  const source=fs.readFileSync(require.resolve('./'+file),'utf8');
+  assert.ok(source.includes("require('./helpers/sessionRenderKeyModule.cjs')"),file+' must load the shared TypeScript bridge');
+  assert.ok(source.includes(contract),file+' must map the sessionRenderKey import into its VM');
  }
 });
