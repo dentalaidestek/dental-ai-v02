@@ -221,3 +221,15 @@ export function patientProfileMergeEditConflict(
 
   return { values, conflicts };
 }
+
+
+/** Native edits must carry the server snapshot revision; never fall back to a blind overwrite. */
+export function isPatientProfileEditRevision(revision: unknown): revision is string {
+  return typeof revision === 'string' && /^[a-f0-9]{64}$/.test(revision);
+}
+
+export function patientProfileEditRevisionError(revision: unknown): string | null {
+  return isPatientProfileEditRevision(revision)
+    ? null
+    : 'Hasta kayıt sürümü alınamadı. Profili yenileyip tekrar deneyin.';
+}
