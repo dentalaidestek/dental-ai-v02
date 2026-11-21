@@ -285,8 +285,8 @@ def test_web_and_native_reject_anatomically_invalid_surface_writes(chat, monkeyp
     monkeypatch.setattr(main, "get_current_user", lambda _request: web_user)
     page = client.get("/patients/38/teeth")
     assert page.status_code == 200, page.text
-    tooth_revisions = json.loads(re.search(r"const TOOTH_REVISIONS\\s*=\\s*(\\{.*?\\});", page.text).group(1))
-    surface_revisions = json.loads(re.search(r"const SURFACE_REVISIONS\\s*=\\s*(\\{.*?\\});", page.text).group(1))
+    tooth_revisions = json.loads(re.search(r"const TOOTH_REVISIONS\s*=\s*(\{.*?\});", page.text).group(1))
+    surface_revisions = json.loads(re.search(r"const SURFACE_REVISIONS\s*=\s*(\{.*?\});", page.text).group(1))
 
     invalid_web = client.post(
         "/patients/38/teeth/11",
