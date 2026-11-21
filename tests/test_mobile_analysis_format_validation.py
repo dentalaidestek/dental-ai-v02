@@ -15,11 +15,15 @@ def _validator():
     tree = ast.parse(source.read_text(encoding="utf-8"))
     node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_copy_validated_analysis_image")
     module = ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[]))
+    # 0a86c530 ile doğrulayıcı kopyaları gerçek sanitizer'dan geçiriyor; izole scope
+    # aynı gerçek fonksiyona bağlanır (import dışında üretim servisi başlatılmaz).
+    from app.clinical_media import sanitize_clinical_media_image
     scope = {
         "Path": Path,
         "Image": Image,
         "HTTPException": HTTPException,
         "UploadFile": UploadFile,
+        "sanitize_clinical_media_image": sanitize_clinical_media_image,
         "MOBILE_MAX_ANALYSIS_BYTES": 15 * 1024 * 1024,
         "MOBILE_MAX_ANALYSIS_PIXELS": 40_000_000,
     }

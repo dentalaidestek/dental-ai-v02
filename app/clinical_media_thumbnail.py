@@ -73,9 +73,11 @@ def ensure_thumbnail(original_reference: str | Path) -> Path:
         original = object_storage.ensure_local(original_reference)
         try:
             with Image.open(original) as source:
-                image = ImageOps.exif_transpose(source)
-                if image.format not in {"JPEG", "PNG", "WEBP"}:
+                # Pillow 12 exif_transpose her zaman kopya döndürür ve format bilgisi düşer;
+                # biçim kontrolü kapatılmamış kaynak üzerinde yapılır.
+                if source.format not in {"JPEG", "PNG", "WEBP"}:
                     raise ValueError("Unsupported clinical image format")
+                image = ImageOps.exif_transpose(source)
                 image.thumbnail((THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE), Image.Resampling.LANCZOS)
                 if image.mode not in {"RGB", "L"}:
                     image = image.convert("RGB")

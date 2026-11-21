@@ -134,7 +134,8 @@ def _drain(engine):
                 row=session.get(StudyRun,run.id)
                 if row is not None and row.status=='RUNNING':
                     row.status='FAILED';row.error='Çalışma tamamlanamadı. Önceki kayıtların korunuyor.'
-                    row.partial_text='';row.updated_at=now();session.add(row);session.commit()
+                    # 42ceabec: checkpoint korunur; çökmede kısmi metin atılmaz.
+                    row.updated_at=now();session.add(row);session.commit()
 
 
 def wake(engine):

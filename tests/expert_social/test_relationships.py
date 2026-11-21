@@ -251,7 +251,7 @@ def test_followers_only_include_active_members_and_verified_identity(env):
         for field in ("private-", "document.pdf", "05300000000", "password_hash")
     )
     assert response.headers["cache-control"] == "private, no-store"
-    assert response.headers["vary"] == "Cookie"
+    assert response.headers["vary"] == "Cookie, Authorization, X-Dental-Social-Admin-Step-Up"
 
 
 @pytest.mark.parametrize(
@@ -346,7 +346,13 @@ def test_existing_user_blocks_hide_relationships_and_feed_in_both_directions(
     for path in paths:
         response = client.get(path)
         assert response.status_code == 200, response.text
-        assert response.json() == {"items": [], "next_cursor": None}
+        # 16498c74 ile yalnız takip akışı yanıtı branş listesi taşıyor.
+        expected = {"items": [], "next_cursor": None, "specialties": [
+            "Endodonti", "Ortodonti", "Pedodonti", "Periodontoloji",
+            "Protetik Diş Tedavisi", "Restoratif Diş Tedavisi",
+            "Ağız, Diş ve Çene Cerrahisi", "Ağız, Diş ve Çene Radyolojisi",
+        ]} if path.endswith("feed/following") else {"items": [], "next_cursor": None}
+        assert response.json() == expected
 
 
 @pytest.mark.parametrize("kind", ["followers", "following"])

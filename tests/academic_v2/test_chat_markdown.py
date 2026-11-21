@@ -58,11 +58,14 @@ def run_client_function(name, end_marker, harness):
 
 
 def test_interrupted_stream_keeps_partial_answer_restores_request_and_disables_export():
-    result=run_client_function('    async function sendMessage(',"    async function uploadChatFiles(",r'''
+    result=run_client_function('    async function followRun(',"    async function uploadChatFiles(",r'''
+var activeRun=null;var runTimer=null;var learningTimer=null;var learningChannel=null;
+var refreshLearning=()=>{};var refreshQuizzes=()=>{};
+const window={addEventListener:()=>{}};
 const made=[];
 function node(){return {removed:false,children:[],classList:{remove(){}},
   querySelector(){return this},appendChild(x){this.children.push(x)},remove(){this.removed=true}}}
-const document={createElement:node};
+const document={createElement:node,hidden:false,getElementById:()=>({addEventListener(){}}),addEventListener:()=>{}};
 const materialCount=1,v2Streaming=true,courseId=2,send={disabled:false},status={};
 const input={value:'Soru',style:{},focus(){}};
 const attach=null,applyIndexReadiness=()=>{};

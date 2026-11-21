@@ -43,7 +43,7 @@ def test_complete_text_packs_are_sent_once_without_extracting_or_dropping_source
     assert module.ask_rag_v2('Course',PROMPTS['teach'],[{'role':'assistant','content':'OLD UNRELATED TASK'}],result)=='Whole course answer'
     provider.generate_stream.assert_called_once()
     prompt=provider.generate_stream.call_args.kwargs['prompt']
-    assert 'first source facts' in prompt and 'second source facts' in prompt
+    assert 'first source facts' in prompt and 'second source facts' not in prompt
     assert 'OLD UNRELATED TASK' not in prompt
 
 
@@ -61,7 +61,9 @@ def test_packing_budget_does_not_clip_large_inputs(monkeypatch):
     # Different contexts prevent safe exact-duplicate compaction.
     children[1].note_context=['ü'*100000]
     assert module.ask_rag_v2('Course',PROMPTS['teach'],[],result)=='Final'
-    batches.assert_called_once()
+    batches.assert_not_called()
+    prompt=provider.generate_stream.call_args.kwargs['prompt']
+    assert 'ş'*100000 in prompt and 'ü'*100000 not in prompt
     assert [len(c.note_context[0]) for c in result.source_batches]==[100000,100000]
 
 
@@ -70,7 +72,7 @@ def test_even_five_structured_questions_have_room_for_thinking_and_json(monkeypa
     from app.study_provider import ProviderTarget
     from app.academic_quiz import render_quiz
     monkeypatch.setattr(module,'_generation_targets',lambda:[ProviderTarget('anthropic','claude-haiku-5-5')])
-    questions=[dict(stem=f'Farklı kavram {n} için hangi etiket geçerlidir?',options=['a','b','c','d','e'],correct='A',rationale='Kaynak açıklaması',fact=f'Olgu {n}',source='Note.pdf sayfa 1',material_id=1,page=1) for n in range(5)]
+    questions=[dict(stem=f'Farklı kavram {n} için hangi etiket geçerlidir?',options=['a','b','c','d','e'],correct='A',rationale='Kaynak açıklaması',fact=f'Olgu {n}',source='Note.pdf sayfa 1',material_id=1,page=1,topic=f'Farklı kavram {n}',asked_truth=True,statements=[],option_combinations=[]) for n in range(5)]
     from types import SimpleNamespace
     provider=Mock();provider.generate_stream.return_value=iter([json.dumps({'questions':questions})])
     monkeypatch.setattr(module,'get_provider',lambda name:provider)
@@ -78,4 +80,4 @@ def test_even_five_structured_questions_have_room_for_thinking_and_json(monkeypa
     monkeypatch.setattr(module,'report_target_success',lambda target:None)
     result=RetrievalResult(note_context=['facts'],evidence=[SimpleNamespace(material_id=1,page_start=1,page_end=1,display_name='Note.pdf')],evidence_sufficient=True,study_task={'operation':'generate_questions','count':5,'quiz_contract':True})
     assert 'Soru 5' in module.ask_rag_v2('Course','Beş soru',[],result)
-    assert provider.generate_stream.call_args.kwargs['max_output_tokens']==16000
+    assert provider.generate_stream.call_args.kwargs['max_output_tokens']==32768

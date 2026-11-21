@@ -221,9 +221,12 @@ def test_study_generation_releases_db_connection_and_rechecks_course(tmp_path, m
     from app import academic_request_understanding as gateway
     from app.study_retrieval_v2 import RetrievalResult
     def understand(*args, source_outline=None):
-        assert source_outline == {'sections': [], 'complete': False}
+        # 35c2397a sonrası planlayıcı çıktısı pdf_files/learning ile zenginleşir;
+        # boş kurs için çekirdek şekil korunur, DB bağlantısı yine serbesttir.
+        assert source_outline.get('sections') == []
+        assert source_outline.get('complete') is False
         assert engine.pool.checkedout() == 0
-        return object()
+        return SimpleNamespace(plan=None)
     monkeypatch.setattr(gateway, 'understand_study_request', understand)
     with Session(engine) as session:
         session.add(main.User(id=1, username='synthetic', role='DOCTOR', display_name='Synthetic'))
@@ -245,7 +248,7 @@ def test_study_generation_releases_db_connection_and_rechecks_course(tmp_path, m
         return 'Synthetic answer'
     monkeypatch.setattr(main, 'ask_study_ai_v2', generate)
     try:
-        response = main.study_ai_ask(None, 1, BackgroundTasks(), message='Angle sınıf II?')
+        response = main.study_ai_ask(SimpleNamespace(state=SimpleNamespace()), 1, BackgroundTasks(), message='Angle sınıf II?')
         assert response.status_code == (409 if delete_during_generation else 200)
         with Session(engine) as session:
             messages = session.exec(select(main.StudyChatMessage)).all()
@@ -279,6 +282,10 @@ def test_patient_media_upload_releases_db_during_storage(tmp_path, monkeypatch):
         return str(path)
 
     monkeypatch.setattr(main, 'storage_persist_file', persist)
+    from PIL import Image
+    jpeg = io.BytesIO()
+    Image.new('RGB', (4, 4)).save(jpeg, format='JPEG')
+    jpeg.seek(0)
     try:
         response = asyncio.run(main.upload_patient_media(
             None,
@@ -286,7 +293,7 @@ def test_patient_media_upload_releases_db_during_storage(tmp_path, monkeypatch):
             media_type='PHOTO',
             tooth_number=None,
             note=None,
-            files=[UploadFile(file=io.BytesIO(b'\xff\xd8\xffsynthetic'), filename='photo.jpg')],
+            files=[UploadFile(file=jpeg, filename='photo.jpg')],
         ))
         assert response.status_code == 303
         with Session(engine) as session:
@@ -468,11 +475,17 @@ def test_mobile_patient_media_upload_releases_db_before_r2_persist(tmp_path, mon
         return str(path)
     monkeypatch.setattr(mobile_api, 'storage_persist_file', persist)
 
+    from PIL import Image
+    jpeg = io.BytesIO()
+    Image.new('RGB', (4, 4)).save(jpeg, format='JPEG')
+    jpeg.seek(0)
     try:
         response = asyncio.run(mobile_api.mobile_patient_media_upload(
             patient_id,
-            image=UploadFile(file=io.BytesIO(b'\xff\xd8\xffsynthetic'), filename='clinical.jpg'),
+            image=UploadFile(file=jpeg, filename='clinical.jpg'),
             media_type='PHOTO',
+            tooth_number=None,
+            note=None,
             request_key='mobile-media-key-0001',
             batch_id='mobile-media-batch-0001',
             user=user,

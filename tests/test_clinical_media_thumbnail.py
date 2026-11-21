@@ -109,10 +109,11 @@ def test_thumbnail_route_and_gallery_use_private_owner_scoped_derivatives():
     api = Path("app/mobile_modern_api_v3.py").read_text(encoding="utf-8")
     native = Path("mobile/src/NativePatientMedia.tsx").read_text(encoding="utf-8")
     route = api[api.index("def mobile_media_thumbnail"):api.index("@router.get(\"/patients/{patient_id}/media/{media_id}\")", api.index("def mobile_media_thumbnail"))]
-    assert "_user_owned_patient(s,user,patient_id)" in route
-    assert "row.owner_user_id!=user.id" in route
-    assert '"Vary":"Authorization"' in route
-    assert '"Cache-Control":"private, no-store"' in route
+    assert "patient.owner_user_id != user.id" in route
+    assert "current_media.file_path == file_path" in route
+    assert "_private_clinical_media_error(404" in route
+    assert '"Cache-Control": "private, no-store"' in api
+    assert '"Vary": "Authorization"' in api
     assert 'item.thumbnail_url||item.url' in native
     assert "preview.url" in native
 
@@ -163,8 +164,9 @@ def test_thumbnail_endpoint_rechecks_owner_after_generation():
     start = api.index("def mobile_media_thumbnail")
     end = api.index("@router.get(\"/patients/{patient_id}/media/{media_id}\")", start)
     block = api[start:end]
-    assert "still_owned=bool(media" in block
-    assert "delete_thumbnail(file_path)" in block
+    assert "still_owned = bool(" in block
+    assert "_cleanup_orphan_thumbnail(delete_thumbnail, file_path, media_id)" in block
+    assert "current_media.file_path == file_path" in block
 
 
 def test_web_patient_gallery_uses_private_thumbnail_route_and_bounded_cursor_pages():
