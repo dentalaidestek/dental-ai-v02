@@ -60,7 +60,7 @@ test('native home renders real recent analyses and patches valid program events 
  assert.match(source,/dashboard_event!==undefined/);
 
  const program=fs.readFileSync(path.join(__dirname,'../src/NativeProgram.tsx'),'utf8');
- assert.match(source,/nav\.navigate\("Program",hasProgramSnapshot\?\{eventId:programEvent\.id\}:\{\}\)/);
+ assert.match(source,/nav\.navigate\("Program",hasProgramSnapshot\?\{eventId:programEvent\.id,openRequestId:Date\.now\(\)\}:\{\}\)/);
  assert.match(program,/visible\.items\.find\(item=>item\.event_id===targetEventId\)/);
  assert.match(program,/setEditor\(\{id:target\.event_id\}\)/);
  assert.match(program,/!actionIntentReady\|\|uncertain/);
