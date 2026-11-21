@@ -153,7 +153,7 @@ function Home({token,user}:{token:string;user:User}){
    <Text style={s.section}>{programTitle}</Text>
    <Pressable accessibilityRole="button" onPress={()=>nav.navigate("Program")}><Text style={{color:"#0878F9",fontWeight:"800"}}>Tümünü Gör ›</Text></Pressable>
   </View>
-  {programEvent?<Pressable accessibilityRole="button" accessibilityLabel={programEvent.title+" program kaydını aç"} onPress={()=>nav.navigate("Program",hasProgramSnapshot?{eventId:programEvent.id}:{})} style={s.event} key={programEvent.id}>
+  {programEvent?<Pressable accessibilityRole="button" accessibilityLabel={programEvent.title+" program kaydını aç"} onPress={()=>nav.navigate("Program",hasProgramSnapshot?{eventId:programEvent.id,openRequestId:Date.now()}:{})} style={s.event} key={programEvent.id}>
    <View style={s.eventIcon}><Icon n="clock"/></View>
    <View style={{flex:1}}>
     <Text style={s.cardTitle}>{programEvent.title}</Text>
@@ -279,7 +279,7 @@ function PatientDetailScreen({token,userId,route,navigation}:{token:string;userI
 }
 
 function AI({token,userId,patientId}:{token:string;userId:number;patientId?:number}){return <ScrollView style={s.page} contentContainerStyle={s.content}><Header title="Dental AI" sub="Görüntü analizi"/><View style={s.aiHero}><Text style={s.aiStar}>✦</Text><Text style={s.aiTitle}>Klinik görüntünü analiz et</Text><Text style={s.aiSub}>Görüntünü seç, hastana bağla ve analiz sonucunu incele.</Text><NativeDentalAI key={patientId||"new-analysis"} token={token} userId={userId} initialPatientId={patientId}/></View><Text style={s.section}>Güvenli akış</Text>{["Görüntü hasta kaydına bağlanır","Mevcut Dental AI motoru kullanılır","Son klinik karar hekiminindir"].map(x=><View style={s.check} key={x}><Text style={s.checkMark}>✓</Text><Text style={s.cardSub}>{x}</Text></View>)}</ScrollView>}
-function Program({token,userId,route}:{token:string;userId:number;route?:any}){const eventId=Number.isSafeInteger(route?.params?.eventId)&&route.params.eventId>0?route.params.eventId:undefined;return <NativeProgram key={token+":"+(eventId||"default")} token={token} userId={userId} initialEventId={eventId}/>;}
+function Program({token,userId,route}:{token:string;userId:number;route?:any}){const eventId=Number.isSafeInteger(route?.params?.eventId)&&route.params.eventId>0?route.params.eventId:undefined;const openRequestId=Number.isSafeInteger(route?.params?.openRequestId)?route.params.openRequestId:0;return <NativeProgram key={token+":"+openRequestId} token={token} userId={userId} initialEventId={eventId}/>;}
 
 function Profile({user,signOut,token,onUserChanged}:{user:User;signOut:()=>void;token:string;onUserChanged:(user:User)=>void}){const nav:any=useNavigation();return <NativeAccount key={token} token={token} user={user} onChanged={onUserChanged} signOut={signOut} onMessages={()=>nav.navigate("Consultations")} onNotifications={()=>nav.navigate("Notifications")} onExperts={()=>nav.navigate("ExpertDirectory")} onAcademic={()=>nav.navigate("Academic")} onHistory={()=>nav.navigate("AnalysisHistory")} onPublicProfile={()=>nav.navigate("ExpertProfile",{id:user.id,name:user.display_name})} onExpertProfile={id=>nav.navigate("ExpertProfile",{id})}/>;}
 
