@@ -8,7 +8,7 @@ function component(file,api){
  const exports={},native={StyleSheet:{create:x=>x},AppState:{addEventListener:()=>({remove(){}})},BackHandler:{addEventListener:()=>({remove(){}})},Alert:{alert:(...args)=>api.onAlert?.(...args)},PanResponder:{create:()=>({panHandlers:{}})},...Object.fromEntries(['ActivityIndicator','FlatList','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};
  native.FlatList=props=>React.createElement('FlatList',props,props.ListHeaderComponent,...(props.data||[]).map((item,index)=>React.createElement(React.Fragment,{key:item.key},props.renderItem?.({item,index}))),props.ListEmptyComponent&&!(props.data||[]).length?props.ListEmptyComponent:null,props.ListFooterComponent);
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/'+file+'.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
- vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true,usePreventRemove:()=>{},useNavigation:()=>({navigate:(...args)=>api.onNavigate?.(...args)})}:name==='./programApi'?{checkProgramConflicts:async()=>({advisory:true,total:0,items:[]}),getProgramMutation:async()=>({state:'NOT_FOUND'}),verifyProgramAction:async()=> 'UNKNOWN',...api}:name==='./programIntent'?{loadProgramRequestKey:async()=>null,getOrCreateProgramRequestKey:async()=> 'program-request-key-00000001',clearProgramRequestKey:async()=>{},loadProgramActionIntent:async()=>null,saveProgramActionIntent:async()=>{},clearProgramActionIntent:async()=>{},...api}:name==='./programInlineAdd'?require('../src/programInlineAdd.ts'):name==='./programModel'?require('../src/programModel.ts'):name==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'SYNTHETIC',first_name:'Synthetic'}})}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:{default:name.slice(2)}});
+ vm.runInNewContext(code,{exports,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>true,usePreventRemove:()=>{},useNavigation:()=>({navigate:(...args)=>api.onNavigate?.(...args)})}:name==='./programApi'?{checkProgramConflicts:async()=>({advisory:true,total:0,items:[]}),getProgramMutation:async()=>({state:'NOT_FOUND'}),verifyProgramAction:async()=> 'UNKNOWN',...api,programEventMatchesPayload:api.programEventMatchesPayload||require('../src/programApi.ts').programEventMatchesPayload}:name==='./programIntent'?{loadProgramRequestKey:async()=>null,getOrCreateProgramRequestKey:async()=> 'program-request-key-00000001',clearProgramRequestKey:async()=>{},loadProgramActionIntent:async()=>null,saveProgramActionIntent:async()=>{},clearProgramActionIntent:async()=>{},...api}:name==='./programInlineAdd'?require('../src/programInlineAdd.ts'):name==='./programModel'?require('../src/programModel.ts'):name==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'SYNTHETIC',first_name:'Synthetic'}})}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:{default:name.slice(2)}});
  return exports.default;
 }
 const button=(tree,label)=>tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>text(child)===label));
@@ -64,6 +64,48 @@ test('program API sends a stable request key and reconciles the server receipt',
   const receipt=await api.getProgramMutation('token','program-create-request-000001');
   assert.equal(receipt.state,'FOUND');assert.equal(receipt.event.id,7);
   assert.ok(url.includes('/program/mutations/program-create-request-000001'));
+ }finally{global.fetch=original}
+});
+
+test('program create receipt must match every persisted field, not only start time and patient',async()=>{
+ const api=require('../src/programApi.ts'),original=global.fetch;
+ const draft={event_type:'APPOINTMENT',title:'Synthetic API visit',start_at:'2030-01-07T10:00',end_at:'2030-01-07T10:30',patient_id:8,location:'Clinic A',notes:'Synthetic note',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const event={id:7,event_type:'APPOINTMENT',title:draft.title,status:'ACTIVE',start_local:draft.start_at,end_local:draft.end_at,patient_id:8,patient_name:'Synthetic',location:draft.location,notes:draft.notes,reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ try{
+  assert.equal(api.programEventMatchesPayload(event,draft),true);
+  const mismatches=[
+   {...event,title:'Different title'},
+   {...event,end_local:'2030-01-07T10:45'},
+   {...event,patient_id:9},
+   {...event,location:'Different clinic'},
+   {...event,notes:'Different note'},
+   {...event,reminder_minutes:'60'},
+   {...event,recurrence_rule:'WEEKLY',recurrence_until:'2030-01-14'}
+  ];
+  for(const mismatch of mismatches){
+   assert.equal(api.programEventMatchesPayload(mismatch,draft),false);
+   global.fetch=async()=>new Response(JSON.stringify({event:mismatch}),{status:200});
+   await assert.rejects(()=>api.saveProgramEvent('token',draft,undefined,'program-create-request-000001'),/Program kaydı sunucudan doğrulanamadı/);
+  }
+ }finally{global.fetch=original}
+});
+
+test('program event receipts reject invalid end ordering, malformed nullable fields and recurrence dates',async()=>{
+ const api=require('../src/programApi.ts'),original=global.fetch;
+ const event={id:7,event_type:'APPOINTMENT',title:'Synthetic visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:8,patient_name:'Synthetic',location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ try{
+  for(const malformed of [
+   {...event,end_local:'2030-01-07T09:59'},
+   {...event,patient_name:{name:'Synthetic'}},
+   {...event,location:'x'.repeat(161)},
+   {...event,notes:'x'.repeat(2001)},
+   {...event,recurrence_rule:'WEEKLY',recurrence_until:'2030-02-30'}
+  ]){
+   global.fetch=async()=>new Response(JSON.stringify({event:malformed}),{status:200});
+   await assert.rejects(()=>api.getProgramEvent('token',7),/Program kaydı doğrulanamadı/);
+  }
+  global.fetch=async()=>new Response(JSON.stringify({event}),{status:200});
+  assert.equal((await api.getProgramEvent('token',7)).id,7);
  }finally{global.fetch=original}
 });
 
