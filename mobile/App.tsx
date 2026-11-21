@@ -1,3 +1,4 @@
+import './src/cryptoPolyfill';
 import NativeAcademic from './src/NativeAcademic';
 import NativeExpertProfile from "./src/NativeExpertProfile";
 import NativeProfessional from "./src/NativeProfessional";

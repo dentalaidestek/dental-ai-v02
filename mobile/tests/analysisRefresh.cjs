@@ -4,6 +4,7 @@ const vm=require('node:vm');
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+let renderKeySeq=0;
 const refreshExports={};
 const refreshSource=ts.transpileModule(fs.readFileSync(require.resolve('../src/analysisRefresh.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
 vm.runInNewContext(refreshSource,{exports:refreshExports,Math});
@@ -14,7 +15,13 @@ function harness(fetchAnalysis){
  const react={useCallback:f=>f,useRef:value=>{const i=refIndex++;return refs[i]??(refs[i]={current:value})},useState:()=>{const i=stateIndex++;return [states[i],value=>{states[i]=value}]},useEffect:(f,deps)=>{const i=effectIndex++;if(!previous[i]||deps.some((v,j)=>!Object.is(v,previous[i].deps[j]))){effects.push(()=>{previous[i]?.cleanup?.();previous[i]={deps,cleanup:f()}})}},createElement:()=>null};react.default=react;
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeDentalAI.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const exports={};
- vm.runInNewContext(code,{exports,setTimeout:()=>0,clearTimeout:()=>{},require:name=>name==='react'?react:name==='react-native'?{AppState:{addEventListener:()=>({remove(){}}),currentState:'active'}}:name==='./api'?{getPatients:async()=>({items:[]})}:name==='./analysisApi'?{getAnalysis:fetchAnalysis,analysisPatientLabel:patient=>{const name=[patient.first_name,patient.last_name].map(value=>typeof value==='string'?value.trim():'').filter(Boolean).join(' ');return name||patient.anonymous_id||'Hasta #'+patient.id}}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:name==='./analysisRefresh'?refreshExports:{}});
+ const shim={react,"react-native":{AppState:{addEventListener:()=>({remove(){}}),currentState:"active"}},
+  "./api":{getPatients:async()=>({items:[]})},
+  "./analysisApi":{getAnalysis:fetchAnalysis,analysisPatientLabel:patient=>{const n=[patient.first_name,patient.last_name].map(v=>typeof v==="string"?v.trim():"").filter(Boolean).join(" ");return n||patient.anonymous_id||"Hasta #"+patient.id}},
+  "./realtime":{useRealtime:()=>({lastEvent:event})},
+  "./analysisRefresh":refreshExports,
+  "./sessionRenderKey":{nextSessionRenderKey:()=>String(++renderKeySeq)}};
+ vm.runInNewContext(code,{exports,setTimeout:()=>0,clearTimeout:()=>{},require:name=>shim[name]||{}});
  const render=()=>{stateIndex=0;effectIndex=0;refIndex=0;exports.default({token});while(effects.length)effects.shift()();};
  return {states,render,setEvent:value=>{event=value;render()},setToken:value=>{token=value;render()},unmount:()=>previous.forEach(x=>x?.cleanup?.())};
 }
