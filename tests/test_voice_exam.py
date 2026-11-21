@@ -834,3 +834,74 @@ def test_history_rejects_ledger_rows_with_a_different_owner_id(app_client):
     history = client.get("/patients/1/voice-exam/history")
     assert history.status_code == 200
     assert history.json()["fields"] == {}
+
+
+def test_partial_reapproval_preserves_unmentioned_approved_fields_and_source_identity(app_client):
+    client, engine = app_client
+    first = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='f' * 32,
+        fields={
+            'allergies': 'Penisilin alerjisi olduğunu belirtti',
+            'medications': 'Metformin kullandığını belirtti',
+        },
+    ))
+    assert first.status_code == 200
+    second = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='1' * 32,
+        fields={'medications': 'Metformin kullanımını bıraktığını belirtti'},
+    ))
+    assert second.status_code == 200
+
+    fields = client.get('/patients/1/voice-exam/history').json()['fields']
+    assert fields['allergies'] == {
+        'value': 'Penisilin alerjisi olduğunu belirtti',
+        'quote': '',
+        'analysis_id': first.json()['analysis_id'],
+    }
+    assert fields['medications'] == {
+        'value': 'Metformin kullanımını bıraktığını belirtti',
+        'quote': '',
+        'analysis_id': second.json()['analysis_id'],
+    }
+    with Session(engine) as session:
+        rows = session.execute(
+            select(ApprovedAnamnesis.__table__.c.field_key,
+                   ApprovedAnamnesis.__table__.c.value,
+                   ApprovedAnamnesis.__table__.c.analysis_id)
+            .order_by(ApprovedAnamnesis.__table__.c.analysis_id)
+        ).all()
+        assert rows == [
+            ('allergies', 'Penisilin alerjisi olduğunu belirtti', first.json()['analysis_id']),
+            ('medications', 'Metformin kullandığını belirtti', first.json()['analysis_id']),
+            ('medications', 'Metformin kullanımını bıraktığını belirtti', second.json()['analysis_id']),
+        ]
+
+
+def test_stale_revision_cannot_replace_existing_approved_anamnesis(app_client):
+    client, engine = app_client
+    first = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='2' * 32,
+        fields={'allergies': 'Penisilin alerjisi olduğunu belirtti'},
+    ))
+    assert first.status_code == 200
+
+    stale = payload(
+        engine, request_key='3' * 32,
+        fields={'allergies': 'Penisilin alerjisi olmadığını belirtti'},
+    )
+    with Session(engine) as session:
+        patient = session.get(Patient, 1)
+        patient.age = 42
+        session.add(patient)
+        session.commit()
+
+    rejected = client.post('/patients/1/voice-exam/apply', json=stale)
+    assert rejected.status_code == 409
+    history = client.get('/patients/1/voice-exam/history')
+    assert history.status_code == 200
+    assert history.json()['fields']['allergies']['value'] == 'Penisilin alerjisi olduğunu belirtti'
+    assert history.json()['fields']['allergies']['analysis_id'] == first.json()['analysis_id']
+    with Session(engine) as session:
+        rows = session.execute(select(ApprovedAnamnesis.__table__)).mappings().all()
+        assert len(rows) == 1
+        assert rows[0]['analysis_id'] == first.json()['analysis_id']
