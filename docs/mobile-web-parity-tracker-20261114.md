@@ -1205,3 +1205,17 @@ Rechecked `app/templates/dashboard.html` before changing native behavior. The we
 Current branch head: `c33be398b5dffc2ed1c5b1042b021118dd29f2dd`. The GitHub commit status endpoint currently returns no checks for this head, and no PR-triggered workflow run is attached to it. The prior run on `0ea3ad2` is useful historical evidence only: Android typecheck and APK/export passed, the six native security suites passed 558/558, Python security passed 573 and PostgreSQL passed 29, but the mobile beta suite had seven stale contract/harness failures. Those seven test fixes are committed earlier on this branch; the repaired suite has not yet been re-run against the current head. A local GitHub clone was not available in this run, so no local test result is claimed.
 
 No main merge, live deployment, migration, store publication, or real patient/audio operation was performed. Next gate is a runner-backed Android + Security Recovery run against the current head. After that, continue the web-first patient-profile/tooth-chart/media visual and functional acceptance; the 60,000-user target remains un-certified.
+
+## 2026-11-21 — Native voice audio-mode recovery
+
+Web-first trace completed before edits: `voice-exam.js`, `voice-exam-live.js` and `voice-finish-draft.js`. New gap: Expo Audio's app-wide `allowsRecording` mode could remain enabled when a 15-second rotation's next `prepareToRecordAsync` failed, or when the recorder screen unmounted after stopping. The browser flow closes its owned microphone stream; native must additionally restore the app-wide playback route.
+
+Added an explicit, testable `restoreVoiceAudioMode` helper and guarded restoration across normal cut, rotation/start failure, pause/finish failure, ASR drain failure, idle exits and unmount cleanup. The helper does not reset audio mode while the recorder is still active; a failed reset is surfaced in the foreground UI. No patient data, audio file, server endpoint, polling, database or production configuration was changed.
+
+Regression coverage added to `mobile/tests/voiceWorkflow.cjs`: helper success/failure, synthetic second-chunk preparation failure after a successful first chunk, and unmount after recording. The suite is part of `npm run test:beta`.
+
+Commits on this work package: `f3d2194` (restore helper), `30e15ca` (recorder failure/unmount restoration), `3c9d313` (idle and drain failure paths), `df65557` (regressions), `589c9a4` (evidence note), followed by this tracker update.
+
+Latest verified starting-head CI before this work: PR HEAD `ecc024c` had Android typecheck, 77/77 native voice tests, Android APK, Expo Android/iOS bundles, Python security/PostgreSQL and six native security jobs all successful (Android run 44899242820; Security Recovery run 44899242833). The current branch HEAD has advanced; new runs 44902342039 (Android) and 44902342087 (Security Recovery) were created but their job lists are still empty/pending at the time of this note. No passing result is claimed for the new audio-mode regressions until those latest-head jobs complete.
+
+Physical Android/iOS audio-route acceptance remains open, including Bluetooth, phone/notification interruption, app background/foreground and playback after stopping. No main merge, live deployment, APK/IPA publication or production patient-data operation.
