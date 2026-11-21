@@ -67,7 +67,7 @@ from app.main import (
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, storage_delete, _record_patient_realtime_events,
     _patient_edit_revision,
     _record_realtime_event, _publish_realtime_event, on_loop,
-    _support_user_can_reply, _support_unread_count, _mark_support_read, UserReport, _ensure_report_support_tickets,
+    _support_user_can_reply, _support_unread_count, _support_unread_map, _mark_support_read, UserReport, _ensure_report_support_tickets,
     _cancel_pending_program_reminders, _resolve_notifications, _record_program_realtime_event, _utcnow_naive,
     _ensure_email_verification_challenge, _verify_email_code,
 )
@@ -2798,18 +2798,28 @@ def mobile_support_tickets(before_id: Optional[int] = Query(None, ge=1), limit: 
         tickets = session.exec(query.order_by(SupportTicket.id.desc()).limit(limit + 1)).all()
         has_more = len(tickets) > limit
         tickets = tickets[:limit]
+        ticket_ids = [ticket.id for ticket in tickets if ticket.id is not None]
+        unread_by_ticket = _support_unread_map(session, ticket_ids, "USER") if ticket_ids else {}
+        latest_by_ticket = {}
+        if ticket_ids:
+            latest_rows = session.exec(select(
+                SupportTicketMessage.ticket_id, func.max(SupportTicketMessage.id)
+            ).where(SupportTicketMessage.ticket_id.in_(ticket_ids)).group_by(SupportTicketMessage.ticket_id)).all()
+            latest_ids = [message_id for _, message_id in latest_rows if message_id is not None]
+            latest_messages = session.exec(select(SupportTicketMessage).where(
+                SupportTicketMessage.id.in_(latest_ids)
+            )).all() if latest_ids else []
+            latest_by_ticket = {message.ticket_id: message for message in latest_messages}
         items = []
         for ticket in tickets:
-            latest = session.exec(select(SupportTicketMessage).where(
-                SupportTicketMessage.ticket_id == ticket.id
-            ).order_by(SupportTicketMessage.id.desc()).limit(1)).first()
+            latest = latest_by_ticket.get(ticket.id)
             items.append({
                 "id": ticket.id, "subject": ticket.subject, "initial_message": ticket.message,
                 "status": ticket.status, "created_at": ticket.created_at.isoformat(),
                 "updated_at": ticket.updated_at.isoformat(),
                 "last_message": latest.message if latest else ticket.message,
-                "unread_count": _support_unread_count(session, ticket.id, "USER"),
-                "can_reply": _support_user_can_reply(session, ticket),
+                "unread_count": unread_by_ticket.get(ticket.id, 0),
+                "can_reply": bool(ticket.status != "CLOSED" and latest and latest.sender_role == "ADMIN"),
             })
         return {"items": items, "total": len(items), "has_more": has_more, "next_before_id": tickets[-1].id if has_more and tickets else None}
 
@@ -2819,10 +2829,17 @@ def mobile_support_reports(token: str = Depends(_mobile_access_token), user: Use
     with Session(engine, expire_on_commit=False) as session:
         reports = session.exec(select(UserReport).where(UserReport.reporter_user_id == user.id).order_by(UserReport.id.desc()).limit(100)).all()
         linked = _ensure_report_support_tickets(session, reports)
+        ticket_ids = [ticket.id for ticket in linked.values() if ticket.id is not None]
+        unread_by_ticket = _support_unread_map(session, ticket_ids, "USER") if ticket_ids else {}
         items = []
         for report in reports:
             ticket = linked.get(report.id)
-            items.append({"id": report.id, "case_id": report.case_id, "reason": report.reason, "detail": report.detail or "", "status": report.status, "created_at": report.created_at.isoformat(), "ticket_id": ticket.id if ticket else None, "unread_count": _support_unread_count(session, ticket.id, "USER") if ticket else 0})
+            items.append({
+                "id": report.id, "case_id": report.case_id, "reason": report.reason,
+                "detail": report.detail or "", "status": report.status,
+                "created_at": report.created_at.isoformat(), "ticket_id": ticket.id if ticket else None,
+                "unread_count": unread_by_ticket.get(ticket.id, 0) if ticket else 0,
+            })
         return {"items": items, "total": len(items)}
 
 
@@ -2832,13 +2849,24 @@ def mobile_support_conversation_options(token: str = Depends(_mobile_access_toke
         cases = session.exec(select(ConsultationCase).where(
             (ConsultationCase.requester_user_id == user.id) | (ConsultationCase.expert_user_id == user.id)
         ).order_by(ConsultationCase.requested_at.desc()).limit(100)).all()
+        case_ids = [case.id for case in cases if case.id is not None]
+        messaged_case_ids = set(session.exec(select(ConsultationMessage.case_id).where(
+            ConsultationMessage.case_id.in_(case_ids)
+        ).distinct()).all()) if case_ids else set()
+        other_ids = {
+            case.expert_user_id if case.requester_user_id == user.id else case.requester_user_id
+            for case in cases
+        }
+        other_users = session.exec(select(User).where(User.id.in_(other_ids))).all() if other_ids else []
+        other_by_id = {other.id: other for other in other_users}
         items = []
+        now = datetime.utcnow()
         for case in cases:
-            has_message = session.exec(select(ConsultationMessage.id).where(ConsultationMessage.case_id == case.id).limit(1)).first() is not None
-            if not has_message and not (case.requester_user_id == user.id and datetime.utcnow() > case.expert_response_deadline):
+            has_message = case.id in messaged_case_ids
+            if not has_message and not (case.requester_user_id == user.id and now > case.expert_response_deadline):
                 continue
             other_id = case.expert_user_id if case.requester_user_id == user.id else case.requester_user_id
-            other = session.get(User, other_id)
+            other = other_by_id.get(other_id)
             items.append({"id": case.id, "other_display_name": other.display_name if other else "Kullanıcı", "status": case.status})
         return {"items": items}
 
