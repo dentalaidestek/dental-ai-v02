@@ -51,6 +51,7 @@ test('program snapshot patch is immutable and preserves unrelated dashboard data
 test('native home renders real recent analyses and patches valid program events without a dashboard GET',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../App.tsx'),'utf8');
  assert.match(source,/dashboardGreetingForHour/);
+ assert.match(source,/d\?\.voice_exam_enabled===true/);
  assert.match(source,/dashboardProfessionalName/);
  assert.match(source,/parseDashboardProgramSnapshot\(lastEvent\)/);
  assert.match(source,/if\(snapshot\)setD\(previous=>previous\?applyDashboardProgramSnapshot/);
@@ -88,15 +89,19 @@ test('dashboard API validates the minimized summary and keeps old-server compati
   assert.equal(calls[0].init.credentials,'omit');
   assert.equal(calls[0].init.headers.Authorization,'Bearer synthetic-token');
 
-  const valid={...base,recent_analyses:[{id:9,patient_id:4,patient_name:'Hasta A',tooth_number:'36',status:'AI_ANALYZED',created_at:'2026-11-21T08:00:00'}],dashboard_event:event,dashboard_event_label:'Bugün'};
+  const valid={...base,recent_analyses:[{id:9,patient_id:4,patient_name:'Hasta A',tooth_number:'36',status:'AI_ANALYZED',created_at:'2026-11-21T08:00:00'}],dashboard_event:event,dashboard_event_label:'Bugün',voice_exam_enabled:true};
   global.fetch=async()=>({ok:true,status:200,text:async()=>JSON.stringify(valid)});
   const result=await getDashboard('synthetic-token');
   assert.equal(result.recent_analyses[0].id,9);
+  assert.equal(result.voice_exam_enabled,true);
 
   global.fetch=async()=>({ok:true,status:200,text:async()=>JSON.stringify({...base,recent_analyses:[{id:9,patient_id:4,patient_name:'Hasta A',clinical_notes:'must not be returned',status:'DRAFT',created_at:'2026-11-21'}]})});
   await assert.rejects(()=>getDashboard('synthetic-token'),error=>error instanceof ApiError&&error.status===502);
 
   global.fetch=async()=>({ok:true,status:200,text:async()=>JSON.stringify({...base,dashboard_event:{...event,start_time:'88:88'}})});
+  await assert.rejects(()=>getDashboard('synthetic-token'),error=>error instanceof ApiError&&error.status===502);
+
+  global.fetch=async()=>({ok:true,status:200,text:async()=>JSON.stringify({...base,voice_exam_enabled:'true'})});
   await assert.rejects(()=>getDashboard('synthetic-token'),error=>error instanceof ApiError&&error.status===502);
  }finally{global.fetch=original}
 });
