@@ -1,10 +1,13 @@
 import {reportSessionExpiry,revalidateSession} from './sessionExpiry';
 import {normalizePatientDirectorySearch} from './patientDirectoryPresentation';
+import {isDashboardProgramEvent} from './dashboardPresentation';
+import type {DashboardProgramEvent} from './dashboardPresentation';
 export const API_BASE = "https://dentalai.tr/api/mobile/v1";
 
 export type User={id:number;username:string;email?:string|null;display_name:string;role:string;is_active:boolean;email_verified_at?:string|null;professional_title?:string|null;specialty?:string|null;university?:string|null};
 export type Patient={id:number;tc_kimlik_no?:string|null;address?:string|null;anonymous_id:string;first_name?:string|null;last_name?:string|null;phone?:string|null;birth_date?:string|null;age?:number|null;chief_complaint?:string|null;created_at?:string};
-export type Dashboard={user:User;stats:{patient_count:number;analysis_count:number;upcoming_event_count:number};recent_patients:Patient[];upcoming_events:Array<{id:number;event_type:string;title:string;start_at:string;end_at?:string|null;patient_id?:number|null;location?:string|null;status:string}>};
+export type DashboardAnalysis={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;status:string;created_at:string};
+export type Dashboard={user:User;stats:{patient_count:number;analysis_count:number;upcoming_event_count:number};recent_patients:Patient[];upcoming_events:Array<{id:number;event_type:string;title:string;start_at:string;end_at?:string|null;patient_id?:number|null;location?:string|null;status:string}>;recent_analyses?:DashboardAnalysis[];dashboard_event?:DashboardProgramEvent|null;dashboard_event_label?:string};
 export type PatientTreatment={id:number;tooth_number?:string|null;treatment_name:string;treatment_date?:string|null;material?:string|null;doctor_note?:string|null;result?:string|null;edit_revision:string;analysis_id?:number|null;created_at:string};
 export type PatientDetail={patient:Patient;edit_revision?:string;teeth:Array<{id:number;tooth_number:string;status:string;note?:string|null;updated_at?:string|null;revision:string}>;surfaces:Array<{id:number;tooth_number:string;surface:string;status:string;note?:string|null;updated_at?:string|null;revision:string}>;treatments:PatientTreatment[];treatments_next_cursor?:string|null;media:Array<{id:number;original_filename:string;file_path:string;media_type:string;tooth_number?:string|null;note?:string|null;uploaded_at?:string}>};
 
@@ -48,7 +51,27 @@ export function login(loginValue:string,password:string,renewEmailCode=false){re
 export function verifyEmail(challengeToken:string,code:string){return request<{access_token:string;token_type:string;expires_at:string}>("/auth/verify-email",undefined,{method:"POST",body:JSON.stringify({challenge_token:challengeToken,code})});}
 export function logout(token:string){return request<{ok:boolean}>("/auth/logout",token,{method:"POST"});}
 export function getMe(token:string){return request<{user:User}>("/me",token);}
-export function getDashboard(token:string){return request<Dashboard>("/dashboard",token);}
+export async function getDashboard(token:string){
+ const result=await request<Dashboard>("/dashboard",token);
+ const analyses=result?.recent_analyses;
+ const analysisFields=new Set(["id","patient_id","patient_name","tooth_number","status","created_at"]);
+ if(analyses!==undefined&&(!Array.isArray(analyses)||analyses.length>3||
+    analyses.some(item=>!item||typeof item!=="object"||Array.isArray(item)||
+      Object.keys(item).some(key=>!analysisFields.has(key))||
+      !Number.isSafeInteger(item.id)||item.id<=0||
+      !Number.isSafeInteger(item.patient_id)||item.patient_id<=0||
+      typeof item.patient_name!=="string"||item.patient_name.length>256||
+      !(item.tooth_number===undefined||item.tooth_number===null||typeof item.tooth_number==="string"&&item.tooth_number.length<=32)||
+      typeof item.status!=="string"||!item.status||item.status.length>40||
+      typeof item.created_at!=="string"||!item.created_at||item.created_at.length>64)||
+    new Set(analyses.map(item=>item.id)).size!==analyses.length))
+  throw new ApiError(502,"Ana sayfa analiz özeti beklenen veri minimizasyonu sözleşmesini karşılamıyor.");
+ if(result?.dashboard_event!==undefined&&result.dashboard_event!==null&&!isDashboardProgramEvent(result.dashboard_event))
+  throw new ApiError(502,"Ana sayfa program özeti doğrulanamadı.");
+ if(result?.dashboard_event_label!==undefined&&!["Bugün","Yaklaşan Program"].includes(result.dashboard_event_label))
+  throw new ApiError(502,"Ana sayfa program etiketi doğrulanamadı.");
+ return result;
+}
 export async function getPatients(token:string,q="",offset=0){
  if(!Number.isSafeInteger(offset)||offset<0)throw Error("Geçersiz hasta sayfası.");
  // Keep the native query identical to the web form's trim/whitespace behavior while
