@@ -78,41 +78,46 @@ def _user(request):
     # omits cookies and sends its own Bearer session token, so resolve that token
     # through the same persisted SessionToken table rather than treating the native
     # request as anonymous. This is shared by the complete voice API, not just history.
+    # If an Authorization header is present it is authoritative. Never fall back
+    # to a different browser-cookie principal when a native Bearer token is invalid
+    # or belongs to another role; that would create a mixed-session confused deputy.
+    authorization = request.headers.get('authorization', '').strip()
+    if authorization:
+        scheme, separator, credential = authorization.partition(' ')
+        credential = credential.strip()
+        if scheme.lower() != 'bearer' or not separator or not credential or len(credential) > 512:
+            return None
+
+        token_hash = main.hash_session_token(credential)
+        with Session(main.engine, expire_on_commit=False) as session:
+            authenticated = session.exec(
+                select(main.SessionToken, main.User)
+                .join(main.User, main.User.id == main.SessionToken.user_id)
+                .where(main.SessionToken.token_hash == token_hash)
+            ).first()
+            if not authenticated:
+                return None
+            session_token, mobile_user = authenticated
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            if session_token.expires_at <= now:
+                session.delete(session_token)
+                session.commit()
+                return None
+            if not mobile_user.is_active or not mobile_user.email_verified_at:
+                return None
+            if mobile_user.role not in {'DOCTOR', 'ADMIN'}:
+                return None
+            if mobile_user.role == 'ADMIN':
+                verified = session.get(main.AdminVerifiedSession, token_hash)
+                if ((mobile_user.email or '').strip().lower() != 'dentalaidestek@gmail.com'
+                        or not verified or verified.user_id != mobile_user.id):
+                    return None
+            return mobile_user
+
     user = main.get_current_user(request)
     if user and user.is_active and user.role in {'DOCTOR', 'ADMIN'}:
         return user
-
-    authorization = request.headers.get('authorization', '')
-    scheme, separator, credential = authorization.partition(' ')
-    credential = credential.strip()
-    if scheme.lower() != 'bearer' or not separator or not credential or len(credential) > 512:
-        return None
-
-    token_hash = main.hash_session_token(credential)
-    with Session(main.engine, expire_on_commit=False) as session:
-        authenticated = session.exec(
-            select(main.SessionToken, main.User)
-            .join(main.User, main.User.id == main.SessionToken.user_id)
-            .where(main.SessionToken.token_hash == token_hash)
-        ).first()
-        if not authenticated:
-            return None
-        session_token, mobile_user = authenticated
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
-        if session_token.expires_at <= now:
-            session.delete(session_token)
-            session.commit()
-            return None
-        if not mobile_user.is_active or not mobile_user.email_verified_at:
-            return None
-        if mobile_user.role not in {'DOCTOR', 'ADMIN'}:
-            return None
-        if mobile_user.role == 'ADMIN':
-            verified = session.get(main.AdminVerifiedSession, token_hash)
-            if ((mobile_user.email or '').strip().lower() != 'dentalaidestek@gmail.com'
-                    or not verified or verified.user_id != mobile_user.id):
-                return None
-        return mobile_user
+    return None
 
 
 def _owned(session, main, user, ident, *, lock=False):
