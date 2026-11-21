@@ -146,14 +146,18 @@ def _drain(engine):
                 elif row is not None and row.status=='RUNNING':
                     row.status='FAILED';row.error=payload.get('error','Çalışma tamamlanamadı. Yeniden deneyebilirsin.')
                     row.stage='Tamamlanamadı';row.updated_at=now();session.add(row);session.commit()
-        except Exception:
+        except Exception as exc:
             # Cancellation is acknowledged only after the worker unwinds and closes
             # the nested provider stream; never report success at request time alone.
             with Session(engine) as session:
                 row=session.get(StudyRun,run.id)
                 if row is not None and row.status=='CANCEL_REQUESTED':
-                    row.status='CANCELLED';row.stage='AI akışı kapatıldı'
-                    row.error='Çalışma iptal edildi; sağlayıcı akışı kapatıldı.'
+                    if type(exc).__name__=='ProviderStreamCloseError':
+                        row.status='CANCEL_FAILED';row.stage='AI akışının kapanması doğrulanamadı'
+                        row.error='Durdurma isteği alındı ancak sağlayıcı bağlantısının kapandığı doğrulanamadı.'
+                    else:
+                        row.status='CANCELLED';row.stage='AI akışı kapatıldı'
+                        row.error='Çalışma iptal edildi; sağlayıcı akışı kapatıldı.'
                     row.partial_text='';row.updated_at=now();session.add(row);session.commit()
                 elif row is not None and row.status=='RUNNING':
                     row.status='FAILED';row.error='Çalışma tamamlanamadı. Önceki kayıtların korunuyor.'
