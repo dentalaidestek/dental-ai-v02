@@ -153,20 +153,28 @@ test('clinical media analysis-upload child uses the opaque account image scope a
  assert.ok(source.includes("const imageScope=useMemo(()=>'clinical-media-scope-'+(++nextClinicalMediaImageScope),[token,userId,patientId]);"),'the opaque scope must rotate on account, session or patient changes');
 });
 
-test('React session-key hook keeps identity stable and rotates it without exposing credentials',()=>{
+test('React session-key hook rotates on account, patient and credential scope changes',()=>{
  const Probe=({scope})=>React.createElement('Text',{value:useSessionRenderKey(scope)});
  let tree;
- renderer.act(()=>{tree=renderer.create(React.createElement(Probe,{scope:'account:1:Bearer synthetic-first-token'}))});
+ renderer.act(()=>{tree=renderer.create(React.createElement(Probe,{scope:'account:1:patient:4:Bearer synthetic-first-token'}))});
  const first=tree.root.findByType('Text').props.value;
- renderer.act(()=>tree.update(React.createElement(Probe,{scope:'account:1:Bearer synthetic-first-token'})));
+ renderer.act(()=>tree.update(React.createElement(Probe,{scope:'account:1:patient:4:Bearer synthetic-first-token'})));
  assert.equal(tree.root.findByType('Text').props.value,first,'the same session scope must keep its renderer identity');
- renderer.act(()=>tree.update(React.createElement(Probe,{scope:'account:1:Bearer synthetic-second-token'})));
+ renderer.act(()=>tree.update(React.createElement(Probe,{scope:'account:1:patient:4:Bearer synthetic-second-token'})));
  const second=tree.root.findByType('Text').props.value;
- assert.notEqual(second,first,'a changed session scope must remount scoped children');
- assert.match(first,/^dai-session-[0-9a-z]+$/);
- assert.match(second,/^dai-session-[0-9a-z]+$/);
- assert.ok(!first.includes('Bearer')&&!first.includes('synthetic-first-token'));
- assert.ok(!second.includes('Bearer')&&!second.includes('synthetic-second-token'));
+ assert.notEqual(second,first,'a changed credential scope must remount scoped children');
+ renderer.act(()=>tree.update(React.createElement(Probe,{scope:'account:1:patient:5:Bearer synthetic-second-token'})));
+ const third=tree.root.findByType('Text').props.value;
+ assert.notEqual(third,second,'switching patient must rotate the opaque identity');
+ renderer.act(()=>tree.update(React.createElement(Probe,{scope:'account:2:patient:5:Bearer synthetic-second-token'})));
+ const fourth=tree.root.findByType('Text').props.value;
+ assert.notEqual(fourth,third,'switching account must rotate the opaque identity');
+ for(const key of [first,second,third,fourth]){
+  assert.match(key,/^dai-session-[0-9a-z]+$/);
+  assert.ok(!key.includes('Bearer'));
+  assert.ok(!key.includes('synthetic-first-token'));
+  assert.ok(!key.includes('synthetic-second-token'));
+ }
  renderer.act(()=>tree.unmount());
 });
 
