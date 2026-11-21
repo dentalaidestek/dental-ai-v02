@@ -50,7 +50,11 @@ test('patient profile child sections use an opaque key across token and patient 
  const parsed=ts.createSourceFile('NativePatientProfile.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
  const keys=[];
  const visit=node=>{
-  if(ts.isJsxAttribute(node)&&node.name.getText(parsed)==='key'&&node.initializer&&ts.isJsxExpression(node.initializer))keys.push(node.initializer.expression?.getText(parsed)||'');
+  // Only the three remount-boundary children matter here; .map() list-item keys are legitimate.
+  if(ts.isJsxSelfClosingElement(node)&&['NativePatientMedia','NativePatientHistory','NativePatientVoiceHistory'].includes(node.tagName.getText(parsed))){
+   const key=node.attributes.properties.find(item=>ts.isJsxAttribute(item)&&item.name.getText(parsed)==='key');
+   keys.push(key&&ts.isJsxAttribute(key)&&key.initializer&&ts.isJsxExpression(key.initializer)?key.initializer.expression?.getText(parsed)||'':'');
+  }
   ts.forEachChild(node,visit);
  };
  visit(parsed);
