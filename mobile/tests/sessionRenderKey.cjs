@@ -29,6 +29,29 @@ test('session scope changes rotate an opaque key without exposing the scope',()=
  }
 });
 
+test('all native screen React keys exclude bearer credentials',()=>{
+ const files=["App.tsx","ChatAttachmentComposer.tsx","ChatImageViewer.tsx","ModernScreens.tsx","NativeAcademic.tsx","NativeAcademicAnswerActions.tsx","NativeAcademicComposer.tsx","NativeAcademicFile.tsx","NativeAcademicSource.tsx","NativeAccount.tsx","NativeAnalysisUpload.tsx","NativeAnswerText.tsx","NativeAuth.tsx","NativeChatDocument.tsx","NativeChatTools.tsx","NativeClinicalReview.tsx","NativeConsultationRequest.tsx","NativeDateField.tsx","NativeDentalAI.tsx","NativeExpertPerformance.tsx","NativeExpertProfile.tsx","NativeImageEditor.tsx","NativeNewPatient.tsx","NativePatientAppointment.tsx","NativePatientHistory.tsx","NativePatientMedia.tsx","NativePatientProfile.tsx","NativePatientSelect.tsx","NativePatientVoiceHistory.tsx","NativeProfessional.tsx","NativeProgram.tsx","NativePublications.tsx","NativePushSettings.tsx","NativeRelationships.tsx","NativeSocialAdmin.tsx","NativeSocialMediaViewer.tsx","NativeSupportRequests.tsx","NativeTimeField.tsx","NativeToothChart.tsx","NativeToothVisual.tsx","NativeVisionViewer.tsx","NativeVoiceApproval.tsx","NativeVoiceDeviceCheck.tsx","NativeVoiceRecorder.tsx","SocialScreens.tsx"];
+ for(const name of files){
+  const relative=name==='App.tsx'?'../App.tsx':'../src/'+name;
+  const source=fs.readFileSync(require.resolve(relative),'utf8');
+  const parsed=ts.createSourceFile(name,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  const keys=[];
+  const visit=node=>{
+   if(ts.isJsxAttribute(node)&&node.name.getText(parsed)==='key'&&node.initializer&&ts.isJsxExpression(node.initializer))
+    keys.push(node.initializer.expression?.getText(parsed)||'');
+   ts.forEachChild(node,visit);
+  };
+  visit(parsed);
+  const credentialKey=keys.find(value=>/(?:^|[^A-Za-z0-9_])(token|accessToken|sessionToken|authorization|bearer)(?:[^A-Za-z0-9_]|$)/i.test(value));
+  assert.equal(credentialKey,undefined,name+' must not put credentials into a React key');
+ }
+ const hook=fs.readFileSync(require.resolve('../src/useSessionRenderKey.ts'),'utf8');
+ assert.ok(hook.includes('resolveSessionRenderIdentity'));
+ assert.ok(hook.includes('return identity.current.key'));
+ const app=fs.readFileSync(require.resolve('../App.tsx'),'utf8');
+ assert.ok(app.includes('function SessionScope('),'navigation route wrappers must use an opaque session scope');
+});
+
 test('analysis and clinical viewer components never interpolate credentials into React keys',()=>{
  const files=['NativeDentalAI.tsx','NativeClinicalReview.tsx'];
  for(const name of files){
