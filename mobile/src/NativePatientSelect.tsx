@@ -9,7 +9,7 @@ import {
  patientSelectRowDetails,
 } from './patientSelectPresentation';
 
-function Search({token,onSelect,onClose}:{token:string;onSelect:(patient:Patient)=>void;onClose:()=>void}){
+function Search({token,onSelect,onClose,searchTitle,searchHint,searchPlaceholder}:{token:string;onSelect:(patient:Patient)=>void;onClose:()=>void;searchTitle:string;searchHint:string;searchPlaceholder:string}){
  const [text,setText]=useState(''),[query,setQuery]=useState(''),[queryError,setQueryError]=useState('');
  const applySearch=useCallback(()=>{
   try{
@@ -29,7 +29,7 @@ function Search({token,onSelect,onClose}:{token:string;onSelect:(patient:Patient
  const emptyMessage=patientSelectEmptyState(query,pages.busy,pages.error||queryError);
  return <View style={{flex:1,paddingTop:40,backgroundColor:'#F7F9FC'}}>
   <View style={{paddingHorizontal:18,paddingBottom:12,flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}>
-   <View><Text style={{fontSize:22,fontWeight:'800',color:'#102033'}}>Hasta Seç</Text><Text style={{fontSize:12,color:'#64748B',marginTop:3}}>Randevuya bağlanacak hastayı bulun</Text></View>
+   <View><Text style={{fontSize:22,fontWeight:'800',color:'#102033'}}>{searchTitle}</Text><Text style={{fontSize:12,color:'#64748B',marginTop:3}}>{searchHint}</Text></View>
    <Pressable accessibilityRole="button" accessibilityLabel="Hasta seçimini kapat" onPress={onClose} style={{padding:10}}><Text style={{color:'#1769AA',fontWeight:'800'}}>Kapat ✕</Text></Pressable>
   </View>
   <View style={{marginHorizontal:16,marginBottom:12,paddingHorizontal:13,flexDirection:'row',alignItems:'center',borderWidth:1,borderColor:'#DCE3EB',borderRadius:12,backgroundColor:'#FFFFFF'}}>
@@ -39,7 +39,7 @@ function Search({token,onSelect,onClose}:{token:string;onSelect:(patient:Patient
     value={text}
     onChangeText={setText}
     onSubmitEditing={applySearch}
-    placeholder="Ad, soyad, hasta no, telefon veya TC ile ara"
+    placeholder={searchPlaceholder}
     autoCorrect={false}
     autoCapitalize="none"
     returnKeyType="search"
@@ -92,15 +92,15 @@ function Search({token,onSelect,onClose}:{token:string;onSelect:(patient:Patient
  </View>;
 }
 
-export default function NativePatientSelect({token,value,onChange,disabled=false}:{token:string;value:Patient|null;onChange:(patient:Patient|null)=>void;disabled?:boolean}){
+export default function NativePatientSelect({token,value,onChange,disabled=false,searchTitle='Hasta Seç',searchHint='Randevuya bağlanacak hastayı bulun',emptyLabel='Hasta seç (isteğe bağlı)　⌕',searchPlaceholder='Ad, soyad, hasta no, telefon veya TC ile ara'}:{token:string;value:Patient|null;onChange:(patient:Patient|null)=>void;disabled?:boolean;searchTitle?:string;searchHint?:string;emptyLabel?:string;searchPlaceholder?:string}){
  const [open,setOpen]=useState(false);
  return <View>
   <Pressable accessibilityRole="button" accessibilityState={{disabled}} disabled={disabled} onPress={()=>setOpen(true)} style={{padding:13,borderWidth:1,borderColor:'#DCE3EB',borderRadius:10,backgroundColor:'#FFFFFF'}}>
-   <Text style={{color:'#102033'}}>{value?`${value.first_name||''} ${value.last_name||''} · ${value.anonymous_id||'Hasta'}`:'Hasta seç (isteğe bağlı)　⌕'}</Text>
+   <Text style={{color:'#102033'}}>{value?`${value.first_name||''} ${value.last_name||''} · ${value.anonymous_id||'Hasta'}`:emptyLabel}</Text>
   </Pressable>
   {value&&<Pressable accessibilityRole="button" disabled={disabled} onPress={()=>onChange(null)} style={{padding:10}}><Text style={{color:'#1769AA'}}>Hasta bağlantısını kaldır</Text></Pressable>}
   <Modal visible={open} animationType="slide" presentationStyle="fullScreen" onRequestClose={()=>setOpen(false)}>
-   {open&&<Search token={token} onClose={()=>setOpen(false)} onSelect={patient=>{onChange(patient);setOpen(false)}}/>}
+   {open&&<Search token={token} onClose={()=>setOpen(false)} onSelect={patient=>{onChange(patient);setOpen(false)}} searchTitle={searchTitle} searchHint={searchHint} searchPlaceholder={searchPlaceholder}/>}
   </Modal>
  </View>;
 }
