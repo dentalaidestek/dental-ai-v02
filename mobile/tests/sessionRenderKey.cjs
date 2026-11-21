@@ -2,6 +2,9 @@ const fs=require('node:fs');
 const ts=require('typescript');
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
+const React=require('react'),renderer=require('react-test-renderer');
+global.IS_REACT_ACT_ENVIRONMENT=true;
+const useSessionRenderKey=require('./helpers/useSessionRenderKeyModule.cjs').default;
 const {nextSessionRenderKey,resolveSessionRenderIdentity}=require('./helpers/sessionRenderKeyModule.cjs');
 
 test('session render keys are opaque, unique and do not encode credentials',()=>{
@@ -148,4 +151,21 @@ test('clinical media analysis-upload child uses the opaque account image scope a
  assert.equal(uploads.length,1,'the clinical archive owns one analysis composer');
  assert.equal(uploads[0],'imageScope','the upload composer key must not be the bearer-token owner tuple');
  assert.ok(source.includes("const imageScope=useMemo(()=>'clinical-media-scope-'+(++nextClinicalMediaImageScope),[token,userId,patientId]);"),'the opaque scope must rotate on account, session or patient changes');
+});
+
+test('React session-key hook keeps identity stable and rotates it without exposing credentials',()=>{
+ const Probe=({scope})=>React.createElement('Text',{value:useSessionRenderKey(scope)});
+ let tree;
+ renderer.act(()=>{tree=renderer.create(React.createElement(Probe,{scope:'account:1:Bearer synthetic-first-token'}))});
+ const first=tree.root.findByType('Text').props.value;
+ renderer.act(()=>tree.update(React.createElement(Probe,{scope:'account:1:Bearer synthetic-first-token'})));
+ assert.equal(tree.root.findByType('Text').props.value,first,'the same session scope must keep its renderer identity');
+ renderer.act(()=>tree.update(React.createElement(Probe,{scope:'account:1:Bearer synthetic-second-token'})));
+ const second=tree.root.findByType('Text').props.value;
+ assert.notEqual(second,first,'a changed session scope must remount scoped children');
+ assert.match(first,/^dai-session-[0-9a-z]+$/);
+ assert.match(second,/^dai-session-[0-9a-z]+$/);
+ assert.ok(!first.includes('Bearer')&&!first.includes('synthetic-first-token'));
+ assert.ok(!second.includes('Bearer')&&!second.includes('synthetic-second-token'));
+ renderer.act(()=>tree.unmount());
 });
