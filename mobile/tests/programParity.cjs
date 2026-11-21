@@ -109,6 +109,31 @@ test('program event receipts reject invalid end ordering, malformed nullable fie
  }finally{global.fetch=original}
 });
 
+test('create recovery preserves its request key when a found receipt does not match the submitted appointment',async()=>{
+ let clears=0,saved=0,lookups=0;
+ const mismatch={id:77,event_type:'APPOINTMENT',title:'Another appointment',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const Editor=component('NativeProgramEditor',{
+  getOrCreateProgramRequestKey:async()=> 'program-create-request-000001',
+  getProgramMutation:async()=>{lookups++;return{state:'FOUND',event:mismatch}},
+  saveProgramEvent:async()=>{throw new Error('Synthetic response mismatch')},
+  clearProgramRequestKey:async()=>{clears++}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),onSaved(){saved++},onClose(){}}));await tick()});
+ await renderer.act(async()=>tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.onChangeText('Expected appointment'));
+ await renderer.act(async()=>button(tree,'Programa Ekle').props.onPress());
+ assert.equal(lookups,1);
+ assert.equal(clears,0);
+ assert.equal(saved,0);
+ assert.ok(button(tree,'Bekleyen randevuyu doğrula'));
+ await renderer.act(async()=>button(tree,'Bekleyen randevuyu doğrula').props.onPress());
+ assert.equal(lookups,2);
+ assert.equal(clears,0);
+ assert.equal(saved,0);
+ assert.ok(text(tree.root).includes('bekleyen form ile eşleşmiyor'));
+ await renderer.act(async()=>tree.unmount());
+});
+
 test('patient-profile appointment verifies its patient and uses the full common program form',async()=>{
  const saved=[];const Editor=component('NativeProgramEditor',{saveProgramEvent:async(_token,payload)=>{saved.push(payload);return{id:7,...payload,start_local:payload.start_at}}});let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),initialPatientId:8,onSaved(){},onClose(){}}));await tick()});
