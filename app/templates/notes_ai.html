@@ -102,9 +102,20 @@ body>.study-academic-overflow-panel.study-overflow-portal{position:fixed!importa
 body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!important}
 
 /* ChatGPT-style inline stop control: same composer button, same footprint. */
-.study-chat-clean-composer #studySendButton.study-send-stop{font-size:0!important;display:grid!important;place-items:center!important;line-height:1!important;}
-.study-chat-clean-composer #studySendButton.study-send-stop::before{content:"";width:12px;height:12px;border-radius:2px;background:currentColor;display:block;}
-.study-chat-clean-composer #studySendButton.study-send-stop:disabled{opacity:.72;}
+.study-chat-clean-composer #studySendButton.study-send-stop{
+    font-size:0!important;display:grid!important;place-items:center!important;line-height:1!important;
+    width:44px!important;min-width:44px!important;height:44px!important;min-height:44px!important;
+    padding:0!important;border-radius:50%!important;background:#102a43!important;
+    border:0!important;box-shadow:0 2px 7px rgba(16,42,67,.22)!important;
+}
+.study-chat-clean-composer #studySendButton.study-send-stop::before{
+    content:"";width:11px;height:11px;border-radius:2px;background:#fff;display:block;
+}
+.study-chat-clean-composer #studySendButton.study-send-stop:disabled{opacity:.85!important;cursor:wait!important;}
+.study-chat-clean-composer #studySendButton:not(.study-send-stop){
+    width:44px!important;min-width:44px!important;height:44px!important;min-height:44px!important;
+    padding:0!important;border-radius:50%!important;display:grid!important;place-items:center!important;
+}
 </style>
 <div class="study-ai-page study-chat-shell study-chat-clean-shell">
     <header class="study-chat-clean-topbar">
@@ -216,7 +227,7 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
         <input type="file" id="studyChatFiles" accept=".pdf,.jpg,.jpeg,.png,.webp" multiple hidden>
         <div class="study-upload-files" id="studyChatUploadFiles" aria-live="polite"></div>
         {% endif %}
-        <form class="study-chat-composer study-chat-composer-fixed study-chat-clean-composer" id="studyChatForm">
+        <form class="study-chat-composer study-chat-composer-fixed study-chat-clean-composer" id="studyChatForm" novalidate>
             {% if chat_upload_enabled %}
             <button type="button" id="studyAttachButton" class="study-attach-button" aria-label="PDF veya görsel ekle">＋</button>
             {% endif %}
@@ -603,8 +614,9 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
     let activeRun=null, runTimer=null;
     function setWorking(value) {
         const canStop=!!activeRun;
-        send.disabled=value ? !canStop : materialCount===0;
-        send.textContent=canStop?'■':'↑';
+        const blocked=materialCount===0 || !v2Ready || uploading;
+        send.disabled=canStop ? cancelInFlight : (value || blocked);
+        send.textContent=canStop?'':'↑';
         send.setAttribute('aria-label',canStop?'Durdur':'Gönder');
         send.title=canStop?'Devam eden yanıtı durdur':'Gönder';
         send.classList.toggle('study-send-stop',canStop);
@@ -664,7 +676,7 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
     async function stopActiveRun() {
         const id=activeRun;
         if(!id || cancelInFlight)return;
-        cancelInFlight=true;send.disabled=true;send.textContent='…';
+        cancelInFlight=true;send.disabled=true;send.classList.add('study-stop-pending');send.setAttribute('aria-label','Durduruluyor');
         try {
             const response=await fetch('/notes/courses/'+courseId+'/ai/runs/'+id+'/cancel',{
                 method:'POST',credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}
@@ -689,7 +701,7 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
         } catch(error) {
             status.textContent=error.message || 'İşlem durdurulamadı.';
             setWorking(!!activeRun);
-        } finally {cancelInFlight=false;}
+        } finally {cancelInFlight=false;send.classList.remove('study-stop-pending');if(activeRun)send.disabled=false;}
     }
     async function followRun(id,pending,userMessage) {
         try {
