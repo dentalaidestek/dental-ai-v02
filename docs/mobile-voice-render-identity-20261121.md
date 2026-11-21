@@ -20,9 +20,11 @@ Replaced those values with process-local opaque keys from `mobile/src/sessionRen
 
 The token remains in authenticated API calls only. The change does not alter audio upload, consent, ASR, extraction, checkpoint, or server authorization behavior.
 
+The same web comparison also exposed a disclosure parity gap: the native consent text did not name the transcription and clinical-review providers. The native consent now explicitly identifies Gemini for speech-to-text and Claude for post-finish clinical/source review. The expanded privacy text explains temporary private-device audio staging, that direct identifiers are reduced but full anonymization is not guaranteed, and that raw audio/full transcript are not automatically written to the patient record. A regression assertion covers this disclosure.
+
 ## Regression coverage
 
-Added `mobile/tests/voiceRenderIdentity.cjs` and registered it in `npm run test:beta`. It parses the TSX syntax tree and asserts that the three named components use opaque keys, no JSX key expression contains the token identifier, and the memoization scopes continue to rotate on the relevant account/patient/review changes.
+Added `mobile/tests/voiceRenderIdentity.cjs` and registered it in `npm run test:beta`. It parses the TSX syntax tree and asserts that the three named components use opaque keys, no JSX key expression contains the token identifier, memoization scopes rotate on relevant account/patient/review changes, and the native consent/privacy copy names Gemini and Claude with the correct data-handling boundary.
 
 Run from `mobile/`:
 
