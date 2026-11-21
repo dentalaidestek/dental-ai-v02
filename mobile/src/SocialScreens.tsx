@@ -643,6 +643,7 @@ function CommentThread({
   item,
   postId,
   canDeleteOthers,
+  commentsClosed,
   onChange,
   onReply,
   onProfile,
@@ -651,6 +652,7 @@ function CommentThread({
   item: api.SocialComment;
   postId: number;
   canDeleteOthers: boolean;
+  commentsClosed: boolean;
   onChange: (c: api.SocialComment | null, id: number) => void;
   onReply: (id: number) => void;
   onProfile: (id: number, name: string) => void;
@@ -744,7 +746,7 @@ function CommentThread({
     };
     const actions = [
       { text: "Vazgeç", style: "cancel" as const },
-      ...(item.owned
+      ...(item.owned && !commentsClosed
         ? [
             {
               text: "Düzenle",
@@ -796,14 +798,16 @@ function CommentThread({
         <Text style={s.meta}>İnceleme durumu: {item.status}</Text>
       )}
       <View style={s.row}>
-        <Pressable disabled={busy} onPress={() => void like()}>
+        <Pressable disabled={busy || item.status !== "PUBLISHED"} onPress={() => void like()}>
           <Text style={s.action}>
             {item.liked ? "♥" : "♡"} {item.like_count}
           </Text>
         </Pressable>
-        <Pressable onPress={() => onReply(item.parent_id || item.id)}>
-          <Text style={s.action}>Yanıtla</Text>
-        </Pressable>
+        {item.status === "PUBLISHED" && !commentsClosed && (
+          <Pressable onPress={() => onReply(item.parent_id || item.id)}>
+            <Text style={s.action}>Yanıtla</Text>
+          </Pressable>
+        )}
         {!item.parent_id && item.reply_count > 0 && (
           <Pressable
             disabled={busy}
@@ -831,6 +835,7 @@ function CommentThread({
               item={c}
               postId={postId}
               canDeleteOthers={canDeleteOthers}
+              commentsClosed={commentsClosed}
               onProfile={onProfile}
               onReply={onReply}
               onChange={(v, id) =>
@@ -1013,6 +1018,7 @@ function Comments({
             item={item}
             postId={post.id}
             canDeleteOthers={post.owned}
+            commentsClosed={post.comments_closed}
             onProfile={onProfile}
             onReply={(id) => {
               if (!d.draft.attempted) {
