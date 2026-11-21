@@ -279,3 +279,20 @@ Hesap: `scripts/capacity_model_69k.py` (parametrik; Kasım 2026 liste fiyatları
 **Akış ve görünümler:** mobil süit **999/999** (realtime/consultation/pagination testleri dahil), `tsc` 0; realtime zinciri web SSE `/sync/events` ↔ mobil WS `/ws/sync` (realtime.ts:16; main.py:10218) + iki WS hub + `pg_notify` ile kanıtlı; görünümler kaynak-düzeyde birebir (paylaşılan enamel atlas, aynı TR string sözleşmeleri, aynı 8 MiB/72k/216k ses sınırları). **🔶 dürüst sınır:** fiziksel cihaz ve gerçek ağ kabulü hâlâ yapılmadı (CI runner tahsis borcu) — "görünümler tamam" kanıtı kaynak + süit düzeyindedir, cihaz ekran düzeyinde değil.
 
 **Canlıya deploy edilmedi.**
+
+## 21. Onuncu geçiş — web-mobil boşluklarının native uygulaması + envanter düzeltmesi
+
+§20'deki 4 boşluktan **3'ü bu turda native olarak tamamlandı**; 1'i (P2#2) envanter düzeltmesiyle zaten kapalı çıktı. Web mantığı birebir korundu; UI mevcut native ekranlara sade ve hızlı eklendi. Test kurallarına dokunulmadı; yeni regresyon testleri yazıldı.
+
+| Boşluk | Uygulama | Web-mantık kanıtı |
+|---|---|---|
+| P2 — uzman müsaitlik aboneliği | `mobile_api.py` POST+GET `/api/mobile/v1/expert-support/availability-watch` (aynı `EXPERT_SPECIALTIES` listesi, 400 "Geçersiz branş.", aktif kayıt idempotent); ExpertDirectory boş durumunda web kopyasıyla "Müsait olduğunda haber ver" + "Bu branşta uzman müsait olduğunda bildirim isteğiniz kaydedildi." + aktif abonelik satırı | web form mantığı main.py:7629-7650 + expert_support.html:38,64 ile aynı akış |
+| P3 — görüntü anotasyonu | `mobile_chat_action`'a `annotate` dalı → web `expert_support_annotate_message` delege (aynı ANNOTATION ConsultationMessage: `reply_to_message_id=original.id` + `original_media_path`); ConsultationChat görüntü mesajlarında "✎ İşaretle" + not modalı (≤2000); ANNOTATION mesaj render'ı notu gösterir | main.py:9189-9203 ile aynı uç, aynı 100k sınırı, aynı 403/409 yolları |
+| P3 — belge görüntüleme | `mobile_professional_api.py` GET `/account/documents/{purpose}/content` (membership/title/expert aynı kaynak alanları: MembershipVerification.document_path / ExpertTitleChange.credential_document_path / ExpertProfile.credential_document_path; `ensure_local` + base64 + no-store); NativeProfessional'da "Üyelik/Unvan/Uzmanlık Belgesini Görüntüle" + expo-sharing | profile_document_page mantığıyla aynı ownership ve alanlar; §20'deki A2 üyelik belgesi aynı mekanizmayla kapanmış oldu |
+| Bonus — performans açıklaması (A3) | NativeExpertPerformance'a "Performansınız Nasıl Değerlendirilir?" bölümü — web `expert_performance_info.html` metni birebir (kaydedilen olaylar, düşürmeyen durumlar, 10 dakikalık talep kuralı) | web metniyle aynı |
+
+**Envanter düzeltmesi (§20 P2#2):** görüntüleyici/diş bazlı analiz mobilde **zaten adaptörlü mevcuttu** — `mobile_clinical_api.py:93` `/clinical-note` (tooth+note+finding → web viewer-note/finding satır formatı) ve `:107` `/selected-teeth` (teeth listesi → `tooth_number` güncelleme + PRELIMINARY iş kuyruğu = viewer-analyze mantığı); NativeClinicalReview'de `saveViewerClinicalNote` + `runViewerTreatmentAnalysis` (FDI regex doğrulamalı) kullanıyor. Gerçek kalan fark yalnız web'de canvas-şekilli çizim anotasyonu UX'idir (not-bazlı anotasyon artık mobilde var; çizim aracı ayrı UX iş kalemdir). **Kalan tek boşluk:** A1 canlı transkript modu (P3 — sunucuda `live_enabled` koşullu, mobilde tam alternatif kaydet→yükle→finalize akışı zaten var; Gemini Live WS bağlantısı sonraki tur önerisi).
+
+**Kanıt:** mobil süit **1003/1003** (yeni `gapFeatures.cjs` 4 test dahil), `tsc --noEmit` **0**, Python security **557 passed / 27 skipped / 0 failed** (yeni `tests/test_mobile_gap_features.py` 3 test dahil: watch idempotency+400+401, belge ownership+base64+404, annotate delege+403+DB ANNOTATION kanıtı). ChatGPT'nin `publications.cjs` mock'u yeni listeyi kapsamadığı için kod tarafına `Array.isArray` toleransı eklendi — test dosyaları değiştirilmedi, kural güncellenmedi.
+
+**Canlıya deploy edilmedi.**

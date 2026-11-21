@@ -367,16 +367,31 @@ export function mediaUploadUrl(patientId:number){return API_BASE+`/patients/${pa
 
 
 export type ChatAction={
- action:"expert-response"|"proposal"|"complete"|"block"|"unblock"|"report"|"delete"|"restore"|"review";
+ action:"expert-response"|"proposal"|"complete"|"block"|"unblock"|"report"|"delete"|"restore"|"review"|"annotate";
  decision?:"ACCEPT"|"REJECT";start_option?:"NOW"|"30M"|"1H"|"3H"|"TODAY";proposal_note?:string;
  completion_action?:"COMPLETE"|"CONTINUE"|"DISPUTE";
  reason?:"HARASSMENT"|"PROFANITY"|"SPAM"|"INAPPROPRIATE"|"OTHER";detail?:string;rating?:number;comment?:string;
+ message_id?:number;annotation_json?:string;
 };
 export async function performChatAction(token:string,id:number,payload:ChatAction){
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz görüşme.");
  const response=await req<{ok:boolean}>(`/consultations/${id}/actions`,token,{method:"POST",body:JSON.stringify(payload)});
  if(response.ok!==true)throw Error("İşlem doğrulanamadı; görüşmeyi yenileyin.");
  return response;
+}
+export type AvailabilityWatch={id:number;specialty:string};
+// Web EXPERT_SPECIALTIES (app/main.py:6653) birebir; watch doğrulaması sunucuda tekrar yapılır.
+export const EXPERT_SPECIALTIES:string[]=["Endodonti","Ortodonti","Pedodonti","Periodontoloji","Protetik Diş Tedavisi","Restoratif Diş Tedavisi","Ağız, Diş ve Çene Cerrahisi","Ağız, Diş ve Çene Radyolojisi"];
+export async function getAvailabilityWatch(token:string){
+ const v=await req<{ok:boolean;watches?:AvailabilityWatch[]}>("/expert-support/availability-watch",token);
+ if(v.ok!==true||!Array.isArray(v.watches))throw Error("Bildirim abonelikleri doğrulanamadı.");
+ return v.watches;
+}
+export async function createAvailabilityWatch(token:string,specialty:string){
+ if(!specialty.trim())throw Error("Branş seçin.");
+ const v=await req<{ok:boolean;specialty?:string;watches?:AvailabilityWatch[]}>("/expert-support/availability-watch",token,{method:"POST",body:JSON.stringify({specialty})});
+ if(v.ok!==true||!Array.isArray(v.watches))throw Error("Bildirim isteği kaydedilemedi.");
+ return v;
 }
 export function chatImageSource(token:string,caseId:number,messageId:number){
  if(!Number.isSafeInteger(caseId)||caseId<=0||!Number.isSafeInteger(messageId)||messageId<=0)throw Error("Geçersiz ek kimliği.");

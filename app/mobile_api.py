@@ -3544,7 +3544,7 @@ from starlette.concurrency import run_in_threadpool as _chat_offload
 import inspect as _chat_inspect
 
 class MobileChatAction(BaseModel):
-    action: _ChatLiteral["expert-response", "proposal", "complete", "block", "unblock", "report", "delete", "restore", "review"]
+    action: _ChatLiteral["expert-response", "proposal", "complete", "block", "unblock", "report", "delete", "restore", "review", "annotate"]
     decision: _ChatLiteral["ACCEPT", "REJECT"] = "ACCEPT"
     start_option: _ChatLiteral["NOW", "30M", "1H", "3H", "TODAY"] = "NOW"
     proposal_note: str = _ChatField(default="", max_length=500)
@@ -3553,6 +3553,8 @@ class MobileChatAction(BaseModel):
     detail: str = _ChatField(default="", max_length=1000)
     rating: int = _ChatField(default=5, ge=1, le=5)
     comment: str = _ChatField(default="", max_length=2000)
+    message_id: int = _ChatField(default=0)
+    annotation_json: str = _ChatField(default="", max_length=100000)
 
 async def _mobile_chat_dispatch(handler, request, *args):
     response = await handler(request, *args) if _chat_inspect.iscoroutinefunction(handler) else await _chat_offload(handler, request, *args)
@@ -3593,9 +3595,49 @@ async def mobile_chat_action(case_id: int, payload: MobileChatAction,
         "delete": (web.consultation_message_delete_for_user, ()),
         "restore": (web.consultation_message_restore_for_user, ()),
         "review": (web.expert_support_review, (payload.rating, payload.comment)),
+        "annotate": (web.expert_support_annotate_message, (payload.message_id, payload.annotation_json)),
     }
     handler, args = handlers[payload.action]
     return await _mobile_chat_dispatch(handler, request, case_id, *args)
+
+class _AvailabilityWatchInput(BaseModel):
+    specialty: str = _ChatField(default="", max_length=64)
+
+@router.post("/expert-support/availability-watch")
+async def mobile_availability_watch(payload: _AvailabilityWatchInput,
+                                    token: str = Depends(_mobile_access_token),
+                                    user: User = Depends(_mobile_user)):
+    """Web /expert-support/availability-watch mantığının birebir mobil karşılığı:
+    aynı branş listesi, aynı idempotent aktif kayıt davranışı."""
+    from app import main as web
+    specialty = payload.specialty.strip()
+    if specialty not in web.EXPERT_SPECIALTIES:
+        raise HTTPException(status_code=400, detail="Geçersiz branş.")
+    with Session(web.engine, expire_on_commit=False) as s:
+        existing = s.exec(select(web.ExpertAvailabilityWatch).where(
+            web.ExpertAvailabilityWatch.user_id == user.id,
+            web.ExpertAvailabilityWatch.specialty == specialty,
+            web.ExpertAvailabilityWatch.is_active == True)).first()
+        if not existing:
+            s.add(web.ExpertAvailabilityWatch(user_id=user.id, specialty=specialty))
+            s.commit()
+        rows = s.exec(select(web.ExpertAvailabilityWatch).where(
+            web.ExpertAvailabilityWatch.user_id == user.id,
+            web.ExpertAvailabilityWatch.is_active == True).order_by(
+            web.ExpertAvailabilityWatch.id.desc())).all()
+    return {"ok": True, "specialty": specialty,
+            "watches": [{"id": w.id, "specialty": w.specialty} for w in rows]}
+
+@router.get("/expert-support/availability-watch")
+def mobile_availability_watch_list(token: str = Depends(_mobile_access_token),
+                                   user: User = Depends(_mobile_user)):
+    from app import main as web
+    with Session(web.engine) as s:
+        rows = s.exec(select(web.ExpertAvailabilityWatch).where(
+            web.ExpertAvailabilityWatch.user_id == user.id,
+            web.ExpertAvailabilityWatch.is_active == True).order_by(
+            web.ExpertAvailabilityWatch.id.desc())).all()
+    return {"ok": True, "watches": [{"id": w.id, "specialty": w.specialty} for w in rows]}
 
 def _mobile_chat_context(session, case, user):
     from app import main as web

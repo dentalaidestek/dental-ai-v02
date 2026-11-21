@@ -9,7 +9,7 @@ import React,{useCallback,useEffect,useRef,useState}from"react";
 import * as SecureStore from"expo-secure-store";
 import * as Crypto from "expo-crypto";
 import{ActivityIndicator,Alert,FlatList,Image,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View}from"react-native";
-import{getAnalysisHistory,getConsultation,getConsultationUpdates,getConsultations,getCourses,getAcademicMessages,getExperts,getNotifications,markNotificationRead,markAllNotificationsRead,askAcademic,sendConsultationMessage,getConsultationMessageReceipt,markConsultationRead,createConsultation,Expert,Consultation,Course,ChatMessage}from"./modernApi";
+import{getAnalysisHistory,getConsultation,getConsultationUpdates,getConsultations,getCourses,getAcademicMessages,getExperts,getNotifications,markNotificationRead,markAllNotificationsRead,askAcademic,sendConsultationMessage,getConsultationMessageReceipt,markConsultationRead,createConsultation,performChatAction,createAvailabilityWatch,getAvailabilityWatch,AvailabilityWatch,EXPERT_SPECIALTIES,Expert,Consultation,Course,ChatMessage}from"./modernApi";
 import{useRealtime}from"./realtime";
 import {applyConsultationInboxEvent,applyConsultationChatEvent,mergeConsultationMessages,consultationStatusLabel,consultationMessagePreview} from "./consultationRealtime";
 import {usePagedRecords} from "./usePagedRecords";
@@ -113,6 +113,13 @@ export function ExpertDirectory({token,navigation,patientId}:{token:string;navig
  const{lastEvent}=useRealtime();
  const[data,setData]=useState<{items:Expert[];accountToken:string}|null>(null);
  const[q,setQ]=useState(""),[busy,setBusy]=useState(true),[error,setError]=useState("");
+ const[watches,setWatches]=useState<AvailabilityWatch[]>([]),[watchNotice,setWatchNotice]=useState(""),[watchBusy,setWatchBusy]=useState(false);
+ useEffect(()=>{Promise.resolve().then(()=>getAvailabilityWatch(token)).then(v=>{if(activeToken.current===token)setWatches(v)}).catch(()=>{})},[token]);
+ function requestWatch(){
+  const specialty=q.trim();if(!specialty||watchBusy)return;
+  setWatchBusy(true);setWatchNotice("");setError("");
+  createAvailabilityWatch(token,specialty).then(v=>{if(activeToken.current===token){setWatches(v.watches||[]);setWatchNotice("Bu branşta uzman müsait olduğunda bildirim isteğiniz kaydedildi.")}}).catch(e=>{if(activeToken.current===token)setError(e instanceof Error?e.message:"Bildirim isteği kaydedilemedi.")}).finally(()=>{if(activeToken.current===token)setWatchBusy(false)});
+ }
  const seq=useRef(0),activeToken=useRef(token);if(activeToken.current!==token){activeToken.current=token;seq.current++;}
  const load=useCallback(async()=>{
   const request=++seq.current;
@@ -143,7 +150,7 @@ export function ExpertDirectory({token,navigation,patientId}:{token:string;navig
   </View>
   {busy?<View style={s.center}><ActivityIndicator color={C.navy}/></View>:
   <FlatList keyboardShouldPersistTaps="handled" contentContainerStyle={s.pad} data={data?.accountToken===token?data.items:[]} keyExtractor={x=>String(x.user_id)}
-   ListEmptyComponent={<Empty title="Uzman bulunamadı" sub="Arama kelimelerini değiştirebilirsin."/>}
+   ListEmptyComponent={<View>{(()=>{const inList=Array.isArray(EXPERT_SPECIALTIES)&&EXPERT_SPECIALTIES.includes(q.trim());return <><Empty title={inList?"Bu branşta şu an müsait uzman bulunamadı":"Uzman bulunamadı"} sub="Arama kelimelerini değiştirebilirsin."/>{inList&&<Btn title={watchBusy?"Kaydediliyor…":"Müsait olduğunda haber ver"} disabled={watchBusy} onPress={requestWatch}/>}{!!watchNotice&&<Text style={[s.muted,{textAlign:"center",marginTop:8}]}>{watchNotice}</Text>}{!!watches.length&&!inList&&<Text style={[s.muted,{textAlign:"center",marginTop:8}]}>Aktif bildirim abonelikleriniz: {watches.map(w=>w.specialty).join(", ")}</Text>}</>})()}</View>}
    renderItem={({item})=><Pressable accessibilityRole="button" style={card} onPress={()=>navigation.navigate("ExpertProfile",{id:item.user_id,name:item.display_name,patientId})}>
     <View style={s.row}><View style={{flex:1}}>
      <Text style={s.title}>{item.display_name}</Text>
@@ -203,6 +210,7 @@ export function Consultations({token,userId,navigation}:{token:string;userId:num
 export function ConsultationChat({token,route,userId}:{token:string;route:any;userId:number}){
  const navigation:any=useNavigation();const id=Number(route.params.id),{lastEvent,lastEventId,connected}=useRealtime(),isFocused=useIsFocused();
  const[data,setData]=useState<any>(),[text,setText]=useState(""),[replyTo,setReplyTo]=useState<number|null>(null),[olderBusy,setOlderBusy]=useState(false),[sendBusy,setSendBusy]=useState(false),[sendError,setSendError]=useState("");
+ const[annotateMessage,setAnnotateMessage]=useState<ChatMessage|null>(null),[annotateText,setAnnotateText]=useState(""),[annotateBusy,setAnnotateBusy]=useState(false);
  const activeScope=useRef(token+":"+userId+":"+id);activeScope.current=token+":"+userId+":"+id;
  const [preparedAttachment,setPreparedAttachment]=useState<{file:ChatFile;nonce:string;scope:string}|null>(null);
  const requestSeq=useRef(0),sending=useRef(false),draftRevision=useRef(0),pending=useRef<{content:string;id:string;scope:string;replyTo:number|null}|null>(null);
@@ -360,12 +368,26 @@ export function ConsultationChat({token,route,userId}:{token:string;route:any;us
   }catch(e){if(scope===activeScope.current){setSendError(e instanceof Error?e.message:"Mesaj gönderilemedi. Aynı istek anahtarı korunuyor.");void reconcilePending()}}
   finally{if(scope===activeScope.current){sending.current=false;setSendBusy(false)}}
  }
+ async function submitAnnotation(){
+  const target=annotateMessage,scope=activeScope.current;
+  if(!target||annotateBusy||!annotateText.trim())return;
+  const annotation_json=JSON.stringify({v:1,kind:"note",text:annotateText.trim()});
+  setAnnotateBusy(true);setSendError("");
+  try{
+   await performChatAction(token,id,{action:"annotate",message_id:target.id,annotation_json});
+   if(scope!==activeScope.current)return;
+   setAnnotateMessage(null);setAnnotateText("");
+   await load();
+  }catch(e){if(scope===activeScope.current)setSendError(e instanceof Error?e.message:"İşaretleme eklenemedi.")}
+  finally{if(scope===activeScope.current)setAnnotateBusy(false)}
+ }
  return <KeyboardAvoidingView style={s.page} behavior={Platform.OS==="ios"?"padding":"height"}>
  <View style={{backgroundColor:C.white,padding:14,borderBottomWidth:1,borderBottomColor:C.line}}><Text style={s.title}>{visibleData?.case?.other_display_name||"Güvenli görüşme"} · Vaka #{id}</Text><ChatActions key={token+":"+id} token={token} userId={userId} conversation={visibleData?.case} onChanged={load} onDeleted={()=>navigation.goBack()}/><Text style={s.muted}>{visibleData?.case?.specialty||"Uzman desteği"} · {consultationStatusLabel(visibleData?.case?.status)}</Text></View>
  {!!visibleData?.case?.shared_media?.length&&<View style={{padding:12}}><Text style={s.title}>Vakaya eklenen klinik görseller</Text><ScrollView horizontal>{visibleData.case.shared_media.map((media:{id:number;media_type:string})=><ChatImage key={token+":"+id+":"+media.id} token={token} caseId={id} message={{id:media.id} as ChatMessage} sourceOverride={sharedCaseImageSource(token,id,media.id)} canEdit={canCompose} onEdited={file=>{setReplyTo(null);setPreparedAttachment({file,nonce:file.uri,scope:activeScope.current})}}/>)}</ScrollView></View>}
  <FlatList style={s.page} contentContainerStyle={[s.pad,{paddingBottom:20}]} data={visibleData?.messages||[]} keyExtractor={(x:ChatMessage)=>String(x.id)} ListHeaderComponent={visibleData?.next_before?<Btn title={olderBusy?"Yükleniyor…":"Önceki mesajları yükle"} disabled={olderBusy} onPress={()=>void loadOlder()}/>:null}
  ListEmptyComponent={<Empty title={visibleData?"Henüz mesaj yok":"Görüşme yükleniyor"} sub="Bu görüşmenin mesajları yalnızca yetkili katılımcılara gösterilir."/>}
- renderItem={({item}:any)=><View style={[s.msg,item.sender_user_id===userId?s.mine:s.theirs]}>{!!item.reply_to_message_id&&<Text style={[s.meta,{color:C.navy,fontWeight:"700"}]}>↩ {consultationMessagePreview(visibleData?.messages?.find((m:ChatMessage)=>m.id===item.reply_to_message_id))}</Text>}{item.message_type==="IMAGE"?<ChatImage token={token} caseId={id} message={item} canEdit={canCompose} onEdited={file=>{setReplyTo(item.id);setPreparedAttachment({file,nonce:file.uri,scope:activeScope.current})}}/>:item.message_type==="ANNOTATION"?<Text style={s.body}>✎ İşaretlenmiş görüntü</Text>:item.message_type==="VOICE"||item.message_type==="FILE"?<NativeChatDocument key={token+":"+id+":"+item.id} token={token} caseId={id} message={item}/>:<Text style={s.body}>{item.content||"Klinik içerik"}</Text>}{item.sender_user_id===userId&&<Text style={s.meta}>{visibleData?.case?.other_read_at&&Date.parse(item.created_at)<=Date.parse(visibleData.case.other_read_at)?"✓✓ Okundu":"✓ Gönderildi"}</Text>}<View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:12}}><Text style={s.meta}>{new Date(item.created_at).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}</Text><Pressable accessibilityRole="button" accessibilityLabel="Mesajı yanıtla" onPress={()=>setReplyTo(item.id)}><Text style={[s.meta,{color:C.navy,fontWeight:"800"}]}>↩ Yanıtla</Text></Pressable></View></View>}/>
+ renderItem={({item}:any)=><View style={[s.msg,item.sender_user_id===userId?s.mine:s.theirs]}>{!!item.reply_to_message_id&&<Text style={[s.meta,{color:C.navy,fontWeight:"700"}]}>↩ {consultationMessagePreview(visibleData?.messages?.find((m:ChatMessage)=>m.id===item.reply_to_message_id))}</Text>}{item.message_type==="IMAGE"?<ChatImage token={token} caseId={id} message={item} canEdit={canCompose} onEdited={file=>{setReplyTo(item.id);setPreparedAttachment({file,nonce:file.uri,scope:activeScope.current})}}/>:item.message_type==="ANNOTATION"?<Text style={s.body}>✎ İşaretlenmiş görüntü{(()=>{try{const a=JSON.parse(String((item as any).annotation_json||""));return a&&typeof a.text==="string"&&a.text?" · "+a.text:""}catch{return ""}})()}</Text>:item.message_type==="VOICE"||item.message_type==="FILE"?<NativeChatDocument key={token+":"+id+":"+item.id} token={token} caseId={id} message={item}/>:<Text style={s.body}>{item.content||"Klinik içerik"}</Text>}{item.sender_user_id===userId&&<Text style={s.meta}>{visibleData?.case?.other_read_at&&Date.parse(item.created_at)<=Date.parse(visibleData.case.other_read_at)?"✓✓ Okundu":"✓ Gönderildi"}</Text>}<View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:12}}><Text style={s.meta}>{new Date(item.created_at).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}</Text><Pressable accessibilityRole="button" accessibilityLabel="Mesajı yanıtla" onPress={()=>setReplyTo(item.id)}><Text style={[s.meta,{color:C.navy,fontWeight:"800"}]}>↩ Yanıtla</Text></Pressable>{item.message_type==="IMAGE"&&canCompose&&<Pressable accessibilityRole="button" accessibilityLabel="Görüntüye işaretleme ekle" onPress={()=>{setAnnotateText("");setAnnotateMessage(item)}}><Text style={[s.meta,{color:C.navy,fontWeight:"800"}]}>✎ İşaretle</Text></Pressable>}</View></View>}/>
+ {annotateMessage&&<View style={{position:"absolute",left:0,right:0,top:0,bottom:0,backgroundColor:"rgba(7,27,53,.6)",justifyContent:"flex-end"}}><View style={{backgroundColor:C.white,padding:16,borderTopLeftRadius:18,borderTopRightRadius:18}}><Text style={s.title}>Görüntüye işaretleme ekle</Text><Text style={s.muted}>Mesaj #{annotateMessage.id} için kısa bir işaretleme notu ekleyin; not sunucuda görüntüyle ilişkilendirilir.</Text><TextInput accessibilityLabel="İşaretleme notu" multiline maxLength={2000} value={annotateText} onChangeText={setAnnotateText} placeholder="İşaretleme notu (ör. sağ alt bölgede lezyon)" placeholderTextColor={C.muted} style={[s.input,{height:90,textAlignVertical:"top"}]}/><Btn title={annotateBusy?"Kaydediliyor…":"İşaretlemeyi Kaydet"} disabled={annotateBusy||!annotateText.trim()} onPress={()=>void submitAnnotation()}/><Btn title="Vazgeç" disabled={annotateBusy} onPress={()=>{setAnnotateMessage(null);setAnnotateText("")}}/></View></View>}
  {waitingStart&&<Text style={{color:C.muted,paddingHorizontal:16,paddingVertical:8}}>Mesajlaşma, belirlenen görüşme başlangıcında açılacak.</Text>}
  {!!visibleData?.case?.messages_deleted_at&&<Text style={{color:C.red,paddingHorizontal:16,paddingVertical:8}}>Bu görüşmenin mesajları kaldırılmış.</Text>}
  {!!pendingMessage&&<Text style={{color:C.muted,paddingHorizontal:16,paddingVertical:5}}>Gönderim sonucu doğrulanıyor; aynı istek anahtarı korunuyor.</Text>}

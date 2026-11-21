@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 from app.mobile_api import _mobile_access_token, _mobile_request
 from app.mobile_account_api import _account_user, _invoke
-from app.membership_verification import DOCUMENT_TYPES, state, validate_document
+from app.membership_verification import DOCUMENT_TYPES, MembershipVerification, state, validate_document
 from app.profile_hub import EXPERT_TITLES
 
 router=APIRouter(tags=['mobile-professional'])
@@ -159,3 +159,36 @@ def expert_performance(response:Response,user=Depends(_account_user)):
         result={'availability':profile.availability,'capacity':web.consultation_capacity_limit(profile),'open_cases':web._expert_open_case_count(s,user.id),'performance':performance,'policy':{'blocked':web._expert_is_blocked(policy),'blocked_until':policy.new_case_blocked_until,'reason':policy.block_reason,'rules_accepted':bool(policy.rules_version==web.EXPERT_RULES_VERSION and policy.rules_accepted_at)},'events':[{'id':e.id,'event_type':e.event_type,'created_at':e.created_at} for e in events]}
         s.commit()
         return result
+
+
+@router.get('/account/documents/{purpose}/content')
+def document_content(purpose:Literal['membership','title','expert'],response:Response,token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    """Web profile_document_page mantığının mobil karşılığı: yalnız sahibin kendi
+    yüklediği belge, aynı kaynak alanları (membership/title/expert)."""
+    import base64
+    from pathlib import Path
+    from app import main as web
+    from app.object_storage import ensure_local
+    response.headers['Cache-Control']='private, no-store'
+    response.headers['Vary']='Authorization'
+    with Session(web.engine,expire_on_commit=False) as s:
+        if purpose=='membership':
+            row=s.exec(select(MembershipVerification).where(MembershipVerification.user_id==user.id).order_by(MembershipVerification.id.desc())).first()
+            path=row.document_path if row else None
+        elif purpose=='title':
+            row=s.exec(select(web.ExpertTitleChange).where(web.ExpertTitleChange.user_id==user.id,web.ExpertTitleChange.credential_document_path.is_not(None)).order_by(web.ExpertTitleChange.id.desc())).first()
+            path=row.credential_document_path if row else None
+        else:
+            row=s.exec(select(web.ExpertProfile).where(web.ExpertProfile.user_id==user.id)).first()
+            path=row.credential_document_path if row else None
+        if not path:
+            raise HTTPException(status_code=404,detail='Görüntülenecek belge bulunamadı.')
+        media_type={'.pdf':'application/pdf','.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png'}.get(Path(path).suffix.lower())
+        if not media_type:
+            raise HTTPException(status_code=404,detail='Belge formatı görüntülenemiyor.')
+        try:
+            local=ensure_local(path)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404,detail='Belge dosyası bulunamadı.') from exc
+    return {'ok':True,'purpose':purpose,'media_type':media_type,'filename':Path(local).name,
+            'data_base64':base64.b64encode(Path(local).read_bytes()).decode('ascii')}
