@@ -61,3 +61,24 @@ test('patient profile child sections use an opaque key across token and patient 
  assert.ok(source.includes('const profileRenderIdentity=useRef<{scope:string;key:string}|null>(null);'));
  assert.ok(source.includes('profileRenderIdentity.current.scope!==scope'),'the opaque key must rotate when the account, token or patient scope changes');
 });
+
+
+test('tooth-chart analysis history uses an opaque render key while retaining tooth-scoped remounts',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativeToothChart.tsx'),'utf8');
+ const parsed=ts.createSourceFile('NativeToothChart.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+ const history=[];
+ const visit=node=>{
+  if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText(parsed)==='NativePatientHistory'){
+   const key=node.attributes.properties.find(item=>ts.isJsxAttribute(item)&&item.name.getText(parsed)==='key');
+   history.push(key&&ts.isJsxAttribute(key)&&key.initializer&&ts.isJsxExpression(key.initializer)?key.initializer.expression?.getText(parsed)||'':'');
+  }
+  ts.forEachChild(node,visit);
+ };
+ visit(parsed);
+ assert.equal(history.length,1,'the selected tooth must own exactly one analysis-history section');
+ assert.equal(history[0],'historyRenderKey','the history section must not use a raw token-bearing React key');
+ assert.ok(!history[0].includes('token')&&!history[0].includes('scope'),'renderer identity must not contain credentials or the raw identity tuple');
+ assert.ok(source.includes('import {nextSessionRenderKey} from "./sessionRenderKey";'));
+ assert.ok(source.includes('const historyScope=`${userId}:${token}:${patientId}:${selected}`;'));
+ assert.ok(source.includes('historyRenderIdentity.current.scope!==historyScope'),'switching account, session, patient or selected tooth must remount the scoped history section');
+});
