@@ -389,11 +389,11 @@ test('voice entry mirrors the web new-patient path and reuses its key after an u
  vm.runInNewContext(code,{exports,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{usePreventRemove(){}}:n==='expo-secure-store'?{getItemAsync:async key=>secure.get(key)||null,setItemAsync:async(key,value)=>secure.set(key,value),deleteItemAsync:async key=>secure.delete(key)}:n==='expo-crypto'?{randomUUID:()=> '00000000-0000-4000-8000-000000000000'}:n==='./api'?{getPatient:async()=>({patient:{id:8,anonymous_id:'Synthetic patient'}})}:n.startsWith('./sessionRenderKey')?sessionRenderKeyExports:n==='./socialDraft'?require('../src/socialDraft.ts'):n==='./voiceApi'?{createAnonymousVoicePatient:async(token,key)=>{calls.push({token,key});if(calls.length===1)throw Error('Synthetic lost response');return{patient:{id:42,anonymous_id:'SES-0123456789ABCDEF',first_name:null,last_name:null}}},extractVoice:async()=>review,finalizeVoice:async()=>({final:{}})}:n==='./voiceEvidencePresentation'?{voiceEvidencePresentation:()=>({label:'Evidence',quote:'',hasEvidence:false,edited:false,fromHistory:false,notice:'Evidence unavailable'})}:{default:n.slice(2)}});
  let tree;
  await renderer.act(async()=>tree=renderer.create(React.createElement(exports.default,{token:'A',userId:1})));
- assert.ok(button(tree,'Yeni hastayla başla →'));
- await renderer.act(async()=>{button(tree,'Yeni hastayla başla →').props.onPress();await new Promise(resolve=>setImmediate(resolve))});
+ assert.ok(button(tree,'Yeni hasta ile devam et →'));
+ await renderer.act(async()=>{button(tree,'Yeni hasta ile devam et →').props.onPress();await new Promise(resolve=>setImmediate(resolve))});
  const storedKey=secure.get('dai.voice.patient.create.1');
  assert.equal(storedKey,'0'.repeat(32));assert.equal(calls.length,1);
- await renderer.act(async()=>{button(tree,'Yeni hastayla başla →').props.onPress();await new Promise(resolve=>setImmediate(resolve))});
+ await renderer.act(async()=>{button(tree,'Yeni hasta ile devam et →').props.onPress();await new Promise(resolve=>setImmediate(resolve))});
  assert.equal(calls.length,2);assert.equal(calls[0].key,calls[1].key);
  assert.equal(secure.has('dai.voice.patient.create.1'),false);
  assert.equal(tree.root.findAllByType('NativeVoiceRecorder').length,1);
