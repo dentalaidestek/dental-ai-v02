@@ -43,14 +43,108 @@ export type SupportTicket={id:number;subject:string;initial_message:string;statu
 export type SupportMessage={id:number;sender_role:"USER"|"ADMIN";message:string;created_at:string};
 export type SupportReport={id:number;case_id:number|null;reason:string;detail:string;status:string;created_at:string;ticket_id:number|null;unread_count:number};
 export type SupportConversationOption={id:number;other_display_name:string;status:string};
+const supportStatuses:readonly SupportTicketStatus[]=["OPEN","IN_PROGRESS","USER_REPLIED","ANSWERED","CLOSED"];
+const supportStatusValid=(value:unknown):value is SupportTicketStatus=>typeof value==="string"&&supportStatuses.includes(value as SupportTicketStatus);
+const supportIdValid=(value:unknown):value is number=>typeof value==="number"&&Number.isSafeInteger(value)&&value>0;
+const supportDateValid=(value:unknown):value is string=>typeof value==="string"&&value.length<=64&&Number.isFinite(Date.parse(value));
+const supportCountValid=(value:unknown):value is number=>typeof value==="number"&&Number.isSafeInteger(value)&&value>=0;
+const supportRequestKeyValid=(value:unknown):value is string=>typeof value==="string"&&/^[A-Za-z0-9_-]{16,96}$/.test(value);
+const supportTicketSummaryValid=(value:unknown):value is SupportTicket=>{
+ if(!value||typeof value!=="object")return false;
+ const x=value as Record<string,unknown>;
+ return supportIdValid(x.id)&&typeof x.subject==="string"&&x.subject.length<=160&&
+  typeof x.initial_message==="string"&&x.initial_message.length<=4000&&supportStatusValid(x.status)&&
+  supportDateValid(x.created_at)&&supportDateValid(x.updated_at)&&
+  (x.last_message===undefined||(typeof x.last_message==="string"&&x.last_message.length<=4000))&&
+  supportCountValid(x.unread_count)&&typeof x.can_reply==="boolean";
+};
+const supportMessageValid=(value:unknown):value is SupportMessage=>{
+ if(!value||typeof value!=="object")return false;
+ const x=value as Record<string,unknown>;
+ return supportIdValid(x.id)&&(x.sender_role==="USER"||x.sender_role==="ADMIN")&&
+  typeof x.message==="string"&&x.message.length<=4000&&supportDateValid(x.created_at);
+};
 const supportKey=()=>("support_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,18)).replace(/[^A-Za-z0-9_-]/g,"");
-export const getSupportTickets=async(t:string,before?:number)=>{if(before!==undefined&&(!Number.isSafeInteger(before)||before<=0))throw Error("Geçersiz destek sayfa kimliği.");const r=await req<{items:SupportTicket[];total:number;has_more:boolean;next_before_id:number|null}>("/support/tickets?limit=50"+(before?"&before_id="+before:""),t);if(!Array.isArray(r.items)||r.items.some(x=>!Number.isSafeInteger(x.id)||x.id<=0||typeof x.subject!=="string"||!["OPEN","IN_PROGRESS","USER_REPLIED","ANSWERED","CLOSED"].includes(x.status))||(r.next_before_id!==null&&(!Number.isSafeInteger(r.next_before_id)||r.next_before_id<=0)))throw Error("Destek talepleri doğrulanamadı.");return r};
-export const getSupportReports=async(t:string)=>{const r=await req<{items:SupportReport[];total:number}>("/support/reports",t);if(!Array.isArray(r.items)||r.items.some(x=>!Number.isSafeInteger(x.id)||typeof x.reason!=="string"||typeof x.status!=="string"))throw Error("Bildirimler doğrulanamadı.");return r};
-export const getSupportConversationOptions=async(t:string)=>{const r=await req<{items:SupportConversationOption[]}>("/support/conversation-options",t);if(!Array.isArray(r.items)||r.items.some(x=>!Number.isSafeInteger(x.id)||typeof x.other_display_name!=="string"))throw Error("Konuşma listesi doğrulanamadı.");return r};
-export const createSupportTicket=(t:string,subject:string,message:string,key=supportKey(),caseId?:number)=>{if(!subject.trim()||subject.trim().length>160||!message.trim()||message.trim().length>4000||(caseId!==undefined&&(!Number.isSafeInteger(caseId)||caseId<=0)))throw Error("Konu, açıklama veya konuşma seçimini kontrol edin.");return req<{ok:boolean;ticket_id:number;status:string;replayed:boolean}>("/support/tickets",t,{method:"POST",body:JSON.stringify({subject:subject.trim(),message:message.trim(),request_key:key,case_id:caseId??null})})};
-export const getSupportTicket=async(t:string,id:number,before?:number)=>{if(!Number.isSafeInteger(id)||id<=0||(before!==undefined&&(!Number.isSafeInteger(before)||before<=0)))throw Error("Geçersiz destek talebi.");const r=await req<{ticket:SupportTicket;messages:SupportMessage[];has_more:boolean;next_before_id:number|null;unread_count:number}>("/support/tickets/"+id+(before?("?before_id="+before):""),t);if(r.ticket?.id!==id||!Array.isArray(r.messages)||r.messages.some(m=>!Number.isSafeInteger(m.id)||typeof m.message!=="string"))throw Error("Destek konuşması doğrulanamadı.");return r};
-export const markSupportTicketRead=(t:string,id:number,through?:number)=>req<{ok:boolean;unread_count:number}>("/support/tickets/"+id+"/read"+(through?("?through_message_id="+through):""),t,{method:"POST"});
-export const replySupportTicket=(t:string,id:number,message:string,key=supportKey())=>{if(!Number.isSafeInteger(id)||id<=0||!message.trim()||message.trim().length>4000)throw Error("Yanıt alanını kontrol edin.");return req<{ok:boolean;ticket_id:number;message_id:number;status:string;replayed:boolean}>("/support/tickets/"+id+"/reply",t,{method:"POST",body:JSON.stringify({message:message.trim(),request_key:key})})};
+export const getSupportTickets=async(t:string,before?:number)=>{
+ if(before!==undefined&&!supportIdValid(before))throw Error("Geçersiz destek sayfa kimliği.");
+ const r=await req<any>("/support/tickets?limit=50"+(before!==undefined?"&before_id="+encodeURIComponent(before):""),t);
+ if(!Array.isArray(r?.items)||r.items.length>50||!supportCountValid(r.total)||r.total!==r.items.length||
+    typeof r.has_more!=="boolean"||r.items.some((x:unknown)=>!supportTicketSummaryValid(x)))
+  throw Error("Destek talepleri doğrulanamadı.");
+ const ids=(r.items as SupportTicket[]).map(x=>x.id);
+ if(new Set(ids).size!==ids.length||ids.some((id:number,index:number)=>index>0&&id>=ids[index-1])||
+    (before!==undefined&&ids.some((id:number)=>id>=before)))
+  throw Error("Destek talebi sırası veya hesap kapsamı doğrulanamadı.");
+ const next=r.next_before_id;
+ if(r.has_more?(!supportIdValid(next)||ids.length===0||next!==ids[ids.length-1]||(before!==undefined&&next>=before)):next!==null)
+  throw Error("Destek talepleri sayfalama imleci ilerlemiyor.");
+ return r as {items:SupportTicket[];total:number;has_more:boolean;next_before_id:number|null};
+};
+export const getSupportReports=async(t:string)=>{
+ const r=await req<any>("/support/reports",t);
+ if(!Array.isArray(r?.items)||r.items.length>100||!supportCountValid(r.total)||r.total!==r.items.length||
+    r.items.some((x:unknown)=>{if(!x||typeof x!=="object")return true;const v=x as Record<string,unknown>;return !supportIdValid(v.id)||
+      !(v.case_id===null||supportIdValid(v.case_id))||typeof v.reason!=="string"||v.reason.length>120||
+      typeof v.detail!=="string"||v.detail.length>4000||typeof v.status!=="string"||!supportDateValid(v.created_at)||
+      !(v.ticket_id===null||supportIdValid(v.ticket_id))||!supportCountValid(v.unread_count)}))
+  throw Error("Bildirimler doğrulanamadı.");
+ const ids=r.items.map((x:any)=>x.id);
+ if(new Set(ids).size!==ids.length||ids.some((id:number,index:number)=>index>0&&id>=ids[index-1]))
+  throw Error("Bildirim sırası doğrulanamadı.");
+ return r as {items:SupportReport[];total:number};
+};
+export const getSupportConversationOptions=async(t:string)=>{
+ const r=await req<any>("/support/conversation-options",t);
+ if(!Array.isArray(r?.items)||r.items.length>100||r.items.some((x:unknown)=>!x||typeof x!=="object"||
+    !supportIdValid((x as Record<string,unknown>).id)||typeof (x as Record<string,unknown>).other_display_name!=="string"||
+    ((x as Record<string,unknown>).other_display_name as string).length>160||typeof (x as Record<string,unknown>).status!=="string"))
+  throw Error("Konuşma listesi doğrulanamadı.");
+ const ids=r.items.map((x:any)=>x.id);
+ if(new Set(ids).size!==ids.length)throw Error("Konuşma listesinde yinelenen kayıt var.");
+ return r as {items:SupportConversationOption[]};
+};
+export const createSupportTicket=async(t:string,subject:string,message:string,key=supportKey(),caseId?:number)=>{
+ if(!subject.trim()||subject.trim().length>160||!message.trim()||message.trim().length>4000||
+    !supportRequestKeyValid(key)||(caseId!==undefined&&!supportIdValid(caseId)))
+  throw Error("Konu, açıklama veya konuşma seçimini kontrol edin.");
+ const r=await req<any>("/support/tickets",t,{method:"POST",body:JSON.stringify({subject:subject.trim(),message:message.trim(),request_key:key,case_id:caseId??null})});
+ if(!r?.ok||!supportIdValid(r.ticket_id)||!(r.status==="OPEN"||r.status==="REPLAYED")||typeof r.replayed!=="boolean")
+  throw Error("Destek talebi kayıt makbuzu doğrulanamadı.");
+ return r as {ok:boolean;ticket_id:number;status:string;replayed:boolean};
+};
+export const getSupportTicket=async(t:string,id:number,before?:number)=>{
+ if(!supportIdValid(id)||(before!==undefined&&!supportIdValid(before)))throw Error("Geçersiz destek talebi.");
+ const r=await req<any>("/support/tickets/"+id+(before!==undefined?"?before_id="+encodeURIComponent(before):""),t);
+ const ticket=r?.ticket;
+ if(!ticket||ticket.id!==id||typeof ticket.subject!=="string"||ticket.subject.length>160||
+    typeof ticket.initial_message!=="string"||ticket.initial_message.length>4000||!supportStatusValid(ticket.status)||
+    !supportDateValid(ticket.created_at)||!supportDateValid(ticket.updated_at)||typeof ticket.can_reply!=="boolean"||
+    !Array.isArray(r.messages)||r.messages.length>20||r.messages.some((m:unknown)=>!supportMessageValid(m))||
+    typeof r.has_more!=="boolean"||!supportCountValid(r.unread_count))
+  throw Error("Destek konuşması doğrulanamadı.");
+ const ids=(r.messages as SupportMessage[]).map(m=>m.id);
+ if(new Set(ids).size!==ids.length||ids.some((messageId:number,index:number)=>index>0&&messageId<=ids[index-1])||
+    (before!==undefined&&ids.some((messageId:number)=>messageId>=before)))
+  throw Error("Destek mesaj sırası veya sayfa kapsamı doğrulanamadı.");
+ if(r.has_more?(!supportIdValid(r.next_before_id)||ids.length!==20||r.next_before_id!==ids[0]||(before!==undefined&&r.next_before_id>=before)):r.next_before_id!==null)
+  throw Error("Destek mesajı sayfalama imleci ilerlemiyor.");
+ return r as {ticket:SupportTicket;messages:SupportMessage[];has_more:boolean;next_before_id:number|null;unread_count:number};
+};
+export const markSupportTicketRead=async(t:string,id:number,through?:number)=>{
+ if(!supportIdValid(id)||(through!==undefined&&!supportIdValid(through)))throw Error("Geçersiz destek okuma sınırı.");
+ const r=await req<any>("/support/tickets/"+id+"/read"+(through!==undefined?"?through_message_id="+encodeURIComponent(through):""),t,{method:"POST"});
+ if(!r?.ok||r.ticket_id!==id||!supportCountValid(r.unread_count))throw Error("Destek okundu makbuzu doğrulanamadı.");
+ return r as {ok:boolean;ticket_id:number;unread_count:number};
+};
+export const replySupportTicket=async(t:string,id:number,message:string,key=supportKey())=>{
+ if(!supportIdValid(id)||!message.trim()||message.trim().length>4000||!supportRequestKeyValid(key))
+  throw Error("Yanıt alanını kontrol edin.");
+ const r=await req<any>("/support/tickets/"+id+"/reply",t,{method:"POST",body:JSON.stringify({message:message.trim(),request_key:key})});
+ if(!r?.ok||r.ticket_id!==id||!supportIdValid(r.message_id)||
+    !(r.status==="USER_REPLIED"||r.status==="REPLAYED")||typeof r.replayed!=="boolean")
+  throw Error("Destek yanıtı kayıt makbuzu doğrulanamadı.");
+ return r as {ok:boolean;ticket_id:number;message_id:number;status:string;replayed:boolean};
+};
 
 export type Notice={id:number;title:string;message:string;notice_type:string;target_url?:string|null;read_at?:string|null;is_read?:boolean;created_at:string};
 export type Expert={user_id:number;display_name:string;specialty:string;academic_title?:string|null;institution?:string|null;bio?:string|null;availability:string;consultation_price:number;rating_avg?:number|null;review_count:number};

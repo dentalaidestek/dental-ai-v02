@@ -2,6 +2,8 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
+const vm=require('node:vm');
+const ts=require('typescript');
 
 const root=path.join(__dirname,'..');
 const api=fs.readFileSync(path.join(root,'src/modernApi.ts'),'utf8');
@@ -23,10 +25,20 @@ test('native support screen implements status filters, empty state and retryable
  assert.ok(screen.includes('replyKey||'));
  assert.ok(screen.includes('import * as SecureStore from "expo-secure-store"'));
  assert.ok(screen.includes('import{useRealtime}from"./realtime"'));
- assert.ok(screen.includes('SecureStore.setItemAsync(\"dai.support.create.pending\"'));
- assert.ok(screen.includes('SecureStore.setItemAsync(\"dai.support.reply.pending.\"+selected'));
- assert.ok(screen.includes('SecureStore.getItemAsync(\"dai.support.create.pending\"'));
- assert.ok(screen.includes('finally{setSending(false)}'));
+ assert.ok(screen.includes("SecureStore.setItemAsync(createPendingKey"));
+ assert.ok(screen.includes("SecureStore.setItemAsync(storageKey"));
+ assert.ok(screen.includes("SecureStore.getItemAsync(createPendingKey"));
+ assert.ok(screen.includes("finally{if(isCurrent(owner))setSending(false)}"));
+});
+
+test('support screen declares every loading, error and mutation state used by its callbacks',()=>{
+ for(const fragment of ['[loading,setLoading]=useState(false)','[error,setError]=useState("")','[sending,setSending]=useState(false)','[createKey,setCreateKey]=useState("")','[replyKey,setReplyKey]=useState("")'])
+  assert.ok(screen.includes(fragment),fragment);
+});
+
+test('support API validates complete pages, cursor progress and exact mutation receipts',()=>{
+ for(const fragment of ['supportTicketSummaryValid','supportMessageValid','supportRequestKeyValid','new Set(ids).size!==ids.length','r.next_before_id!==ids[0]','r.ticket_id!==id','r.message_id','r.unread_count'])
+  assert.ok(api.includes(fragment),fragment);
 });
 
 test('support screen is registered and reachable from the app',()=>{
@@ -61,7 +73,8 @@ test('native support exposes optional expert conversation linking and persists i
  assert.ok(api.includes('getSupportConversationOptions'));
  assert.ok(api.includes('case_id:caseId??null'));
  assert.ok(screen.includes('İlgili uzman konuşması (isteğe bağlı)'));
- assert.ok(screen.includes('caseId:caseId??null'));
+ assert.ok(screen.includes('case_id:caseId??null'));
+ assert.ok(screen.includes('createSupportTicket(token,subject,message,key,caseId)'));
  assert.ok(screen.includes('Konuşma yalnızca destek ekibiyle ilişkilendirilir'));
 });
 test('native support exposes reports and cursor pagination for tickets and messages',()=>{
@@ -85,4 +98,54 @@ test('support notifications open the exact ticket through the authenticated owne
  assert.ok(screen.includes('void open(initialTicketId)'));
  assert.ok(screen.includes('getSupportTicket(token,id)'));
  assert.ok(app.includes('initialTicketId={route.params?.ticketId}'));
+});
+
+test('support recovery storage is isolated by account and ticket',()=>{
+ const scopeSource=fs.readFileSync(path.join(root,'src/supportDraftScope.ts'),'utf8');
+ const compiled=ts.transpileModule(scopeSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+ const scopeModule={exports:{}};
+ vm.runInNewContext(compiled,{module:scopeModule,exports:scopeModule.exports});
+ const scope=scopeModule.exports;
+ const createA=scope.supportCreateIntentStorageKey(7),createB=scope.supportCreateIntentStorageKey(8);
+ const replyA=scope.supportReplyIntentStorageKey(7,42),replyB=scope.supportReplyIntentStorageKey(8,42);
+ const replyOtherTicket=scope.supportReplyIntentStorageKey(7,43);
+ assert.notEqual(createA,createB);
+ assert.notEqual(replyA,replyB);
+ assert.notEqual(replyA,replyOtherTicket);
+ assert.ok(!createA.includes('secret-token'));
+ assert.throws(()=>scope.supportCreateIntentStorageKey(0),/Geçersiz/);
+ assert.throws(()=>scope.supportReplyIntentStorageKey(7,-1),/Geçersiz/);
+ const intent={version:2,user_id:7,kind:'CREATE',key:'support_m1abcde_12345678',subject:'Konu',message:'Özel destek metni',case_id:null};
+ assert.equal(scope.isSupportPendingIntentForUser(intent,7,'CREATE'),true);
+ assert.equal(scope.isSupportPendingIntentForUser(intent,8,'CREATE'),false);
+ assert.equal(scope.isSupportPendingIntentForUser({...intent,user_id:8},7,'CREATE'),false);
+ const reply={version:2,user_id:7,kind:'REPLY',ticket_id:42,key:'support_m1abcde_12345678',message:'Yanıt'};
+ assert.equal(scope.isSupportPendingIntentForUser(reply,7,'REPLY',42),true);
+ assert.equal(scope.isSupportPendingIntentForUser(reply,7,'REPLY',43),false);
+});
+
+test('support screen ignores legacy unscoped drafts and restores only versioned scoped intents',()=>{
+ assert.ok(screen.includes('supportCreateIntentStorageKey(userId)'));
+ assert.ok(screen.includes('supportReplyIntentStorageKey(userId,selected)'));
+ assert.ok(screen.includes('isSupportPendingIntentForUser(d,userId,"CREATE")'));
+ assert.ok(screen.includes('isSupportPendingIntentForUser(d,userId,"REPLY",selected)'));
+ assert.equal(screen.includes('"dai.support.create.pending"'),false);
+ assert.equal(screen.includes('"dai.support.reply.pending."+selected'),false);
+ assert.ok(app.includes('userId={user.id}'));
+});
+
+test('support pending mutations cannot silently change payload under the same idempotency key',()=>{
+ assert.ok(screen.includes('editable={!createKey}'));
+ assert.ok(screen.includes('editable={!replyKey}'));
+ assert.ok(screen.includes('Aynı talebi güvenle tekrar dene'));
+ assert.ok(screen.includes('Aynı yanıtı güvenle tekrar dene'));
+ assert.equal(screen.includes('setCreateKey("");void SecureStore.deleteItemAsync'),false);
+ assert.equal(screen.includes('setReplyKey("");void SecureStore.deleteItemAsync'),false);
+});
+
+test('support list and detail ignore late responses from an old session or selected ticket',()=>{
+ assert.ok(screen.includes('scopeRef.current=scope'));
+ assert.ok(screen.includes('if(!isCurrent(owner)||request!==listRequest.current)return'));
+ assert.ok(screen.includes('if(!isCurrent(owner)||request!==detailRequest.current||selectedRef.current!==id)return'));
+ assert.ok(screen.includes('request===detailRequest.current&&selectedRef.current===id'));
 });

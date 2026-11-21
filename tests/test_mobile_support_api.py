@@ -1,5 +1,6 @@
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
+from sqlalchemy import event
 
 try:
     from fastapi.testclient import TestClient
@@ -7,6 +8,7 @@ except RuntimeError:
     TestClient = None
 
 from app import main
+from app import mobile_api
 from app.mobile_api import MobileSupportMutationReceipt
 
 
@@ -42,6 +44,14 @@ def test_mobile_support_requests_are_private_and_idempotent(monkeypatch, tmp_pat
         })
         assert created.status_code == 200, created.text
         ticket_id = created.json()["ticket_id"]
+
+        # The list route must use the same batched unread/latest-message strategy as the web page.
+        with monkeypatch.context() as guarded:
+            guarded.setattr(mobile_api, "_support_unread_count", lambda *a, **k: pytest.fail("per-ticket unread query returned"))
+            guarded.setattr(mobile_api, "_support_user_can_reply", lambda *a, **k: pytest.fail("per-ticket latest-message query returned"))
+            listing = client.get("/api/mobile/v1/support/tickets", headers=h1)
+            assert listing.status_code == 200
+            assert listing.json()["items"][0]["id"] == ticket_id
 
         replay = client.post("/api/mobile/v1/support/tickets", headers=h1, json={
             "subject": "Mobil giriş sorunu", "message": "İlk açıklama", "request_key": "support_create_key_0001"
@@ -141,22 +151,41 @@ def test_mobile_support_case_link_reports_and_ticket_cursor_paging(monkeypatch, 
             main.SessionToken(token_hash=main.hash_session_token(token), user_id=owner.id, expires_at=now + main.timedelta(days=1)),
             main.SessionToken(token_hash=main.hash_session_token(other_token), user_id=other.id, expires_at=now + main.timedelta(days=1)),
         ])
-        case = main.ConsultationCase(
-            requester_user_id=owner.id, expert_user_id=other.id, specialty="Endodonti",
-            clinical_summary="Özet", question="Soru", expert_response_deadline=now + main.timedelta(days=1),
-        )
-        session.add(case); session.flush()
-        session.add(main.ConsultationMessage(case_id=case.id, sender_user_id=owner.id, message_type="TEXT", content="Merhaba"))
-        report = main.UserReport(reporter_user_id=owner.id, reported_user_id=other.id, case_id=case.id, reason="OTHER", detail="İnceleme")
+        cases = []
+        for n in range(3):
+            case = main.ConsultationCase(
+                requester_user_id=owner.id, expert_user_id=other.id, specialty="Endodonti",
+                clinical_summary="Özet", question=f"Soru {n}",
+                expert_response_deadline=now + main.timedelta(days=1),
+                requested_at=now + main.timedelta(seconds=n),
+            )
+            session.add(case); session.flush()
+            session.add(main.ConsultationMessage(case_id=case.id, sender_user_id=owner.id, message_type="TEXT", content=f"Merhaba {n}"))
+            cases.append(case)
+        report = main.UserReport(reporter_user_id=owner.id, reported_user_id=other.id, case_id=cases[0].id, reason="OTHER", detail="İnceleme")
         session.add(report); session.commit()
-        case_id, report_id = case.id, report.id
+        case_id, report_id = cases[0].id, report.id
+        case_ids = {case.id for case in cases}
 
     with TestClient(main.app) as client:
         headers = {"Authorization": "Bearer " + token}
-        options = client.get("/api/mobile/v1/support/conversation-options", headers=headers)
+        statements = []
+        def record_query(conn, cursor, statement, parameters, context, executemany):
+            statements.append(statement.lower())
+        event.listen(engine, "before_cursor_execute", record_query)
+        try:
+            options = client.get("/api/mobile/v1/support/conversation-options", headers=headers)
+        finally:
+            event.remove(engine, "before_cursor_execute", record_query)
         assert options.status_code == 200
-        assert [x["id"] for x in options.json()["items"]] == [case_id]
-        reports = client.get("/api/mobile/v1/support/reports", headers=headers)
+        assert {x["id"] for x in options.json()["items"]} == case_ids
+        message_queries = [q for q in statements if "consultationmessage" in q]
+        user_queries = [q for q in statements if "from user" in q or 'from "user"' in q]
+        assert len(message_queries) == 1, f"conversation messages must be fetched once, got {len(message_queries)}"
+        assert len(user_queries) <= 2, f"one auth lookup plus one batched participant lookup expected, got {len(user_queries)}"
+        with monkeypatch.context() as guarded:
+            guarded.setattr(mobile_api, "_support_unread_count", lambda *a, **k: pytest.fail("per-report unread query returned"))
+            reports = client.get("/api/mobile/v1/support/reports", headers=headers)
         assert reports.status_code == 200
         assert [x["id"] for x in reports.json()["items"]] == [report_id]
         report_ticket_id = reports.json()["items"][0]["ticket_id"]
