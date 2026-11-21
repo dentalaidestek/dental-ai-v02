@@ -1,8 +1,4 @@
-import pytest
-try:
-    from fastapi.testclient import TestClient
-except Exception:
-    TestClient = None
+from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -42,7 +38,6 @@ def _user_and_token(session, username):
     return int(user.id), token
 
 
-@pytest.mark.skipif(TestClient is None, reason="Starlette TestClient unavailable")
 def test_dashboard_is_private_owner_scoped_and_returns_only_three_minimal_analyses(
     monkeypatch, tmp_path
 ):
