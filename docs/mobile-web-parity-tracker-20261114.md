@@ -1090,3 +1090,41 @@ Commits in this pass:
 - record this CI and parity evidence
 
 The new tests are committed but their post-fix workflow result is still required. No clinical records, owner predicates, database schema, provider, dependency, main branch or production environment were changed. No merge, deploy, migration or APK/IPA publication.
+
+
+## 2026-11-21 — clinical media camera parity and private image cache scope
+
+Starting PR head: `e3b7b72b4571651cd162efbc4b2a8c5f2937e660`.
+
+### CI evidence inspected before changes
+
+- Android CI run [44840473644](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44840473644): the `npm run typecheck` step completed successfully; Android internal APK build succeeded. The job later failed in beta regression at 900/901 because the rendered voice-retry fixture did not publish the recorder's completed-session state.
+- Security Recovery [44840473660](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44840473660): Python security passed; Native Program, Academic and Social passed. Native Clinical (253/254) and Native Voice (76/77) repeated the same voice workflow fixture failure.
+- The failing assertion was the second source-only finalization call. `NativeVoiceRecorder` persists `ended: true` and publishes `finished: true` through `onSessionState`; the test called `onFinished` without reproducing that state callback. The fixture now emits the finished state before the final transcript callback. No production voice guard was weakened.
+
+### Web-first clinical media comparison
+
+Re-read `app/templates/patient_detail.html` and its inline gallery/upload scripts before changing native behavior. The web archive provides:
+- a multi-file image input that can expose the mobile browser's camera/gallery picker;
+- distinct PHOTO/RADIOGRAPH intent;
+- bounded 12-file / 12 MiB per-file / 96 MiB batch validation;
+- cursor-paged gallery, selection capped at four images, thumbnail cards and original-file preview;
+- delete confirmation and explicit retry after gallery read errors.
+
+Compared `NativePatientMedia.tsx`, `modernApi.ts`, `mobile_api.py`, and `mobile_modern_api_v3.py`. Native archive already had encrypted local drafts, per-file request receipts, batch reconciliation, byte progress, owner-scoped APIs, and thumbnail/original endpoints. Two parity/security gaps remained:
+1. The archive only opened the photo library. The separate AI analysis composer already supported camera capture, but the patient archive did not. Added a camera action that uses the same normalization, encryption, 12/96 MiB checks, version-3 secure draft, batch ID and per-file request keys as gallery selection. It does not upload until the clinician explicitly presses Save.
+2. Remote archive images used media-ID-only React keys and inline image sources. After an account/session switch, the same media ID could reuse an image component/cache identity. Added owner/session-scoped keys and a private source helper that validates canonical mobile media URLs, attaches the current Bearer token, and requests image cache revalidation.
+
+Also removed the second hard-coded API base in `modernApi.ts`; it now imports the exported `API_BASE` from `api.ts`, keeping media and other modern endpoints on the same canonical origin.
+
+### Added regression coverage
+
+- camera capture is staged into an encrypted, account/patient-scoped draft before network upload;
+- denied camera permission creates no draft and performs no encryption;
+- owner/session/variant changes produce distinct image keys;
+- private image source rejects external, malformed, query-bearing and unscoped URLs;
+- private image source carries the current Authorization header and `cache: reload`;
+- web/native archive camera and thumbnail/original behavior remains explicitly compared;
+- modern API base import is checked against the shared API module.
+
+The new HEAD must still run Android typecheck, all beta tests, Security Recovery and the native clinical/voice suites. No post-change pass is claimed before those jobs complete. No production patient data, database, migration, main branch or live deployment was touched.
