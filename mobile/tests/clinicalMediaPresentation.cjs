@@ -28,6 +28,23 @@ test('private clinical image cache identity changes across authenticated owner a
  assert.throws(()=>api.clinicalMediaImageKey('owner',42,'unknown'),/kapsamı doğrulanamadı/);
 });
 
+test('private analysis image identity changes across opaque session, asset and retry scopes',()=>{
+ const api=loadPresentation();
+ const first=api.clinicalAnalysisImageKey('clinical-vision-scope-1',31,7,0);
+ const otherSession=api.clinicalAnalysisImageKey('clinical-vision-scope-2',31,7,0);
+ const otherAsset=api.clinicalAnalysisImageKey('clinical-vision-scope-1',31,8,0);
+ const retry=api.clinicalAnalysisImageKey('clinical-vision-scope-1',31,7,1);
+ assert.notEqual(first,otherSession);
+ assert.notEqual(first,otherAsset);
+ assert.notEqual(first,retry);
+ assert.ok(!first.includes('Bearer'));
+ assert.ok(!first.includes('synthetic-token'));
+ assert.throws(()=>api.clinicalAnalysisImageKey('',31,7,0),/kapsamı doğrulanamadı/);
+ assert.throws(()=>api.clinicalAnalysisImageKey('scope',0,7,0),/kapsamı doğrulanamadı/);
+ assert.throws(()=>api.clinicalAnalysisImageKey('scope',31,0,0),/kapsamı doğrulanamadı/);
+ assert.throws(()=>api.clinicalAnalysisImageKey('scope',31,7,-1),/kapsamı doğrulanamadı/);
+});
+
 test('private clinical image requests carry the current bearer token and force revalidation',()=>{
  const api=loadPresentation();
  const uri='https://dentalai.tr/api/mobile/v1/patients/8/media/42/thumbnail';
