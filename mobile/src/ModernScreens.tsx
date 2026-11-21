@@ -15,6 +15,7 @@ import {applyConsultationInboxEvent,applyConsultationChatEvent,mergeConsultation
 import {usePagedRecords} from "./usePagedRecords";
 import {resolveNativeNotificationTarget} from "./notificationTarget";
 import {applyNotificationReadAllSnapshot,parseNotificationTimestamp} from "./notificationState";
+import {shouldRefreshNotificationList} from "./notificationRefresh";
 
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",green:"#16803C",red:"#B42318"};
 const card={backgroundColor:C.white,borderRadius:18,borderWidth:1,borderColor:C.line,padding:16,marginBottom:12} as any;
@@ -27,23 +28,34 @@ export function Notifications({token,initialNoticeId}:{token:string;initialNotic
  const[d,setD]=useState<any>();const{lastEvent}=useRealtime();
  const[busy,setBusy]=useState(false),[markingAll,setMarkingAll]=useState(false),[error,setError]=useState("");
  const requestGeneration=useRef(0),activeToken=useRef(token),autoOpenedNoticeId=useRef<number|null>(null);
+ const loadPromise=useRef<Promise<void>|null>(null),loadQueued=useRef(false);
  // Never allow an earlier account or an older refresh to overwrite this account's notifications.
- if(activeToken.current!==token){activeToken.current=token;requestGeneration.current++;autoOpenedNoticeId.current=null;}
+ if(activeToken.current!==token){
+  activeToken.current=token;requestGeneration.current++;autoOpenedNoticeId.current=null;
+  loadQueued.current=false;loadPromise.current=null;
+ }
  const load=useCallback(async()=>{
-  const request=++requestGeneration.current;setBusy(true);
-  try{
-   const result=await getNotifications(token,noticeId);
-   if(request!==requestGeneration.current||activeToken.current!==token)return;
-   setD({...result,accountToken:token});setError("");
-  }catch(e){
-   if(request===requestGeneration.current&&activeToken.current===token)setError(e instanceof Error?e.message:"Bildirimler alınamadı.");
-  }finally{
-   if(request===requestGeneration.current&&activeToken.current===token)setBusy(false);
-  }
+  if(loadPromise.current){loadQueued.current=true;return loadPromise.current;}
+  const task=(async()=>{
+   do{
+    loadQueued.current=false;
+    const request=++requestGeneration.current;setBusy(true);
+    try{
+     const result=await getNotifications(token,noticeId);
+     if(request===requestGeneration.current&&activeToken.current===token){setD({...result,accountToken:token});setError("");}
+    }catch(e){
+     if(request===requestGeneration.current&&activeToken.current===token)setError(e instanceof Error?e.message:"Bildirimler alınamadı.");
+    }finally{
+     if(request===requestGeneration.current&&activeToken.current===token)setBusy(false);
+    }
+   }while(loadQueued.current&&activeToken.current===token);
+  })();
+  loadPromise.current=task;
+  try{await task;}finally{if(loadPromise.current===task)loadPromise.current=null;}
  },[token,noticeId]);
  useEffect(()=>{setD(undefined);setError("");setBusy(false);autoOpenedNoticeId.current=null;return()=>{requestGeneration.current++}},[token,noticeId]);
  useEffect(()=>{void load()},[load]);
- useEffect(()=>{if(lastEvent&&["NOTICE_CREATED","NOTICE_RESOLVED","MESSAGE_CREATED","CASE_CREATED","NOTIFICATIONS_READ"].includes(String(lastEvent.event_type||lastEvent.type)))void load()},[lastEvent,load]);
+ useEffect(()=>{if(shouldRefreshNotificationList(lastEvent))void load()},[lastEvent,load]);
  async function open(item:any){
   const requestToken=token;
   const target=resolveNativeNotificationTarget(item.target_url);
