@@ -420,3 +420,63 @@ test('Dental Flow ignores delayed follow, edit and compose results from a previo
  assert.match(flow,/if \(!isSocialSessionCurrent\(sessionScope\.current, \{ userId: user\.id, token \}\)\) return;/);
  assert.match(flow,/onPosted=\{\(p\) => \{\s*if \(!isSocialSessionCurrent/);
 });
+
+
+test('native comment moderation matches web ownership rules and updates the authoritative count',async()=>{
+ const h=harness(),changes=[],counts=[];
+ h.api.deleteComment=async()=>({ok:true,comment_count:4,removed_count:2});
+ const item={id:21,post_id:4,author_id:9,author_name:'Other member',text:'Reply thread root',status:'PUBLISHED',version:1,owned:false,liked:false,like_count:0,reply_count:1,parent_id:null};
+ let tree=h.render('CommentThread',{token:'synthetic',item,postId:4,canDeleteOthers:true,commentsClosed:false,onChange:(...args)=>changes.push(args),onReply(){},onProfile(){},onCountChange:count=>counts.push(count)});
+ nodes(tree).find(n=>n.props?.accessibilityLabel==='Yorum işlemleri').props.onPress();
+ const actions=h.alerts[0][2];
+ assert.deepEqual(actions.map(a=>a.text),['Vazgeç','Sil','Bildir']);
+ assert.ok(actions.length<=3,'Android must retain every action without truncating the Alert');
+ actions.find(a=>a.text==='Sil').onPress();
+ const confirm=h.alerts[1][2];
+ await confirm.find(a=>a.text==='Sil').onPress();
+ await tick();
+ assert.deepEqual(changes,[[null,21]]);
+ assert.deepEqual(counts,[4]);
+
+ const member=harness();
+ tree=member.render('CommentThread',{token:'synthetic',item,postId:4,canDeleteOthers:false,commentsClosed:false,onChange(){},onReply(){},onProfile(){},onCountChange(){}});
+ nodes(tree).find(n=>n.props?.accessibilityLabel==='Yorum işlemleri').props.onPress();
+ assert.deepEqual(member.alerts[0][2].map(a=>a.text),['Vazgeç','Bildir']);
+
+ const author=harness();
+ tree=author.render('CommentThread',{token:'synthetic',item:{...item,owned:true},postId:4,canDeleteOthers:false,commentsClosed:false,onChange(){},onReply(){},onProfile(){},onCountChange(){}});
+ nodes(tree).find(n=>n.props?.accessibilityLabel==='Yorum işlemleri').props.onPress();
+ assert.deepEqual(author.alerts[0][2].map(a=>a.text),['Vazgeç','Düzenle','Sil']);
+});
+
+test('native comments hide replies on closed or unpublished threads and use ten-row reply pages',async()=>{
+ const h=harness(),base={id:10,post_id:5,author_id:7,author_name:'Expert',text:'Root',version:1,owned:false,liked:false,like_count:0,reply_count:1,parent_id:null};
+ let tree=h.render('CommentThread',{token:'synthetic',item:{...base,status:'PENDING'},postId:5,canDeleteOthers:false,commentsClosed:false,onChange(){},onReply(){},onProfile(){},onCountChange(){}});
+ assert.equal(nodes(tree).some(n=>text(n)==='Yanıtla'),false);
+ const pendingLike=nodes(tree).find(n=>n.type==='Pressable'&&text(n).startsWith('♡'));
+ assert.equal(pendingLike.props.disabled,true);
+
+ tree=h.render('CommentThread',{token:'synthetic',item:{...base,status:'PUBLISHED'},postId:5,canDeleteOthers:false,commentsClosed:true,onChange(){},onReply(){},onProfile(){},onCountChange(){}});
+ assert.equal(nodes(tree).some(n=>text(n)==='Yanıtla'),false);
+
+ tree=h.render('CommentThread',{token:'synthetic',item:{...base,status:'PUBLISHED'},postId:5,canDeleteOthers:false,commentsClosed:false,onChange(){},onReply(){},onProfile(){},onCountChange(){}});
+ const toggle=nodes(tree).find(n=>n.type==='Pressable'&&text(n)==='1 yanıtı aç');
+ assert.ok(toggle);
+ await toggle.props.onPress();
+ await tick();
+ assert.equal(h.requests[0][4],10,'native reply paging must match the web limit');
+});
+
+test('native comment sheet displays and publishes the server comment count',async()=>{
+ const h=harness(),counts=[];
+ h.setGetCommentsHandler(async()=>({items:[],next_cursor:null,comment_count:12}));
+ const onCountChange=(postId,count)=>counts.push([postId,count]);
+ const props={token:'synthetic',userId:3,post:{id:6,owned:true,comments_closed:false,comment_count:10},onClose(){},onProfile(){},onCountChange};
+ let tree=h.render('Comments',props);
+ await tick();
+ tree=h.render('Comments',props);
+ const sheet=nodes(tree).find(n=>typeof n.props?.title==='string'&&n.props.title.startsWith('Yorumlar'));
+ assert.ok(sheet);
+ assert.equal(sheet.props.title,'Yorumlar · 12');
+ assert.deepEqual(counts,[[6,12]]);
+});
