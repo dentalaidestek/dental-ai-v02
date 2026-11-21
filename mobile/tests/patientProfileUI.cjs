@@ -867,3 +867,42 @@ test('native patient edit controls match the web patient_detail field contract',
  assert.ok(text(tree.toJSON()).includes('Yaş: 0 · Hasta No: SYN-8'));
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('native profile editing fails closed when the server revision is missing',async()=>{
+ const missing=patient(8);delete missing.edit_revision;
+ let writes=0,tree;
+ const Profile=component({getPatient:async()=>missing,editPatient:async()=>{writes++;return{ok:true}}});
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'missing-revision',patientId:8,actions}));await Promise.resolve();await Promise.resolve()});
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress());return item};
+ await press('Hasta Bilgileri');
+ const save=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Değişiklikleri Kaydet')));
+ assert.ok(save);assert.equal(save.props.disabled,true,'profile writes must not silently omit expected_revision');
+ await renderer.act(async()=>save.props.onPress());
+ assert.equal(writes,0);
+ assert.ok(text(tree.toJSON()).includes('Hasta kayıt sürümü alınamadı'));
+ assert.ok(tree.root.findAllByType('Pressable').some(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Profili yenile'))));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('a known stale profile revision cannot be resubmitted before the three-way merge',async()=>{
+ const initial=patient(8),latest=patient(8);latest.patient.phone='05559998877';latest.edit_revision='b'.repeat(64);
+ let reads=0,writes=0,tree;
+ const Profile=component({getPatient:async()=>++reads===1?initial:latest,editPatient:async()=>{writes++;throw Object.assign(new Error('Hasta bilgileri başka bir oturumda güncellendi.'),{status:409})}});
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'revision-conflict',patientId:8,actions}));await Promise.resolve();await Promise.resolve()});
+ const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress());return item};
+ await press('Hasta Bilgileri');
+ const name=tree.root.findAllByType('TextInput').find(n=>n.props.accessibilityLabel==='Ad');
+ await renderer.act(async()=>name.props.onChangeText('Local draft'));
+ await press('Değişiklikleri Kaydet');
+ assert.equal(writes,1);
+ const staleSave=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Değişiklikleri Kaydet')));
+ assert.equal(staleSave.props.disabled,true,'a 409 must not leave a stale revision submit button active');
+ await renderer.act(async()=>staleSave.props.onPress());
+ assert.equal(writes,1,'repeated taps must not replay the known-stale revision');
+ await press('Güncel kayıtla taslağı birleştir');
+ assert.equal(reads,2);
+ const mergedSave=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes('Değişiklikleri Kaydet')));
+ assert.equal(mergedSave.props.disabled,false,'the save becomes available after a conflict-free merge with the latest revision');
+ await renderer.act(async()=>tree.unmount());
+});
