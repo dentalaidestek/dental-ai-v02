@@ -202,6 +202,9 @@ test('patient, Program, Academic, relationship, account and expert-performance r
 });
 
 
-test('VM bridge exposes a callable production hook default export',()=>{
+test('VM bridge exposes a callable production hook without CommonJS wrapper collisions',()=>{
+ const helper=fs.readFileSync(require.resolve('./helpers/useSessionRenderKeyModule.cjs'),'utf8');
+ assert.ok(!/\\b(?:const|let|var)\\s+exports\\b/.test(helper),'a CommonJS module must not redeclare its wrapper exports binding');
+ assert.ok(helper.includes('const hookExports = {};'));
  assert.equal(typeof useSessionRenderKey,'function');
 });
