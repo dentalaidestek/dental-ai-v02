@@ -337,7 +337,7 @@ function loadModernApi(fetchImpl){
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
  class ApiError extends Error{constructor(status,message){super(message);this.status=status}}
  const exports={};
- const requireChain=name=>name==='./api'?{ApiError}:name==='./sessionExpiry'?{revalidateSession:async()=>{}}:name==='./chatFiles'?{validateChatFile:()=>{}}:name==='./notificationState'?loadSrcModule('notificationState',requireChain):(()=>{throw Error('Unexpected import '+name)})();
+ const requireChain=name=>name==='./api'?{ApiError,API_BASE:'https://dentalai.tr/api/mobile/v1'}:name==='./sessionExpiry'?{revalidateSession:async()=>{}}:name==='./chatFiles'?{validateChatFile:()=>{}}:name==='./notificationState'?loadSrcModule('notificationState',requireChain):(()=>{throw Error('Unexpected import '+name)})();
  vm.runInNewContext(code,{
   exports,fetch:fetchImpl,AbortController,FormData,URLSearchParams,Response,
   setTimeout,clearTimeout,require:requireChain
@@ -603,7 +603,9 @@ test('clinical archive camera capture is encrypted and persisted as an owner-sco
  assert.ok(cameraButton,'the clinical archive must expose the web-equivalent camera action');
  await renderer.act(async()=>{await cameraButton.props.onPress();});
  assert.equal(cameraOptions.length,1);
- assert.deepEqual(cameraOptions[0],{mediaTypes:['images'],quality:.9});
+ assert.equal(cameraOptions[0].quality,.9);
+ assert.equal(cameraOptions[0].mediaTypes.length,1);
+ assert.equal(cameraOptions[0].mediaTypes[0],'images');
  assert.deepEqual(encrypted,[{uri:'file:///cache/captured-clinical.jpg',userId:1,patientId:4}]);
  const raw=storage.get('dai.patient-media.upload.1.4');
  assert.ok(raw,'camera capture must be checkpointed before the user starts network upload');

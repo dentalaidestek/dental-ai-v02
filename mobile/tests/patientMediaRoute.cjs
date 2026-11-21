@@ -102,7 +102,7 @@ test('native thumbnails recheck exact ownership and source identity after R2 gen
   const tick=String.fromCharCode(96);
   assert.ok(api.includes('thumbnail_url:'+tick+'${API_BASE}/patients/${p}/media/${media.id}/thumbnail'+tick));
   assert.match(native,/item\.thumbnail_url\|\|item\.url/);
-  assert.match(native,/source=\{\{uri:preview\.url/);
+  assert.match(native,/source=\{clinicalMediaImageSource\(preview\.url,token\)\}/);
   assert.match(main,/app\.include_router\(mobile_router\)[\s\S]*app\.include_router\(mobile_modern_router\)/);
   assert.ok(main.includes("from app.mobile_route_registry import remove_shadowed_routes as _remove_shadowed_mobile_routes"));
    assert.ok(main.includes("_remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)"));
