@@ -710,3 +710,71 @@ def test_confirmation_response_does_not_wait_for_realtime_delivery(app_client,mo
     response=client.post('/patients/1/voice-exam/apply',json=payload(engine))
     assert response.status_code==200
     with Session(engine) as s:assert s.get(Analysis,response.json()['analysis_id']) is not None
+
+def test_web_and_native_history_share_the_same_approved_record_contract(app_client):
+    client, engine = app_client
+    saved = client.post(
+        "/patients/1/voice-exam/apply",
+        json=payload(engine, request_key="f" * 32, fields={
+            "medical_history": "Astım beyanı",
+            "medications": "Metformin kullandığını belirtti",
+            "allergies": "Penisilin alerjisi olmadığını belirtti",
+        }),
+    )
+    assert saved.status_code == 200
+
+    web_response = client.get("/patients/1/voice-exam/history")
+    native_headers, _ = _bearer_headers(engine, token="web-native-parity-token")
+    native_response = client.get("/patients/1/voice-exam/history", headers=native_headers)
+
+    assert web_response.status_code == native_response.status_code == 200
+    assert native_response.json()["fields"] == web_response.json()["fields"]
+    assert native_response.json()["fields"]["medical_history"]["analysis_id"] == saved.json()["analysis_id"]
+    assert "no-store" in native_response.headers.get("cache-control", "").lower()
+
+
+def test_stale_second_approval_cannot_append_over_a_newer_patient_revision(app_client):
+    client, engine = app_client
+    original = payload(engine, request_key="1" * 32, fields={
+        "allergies": "Penisilin alerjisi olduğunu belirtti",
+    })
+    first = client.post("/patients/1/voice-exam/apply", json=original)
+    assert first.status_code == 200
+
+    stale = {
+        **original,
+        "request_key": "2" * 32,
+        "fields": {"allergies": "Alerji yok beyanı"},
+    }
+    second = client.post("/patients/1/voice-exam/apply", json=stale)
+    assert second.status_code == 409
+
+    history = client.get("/patients/1/voice-exam/history")
+    assert history.status_code == 200
+    assert history.json()["fields"]["allergies"]["value"] == "Penisilin alerjisi olduğunu belirtti"
+    with Session(engine) as session:
+        rows = session.execute(
+            select(ApprovedAnamnesis.__table__).where(
+                ApprovedAnamnesis.__table__.c.patient_id == 1,
+                ApprovedAnamnesis.__table__.c.field_key == "allergies",
+            )
+        ).mappings().all()
+        assert len(rows) == 1
+        assert rows[0]["analysis_id"] == first.json()["analysis_id"]
+
+
+def test_history_rejects_ledger_rows_with_a_different_owner_id(app_client):
+    client, engine = app_client
+    with Session(engine) as session:
+        session.execute(ApprovedAnamnesis.__table__.insert().values(
+            owner_user_id=2,
+            patient_id=1,
+            field_key="allergies",
+            value="Başka hekime ait beyan",
+            analysis_id=987654,
+        ))
+        session.commit()
+
+    history = client.get("/patients/1/voice-exam/history")
+    assert history.status_code == 200
+    assert history.json()["fields"] == {}
