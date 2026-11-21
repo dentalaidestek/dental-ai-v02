@@ -40,7 +40,8 @@ class User(VoiceTestModel, table=True):
     role: str = 'DOCTOR'
     is_active: bool = True
     email: str | None = None
-    email_verified_at: datetime | None = Field(default_factory=datetime.utcnow)
+    # Match the production User model: an omitted verification timestamp is unverified.
+    email_verified_at: datetime | None = None
 
 
 class SessionToken(VoiceTestModel, table=True):
@@ -124,7 +125,7 @@ def app_client(monkeypatch):
     import app
     monkeypatch.setattr(app, 'main', main, raising=False)
     with Session(engine) as session:
-        session.add_all([User(id=1), User(id=2), Patient(id=1, owner_user_id=1, first_name='Mevcut', age=40,
+        session.add_all([User(id=1, email_verified_at=datetime.utcnow()), User(id=2, email_verified_at=datetime.utcnow()), Patient(id=1, owner_user_id=1, first_name='Mevcut', age=40,
             chief_complaint='Eski şikâyet'), Patient(id=2, owner_user_id=2),
             StudyCourse(id=1, owner_user_id=1, title='Notlarım'), StudyCourse(id=2, owner_user_id=2, title='Yabancı ders')])
         session.commit()
