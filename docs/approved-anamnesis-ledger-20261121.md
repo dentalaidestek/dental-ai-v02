@@ -29,6 +29,7 @@ The migration uses a transaction-scoped PostgreSQL advisory lock, bounded lock/s
 - Idempotent replay does not duplicate ledger rows.
 - Migration backfills 503 records across multiple 500-row pages, excludes non-voice work, preserves owner/patient/source IDs, and is safe to retry.
 - A fresh database already stamped revision 21 still creates the table.
+- A real PostgreSQL concurrency regression holds the patient row lock, confirms a second approval is blocked in `pg_stat_activity`, then verifies both approvals and both original Analysis IDs survive in order.
 - Existing route tests continue to cover cross-patient ownership isolation and no-store responses.
 
 ## Validation boundary
