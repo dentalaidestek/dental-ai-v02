@@ -274,8 +274,9 @@ def test_require_schema_fails_closed_if_latest_history_index_is_missing():
             "patient_id INTEGER NOT NULL, field_key VARCHAR NOT NULL, value VARCHAR NOT NULL, "
             "analysis_id INTEGER NOT NULL, created_at DATETIME NOT NULL)"
         ))
-    with pytest.raises(RuntimeError, match="approved anamnesis query index"):
+    with pytest.raises(RuntimeError, match="approved anamnesis query index") as error:
         require_schema(engine)
+    assert "owner/patient/field/source columns" in str(error.value)
     engine.dispose()
 
 
