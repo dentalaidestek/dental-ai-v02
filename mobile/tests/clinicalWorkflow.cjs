@@ -19,6 +19,16 @@ test('clinical image source rejects invalid analysis and asset IDs before buildi
  assert.throws(()=>clinicalImage('synthetic-token',17,0),/Geçersiz analiz kimliği/);
  assert.throws(()=>clinicalImage('synthetic-token',17,1.5),/Geçersiz analiz kimliği/);
 });
+test('legacy radiograph fallback uses a scoped private endpoint and never exposes a storage path',()=>{
+ const {legacyClinicalImage}=api();
+ const source=legacyClinicalImage('synthetic-token',17);
+ assert.equal(source.uri,apiBase+'/analyses/17/legacy-radiograph');
+ assert.equal(source.headers.Authorization,'Bearer synthetic-token');
+ assert.equal(source.headers.Cookie,'');
+ assert.equal(source.cache,'reload');
+ assert.throws(()=>legacyClinicalImage('synthetic-token',0),/Geçersiz analiz kimliği/);
+ assert.throws(()=>legacyClinicalImage('synthetic-token',1.5),/Geçersiz analiz kimliği/);
+});
 test('vision snapshot requests bypass HTTP cache like the web embedded viewer',async()=>{
  const calls=[];
  const {getVision}=api(async(...args)=>{calls.push(args);return{status:'VISION_PENDING'}});
