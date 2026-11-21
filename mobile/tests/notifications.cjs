@@ -9,7 +9,7 @@ require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(
 
 const {applyNotificationReadAllSnapshot,parseNotificationTimestamp}=require('../src/notificationState.ts');
 const {normalizeNotificationReadAt}=require('../src/notificationState.ts');
-const {shouldRefreshHomeUnread}=require('../src/notificationRefresh.ts');
+const {shouldRefreshHomeUnread,shouldRefreshNotificationList}=require('../src/notificationRefresh.ts');
 const {isValidExpoPushToken}=require('../src/pushToken.ts');
 
 test('mark-all snapshot reads only notices created at or before the captured cutoff',()=>{
@@ -134,7 +134,14 @@ test('account login claims the same installation before optional push refresh',(
  const api=fs.readFileSync(path.join(__dirname,'../src/modernApi.ts'),'utf8');
  assert.ok(push.includes('INSTALLATION_PROOF_KEY'));
  assert.ok(push.includes('Crypto.getRandomBytesAsync(32)'));
- assert.ok(push.includes('installationClaimQueue.then(claim, claim)'));
+ assert.ok(push.includes('enqueueInstallationMutation(async () => {'));
+ assert.ok(push.includes('installationClaimQueue.then(operation, operation)'));
+ assert.ok(push.includes('export async function unregisterNativePushForLogout'));
+ const logoutStart=push.indexOf('export async function unregisterNativePushForLogout');
+ const logoutEnd=push.indexOf('export function subscribeToNativePushResponses',logoutStart);
+ const logout=push.slice(logoutStart,logoutEnd);
+ assert.ok(logout.includes('enqueueInstallationMutation(async () => {'));
+ assert.ok(logout.indexOf('unregisterPushDevice')>logout.indexOf('enqueueInstallationMutation'));
  assert.ok(push.includes('claimPushDevice(token, identity.deviceId, identity.installationProof)'));
  assert.ok(api.includes('"/push/devices/claim"'));
  assert.ok(api.includes('installation_proof:installationProof'));
@@ -187,4 +194,28 @@ test('home badge uses a count-only request and filters unrelated realtime events
  assert.ok(!home.includes('if(lastEvent)loadUnread()'));
  assert.ok(api.includes('"/notifications/unread-count"'));
  assert.ok(api.includes('normalizeNotificationReadAt(n)'));
+});
+
+
+test('notification center refreshes only for notice events, not message/realtime chat events',()=>{
+ for(const type of ['NOTICE_CREATED','NOTICE_RESOLVED','NOTIFICATIONS_READ']){
+  assert.equal(shouldRefreshNotificationList({event_type:type}),true,type);
+  assert.equal(shouldRefreshNotificationList({type:type.toLowerCase()}),true,type+' fallback');
+ }
+ for(const type of ['MESSAGE_CREATED','CASE_CREATED','CASE_STATUS_UPDATED','PROFILE_UPDATED','PATIENT_UPDATED']){
+  assert.equal(shouldRefreshNotificationList({event_type:type}),false,type);
+ }
+ assert.equal(shouldRefreshNotificationList(null),false);
+});
+
+test('notification list refresh is single-flight with one trailing reconcile',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../src/ModernScreens.tsx'),'utf8');
+ const start=source.indexOf('export function Notifications('),end=source.indexOf('\nexport function AnalysisHistory',start);
+ const screen=source.slice(start,end);
+ assert.ok(screen.includes('const loadPromise=useRef<Promise<void>|null>(null),loadQueued=useRef(false)'));
+ assert.ok(screen.includes('if(loadPromise.current){loadQueued.current=true;return loadPromise.current;}'));
+ assert.ok(screen.includes('while(loadQueued.current&&activeToken.current===token)'));
+ assert.ok(screen.includes('shouldRefreshNotificationList(lastEvent)'));
+ assert.ok(!screen.includes('MESSAGE_CREATED'));
+ assert.ok(!screen.includes('CASE_CREATED'));
 });

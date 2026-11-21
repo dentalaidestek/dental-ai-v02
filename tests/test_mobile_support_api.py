@@ -24,12 +24,15 @@ def test_mobile_support_requests_are_private_and_idempotent(monkeypatch, tmp_pat
             main.User(username=f"support-{n}", role="DOCTOR", display_name=f"Doctor {n}", email_verified_at=now)
             for n in (1, 2)
         ]
-        admin = main.User(username="support-admin-mobile", role="ADMIN", display_name="Admin", email_verified_at=now)
+        admin = main.User(username="support-admin-mobile", role="ADMIN", display_name="Admin", email=main.ADMIN_FIXED_EMAIL, email_verified_at=now)
         session.add_all(users + [admin])
         session.commit()
         tokens = ["mobile-support-user-one", "mobile-support-user-two", "mobile-support-admin"]
         for user, token in zip(users + [admin], tokens):
             session.add(main.SessionToken(token_hash=main.hash_session_token(token), user_id=user.id, expires_at=now + main.timedelta(days=1)))
+        # The real admin console requires the second-factor verified-session record;
+        # a role-only ADMIN fixture must not bypass this production authorization gate.
+        session.add(main.AdminVerifiedSession(token_hash=main.hash_session_token(tokens[2]), user_id=admin.id))
         session.commit()
         first_id, second_id, admin_id = users[0].id, users[1].id, admin.id
 
@@ -128,7 +131,9 @@ def test_mobile_support_requests_are_private_and_idempotent(monkeypatch, tmp_pat
 def test_support_receipt_schema_has_serialized_production_upgrade():
     from pathlib import Path
     migration = (Path(__file__).resolve().parents[1] / "app" / "migrate.py").read_text(encoding="utf-8")
-    assert "REVISION = 13" in migration
+    assert "SUPPORT_RECEIPTS_REVISION = 14" in migration
+    assert "PROGRAM_REMINDER_PENDING_INDEX_REVISION = 20" in migration
+    assert "REVISION = PROGRAM_REMINDER_PENDING_INDEX_REVISION" in migration
     assert "def _upgrade_support_receipts_schema(main):" in migration
     assert migration.count("MobileSupportMutationReceipt.__table__.create(connection, checkfirst=True)") >= 2
     assert "if _upgrade_support_receipts_schema(main):" in migration
