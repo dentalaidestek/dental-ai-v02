@@ -264,19 +264,27 @@ def reviewed_history_payload(session, main, user, patient_id, fingerprint=None):
     if not patient:
         return None
     fingerprint = fingerprint or _fingerprint(session, main, patient)
+    from sqlalchemy import func
     table = ApprovedAnamnesis.__table__
-    rows = session.execute(
-        select(table.c.id, table.c.field_key, table.c.value, table.c.analysis_id)
+    # Aggregate to one latest row per field in SQL; never load the patient's
+    # entire approval history into application memory on a profile refresh.
+    latest = (
+        select(table.c.field_key, func.max(table.c.id).label("latest_id"))
         .where(table.c.patient_id == patient_id, table.c.owner_user_id == user.id)
-        .order_by(table.c.field_key, table.c.id.desc())
+        .group_by(table.c.field_key)
+        .subquery()
+    )
+    rows = session.execute(
+        select(table.c.field_key, table.c.value, table.c.analysis_id)
+        .join(latest, table.c.id == latest.c.latest_id)
+        .order_by(table.c.field_key)
     ).mappings()
     fields = {}
     for row in rows:
         key = row["field_key"]
-        if key not in fields and key in HISTORY_LABELS:
-            value = row["value"]
-            if isinstance(value, str) and value and len(value) <= 3000:
-                fields[key] = {"value": value, "quote": "", "analysis_id": row["analysis_id"]}
+        value = row["value"]
+        if key in HISTORY_LABELS and isinstance(value, str) and value and len(value) <= 3000:
+            fields[key] = {"value": value, "quote": "", "analysis_id": row["analysis_id"]}
     return {"ok": True, "revision": fingerprint, "fields": fields,
         "notice": "Önceki hekim onaylı sesli muayene kayıtlarıdır. Güncel kullanım veya hastalık durumu olarak kabul etmeden hastayla doğrulayın."}
 
