@@ -4,6 +4,26 @@ const HOME_NOTIFICATION_EVENTS = new Set([
   "NOTIFICATIONS_READ",
 ]);
 
+const NOTIFICATION_LIST_EVENTS = new Set([
+  "NOTICE_CREATED",
+  "NOTICE_RESOLVED",
+  "NOTIFICATIONS_READ",
+]);
+
+/**
+ * The notification center lists AdminNotice records, not consultation/chat rows.
+ * Match the web center and avoid a full list request for every message event.
+ */
+export function shouldRefreshNotificationList(event: unknown): boolean {
+  if (!event || typeof event !== "object") return false;
+  const value = event as { event_type?: unknown; type?: unknown };
+  const eventType =
+    typeof value.event_type === "string" && value.event_type.trim()
+      ? value.event_type
+      : value.type;
+  return typeof eventType === "string" && NOTIFICATION_LIST_EVENTS.has(eventType.trim().toUpperCase());
+}
+
 /**
  * The home badge represents AdminNotice rows only. Match the web sync handler:
  * patient, analysis, program and chat events must not trigger a notice-count read.
