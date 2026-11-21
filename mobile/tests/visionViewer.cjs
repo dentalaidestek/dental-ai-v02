@@ -278,7 +278,7 @@ test('switching to another authorized asset clears image failure and loads only 
  assert.ok(!text(t.toJSON()).includes('Görüntü yüklenemedi'));
  const nextImage=t.root.findByType('Image');
  assert.notEqual(nextImage.props.testID,firstKey);
- assert.match(nextImage.props.testID,/^clinical-analysis:clinical-vision-scope-\\d+:32:8:0$/);
+ assert.match(nextImage.props.testID,/^clinical-analysis:clinical-vision-scope-\d+:32:8:0$/);
  await renderer.act(async()=>staleError());
  assert.ok(!text(t.toJSON()).includes('Görüntü yüklenemedi'),'a late error from the previous asset cannot poison the active image');
  assert.deepEqual(calls,[['A',32,7,'BITEWING'],['A',32,8,'INTRAORAL_PHOTO']]);
