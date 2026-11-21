@@ -89,8 +89,20 @@ export default function ChatAttachmentComposer({token,userId,caseId,replyTo,disa
  const image=!!file?.type.startsWith("image/");
  if(!optionsOpen&&!file&&!pendingId&&!error&&!recoveryBlocked&&!uncertain&&!(busy||restoring))return null;
  return <View style={{paddingHorizontal:12,paddingBottom:8}}>{optionsOpen&&<View style={{flexDirection:"row",flexWrap:"wrap"}}><Button title={restoring?"Bekleyen ek kontrol ediliyor…":"＋ Fotoğraf"} disabled={restoring||recoveryBlocked||busy||disabled||uncertain} onPress={()=>void choose()}/><Button title="Kamera" disabled={restoring||recoveryBlocked||busy||disabled||uncertain} onPress={()=>void choose(true)}/><Button title="PDF / Ses" disabled={restoring||recoveryBlocked||busy||disabled||uncertain} onPress={()=>void chooseFile()}/></View>}
- {file&&<View>{image?<Image source={{uri:file.uri}} resizeMode="contain" style={{height:130,width:"100%"}}/>:<Text style={{color:"#071B35",padding:12}}>{file.name}</Text>}<Text style={{color:"#63748A"}}>{replyTo?"Alıntılı yanıt olarak gönderilecek.":"Seçilen ek bu görüşmeye gönderilecek."}</Text>
- {image&&<Button title="Görseli düzenle" disabled={busy||uncertain||disabled} onPress={()=>setEditing(true)}/>}<Button title={busy?"Gönderiliyor…":"Eki gönder"} disabled={restoring||recoveryBlocked||busy||disabled||uncertain} onPress={()=>void send()}/><Button title="Seçimi kaldır" disabled={restoring||recoveryBlocked||busy||uncertain} onPress={()=>setFile(null)}/></View>}
+ {file&&<View style={{borderWidth:1,borderColor:"#DCE3EB",borderRadius:14,backgroundColor:"white",padding:10}}>
+  <View style={{flexDirection:"row",alignItems:"center",gap:10}}>
+   {image?<Image source={{uri:file.uri}} resizeMode="cover" style={{width:64,height:64,borderRadius:12}}/>:<View style={{width:64,height:64,borderRadius:12,backgroundColor:"#EEF3F8",alignItems:"center",justifyContent:"center"}}><Text style={{fontSize:24}}>📄</Text></View>}
+   <View style={{flex:1}}>
+    <Text numberOfLines={1} style={{fontWeight:"700",color:"#10233F"}}>{file.name}</Text>
+    <Text style={{color:"#63748A",fontSize:12,marginTop:2}}>{replyTo?"Alıntılı yanıt olarak gönderilecek.":"Seçilen ek bu görüşmeye gönderilecek."}</Text>
+   </View>
+   <Pressable accessibilityRole="button" accessibilityLabel="Seçimi kaldır" disabled={restoring||recoveryBlocked||busy||uncertain} onPress={()=>setFile(null)} style={{width:36,height:36,alignItems:"center",justifyContent:"center",borderRadius:18,backgroundColor:"#F1F4F8"}}><Text style={{fontSize:18,color:"#10233F"}}>×</Text></Pressable>
+  </View>
+  <View style={{flexDirection:"row",gap:10,marginTop:10,flexWrap:"wrap"}}>
+   {image&&<Pressable accessibilityRole="button" disabled={busy||uncertain||disabled} onPress={()=>setEditing(true)} style={{paddingVertical:10,paddingHorizontal:14,borderRadius:10,borderWidth:1,borderColor:"#DCE3EB"}}><Text style={{fontWeight:"800",color:"#071B35"}}>✎ Görseli düzenle</Text></Pressable>}
+   <Pressable accessibilityRole="button" accessibilityLabel="Eki gönder" disabled={restoring||recoveryBlocked||busy||disabled||uncertain} onPress={()=>void send()} style={{paddingVertical:10,paddingHorizontal:18,borderRadius:10,backgroundColor:"#071B35",opacity:restoring||recoveryBlocked||busy||disabled||uncertain?0.5:1}}><Text style={{fontWeight:"800",color:"white"}}>{busy?"Gönderiliyor…":"Eki gönder"}</Text></Pressable>
+  </View>
+ </View>}
  {pendingMeta&&!file&&<Text style={{color:"#63748A",padding:8}}>Önceki ek gönderiminin sonucu doğrulanıyor. Aynı dosyayı yeniden seçerseniz aynı istek anahtarıyla güvenli biçimde devam edilir.</Text>}
  {pendingId&&file&&<Text style={{color:"#63748A",padding:8}}>Bekleyen ek aynı istek anahtarıyla gönderilecek.</Text>}
  {(busy||restoring)&&<ActivityIndicator/>}{restoring&&<Text style={{color:"#63748A",padding:8}}>Bekleyen ek kaydı kontrol ediliyor; kontrol bitmeden yeni gönderim açılamaz.</Text>}{recoveryBlocked&&<Button title="Bekleyen kaydı yeniden kontrol et" disabled={restoring} onPress={()=>setRestoreAttempt(value=>value+1)}/>} {!!error&&<Text style={{color:"#B42318"}}>{error}</Text>}

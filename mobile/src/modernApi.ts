@@ -24,8 +24,10 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
    throw new ApiError(502,"Sunucudan geçersiz API yanıtı alındı.");
   if(!r.ok){
    if(r.status===401)await revalidateSession(token);
-   const detail=b?.detail;
-   throw new ApiError(r.status,typeof detail==="string"?detail:(typeof detail?.message==="string"?detail.message:"İstek başarısız."));
+   const rawDetail=typeof b?.detail==="string"?b.detail:(typeof b?.detail?.message==="string"?b.detail.message:"");
+   // Mirror api.ts: a bare 404 "Not Found" means the deployed server predates this route.
+   const detail=(r.status===404&&(!rawDetail||rawDetail==="Not Found"))?"Sunucuda istenen kayıt bulunamadı (404). Uygulama ile sunucu sürümü uyumsuz olabilir; güncellemeyi kontrol edip tekrar deneyin.":(rawDetail||"İstek başarısız.");
+   throw new ApiError(r.status,detail);
   }
   return b as T;
  }catch(error){
@@ -177,6 +179,11 @@ export const getNotificationUnreadCount=async(t:string)=>{
  if(!Number.isSafeInteger(result?.unread_count)||result.unread_count<0)
   throw Error("Bildirim sayısı doğrulanamadı.");
  return result.unread_count;
+};
+export const getMessagesUnreadCount=async(t:string)=>{
+ // Web /messages/unread-count parity: red count badge on the Mesajlar tab.
+ const result=await req<{count:number}>("/messages/unread-count",t);
+ return {count:Number.isSafeInteger(result?.count)&&result.count>0?result.count:0};
 };
 export const markNotificationRead=(t:string,id:number)=>{
  if(!Number.isSafeInteger(id)||id<=0)throw Error("Geçersiz bildirim kimliği.");

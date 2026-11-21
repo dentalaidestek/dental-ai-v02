@@ -109,7 +109,8 @@ test("consultation inbox receives authenticated user identity from both navigati
  assert.ok(source.slice(filterStart,start).includes("item.status_key||item.status"));
  assert.ok(inbox.includes("item.status_label||item.status"));
  assert.ok(source.includes('"EXPERT_TIMEOUT","PROPOSAL_EXPIRED"'));
- assert.ok(app.includes("<Consultations token={token} userId={user.id} navigation={navigation}/>"));
+ assert.ok(app.includes("<MessagesTabScreen token={token} userId={user.id} navigation={navigation}"),"tab entry passes the authenticated identity through MessagesTabScreen");
+ assert.ok(app.includes("<Consultations token={token} userId={userId} navigation={navigation}/>"),"MessagesTabScreen forwards the same identity to the inbox");
  assert.ok(app.includes("<Consultations token={token} userId={user.id} navigation={p.navigation}/>"));
 });
 

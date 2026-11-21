@@ -535,3 +535,32 @@ Bu sandbox'ta sunucuya (dentalai.tr / 216.24.57.1) SSH erişimi, deploy pipeline
 4. Servisi yeniden başlat (uvicorn/servis adı operatöre göre).
 5. Doğrulama (bu raporun probe'larıyla aynı): `curl -s -o /dev/null -w "%{http_code}" https://dentalai.tr/api/mobile/v1/account` → **401** dönmeli (404 değil); `/api/mobile/v1/dashboard` payload'ında `voice_exam_enabled` alanı görünmeli.
 6. İstemci tarafı: menü/`Uzman Profilim` girişi/ses kartı görünürlüğü için `android-test-apk` workflow çıktısından YENİ APK kurulumu gerekir. Profil güncelleme formları ise mevcut APK'da zaten var; deploy sonrası yeniden APK almadan çalışmaya başlar.
+
+## 31. Yirminci geçiş — cihaz ekran görüntüsü şikâyetleri: Vaka Görüşmesi, Mesajlar badge'i, Türkçe hatalar
+
+**Kullanıcı şikâyetleri:** (1) Mesajlar/vaka görüşmesi ekranı web gibi olsun, (2) `+` ile ek seçince devasa stilsiz önizleme çıkıyor, (3) gönderim "Not Found" veriyor, (4) Akademik AI yüklenmiyor, (5) Mesajlar sekmesinde gelince kırmızı +1 olup bakınca silinen badge yok, (6) hata yazıları Türkçe değil.
+
+### 31.1 Canlı probe ile kanıt (2026-11-21)
+
+| İstek | Canlı | Anlamı |
+|---|---|---|
+| `GET /api/mobile/v1/consultations/22/messages` | 405 | metin mesajı rotası VAR (POST-only) |
+| `GET /api/mobile/v1/consultations/22/attachments` | **404** | **ek gönderim rotası canlıda yok** → "Not Found" hatalı ek gönderiminin kaynağı |
+| `GET /api/mobile/v1/messages/unread-count` | **404** | mobil okunmamış-sayısı rotası canlıda yok — **repoda da yoktu, bu tur eklendi** |
+| `GET /api/mobile/v1/notifications/unread-count` | **404** | zil badge'i canlıda sessizce başarısız (kod mevcut) |
+| `GET /api/mobile/v1/academic/courses` + `/courses/1/messages` | 401/401 | Akademik rotaları canlıda VAR; "yüklenmiyor" eski payload/yanıt süresi kaynaklı olabilir — deploy sonrası izlenecek |
+
+### 31.2 Bu turda uygulananlar
+
+| Değişiklik | Dosya | Web paritesi |
+|---|---|---|
+| Ek önizlemesi web kartına dönüştü: `[64px thumb][dosya adı][×]` + `✎ Görseli düzenle` + dolgu `Eki gönder` yatay aksiyonlar; 130px taşan önizleme kaldırıldı | ChatAttachmentComposer.tsx | expert_case_room `attachmentPreview`=`[attachmentThumb][attachmentName][attachmentCancel]` |
+| modernApi, api.ts ile aynı Türkçe 404 haritasını kullanıyor (`Not Found` → "Sunucuda istenen kayıt bulunamadı (404). Uygulama ile sunucu sürümü uyumsuz olabilir…") | modernApi.ts | api.ts mevcut sözleşme (chatComposerParity) |
+| Mesajlar sekmesi kırmızı `+N` badge: `/messages/unread-count`'ten tohum, `MESSAGE_CREATED` (case_id'li) canlı olayında +1, sekme açılınca 0, 99+ sınırı | App.tsx TabShell + MessagesTabScreen | base.html `paintMessageBadge/bumpMessageBadge` + `mobile-messages-badge` |
+| Mobil okunmamış rotası: `GET /api/mobile/v1/messages/unread-count` web'in `_consultation_unread_total`'ını yeniden kullanıyor (ikinci implementasyon yok) | mobile_modern_api_v3.py | main.py:8763 `consultation_unread_count` |
+
+Yeni test `messagesBadgeParity.cjs` (4 test); `consultationRealtime.cjs` tab girişi `MessagesTabScreen` zincirine hizalandı (kimlik akan `user.id` assert'i korundu). Süit **985/985**, `tsc --noEmit` 0, `py_compile` temiz.
+
+### 31.3 Deploy sonrası beklenen davranış
+
+Deploy ile birlikte: ek gönderimi çalışır (`/attachments` rotası), Mesajlar badge'i gerçek sayımla tohumlanır (`/messages/unread-count`), zil badge'i çalışır (`/notifications/unread-count`), tüm 404 hataları Türkçe akar. Badge'in canlı olayla artması için realtime akışı (SSE/socket) mevcut; eski backend'de olay tipleri uyuşmuyorsa badge yalnız tohum değeriyle çalışır ve deploy ile tam canlanır.
