@@ -5,7 +5,7 @@ global.IS_REACT_ACT_ENVIRONMENT=true;
 require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
 const presentation=require('../src/patientVoiceHistoryPresentation.ts');
 const resumePolicy=require('../src/patientVoiceHistoryRefresh.ts');
-const history=(value='Olumsuz beyan: sistemik rahatsızlık yok')=>({ok:true,revision:'a'.repeat(64),notice:'Önceki hekim onaylı sesli muayene kayıtlarıdır.',fields:{medical_history:{value,quote:'',analysis_id:17},medications:{value:'Metformin beyanı',quote:'',analysis_id:17},allergies:{value:'Olmadığı belirtildi: penisilin alerjisi',quote:'',analysis_id:17}}});
+const history=(value='Olumsuz beyan: sistemik rahatsızlık yok')=>({ok:true,revision:'a'.repeat(64),notice:'Önceki hekim onaylı sesli muayene kayıtlarıdır. Güncel kullanım veya hastalık durumu olarak kabul etmeden hastayla doğrulayın.',fields:{medical_history:{value,quote:'',analysis_id:17},medications:{value:'Metformin beyanı',quote:'',analysis_id:17},allergies:{value:'Olmadığı belirtildi: penisilin alerjisi',quote:'',analysis_id:17}}});
 function mount(getVoiceHistory,initialAppState='active'){
  const source=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativePatientVoiceHistory.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2020}}).outputText;
  const exports={},listeners=new Set(),focusState={current:true};
@@ -48,7 +48,10 @@ test('patient profile shows only server-approved fields with source ids and a cu
  assert.ok(rendered.includes('Metformin beyanı'));
  assert.ok(rendered.includes('Olmadığı belirtildi: penisilin alerjisi'));
  assert.ok(rendered.includes('Sesli muayene #17'));
- assert.ok(rendered.includes('güncel hastalık'));
+ const canonicalWarning='Güncel kullanım veya hastalık durumu olarak kabul etmeden hastayla doğrulayın.';
+ assert.ok(rendered.includes(canonicalWarning),'native must retain the canonical web-provided current-status warning');
+ assert.equal(rendered.split(canonicalWarning).length-1,1,'the same clinical warning must not be rendered twice');
+ assert.equal(rendered.includes('Bu kayıtlar önceki sesli muayenelerden gelir'),false,'no native-only duplicate warning should be appended');
  await renderer.act(async()=>tree.unmount());
 });
 test('empty approved history does not add an empty anamnesis card',async()=>{
