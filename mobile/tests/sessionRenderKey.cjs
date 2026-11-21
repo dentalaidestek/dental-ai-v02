@@ -48,6 +48,9 @@ test('all native screen React keys exclude bearer credentials',()=>{
   const credentialKey=keys.find(value=>/(?:^|[^A-Za-z0-9_])(token|accessToken|sessionToken|authorization|bearer)(?:[^A-Za-z0-9_]|$)/i.test(value));
   assert.equal(credentialKey,undefined,name+' must not put credentials into a React key');
  }
+ const social=fs.readFileSync(require.resolve('../src/SocialScreens.tsx'),'utf8');
+ assert.ok(social.includes('key={`${sessionKey}:composer`}'),'Dental Flow composer must use the opaque session epoch, not the bearer token');
+ assert.ok(!social.includes('key={`${user.id}:${token}`}'),'bearer credentials must never appear in the composer key');
  const hook=fs.readFileSync(require.resolve('../src/useSessionRenderKey.ts'),'utf8');
  assert.ok(hook.includes('resolveSessionRenderIdentity'));
  assert.ok(hook.includes('return identity.current.key'));
@@ -191,6 +194,8 @@ test('patient, Program, Academic, relationship, account and expert-performance r
  const academicHarness=fs.readFileSync(require.resolve('./academicWorkflow.cjs'),'utf8');
  const relationshipsHarness=fs.readFileSync(require.resolve('./relationships.cjs'),'utf8');
  const professionalHarness=fs.readFileSync(require.resolve('./professionalParity.cjs'),'utf8');
+ const nativeAuthHarness=fs.readFileSync(require.resolve('./nativeAuth.cjs'),'utf8');
+ assert.equal(nativeAuthHarness.split("name==='./useSessionRenderKey'?require('./helpers/useSessionRenderKeyModule.cjs')").length-1,3,'all NativeAccount VM renderers must resolve the real session key hook');
  const performanceHarness=fs.readFileSync(require.resolve('./expertPerformance.cjs'),'utf8');
  assert.ok(app.includes('NativePatientProfile key={profileRenderKey}'));
  for(const source of [program,academic,relationships,professional,account,performance])assert.ok(source.includes("import useSessionRenderKey from './useSessionRenderKey';"));
