@@ -18,13 +18,13 @@ export default function NativePatientHistory({token,patientId,toothNumber,onOpen
  const imageScope=useRef<{token:string;scope:string}|null>(null);
  if(!imageScope.current||imageScope.current.token!==token)imageScope.current={token,scope:createPatientAnalysisHistoryImageScope()};
  if(active.current!==scope){active.current=scope;generation.current++;detailRequest.current++}
- const [data,setData]=useState<{scope:string;items:AnalysisHistory[];next:PatientAnalysisHistoryCursor|null}|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[errorMore,setErrorMore]=useState(false),[selected,setSelected]=useState<number|null>(null),[detail,setDetail]=useState<MobileAnalysis|null>(null),[detailError,setDetailError]=useState(''),[zoom,setZoom]=useState(1),[legacyRadiographError,setLegacyRadiographError]=useState(false);
+ const [data,setData]=useState<{scope:string;items:AnalysisHistory[];next:PatientAnalysisHistoryCursor|null}|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[errorMore,setErrorMore]=useState(false),[selected,setSelected]=useState<number|null>(null),[detail,setDetail]=useState<MobileAnalysis|null>(null),[detailError,setDetailError]=useState(''),[zoom,setZoom]=useState(1),[legacyRadiographError,setLegacyRadiographError]=useState(false),[historyImageError,setHistoryImageError]=useState(false),[imageRetryRevision,setImageRetryRevision]=useState(0);
  const visible=data?.scope===scope?data:null;
  const assetGroups=groupPatientAnalysisAssets(detail?.assets);
  const showLegacyRadiograph=detail?shouldShowLegacyPatientRadiograph(detail.analysis.legacy_radiograph_available,detail.assets):false;
  const load=useCallback(async(more=false)=>{if(locked.current){if(!more)refreshPending.current=true;return;}locked.current=true;const seq=++generation.current,owner=scope;setBusy(true);setError('');setErrorMore(false);try{const page=await getPatientAnalysisHistoryPage(token,patientId,toothNumber,more?visible?.next??undefined:undefined);if(active.current!==owner||generation.current!==seq)return;setData(previous=>({scope:owner,items:more&&previous?.scope===owner?[...previous.items,...page.items.filter(x=>!previous.items.some(y=>y.id===x.id))]:page.items,next:page.next}));setError('');setErrorMore(false)}catch(e){if(active.current===owner&&generation.current===seq){setError(e instanceof Error?e.message:'Analiz geçmişi alınamadı.');setErrorMore(more)}}finally{if(active.current===owner&&generation.current===seq){locked.current=false;setBusy(false);if(refreshPending.current){refreshPending.current=false;void Promise.resolve().then(()=>{if(active.current===owner)void loader.current()})}}}},[token,patientId,toothNumber,scope,visible?.next]);
  const loader=useRef(load);loader.current=load;
- useEffect(()=>{locked.current=false;refreshPending.current=false;setData(null);setSelected(null);setDetail(null);setError('');setErrorMore(false);void loader.current();return()=>{generation.current++;detailRequest.current++}},[scope]);
+ useEffect(()=>{locked.current=false;refreshPending.current=false;setData(null);setSelected(null);setDetail(null);setError('');setErrorMore(false);setLegacyRadiographError(false);setHistoryImageError(false);setImageRetryRevision(0);void loader.current();return()=>{generation.current++;detailRequest.current++}},[scope]);
  useEffect(()=>{if(!focusInitialized.current){focusInitialized.current=true;return;}if(focused)void loader.current()},[focused]);
  useEffect(()=>{
   let previousState=AppState.currentState;
@@ -41,11 +41,11 @@ export default function NativePatientHistory({token,patientId,toothNumber,onOpen
   if(lastEvent&&['ANALYSIS_CREATED','ANALYSIS_UPDATED','PATIENT_UPDATED'].includes(String(lastEvent.event_type||lastEvent.type))&&Number(lastEvent.payload?.patient_id||lastEvent.entity_id)===patientId)void loader.current();
  },[lastEvent,patientId]);
  async function open(id:number){
-  const seq=++detailRequest.current,owner=scope;setSelected(id);setDetail(null);setDetailError('');setZoom(1);setLegacyRadiographError(false);
+  const seq=++detailRequest.current,owner=scope;setSelected(id);setDetail(null);setDetailError('');setZoom(1);setLegacyRadiographError(false);setHistoryImageError(false);setImageRetryRevision(0);
   try{const result=await getAnalysis(token,id);if(result.analysis.patient_id!==patientId)throw Error('Analiz bu hastaya ait değil.');if(active.current===owner&&detailRequest.current===seq)setDetail(result)}
   catch(e){if(active.current===owner&&detailRequest.current===seq)setDetailError(e instanceof Error?e.message:'Analiz ayrıntısı alınamadı.')}
  }
- function close(){detailRequest.current++;setSelected(null);setDetail(null);setLegacyRadiographError(false)}
+ function close(){detailRequest.current++;setSelected(null);setDetail(null);setLegacyRadiographError(false);setHistoryImageError(false);setImageRetryRevision(0)}
  return <View>
   <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center'}}>
    <Text style={{fontSize:20,fontWeight:'800',color:'#102033'}}>Analiz Geçmişi</Text>
@@ -96,20 +96,26 @@ export default function NativePatientHistory({token,patientId,toothNumber,onOpen
       </View>
       {assetGroups.clinical.map(asset=><View key={asset.id} style={{marginBottom:16}}>
        <Text style={{color:'#53657B'}}>Klinik görüntü · {asset.original_filename}</Text>
-       <ScrollView horizontal><Image key={patientAnalysisHistoryImageKey(imageScope.current!.scope,detail.analysis.id,asset.id)} testID={patientAnalysisHistoryImageKey(imageScope.current!.scope,detail.analysis.id,asset.id)} source={patientAnalysisHistoryImageSource(token,detail.analysis.id,asset.id)} resizeMode="contain" style={{width:300*zoom,height:240*zoom}}/></ScrollView>
+       <ScrollView horizontal><Image key={patientAnalysisHistoryImageKey(imageScope.current!.scope,detail.analysis.id,asset.id,imageRetryRevision)} testID={patientAnalysisHistoryImageKey(imageScope.current!.scope,detail.analysis.id,asset.id,imageRetryRevision)} source={patientAnalysisHistoryImageSource(token,detail.analysis.id,asset.id)} resizeMode="contain" style={{width:300*zoom,height:240*zoom}} onError={()=>setHistoryImageError(true)}/></ScrollView>
       </View>)}
       {!assetGroups.clinical.length&&<Text style={{color:'#53657B'}}>Yüklenmiş görüntü bulunmuyor.</Text>}
       <Text style={{fontSize:18,fontWeight:'800',color:'#102033',marginTop:12}}>Radyografiler</Text>
       {assetGroups.radiographs.map(asset=><View key={asset.id} style={{marginBottom:16}}>
        <Text style={{color:'#53657B'}}>Radyografi · {asset.original_filename}</Text>
-       <ScrollView horizontal><Image key={patientAnalysisHistoryImageKey(imageScope.current!.scope,detail.analysis.id,asset.id)} testID={patientAnalysisHistoryImageKey(imageScope.current!.scope,detail.analysis.id,asset.id)} source={patientAnalysisHistoryImageSource(token,detail.analysis.id,asset.id)} resizeMode="contain" style={{width:300*zoom,height:240*zoom}}/></ScrollView>
+       <ScrollView horizontal><Image key={patientAnalysisHistoryImageKey(imageScope.current!.scope,detail.analysis.id,asset.id,imageRetryRevision)} testID={patientAnalysisHistoryImageKey(imageScope.current!.scope,detail.analysis.id,asset.id,imageRetryRevision)} source={patientAnalysisHistoryImageSource(token,detail.analysis.id,asset.id)} resizeMode="contain" style={{width:300*zoom,height:240*zoom}} onError={()=>setHistoryImageError(true)}/></ScrollView>
       </View>)}
       {!assetGroups.radiographs.length&&showLegacyRadiograph&&<View style={{marginBottom:16}}>
        <Text style={{color:'#53657B'}}>Önceki radyografik görüntü</Text>
        {legacyRadiographError?<Text accessibilityRole="alert" style={{color:'#B42318'}}>Radyografik görüntü alınamadı. Analiz ayrıntısını yenileyin.</Text>:
-        <ScrollView horizontal><Image key={patientAnalysisHistoryImageKey(imageScope.current!.scope,detail.analysis.id,null)} testID={patientAnalysisHistoryImageKey(imageScope.current!.scope,detail.analysis.id,null)} source={patientAnalysisHistoryImageSource(token,detail.analysis.id,null)} resizeMode="contain" style={{width:300*zoom,height:240*zoom}} onError={()=>setLegacyRadiographError(true)}/></ScrollView>}
+        <ScrollView horizontal><Image key={patientAnalysisHistoryImageKey(imageScope.current!.scope,detail.analysis.id,null,imageRetryRevision)} testID={patientAnalysisHistoryImageKey(imageScope.current!.scope,detail.analysis.id,null,imageRetryRevision)} source={patientAnalysisHistoryImageSource(token,detail.analysis.id,null)} resizeMode="contain" style={{width:300*zoom,height:240*zoom}} onError={()=>{setLegacyRadiographError(true);setHistoryImageError(true)}}/></ScrollView>}
       </View>}
       {!assetGroups.radiographs.length&&!showLegacyRadiograph&&<Text style={{color:'#53657B'}}>Radyografik görüntü bulunmuyor.</Text>}
+      {historyImageError&&<View style={{borderWidth:1,borderColor:'#F0C36D',backgroundColor:'#FFFAEB',borderRadius:12,padding:12,marginTop:10}}>
+       <Text accessibilityRole="alert" style={{color:'#7A4B00'}}>Bir veya daha fazla klinik görüntü yüklenemedi. Analiz kaydı korunuyor; yalnızca görseller yeniden yüklenecek.</Text>
+       <Pressable accessibilityRole="button" onPress={()=>{setHistoryImageError(false);setLegacyRadiographError(false);setImageRetryRevision(value=>value+1)}} style={{padding:12,alignSelf:'flex-start'}}>
+        <Text style={{color:'#1769AA',fontWeight:'800'}}>Görselleri yeniden yükle</Text>
+       </Pressable>
+      </View>}
       {onOpenAnalysis&&<><Text style={{fontSize:18,fontWeight:'800',color:'#102033',marginTop:12}}>Tedavi önerisi</Text><Pressable onPress={()=>{const id=detail.analysis.id;close();onOpenAnalysis(id)}} style={{padding:16,backgroundColor:'#071B35',borderRadius:12}}><Text style={{color:'white',fontWeight:'800',textAlign:'center'}}>Analiz sonucunu aç</Text></Pressable></>}
      </>}
     </ScrollView>
