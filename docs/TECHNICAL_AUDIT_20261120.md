@@ -424,3 +424,47 @@ Yorum: canlı dentalai.tr **hâlâ eski backend'i çalıştırıyor**. Bu yüzde
 **Net cevap:** Çekirdek hastane/uzman akışları web ile fonksiyon düzeyinde birebir (test kanıtlı) ve iki bilinen UX eksiği (canvas çizim anotasyonu, canlı transkript) dışında envanter boşluğu yok. Ancak (1) bu birebirlik **kullanıcının telefonuna ancak beta APK kurulduğunda** ulaşır, (2) ekran görüntülerindeki Not Found'lar **backend deploy edilmeden** kaybolmaz, (3) cihaz düzeyinde birebir doğrulama ancak gerçek kullanımla yapılabilir.
 
 **Tip süit kanıtı:** `bcb482c1` (radiograph parite commit'leri dahil) yerel tam koşum **971/971 pass, 0 fail** — branch tipi yeşil; CI `Mobile Android CI` success ile tutarlı.
+
+## 28. On yedinci geçiş — web akış-bütünü envanteri + başlık başlık mobil parite (buton→hedef kanıtıyla)
+
+**Yöntem:** 68 web şablonunun tamamı script ile tarandı (`scripts/web_flow_inventory.py` → `web_flow_inventory.txt`): her şablonda bağlantı etiketi→hedef, form aksiyonları, buton metinleri ve JS uçları çıkarıldı; mobil uç yüzeyi (`mobile/src` yol literalleri) ve ekran kanıtlarıyla satır satır eşleştirildi. Kullanıcının istediği biçim: "buton nereye gidiyor, açılan yerde ne var, tıklanan buton nereye gidiyor".
+
+### 28.1 Not Found durumu (canlı probe, bu turda tekrar)
+
+```
+GET /api/mobile/v1/academic/library/receipt → 404 {"detail":"Not Found"}   (yeni-sadece uç → canlı ESKİ build)
+GET /api/mobile/v1/me                       → 401 Türkçe (kontrol ✓)
+```
+
+Canlı **hâlâ eski backend**. Ekran görüntülerindeki tüm sorunların kod karşılığı tamam (§26-27) ama **Not Found canlıda backend deploy edilene kadar görünmeye devam eder** — istemci tek başına bunu kaldıramaz. (Bir turda bağlantı HTTP:000 döndü, tekrar denemede normal — sunucu erişilebilir; geçici ağ davranışı.)
+
+### 28.2 Başlık başlık parite matrisi (web buton→hedef ↔ mobil)
+
+| Başlık | Web akış (buton→hedef) | Mobil karşılık | Durum |
+|---|---|---|---|
+| **Hastalar** | patients_all `＋ Yeni Hasta`→/patients/new; patient_detail: Düzenle/Sil, 🩻 Röntgen Ekle, 📷 Fotoğraf Ekle, "Seçilenleri AI ile Analiz Et", ＋ Tedavi→/patients/{id}/treatment/new, ◷ Randevu→/program/new?type=APPOINTMENT, Diş Şeması→/patients/{id}/teeth, Uzmana Danış→/expert-support?patient_id | NativePatientSelect/NewPatient/PatientDetail/PatientProfile/PatientMedia/NativePatientAppointment/ToothChart + hasta silme + medya silme + çoklu görsel analiz | ✓ parite |
+| **Dental Akış (mesajlar)** | messages filtreleri (Tümü/Okunmamış/Bekleyen/Kaçırılan/Geçmiş), messages_deleted Geri Yükle, case_room: ↑ gönder, ＋ Dosya ekle, proposal/expert-response (Kabul Et/Reddet/Süreyi Onayla), Tamamlandı, Sorun bildir, Engelle/Şikâyet, Değerlendirme, read receipts, SSE | CHAT_FILTERS (ModernScreens:183) birebir 5 filtre, /messages/deleted (modernApi:515), kompozitör web-parite (§26), NativeChatTools PROPOSED/Kabul akışı, block/unblock/report, annotate (✎ İşaretle), WS realtime | ✓ parite (çizim anotasyonu dışı — bkz. 28.3) |
+| **AI (analiz)** | analysis_choice: Hasta ile / Hızlı (misafir); analysis_new 🔬 Analizi Başlat; viewer çoklu sekme; result final + "Yeni bilgilerle tekrar analiz et"; work_pending Yeniden dene/İptal | NativeAnalysisUpload (çoklu görsel), NativeVisionViewer sekme+retryTreatment+retryable, analyses/preview uçları, final + tekrar analiz | ✓ parite (**misafir hızlı analiz bilinçli yok** — uygulama oturum zorunlu; web-only) |
+| **AI (akademik)** | notes + Dersi Oluştur; notes_course materyal yükle/sil/rename/ders sil; notes_ai: Yeni sohbet, Özetle, Bana Öğret, Soru Hazırla, Eksiklerimden 5 soru, Güncelle, ↑ gönder | NativeAcademic: ders oluştur/sil/yeniden adlandır, materyal akışı (Composer/File/Source), **4 hızlı komut mobilde var** (NativeAcademic:196-198), quiz + AnswerActions, 404 akılları (§26) | ✓ parite |
+| **Program** | program: Bugün/Hafta/Ay, ‹› gezinme, ✓ Tamamla, Sil, "Diğer güne kopyala", hasta bağlantılı event; form: Ders/Sınav/Tez/Görev/Randevu | NativeProgram: today/week/month (kaynakta 22 geçme), takvim pan-handler, NativeProgramEditor + programApi complete/delete/copy, hasta bağlama | ✓ parite |
+| **Sesli Muayene** | entry: hasta seç / anonim başlat; device_check; session/panel: mikrofon başlat/duraklat/bitir, özeti kontrol, dinle, metne çevir, değerlendir | VoiceExamEntry + NativeVoiceDeviceCheck + NativeVoiceRecorder + NativeVoiceApproval + /voice-exam/anonymous + history + finalize→hasta profili (§16 Issue #258 kapanışı) | ✓ parite (**canlı transkript modu P3 — bkz. 28.3**) |
+| **Diş Şeması** | tooth_chart: Kalıcı/Süt, O/M/D/L/B yüzey butonları, Diş Bilgisi/Tedavi Geçmişi/Notlar; browser: hasta listesi→şema | NativeToothChart/ToothVisual/ToothChartBrowser; boyut/renk web-uyumu son 8 commit'te (27b6d0e2, d71cb023, 9c3d6dc1) | ✓ parite |
+| **Profil/Hesap** | account: foto, ad, e-mail onam, kullanıcı adı, unvan+belge, şifre, push, **Hesabı Kalıcı Olarak Sil**; documents yükle/gör | NativeAccount: aynı alanlar + "Hesabı Kalıcı Olarak Sil" (kullanıcı adı+şifre onaylı, NativeAccount:27-52); NativeProfessional belge görüntüleme (§21) | ✓ parite |
+| **Sosyal (Uzman)** | expert_public_profile Takip et; expert_profile_edit sekmeler (Genel/Yayınlar/Gönderiler/Ayarlar) + ORCID; expert_following Dental Akış Keşfet/Takip + branş filtresi; _expert_social paylaş; performans+info | NativeExpertProfile/Publications/SocialMediaViewer/Relationships/ExpertPerformance (+info metni birebir §21), /posts+/moderation uçları, branş listesi (socialApi:148) | ✓ parite |
+| **Admin** | admin_center 25+ bölüm | NativeSocialAdmin (sosyal moderasyon+step-up) — **tam panel bilinçli web-only** | Bilinçli web-only |
+| **Genel** | login/register/forgot/reset, support_request, legal/about/contact, features | NativeAuth (4 ekran), NativeSupportRequests (§20 doğrulandı), yasal sayfalar web-only | ✓ parite |
+| **Ödeme/Gelir** | web'de de "Ödeme işlemleri yakında" | yok | N/A (her iki tarafta da yok) |
+
+### 28.3 Gerçekten kalan farklar (envanter boşluğu yok, kalemler bunlar)
+
+1. **Canvas çizim anotasyonu** — web görsel üstüne kalem/ok çizer; mobilde not-bazlı anotasyon var (§21), çizim aracı UX işi → Backlog P1-4.
+2. **Canlı transkript modu (Gemini Live WS)** — mobilde tam alternatif (kaydet→yükle→finalize) var; canlı bağlantı P3 → Backlog.
+3. **Misafir (hızlı) analiz** — web `/analysis/guest/new`; mobilde bilinçli yok (oturum zorunlu uygulama). İstenirse "misafir modu" ekranı ayrı iş kalemi.
+4. **Admin paneli** — bilinçli web-only (masaüstü işi; mobilde sosyal moderasyon karşılığı var).
+5. **Görsel dil:** palet farkı daraldı (kompozitör/profil hero/diş şeması boyutları son commit'lerle web-uyumlu); genel mobil palet hâlâ lacivert ağırlıklı (#071B35) vs web mavi vurgu (#2563eb) — kompozitör web mavisine geçti; kalan ekranlar için token birleştirmesi backlog (MODERN_FEATURES_BACKLOG P2 görsel tutarlılık).
+
+### 28.4 Modern uygulama esintileri — kodlanmış backlog
+
+`docs/MODERN_FEATURES_BACKLOG.md` oluşturuldu: P1 (AI akıllı yanıtlar, sesle dikte, program hatırlatma push'ları, görsel çizim anotasyonu), P2 (Reels-benzeri kısa video, Stories, yorum thread + @bahsetme, before/after galerisi, AI feed sıralaması, deep linking), P3 (teledanışmanlık görüntülü görüşme, RAG arama, taslak+zamanlama, TTS özet, i18n). Her kalemde nerede/nasıl/kabul/test — ChatGPT doğrudan devralabilir. Bilinçli yapılmayacaklar da kayıtlı (3. parti SDK, hasta verisi riskli entegrasyonlar).
+
+**Bu turda kaynak kodu değişikliği yok; iki belge eklendi. Mobil süit tip `bcb482c1`'de 971/971 yeşil (dokunulmadı).**
