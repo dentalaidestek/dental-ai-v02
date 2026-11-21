@@ -63,6 +63,7 @@ test('native home renders real recent analyses and patches valid program events 
  assert.match(source,/nav\.navigate\("Program",hasProgramSnapshot\?\{eventId:programEvent\.id\}:\{\}\)/);
  assert.match(program,/visible\.items\.find\(item=>item\.event_id===targetEventId\)/);
  assert.match(program,/setEditor\(\{id:target\.event_id\}\)/);
+ assert.match(program,/!actionIntentReady\|\|uncertain/);
  assert.match(source,/initialEventId=\{eventId\}/);
 
 
