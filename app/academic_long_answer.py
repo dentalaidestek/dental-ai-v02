@@ -69,22 +69,27 @@ def stream_complete_answer(provider, options, retrieval, *, allow_continuation=T
         before = len(answer)
         prefix = ''
         previous = answer
-        for chunk in _provider_chunks(provider,call_options):
-            if not chunk:
-                continue
-            if attempt and prefix is not None:
-                prefix += chunk
-                if len(prefix) < 4000:
-                    continue
-                chunk = _without_repeated_tail(previous, prefix)
-                prefix = None
+provider_stream=_provider_chunks(provider,call_options)
+        try:
+            for chunk in provider_stream:
                 if not chunk:
                     continue
-            emitted = True
-            if MAX_ANSWER_CHARS is not None and len(answer) + len(chunk) > MAX_ANSWER_CHARS:
-                raise LongAnswerError('Yanıt PDF hazırlama sınırını aştığı için tamamlanamadı; eksik PDF kaydedilmedi.')
-            answer += chunk
-            yield chunk
+                if attempt and prefix is not None:
+                    prefix += chunk
+                    if len(prefix) < 4000:
+                        continue
+                    chunk = _without_repeated_tail(previous, prefix)
+                    prefix = None
+                    if not chunk:
+                        continue
+                emitted = True
+                if MAX_ANSWER_CHARS is not None and len(answer) + len(chunk) > MAX_ANSWER_CHARS:
+                    raise LongAnswerError('Yanıt PDF hazırlama sınırını aştığı için tamamlanamadı; eksik PDF kaydedilmedi.')
+                answer += chunk
+                yield chunk
+
+        finally:
+            provider_stream.close()
         if attempt and prefix:
             chunk = _without_repeated_tail(previous, prefix)
             if chunk:
@@ -144,17 +149,22 @@ def stream_complete_structured_answer(provider, options, *, expected_count=None)
                 + json.dumps(saved,ensure_ascii=False))
         chunks=[]
         last_heartbeat=time.monotonic()
-        for chunk in _provider_chunks(provider,call):
-            if chunk:
-                total_size+=len(chunk)
-                if MAX_ANSWER_CHARS is not None and total_size>MAX_ANSWER_CHARS:
-                    raise LongAnswerError('Soru seti tamamlanamadı; eksik set kaydedilmedi.')
-                chunks.append(chunk)
-            # Structured output stays hidden, but durable workers need a chance
-            # to observe cancellation while the provider is still generating it.
-            if time.monotonic()-last_heartbeat>=1.5:
-                last_heartbeat=time.monotonic()
-                yield ''
+provider_stream=_provider_chunks(provider,call)
+        try:
+            for chunk in provider_stream:
+                if chunk:
+                    total_size+=len(chunk)
+                    if MAX_ANSWER_CHARS is not None and total_size>MAX_ANSWER_CHARS:
+                        raise LongAnswerError('Soru seti tamamlanamadı; eksik set kaydedilmedi.')
+                    chunks.append(chunk)
+                # Structured output stays hidden, but durable workers need a chance
+                # to observe cancellation while the provider is still generating it.
+                if time.monotonic()-last_heartbeat>=1.5:
+                    last_heartbeat=time.monotonic()
+                    yield ''
+
+        finally:
+            provider_stream.close()
         text=''.join(chunks)
         truncated=getattr(provider,'last_finish_reason','UNKNOWN')=='MAX_TOKENS'
         if not truncated:
