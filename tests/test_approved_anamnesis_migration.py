@@ -200,3 +200,20 @@ def test_patient_delete_removes_approved_anamnesis_only_after_owner_authorizatio
         assert session.exec(select(ApprovedAnamnesis)).all() == []
     engine.dispose()
 
+def test_require_schema_fails_closed_if_latest_history_index_is_missing():
+    from app.migrate import require_schema
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"
+        ))
+        connection.execute(text("INSERT INTO dental_schema_revision(id, version) VALUES (1, 21)"))
+        connection.execute(text(
+            "CREATE TABLE approvedanamnesis (id INTEGER PRIMARY KEY, owner_user_id INTEGER NOT NULL, "
+            "patient_id INTEGER NOT NULL, field_key VARCHAR NOT NULL, value VARCHAR NOT NULL, "
+            "analysis_id INTEGER NOT NULL, created_at DATETIME NOT NULL)"
+        ))
+    with pytest.raises(RuntimeError, match="approved anamnesis query index"):
+        require_schema(engine)
+    engine.dispose()

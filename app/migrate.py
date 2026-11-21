@@ -68,8 +68,12 @@ def require_schema(engine,*,require_study=False):
         raise RuntimeError('Run python -m app.migrate before starting this service') from exc
     if revision != REVISION:
         raise RuntimeError(f'Expected schema revision {REVISION}; run python -m app.migrate')
-    if not inspect(engine).has_table("approvedanamnesis"):
+    inspector = inspect(engine)
+    if not inspector.has_table("approvedanamnesis"):
         raise RuntimeError("Run python -m app.migrate to create the approved anamnesis ledger")
+    approved_indexes = {item.get("name") for item in inspector.get_indexes("approvedanamnesis")}
+    if "ix_approvedanamnesis_owner_patient_field_id" not in approved_indexes:
+        raise RuntimeError("Run python -m app.migrate to install the approved anamnesis query index")
     # Additive admin MFA tables: the production startup only checks schema revision,
     # so the original init_db() DDL never runs on Render. Serialize this small
     # compatibility migration across concurrent web instances.
