@@ -1,4 +1,5 @@
 const fs=require('node:fs');
+const ts=require('typescript');
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
 const {nextSessionRenderKey}=require('./helpers/sessionRenderKeyModule.cjs');
@@ -34,7 +35,7 @@ test('all VM component harnesses resolve the opaque session-key helper',()=>{
  const cases=[
   ['analysisRefresh.cjs',"name==='./sessionRenderKey'?sessionRenderKeyExports"],
   ['analysisRecovery.cjs',"name==='./sessionRenderKey'?sessionRenderKeyExports"],
-  ['clinicalWorkflow.cjs',"n==='./sessionRenderKey'?sessionRenderKeyExports'],
+  ['clinicalWorkflow.cjs',"n==='./sessionRenderKey'?sessionRenderKeyExports"],
  ];
  for(const [file,contract] of cases){
   const source=fs.readFileSync(require.resolve('./'+file),'utf8');
