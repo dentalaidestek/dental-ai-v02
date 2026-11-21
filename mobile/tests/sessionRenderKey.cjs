@@ -179,21 +179,23 @@ test('React session-key hook rotates on account, patient and credential scope ch
 });
 
 
-test('patient, Program, Academic and relationship renderers share the production opaque-key hook contract',()=>{
+test('patient, Program, Academic, relationship and account renderers share the production opaque-key hook contract',()=>{
  const app=fs.readFileSync(require.resolve('../App.tsx'),'utf8');
  const program=fs.readFileSync(require.resolve('../src/NativeProgram.tsx'),'utf8');
  const academic=fs.readFileSync(require.resolve('../src/NativeAcademic.tsx'),'utf8');
  const relationships=fs.readFileSync(require.resolve('../src/NativeRelationships.tsx'),'utf8');
+ const professional=fs.readFileSync(require.resolve('../src/NativeProfessional.tsx'),'utf8');
+ const account=fs.readFileSync(require.resolve('../src/NativeAccount.tsx'),'utf8');
  const programHarness=fs.readFileSync(require.resolve('./programParity.cjs'),'utf8');
  const academicHarness=fs.readFileSync(require.resolve('./academicWorkflow.cjs'),'utf8');
  const relationshipsHarness=fs.readFileSync(require.resolve('./relationships.cjs'),'utf8');
+ const professionalHarness=fs.readFileSync(require.resolve('./professionalParity.cjs'),'utf8');
  assert.ok(app.includes('NativePatientProfile key={profileRenderKey}'));
- assert.ok(program.includes("import useSessionRenderKey from './useSessionRenderKey';"));
- assert.ok(academic.includes("import useSessionRenderKey from './useSessionRenderKey';"));
- assert.ok(relationships.includes("import useSessionRenderKey from './useSessionRenderKey';"));
+ for(const source of [program,academic,relationships,professional,account])assert.ok(source.includes("import useSessionRenderKey from './useSessionRenderKey';"));
  assert.ok(programHarness.includes("name==='./useSessionRenderKey'?require('./helpers/useSessionRenderKeyModule.cjs')"));
  assert.ok(academicHarness.includes("n==='./useSessionRenderKey'?require('./helpers/useSessionRenderKeyModule.cjs')"));
  assert.ok(relationshipsHarness.includes("n==='./useSessionRenderKey'?require('./helpers/useSessionRenderKeyModule.cjs')"));
+ assert.equal(professionalHarness.split("n==='./useSessionRenderKey'?require('./helpers/useSessionRenderKeyModule.cjs')").length-1,2,'both NativeProfessional and NativeAccount VM renderers must resolve the hook');
 });
 
 
