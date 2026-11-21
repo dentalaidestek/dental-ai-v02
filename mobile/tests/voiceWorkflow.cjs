@@ -5,6 +5,12 @@ const text=n=>typeof n==='string'?n:!n?'':(n.children||[]).map(text).join('');
 const button=(t,label)=>t.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(c=>text(c)===label));
 
 const recorderLifecycle=require('../src/voiceRecorderLifecycle.ts');
+test('native voice audio-mode restoration reports failure instead of silently claiming success',async()=>{
+ const calls=[];
+ assert.equal(await recorderLifecycle.restoreVoiceAudioMode(async()=>{calls.push('restored')}),true);
+ assert.deepEqual(calls,['restored']);
+ assert.equal(await recorderLifecycle.restoreVoiceAudioMode(async()=>{throw Error('synthetic audio mode failure')}),false);
+});
 test('native voice recorder distinguishes normal chunk rotation from an unexpected microphone stop',()=>{
  assert.equal(recorderLifecycle.isUnexpectedVoiceRecorderStop(true,true,true,true),false,'a stop owned by rotation is expected');
  assert.equal(recorderLifecycle.isUnexpectedVoiceRecorderStop(true,true,true,false),true,'a stop outside rotation must pause the session');
@@ -142,18 +148,18 @@ function nativeVoiceAudioModule(files,transcribe){
  if(typeof transcribe==='function')exports.transcribeNativeRecording=transcribe;
  return exports;
 }
-function recorderUI({saved=null,loadDraft=null,transcribe=async()=>({transcript:'Synthetic dictated speech',revision:'r'}),stopFailures=0,stopFailureStopsRecorder=false,stopGate=null,permissionGate=null,restoredFileInfo={exists:true,size:1024}}={}){
- const exports={},store=new Map(),calls=[],timers=[],files=new Map(),state={isRecording:false,durationMillis:0,mediaServicesDidReset:false};
+function recorderUI({saved=null,loadDraft=null,transcribe=async()=>({transcript:'Synthetic dictated speech',revision:'r'}),stopFailures=0,stopFailureStopsRecorder=false,stopGate=null,permissionGate=null,prepareFailureAt=0,restoredFileInfo={exists:true,size:1024}}={}){
+ const exports={},store=new Map(),calls=[],modeCalls=[],timers=[],files=new Map(),state={isRecording:false,durationMillis:0,mediaServicesDidReset:false};
  
  if(saved){try{for(const segment of JSON.parse(saved).segments||[])files.set(segment.uri,{...restoredFileInfo})}catch{}}
  let audioUri='file:///cache/record-0.m4a',stopFailuresRemaining=stopFailures;
- const audio={get uri(){return audioUri},prepareToRecordAsync:async options=>{if(!options?.extension)throw Error('iOS segment preparation must receive fresh recording options');const index=calls.filter(value=>value==='prepare').length+1;audioUri='file:///cache/record-'+index+'.m4a';files.set(audioUri,{exists:true,size:1024});calls.push('prepare')},record(){state.isRecording=true;calls.push('record')},stop:async()=>{calls.push('stop');if(stopGate)await stopGate();if(stopFailuresRemaining>0){stopFailuresRemaining--;if(stopFailureStopsRecorder)state.isRecording=false;throw Error('Synthetic stop failure')}state.isRecording=false}};
+ const audio={get uri(){return audioUri},prepareToRecordAsync:async options=>{if(!options?.extension)throw Error('iOS segment preparation must receive fresh recording options');const index=calls.filter(value=>value==='prepare').length+1;if(index===prepareFailureAt)throw Error('Synthetic prepare failure');audioUri='file:///cache/record-'+index+'.m4a';files.set(audioUri,{exists:true,size:1024});calls.push('prepare')},record(){state.isRecording=true;calls.push('record')},stop:async()=>{calls.push('stop');if(stopGate)await stopGate();if(stopFailuresRemaining>0){stopFailuresRemaining--;if(stopFailureStopsRecorder)state.isRecording=false;throw Error('Synthetic stop failure')}state.isRecording=false}};
  let focusValue=true,focusSubs=new Set(),clockNow=Date.now(),nextInterval=0,appStateListener=null;const intervals=new Map(),appState={currentState:'active',addEventListener:(event,listener)=>{appStateListener=listener;return{remove(){if(appStateListener===listener)appStateListener=null}}}};
  const secure={getItemAsync:async key=>store.get(key)||null,setItemAsync:async(k,v)=>store.set(k,v),deleteItemAsync:async k=>store.delete(k)};
  const native={StyleSheet:{create:x=>x},Alert:{alert(){}},AppState:appState,...Object.fromEntries(['ActivityIndicator','Pressable','Text','TextInput','View'].map(x=>[x,x]))};
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeVoiceRecorder.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
- vm.runInNewContext(code,{exports,Date:{now:()=>clockNow},setInterval:fn=>{const id=++nextInterval;intervals.set(id,fn);return id},clearInterval:id=>intervals.delete(id),setTimeout:(fn,ms)=>ms===15000?(timers.push(fn),timers.length):setTimeout(fn,ms),clearTimeout:id=>{if(typeof id!=='number')clearTimeout(id)},AbortController,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='expo-audio'?{useAudioRecorder:()=>audio,useAudioRecorderState:()=>state,RecordingPresets:{HIGH_QUALITY:{extension:'.m4a',android:{outputFormat:'mpeg4',audioEncoder:'aac'},ios:{}}},requestRecordingPermissionsAsync:async()=>{if(permissionGate)await permissionGate();return{granted:true}},setAudioModeAsync:async()=>{}}:n==='expo-file-system/legacy'?{cacheDirectory:'file:///cache/',deleteAsync:async uri=>files.set(uri,{exists:false,size:0}),getInfoAsync:async uri=>files.get(uri)||{exists:false,size:0}}:n==='expo-document-picker'?{getDocumentAsync:async()=>({canceled:true,assets:[]})}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=>crypto.randomUUID()} :n==='@react-navigation/native'?{useIsFocused:()=>{const [current,setCurrent]=React.useState(focusValue);React.useEffect(()=>{focusSubs.add(setCurrent);return()=>{focusSubs.delete(setCurrent)}},[]);return current},usePreventRemove(){}}:n==='./socialDraft'?{chunkedDraftStore:()=>({getItemAsync:async key=>loadDraft?loadDraft(key):saved,setItemAsync:async(k,v)=>{store.set('draft',v);store.set(k,v)},deleteItemAsync:async k=>store.delete(k)})}:n==='./voiceDraftScope'?require('../src/voiceDraftScope.ts'):n==='./voiceSession'?require('../src/voiceSession.ts'):n==='./nativeVoiceAudio'?nativeVoiceAudioModule(files,transcribe):n==='./voiceAudioImport'?require('../src/voiceAudioImport.ts'):n==='./voiceDeviceCheck'?require('../src/voiceDeviceCheck.ts'):n==='./voiceRecorderLifecycle'?require('../src/voiceRecorderLifecycle.ts'):(()=>{throw Error('Unexpected NativeVoiceRecorder dependency: '+n)})()});
- return{Component:exports.default,calls,store,timers,files,focus:value=>{focusValue=value;for(const notify of[...focusSubs])notify(value)},background:()=>{appState.currentState='background';appStateListener?.('background')},foreground:()=>{appState.currentState='active';appStateListener?.('active')},advance:ms=>{clockNow+=ms;for(const fn of intervals.values())fn()}};
+ vm.runInNewContext(code,{exports,Date:{now:()=>clockNow},setInterval:fn=>{const id=++nextInterval;intervals.set(id,fn);return id},clearInterval:id=>intervals.delete(id),setTimeout:(fn,ms)=>ms===15000?(timers.push(fn),timers.length):setTimeout(fn,ms),clearTimeout:id=>{if(typeof id!=='number')clearTimeout(id)},AbortController,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='expo-audio'?{useAudioRecorder:()=>audio,useAudioRecorderState:()=>state,RecordingPresets:{HIGH_QUALITY:{extension:'.m4a',android:{outputFormat:'mpeg4',audioEncoder:'aac'},ios:{}}},requestRecordingPermissionsAsync:async()=>{if(permissionGate)await permissionGate();return{granted:true}},setAudioModeAsync:async mode=>{modeCalls.push(mode?.allowsRecording===true)}}:n==='expo-file-system/legacy'?{cacheDirectory:'file:///cache/',deleteAsync:async uri=>files.set(uri,{exists:false,size:0}),getInfoAsync:async uri=>files.get(uri)||{exists:false,size:0}}:n==='expo-document-picker'?{getDocumentAsync:async()=>({canceled:true,assets:[]})}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=>crypto.randomUUID()} :n==='@react-navigation/native'?{useIsFocused:()=>{const [current,setCurrent]=React.useState(focusValue);React.useEffect(()=>{focusSubs.add(setCurrent);return()=>{focusSubs.delete(setCurrent)}},[]);return current},usePreventRemove(){}}:n==='./socialDraft'?{chunkedDraftStore:()=>({getItemAsync:async key=>loadDraft?loadDraft(key):saved,setItemAsync:async(k,v)=>{store.set('draft',v);store.set(k,v)},deleteItemAsync:async k=>store.delete(k)})}:n==='./voiceDraftScope'?require('../src/voiceDraftScope.ts'):n==='./voiceSession'?require('../src/voiceSession.ts'):n==='./nativeVoiceAudio'?nativeVoiceAudioModule(files,transcribe):n==='./voiceAudioImport'?require('../src/voiceAudioImport.ts'):n==='./voiceDeviceCheck'?require('../src/voiceDeviceCheck.ts'):n==='./voiceRecorderLifecycle'?require('../src/voiceRecorderLifecycle.ts'):(()=>{throw Error('Unexpected NativeVoiceRecorder dependency: '+n)})()});
+ return{Component:exports.default,calls,modeCalls,store,timers,files,focus:value=>{focusValue=value;for(const notify of[...focusSubs])notify(value)},background:()=>{appState.currentState='background';appStateListener?.('background')},foreground:()=>{appState.currentState='active';appStateListener?.('active')},advance:ms=>{clockNow+=ms;for(const fn of intervals.values())fn()}};
 }
 test('native recorder disables new microphone and file input at the web transcript budget',async()=>{
  const h=recorderUI();let tree;
@@ -167,6 +173,27 @@ test('native recorder disables new microphone and file input at the web transcri
  assert.ok(audioFile);assert.equal(audioFile.props.disabled,true);
  assert.ok(text(tree.toJSON()).includes('54.000 karakter / 180 KB'));
  await renderer.act(async()=>tree.unmount());
+});
+
+test('native recorder restores global audio mode when a chunk rotation cannot start the next segment',async()=>{
+ const h=recorderUI({prepareFailureAt:2});let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished(){}})));
+ await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());
+ assert.deepEqual(h.modeCalls,[true]);
+ await renderer.act(async()=>{h.timers[0]();await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve));});
+ assert.equal(h.modeCalls.at(-1),false,'a failed rotation must leave Expo Audio out of recording mode');
+ assert.ok(text(tree.toJSON()).includes('Synthetic prepare failure'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('unmount after recording stops the recorder and restores the app playback route',async()=>{
+ const h=recorderUI();let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished(){}})));
+ await renderer.act(async()=>button(tree,'Mikrofonu başlat').props.onPress());
+ assert.equal(h.modeCalls.at(-1),true);
+ await renderer.act(async()=>tree.unmount());
+ assert.equal(h.calls.at(-1),'stop');
+ assert.equal(h.modeCalls.at(-1),false);
 });
 
 test('native microphone pauses/resumes and only finishes clinical handoff after ASR',async()=>{
