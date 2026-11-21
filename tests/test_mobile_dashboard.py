@@ -1,7 +1,7 @@
 import pytest
 try:
     from fastapi.testclient import TestClient
-except RuntimeError:
+except Exception:
     TestClient = None
 from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine
