@@ -171,15 +171,19 @@ test('React session-key hook keeps identity stable and rotates it without exposi
 });
 
 
-test('patient, Program and Academic renderers share the production opaque-key hook contract',()=>{
+test('patient, Program, Academic and relationship renderers share the production opaque-key hook contract',()=>{
  const app=fs.readFileSync(require.resolve('../App.tsx'),'utf8');
  const program=fs.readFileSync(require.resolve('../src/NativeProgram.tsx'),'utf8');
  const academic=fs.readFileSync(require.resolve('../src/NativeAcademic.tsx'),'utf8');
+ const relationships=fs.readFileSync(require.resolve('../src/NativeRelationships.tsx'),'utf8');
  const programHarness=fs.readFileSync(require.resolve('./programParity.cjs'),'utf8');
  const academicHarness=fs.readFileSync(require.resolve('./academicWorkflow.cjs'),'utf8');
+ const relationshipsHarness=fs.readFileSync(require.resolve('./relationships.cjs'),'utf8');
  assert.ok(app.includes('NativePatientProfile key={profileRenderKey}'));
  assert.ok(program.includes("import useSessionRenderKey from './useSessionRenderKey';"));
  assert.ok(academic.includes("import useSessionRenderKey from './useSessionRenderKey';"));
+ assert.ok(relationships.includes("import useSessionRenderKey from './useSessionRenderKey';"));
  assert.ok(programHarness.includes("name==='./useSessionRenderKey'?require('./helpers/useSessionRenderKeyModule.cjs')"));
  assert.ok(academicHarness.includes("n==='./useSessionRenderKey'?require('./helpers/useSessionRenderKeyModule.cjs')"));
+ assert.ok(relationshipsHarness.includes("n==='./useSessionRenderKey'?require('./helpers/useSessionRenderKeyModule.cjs')"));
 });
