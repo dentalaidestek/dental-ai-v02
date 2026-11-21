@@ -31,6 +31,16 @@ test('native support screen implements status filters, empty state and retryable
  assert.ok(screen.includes("finally{if(isCurrent(owner))setSending(false)}"));
 });
 
+test('support screen declares every loading, error and mutation state used by its callbacks',()=>{
+ for(const fragment of ['[loading,setLoading]=useState(false)','[error,setError]=useState("")','[sending,setSending]=useState(false)','[createKey,setCreateKey]=useState("")','[replyKey,setReplyKey]=useState("")'])
+  assert.ok(screen.includes(fragment),fragment);
+});
+
+test('support API validates complete pages, cursor progress and exact mutation receipts',()=>{
+ for(const fragment of ['supportTicketSummaryValid','supportMessageValid','supportRequestKeyValid','new Set(ids).size!==ids.length','r.next_before_id!==ids[0]','r.ticket_id!==id','r.message_id','r.unread_count'])
+  assert.ok(api.includes(fragment),fragment);
+});
+
 test('support screen is registered and reachable from the app',()=>{
  assert.ok(app.includes('import NativeSupportRequests from "./src/NativeSupportRequests"'));
  assert.ok(app.includes('name="SupportRequests"'));
