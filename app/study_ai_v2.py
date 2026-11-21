@@ -832,12 +832,17 @@ def stream_rag_v2(
                     stream_complete_answer(provider, generation_call, retrieval,
                         allow_continuation=True))
                 for chunk in completed:
-                    if chunk:
-                        emitted = True
+                    if not chunk:
+                        # Keep structured/private output hidden while allowing the
+                        # durable worker to observe cancellation during generation.
                         if checked_set or checked_source or pdf_patch:
-                            pieces.append(chunk)
-                        else:
-                            yield chunk
+                            yield ''
+                        continue
+                    emitted = True
+                    if checked_set or checked_source or pdf_patch:
+                        pieces.append(chunk)
+                    else:
+                        yield chunk
             except LongAnswerError as exc:
                 raise StudyAIError(str(exc)) from exc
             if pdf_patch:
