@@ -2,7 +2,7 @@ const fs=require('node:fs');
 const ts=require('typescript');
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
-const {nextSessionRenderKey}=require('./helpers/sessionRenderKeyModule.cjs');
+const {nextSessionRenderKey,resolveSessionRenderIdentity}=require('./helpers/sessionRenderKeyModule.cjs');
 
 test('session render keys are opaque, unique and do not encode credentials',()=>{
  const first=nextSessionRenderKey(),second=nextSessionRenderKey();
@@ -11,6 +11,21 @@ test('session render keys are opaque, unique and do not encode credentials',()=>
  for(const secret of ['Bearer synthetic-secret-token','eyJhbGciOiJIUzI1NiJ9.synthetic.signature']) {
   assert.ok(!first.includes(secret));
   assert.ok(!second.includes(secret));
+ }
+});
+
+test('session scope changes rotate an opaque key without exposing the scope',()=>{
+ const first=resolveSessionRenderIdentity(null,'user:7:Bearer synthetic-secret-token');
+ const stable=resolveSessionRenderIdentity(first,'user:7:Bearer synthetic-secret-token');
+ const rotated=resolveSessionRenderIdentity(first,'user:7:Bearer replacement-secret-token');
+ assert.strictEqual(stable,first,'a stable scope must retain its renderer identity');
+ assert.notEqual(rotated.key,first.key,'a new session must remount scoped children');
+ assert.match(first.key,/^dai-session-[0-9a-z]+$/);
+ assert.match(rotated.key,/^dai-session-[0-9a-z]+$/);
+ for(const value of [first.key,rotated.key]){
+  assert.ok(!value.includes('synthetic-secret-token'));
+  assert.ok(!value.includes('replacement-secret-token'));
+  assert.ok(!value.includes('Bearer'));
  }
 });
 
