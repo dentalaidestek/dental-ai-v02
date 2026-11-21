@@ -167,6 +167,19 @@ def test_native_bearer_session_can_apply_and_read_only_its_own_approved_anamnesi
     assert client.get('/patients/2/voice-exam/history', headers=headers).status_code == 404
 
 
+def test_bearer_voice_identity_never_falls_back_to_a_different_cookie_user(app_client):
+    client, engine = app_client
+    with Session(engine) as session:
+        session.add(User(id=3, role='PATIENT', email_verified_at=datetime.utcnow()))
+        session.commit()
+    headers, _ = _bearer_headers(engine, 'patient-token', user_id=3)
+    # Simulate a browser cookie resolving to doctor #1 while the Authorization
+    # header identifies a different, non-clinician account. Bearer must win.
+    headers['x-login'] = '1'
+    response = client.get('/patients/1/voice-exam/history', headers=headers)
+    assert response.status_code == 401, response.text
+
+
 def test_native_bearer_voice_auth_rejects_unverified_expired_and_non_doctor_sessions(app_client, monkeypatch):
     client, engine = app_client
     main = sys.modules['app.main']
