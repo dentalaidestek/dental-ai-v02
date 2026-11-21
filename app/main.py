@@ -5445,7 +5445,7 @@ def study_run_cancel(request:Request,course_id:int,run_id:int):
             return JSONResponse({'ok':False},status_code=404)
         row=cancel_run(session,run_id=run_id,owner=user.id,course=course_id)
         if row is None:return JSONResponse({'ok':False},status_code=404)
-        if row.status not in ('CANCELLED','CANCEL_REQUESTED'):
+        if row.status not in ('CANCELLED','CANCEL_REQUESTED','CANCEL_FAILED'):
             return JSONResponse({'ok':False,'error':'Çalışma zaten tamamlandı veya artık iptal edilemiyor.','run':payload(session,row)},status_code=409)
         session.commit()
         result=payload(session,row)
