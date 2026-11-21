@@ -742,11 +742,13 @@ def _upgrade_approved_anamnesis_schema(main):
         revision = connection.execute(
             text("SELECT version FROM dental_schema_revision WHERE id=1")
         ).scalar()
-        if revision == APPROVED_ANAMNESIS_REVISION:
-            if not inspect(connection).has_table(table.name):
-                raise RuntimeError("Approved anamnesis table is missing at schema revision 21")
+        table_exists = inspect(connection).has_table(table.name)
+        if revision == APPROVED_ANAMNESIS_REVISION and table_exists:
             return True
-        if revision != PROGRAM_REMINDER_PENDING_INDEX_REVISION:
+        # A fresh database starts at the current revision after init_db(); it
+        # still needs the additive table created. Existing revision-20 databases
+        # are upgraded below and advance to 21 only after the backfill completes.
+        if revision not in (PROGRAM_REMINDER_PENDING_INDEX_REVISION, APPROVED_ANAMNESIS_REVISION):
             return False
         for required in ("analysis", "workjob"):
             if not inspect(connection).has_table(required):
@@ -787,17 +789,18 @@ def _upgrade_approved_anamnesis_schema(main):
                 connection.execute(insert_sql, batch)
             last_id = page[-1]["analysis_id"]
 
-        result = connection.execute(text(
-            "UPDATE dental_schema_revision SET version=:version "
-            "WHERE id=1 AND version=:prior"
-        ), {"version": APPROVED_ANAMNESIS_REVISION,
-            "prior": PROGRAM_REMINDER_PENDING_INDEX_REVISION})
-        if result.rowcount != 1:
-            current = connection.execute(
-                text("SELECT version FROM dental_schema_revision WHERE id=1")
-            ).scalar()
-            if current != APPROVED_ANAMNESIS_REVISION:
-                raise RuntimeError("Schema changed during approved anamnesis migration")
+        if revision == PROGRAM_REMINDER_PENDING_INDEX_REVISION:
+            result = connection.execute(text(
+                "UPDATE dental_schema_revision SET version=:version "
+                "WHERE id=1 AND version=:prior"
+            ), {"version": APPROVED_ANAMNESIS_REVISION,
+                "prior": PROGRAM_REMINDER_PENDING_INDEX_REVISION})
+            if result.rowcount != 1:
+                current = connection.execute(
+                    text("SELECT version FROM dental_schema_revision WHERE id=1")
+                ).scalar()
+                if current != APPROVED_ANAMNESIS_REVISION:
+                    raise RuntimeError("Schema changed during approved anamnesis migration")
     logger.warning("migration.approved_anamnesis complete revision=%s",
                    APPROVED_ANAMNESIS_REVISION)
     return True
