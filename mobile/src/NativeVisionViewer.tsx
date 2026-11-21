@@ -19,9 +19,9 @@ export default function NativeVisionViewer({token,analysisId,assetId,assets=[],o
  const [findings,setFindings]=useState<VisionFinding[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[pending,setPending]=useState(false),[pollDelay,setPollDelay]=useState(5000),[imageError,setImageError]=useState(false),[imageRevision,setImageRevision]=useState(0),[zoom,setZoom]=useState(1),[width,setWidth]=useState(320),[size,setSize]=useState<{width:number;height:number}|null>(null),[selected,setSelected]=useState(''),[filter,setFilter]=useState('Tümü'),[foreground,setForeground]=useState(AppState.currentState==='active');
  const [tab,setTab]=useState<ViewerTab>('findings'),[treatmentTeeth,setTreatmentTeeth]=useState<string[]>([]),[treatmentBusy,setTreatmentBusy]=useState(false),[treatmentMessage,setTreatmentMessage]=useState(''),[clinicalTooth,setClinicalTooth]=useState(''),[manualFinding,setManualFinding]=useState(''),[clinicalNote,setClinicalNote]=useState(''),[chartBusy,setChartBusy]=useState(false),[chartMessage,setChartMessage]=useState('');
  const findingInput=useRef<TextInput|null>(null),contentScroll=useRef<any>(null),alive=useRef(true),lock=useRef(false),focused=useIsFocused(),currentAsset=assets.find(asset=>asset.id===assetId),modality=currentAsset?.image_type||'';
-  const imageScope=useRef({token,scope:`clinical-vision-scope-${++nextClinicalVisionScope}`});
- if(imageScope.current.token!==token)imageScope.current={token,scope:`clinical-vision-scope-${++nextClinicalVisionScope}`};
- const imageKey=clinicalAnalysisImageKey(imageScope.current.scope,analysisId,assetId,imageRevision);
+  const imageScope=useRef<{token:string;scope:string}|null>(null);
+ if(!imageScope.current||imageScope.current.token!==token)imageScope.current={token,scope:`clinical-vision-scope-${++nextClinicalVisionScope}`};
+ const imageKey=clinicalAnalysisImageKey(imageScope.current!.scope,analysisId,assetId,imageRevision);
  const latestRequest=useRef({token,analysisId,assetId,modality}),viewerActive=useRef({focused,foreground}),queuedLoad=useRef(false),queuedReset=useRef(false),requestGeneration=useRef(0);
   latestRequest.current={token,analysisId,assetId,modality};viewerActive.current={focused,foreground};
   useEffect(()=>{alive.current=true;const listener=AppState.addEventListener('change',v=>setForeground(v==='active'));return()=>{alive.current=false;requestGeneration.current++;listener.remove()}},[]);
