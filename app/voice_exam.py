@@ -257,33 +257,28 @@ def final_review(request: Request, patient_id: int, payload: FinalInput):
 
 
 def reviewed_history_payload(session, main, user, patient_id, fingerprint=None):
-    """Return only fields from completed, clinician-approved voice examinations."""
-    from app.work_jobs import WorkJob
+    """Return the latest explicitly approved value per field, with immutable provenance."""
+    from app.approved_anamnesis import ApprovedAnamnesis, HISTORY_LABELS
 
     patient = _owned(session, main, user, patient_id)
     if not patient:
         return None
     fingerprint = fingerprint or _fingerprint(session, main, patient)
-    labels = {'family_history': 'Aile sağlık öyküsü', 'materials': 'Konuşulan materyaller', 'dental_history': 'Önceki diş tedavileri', 'oral_habits': 'Ağız bakımı ve alışkanlıklar', 'medical_history': 'Sistemik hastalık / hasta beyanı', 'medications': 'İlaç / hasta beyanı',
-              'allergies': 'Alerji / hasta beyanı'}
+    table = ApprovedAnamnesis.__table__
+    rows = session.execute(
+        select(table.c.id, table.c.field_key, table.c.value, table.c.analysis_id)
+        .where(table.c.patient_id == patient_id, table.c.owner_user_id == user.id)
+        .order_by(table.c.field_key, table.c.id.desc())
+    ).mappings()
     fields = {}
-    # Join prevents scanning the entire patient archive and excludes non-voice records.
-    rows = session.exec(select(main.Analysis).join(WorkJob, WorkJob.resource_id == main.Analysis.id)
-        .where(main.Analysis.patient_id == patient_id, WorkJob.owner_user_id == user.id,
-               WorkJob.resource_type == 'ANALYSIS', WorkJob.kind == 'VOICE_REVIEW', WorkJob.status == 'DONE')
-        .order_by(main.Analysis.id.desc()).limit(12)).all()
     for row in rows:
-        for paragraph in (row.clinical_notes or '').split('\n\n'):
-            for name, label in labels.items():
-                prefix = label + ': '
-                if name not in fields and paragraph.startswith(prefix):
-                    value = paragraph[len(prefix):].strip()
-                    if value and len(value) <= 3000:
-                        # Approved clinical notes do not retain the original transcript quote.
-                        # Never relabel the saved value itself as verbatim speech evidence.
-                        fields[name] = {'value': value, 'quote': '', 'analysis_id': row.id}
-    return {'ok': True, 'revision': fingerprint, 'fields': fields,
-        'notice': 'Önceki hekim onaylı sesli muayene kayıtlarıdır. Güncel kullanım veya hastalık durumu olarak kabul etmeden hastayla doğrulayın.'}
+        key = row["field_key"]
+        if key not in fields and key in HISTORY_LABELS:
+            value = row["value"]
+            if isinstance(value, str) and value and len(value) <= 3000:
+                fields[key] = {"value": value, "quote": "", "analysis_id": row["analysis_id"]}
+    return {"ok": True, "revision": fingerprint, "fields": fields,
+        "notice": "Önceki hekim onaylı sesli muayene kayıtlarıdır. Güncel kullanım veya hastalık durumu olarak kabul etmeden hastayla doğrulayın."}
 
 
 @router.get('/patients/{patient_id}/voice-exam/history')
@@ -527,6 +522,17 @@ def apply_review(request: Request, patient_id: int, payload: ApplyInput, backgro
             notes += '\n\nHekim tarafından onaylanan diş ' + item.tooth + ': ' + item.status + ' ' + item.note
         analysis = main.Analysis(patient_id=patient_id, status='DRAFT', clinical_notes=notes.strip() or 'Sesli muayene alanları hekim tarafından onaylandı.')
         session.add(analysis); session.flush(); session.add(patient)
+        # Keep the canonical Analysis as the source of truth and append only the
+        # explicitly approved anamnesis fields in the same transaction.
+        from app.approved_anamnesis import ApprovedAnamnesis, HISTORY_LABELS
+        approved_table = ApprovedAnamnesis.__table__
+        approved_rows = [
+            {"owner_user_id": user.id, "patient_id": patient_id, "field_key": key,
+             "value": value, "analysis_id": analysis.id}
+            for key, value in fields.items() if key in HISTORY_LABELS
+        ]
+        if approved_rows:
+            session.execute(approved_table.insert(), approved_rows)
         events += main._record_patient_realtime_events(session, patient, 'PATIENT_UPDATED')
         # Audit/idempotency only: no audio or transcript in generic job payloads.
         session.add(WorkJob(owner_user_id=user.id, resource_id=analysis.id, resource_type='ANALYSIS',
