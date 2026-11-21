@@ -44,12 +44,12 @@ function loadHistory({assets,legacy=true,fetchPage,getAnalysis}={}){
   ActivityIndicator:'ActivityIndicator',Image:'Image',Modal:'Modal',Pressable:'Pressable',
   ScrollView:'ScrollView',Text:'Text',View:'View'
  };
- const modernApi={getPatientAnalysisHistoryPage:fetchPage||async()=>({items:[item],total:1,next:null})};
- const analysisApi={getAnalysis:getAnalysis||async()=>({
+ const modernApi={getPatientAnalysisHistoryPage:fetchPage||(async()=>({items:[item],total:1,next:null}))};
+ const analysisApi={getAnalysis:getAnalysis||(async()=>({
   analysis:{id:41,patient_id:8,tooth_number:'11',clinical_notes:'Synthetic note',status:'FINAL',created_at:item.created_at,is_voice_review:false,legacy_radiograph_available:legacy},
   patient:{id:8,anonymous_id:'SYN-8',age:0,chief_complaint:null},
   assets
- })};
+ }))};
  vm.runInNewContext(code,{
   exports,
   require:name=>{
@@ -155,7 +155,7 @@ test('private patient-history images revalidate and remount without putting bear
 test('private history image helper validates identity and returns only canonical authenticated no-cache routes',()=>{
  const {createPatientAnalysisHistoryImageScope,patientAnalysisHistoryImageKey,patientAnalysisHistoryImageSource}=patientHistoryImageExports;
  const scope=createPatientAnalysisHistoryImageScope();
- assert.match(scope,/^patient-analysis-history-scope-[1-9]\\d*$/);
+ assert.match(scope,/^patient-analysis-history-scope-[1-9]\d*$/);
  const key=patientAnalysisHistoryImageKey(scope,41,7);
  assert.ok(!key.includes('synthetic-token'));
  assert.notEqual(key,patientAnalysisHistoryImageKey(createPatientAnalysisHistoryImageScope(),41,7));
@@ -170,6 +170,32 @@ test('private history image helper validates identity and returns only canonical
  assert.throws(()=>patientAnalysisHistoryImageSource('bad token',41,7),/oturumu/);
  assert.throws(()=>patientAnalysisHistoryImageSource('synthetic-token',0,7),/kimliği/);
  assert.throws(()=>patientAnalysisHistoryImageKey('synthetic-token',41,7),/kapsamı/);
+});
+
+
+test('an in-flight patient-history read coalesces a realtime refresh and does not double-fetch on initial focus',async()=>{
+ let resolveFirst,calls=0;
+ const History=loadHistory({
+  assets:[],legacy:false,
+  fetchPage:async()=>{
+   calls++;
+   if(calls===1)return new Promise(resolve=>{resolveFirst=resolve});
+   return {items:[{id:41,patient_id:8,patient_name:'SYNTHETIC',tooth_number:'11',clinical_notes:'Synthetic note',status:'FINAL',created_at:'2026-11-17T10:00:00Z'}],total:1,next:null};
+  }
+ });
+ const props={token:'synthetic-token',patientId:8};
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(History,props));await flush()});
+ assert.equal(calls,1,'scope initialization and initial focus must share one read');
+ History.setEvent({event_type:'ANALYSIS_CREATED',payload:{patient_id:8}});
+ await renderer.act(async()=>{tree.update(React.createElement(History,props));await flush()});
+ assert.equal(calls,1,'realtime refresh must wait for the current request rather than overlap it');
+ await renderer.act(async()=>{resolveFirst({items:[],total:0,next:null});await flush();await flush()});
+ assert.equal(calls,2,'one queued first-page refresh must run after the in-flight request settles');
+ History.setEvent({event_type:'ANALYSIS_UPDATED',payload:{patient_id:9}});
+ await renderer.act(async()=>{tree.update(React.createElement(History,props));await flush()});
+ assert.equal(calls,2,'another patient event must not refresh this history');
+ await renderer.act(async()=>tree.unmount());
 });
 
 test('native analysis status matches the web profile status labels',()=>{
