@@ -184,13 +184,14 @@ def test_native_bearer_admin_requires_the_existing_second_factor_marker(app_clie
     with Session(engine) as session:
         session.add(User(id=5, role='ADMIN', email='dentalaidestek@gmail.com',
                          email_verified_at=datetime.utcnow()))
+        session.add(Patient(id=3, owner_user_id=5))
         session.commit()
     headers, token_hash = _bearer_headers(engine, 'admin-token', user_id=5)
-    assert client.get('/patients/1/voice-exam/history', headers=headers).status_code == 401
+    assert client.get('/patients/3/voice-exam/history', headers=headers).status_code == 401
     with Session(engine) as session:
         session.add(AdminVerifiedSession(token_hash=token_hash, user_id=5))
         session.commit()
-    assert client.get('/patients/1/voice-exam/history', headers=headers).status_code == 200
+    assert client.get('/patients/3/voice-exam/history', headers=headers).status_code == 200
 
 
 def test_native_bearer_voice_mutations_keep_cross_site_origin_protection(app_client):
