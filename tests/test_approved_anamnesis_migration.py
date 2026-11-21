@@ -43,7 +43,7 @@ def test_revision_21_backfills_all_completed_voice_reviews_in_bounded_pages():
         assert connection.execute(text(
             "SELECT version FROM dental_schema_revision WHERE id=1"
         )).scalar_one() == 21
-        rows = connection.execute(select(table)).mappings().all()
+        rows = connection.execute(select(table).order_by(table.c.id)).mappings().all()
         assert len(rows) == 503
         assert rows[0]["owner_user_id"] == 9
         assert rows[0]["patient_id"] == 77
@@ -57,3 +57,23 @@ def test_revision_21_backfills_all_completed_voice_reviews_in_bounded_pages():
     with engine.connect() as connection:
         assert connection.execute(text("SELECT count(*) FROM approvedanamnesis")).scalar_one() == 503
     engine.dispose()
+
+def test_fresh_revision_21_database_still_creates_the_ledger():
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"
+        ))
+        connection.execute(text("INSERT INTO dental_schema_revision(id, version) VALUES (1, 21)"))
+        connection.execute(text(
+            "CREATE TABLE analysis (id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL, clinical_notes TEXT)"
+        ))
+        connection.execute(text(
+            "CREATE TABLE workjob (id INTEGER PRIMARY KEY, owner_user_id INTEGER NOT NULL, "
+            "resource_id INTEGER NOT NULL, resource_type VARCHAR NOT NULL, kind VARCHAR NOT NULL, status VARCHAR NOT NULL)"
+        ))
+    assert _upgrade_approved_anamnesis_schema(SimpleNamespace(engine=engine)) is True
+    with engine.connect() as connection:
+        assert "approvedanamnesis" in __import__("sqlalchemy").inspect(connection).get_table_names()
+    engine.dispose()
+
