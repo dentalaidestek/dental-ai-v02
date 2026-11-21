@@ -14,3 +14,17 @@ export function isUnexpectedVoiceRecorderStop(
 ):boolean{
  return wasRecording&&recordingRequested&&hasActiveSegment&&!transitionInProgress;
 }
+
+/**
+ * Restore the app-wide playback route after a native recording has stopped.
+ * Expo Audio mode is global to the app, so every terminal/failed capture path
+ * must attempt to leave recording mode. A false result is surfaced to the UI.
+ */
+export async function restoreVoiceAudioMode(restore:()=>Promise<unknown>):Promise<boolean>{
+ try{
+  await restore();
+  return true;
+ }catch{
+  return false;
+ }
+}

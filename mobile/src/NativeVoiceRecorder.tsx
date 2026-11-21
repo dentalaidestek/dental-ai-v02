@@ -11,16 +11,24 @@ import {addVoiceElapsed,discardInterruptedVoiceSegment,formatVoiceElapsed,markVo
 import {isPrivateVoiceRecordingUri,readPrivateVoiceAudioDuration,transcribeNativeRecording,VoiceAsrError} from './nativeVoiceAudio';
 import {resolveVoiceAudioAsset,validateVoiceAudioBytes,validateVoiceAudioDuration} from './voiceAudioImport';
 import {voiceDeviceSignalLevel} from './voiceDeviceCheck';
-import {isUnexpectedVoiceRecorderStop} from './voiceRecorderLifecycle';
+import {isUnexpectedVoiceRecorderStop,restoreVoiceAudioMode} from './voiceRecorderLifecycle';
 import {isVoiceDraftScopeCurrent} from './voiceDraftScope';
 
 const WAVE_BARS=[5,9,14,19,12,23,16,28,17,24,13,20,11,26,15,22,12,18,9,14,6];
+const AUDIO_MODE_RESTORE_WARNING='Mikrofon durdu ancak cihazın ses yönlendirmesi geri yüklenemedi. Uygulamanın ses ayarını kontrol edin.';
 export default function NativeVoiceRecorder({token,userId,patientId,consent,value,disabled=false,onTranscript,onFinished,onBusyChanged,onSessionState}:{token:string;userId:number;patientId:number;consent:boolean;value:string;disabled?:boolean;onTranscript:(text:string)=>void;onFinished:(text:string,sessionId:string)=>void;onBusyChanged?:(busy:boolean)=>void;onSessionState?:(state:{started:boolean;finished:boolean;sessionId:string})=>void}){
  const options={...RecordingPresets.HIGH_QUALITY,directory:'cache' as const,isMeteringEnabled:true,numberOfChannels:1,bitRate:64000,android:{...RecordingPresets.HIGH_QUALITY.android,maxFileSize:8*1024*1024}},recorder=useAudioRecorder(options),status=useAudioRecorderState(recorder,250);
  const store=useMemo(()=>chunkedDraftStore(SecureStore,Crypto.randomUUID,300),[]),key=voiceDraftKey(userId,patientId),draft=useRef<VoiceDraft>(newVoiceDraft(userId,patientId,Date.now(),Crypto.randomUUID())),mounted=useRef(true),wanted=useRef(false),active=useRef<string|null>(null),stopped=useRef(true),timer=useRef<ReturnType<typeof setTimeout>|null>(null),gate=useRef(false),cutting=useRef<Promise<void>|null>(null),draining=useRef<Promise<void>|null>(null),controller=useRef<AbortController|null>(null),lastInput=useRef(value),transcriptRef=useRef(value),wasRecording=useRef(false);
  transcriptRef.current=value;
  const scopeRef=useRef(key),scopeCleanup=useRef<Promise<void>>(Promise.resolve());scopeRef.current=key;
  const scopeIsCurrent=(expectedKey:string)=>isVoiceDraftScopeCurrent(expectedKey,scopeRef.current);
+ async function restoreAudioModeAfterStop():Promise<boolean|null>{
+  if(!stopped.current)return null;
+  return restoreVoiceAudioMode(()=>setAudioModeAsync({allowsRecording:false}));
+ }
+ function appendAudioModeWarning(message:string,restored:boolean|null):string{
+  return restored===false?(message?message+' '+AUDIO_MODE_RESTORE_WARNING:AUDIO_MODE_RESTORE_WARNING):message;
+ }
  const transcriptCallback=useRef(onTranscript),finishCallback=useRef(onFinished);transcriptCallback.current=onTranscript;finishCallback.current=onFinished;
  const consentRef=useRef(consent);consentRef.current=consent;
  const [view,setView]=useState(draft.current),[ready,setReady]=useState(false),[recording,setRecording]=useState(false),[elapsedMs,setElapsedMs]=useState(0),[level,setLevel]=useState(0),[working,setWorking]=useState(false),[transcribing,setTranscribing]=useState(false),[error,setError]=useState(''),[storageBlocked,setStorageBlocked]=useState(false),[indeterminateSegmentId,setIndeterminateSegmentId]=useState<string|null>(null);
@@ -126,7 +134,8 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
    wanted.current=false;if(timer.current)clearTimeout(timer.current);controller.current?.abort();
    const pendingDrain=draining.current,priorCleanup=scopeCleanup.current;
    const cleanupWork=(async()=>{
-    if(pendingDrain)await pendingDrain.catch(()=>{});
+    try{
+     if(pendingDrain)await pendingDrain.catch(()=>{});
     const id=active.current;if(!id)return;
     const startedAt=chunkStartedAt.current,base=draft.current;
     if(!stopped.current){await recorder.stop();stopped.current=true;}
@@ -146,7 +155,10 @@ export default function NativeVoiceRecorder({token,userId,patientId,consent,valu
     const savedDraft={...next,updatedAt:Date.now()};
     await store.setItemAsync(effectKey,JSON.stringify(savedDraft));
     if(scopeIsCurrent(effectKey)){draft.current=savedDraft;if(mounted.current)setView(savedDraft);}
-    if(active.current===id){active.current=null;chunkStartedAt.current=null;}
+     if(active.current===id){active.current=null;chunkStartedAt.current=null;}
+    }finally{
+     if(stopped.current)await restoreVoiceAudioMode(()=>setAudioModeAsync({allowsRecording:false}));
+    }
    })();
    scopeCleanup.current=Promise.all([priorCleanup,cleanupWork]).then(()=>undefined).catch(()=>undefined);
   };
@@ -194,6 +206,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
     if(!scopeIsCurrent(drainKey))return;
     wanted.current=false;
     try{await cut()}catch{}
+    if(stopped.current)await restoreAudioModeAfterStop();
     if(scopeIsCurrent(drainKey)&&mounted.current){
      const cleanupPending=draft.current.segments.some(segment=>segment.transcribed===true);
      if(cleanupPending)setStorageBlocked(true);
@@ -333,7 +346,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    if(!stopped.current){await recorder.stop();stopped.current=true;}
    const segment=draft.current.segments.find(item=>item.id===id);
    if(!segment){active.current=null;chunkStartedAt.current=null;return;}
-   if(startedAt===null){await discardUnstartedSegment(id,segment.uri);wasRecording.current=false;if(!wanted.current)await setAudioModeAsync({allowsRecording:false});if(mounted.current)setRecording(false);return;}
+   if(startedAt===null){await discardUnstartedSegment(id,segment.uri);wasRecording.current=false;if(!wanted.current){const restored=await restoreAudioModeAfterStop();if(restored===false&&mounted.current)setError(AUDIO_MODE_RESTORE_WARNING);}if(mounted.current)setRecording(false);return;}
    const info=await FileSystem.getInfoAsync(segment.uri);
    let next=addVoiceElapsed(draft.current,startedAt,Date.now());
    if(!info.exists)next=discardInterruptedVoiceSegment(next,id);
@@ -341,15 +354,15 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    await persist(next);
    active.current=null;chunkStartedAt.current=null;stopped.current=true;wasRecording.current=false;
    if(mounted.current)setElapsedMs(next.elapsedMs||0);
-   if(!wanted.current)await setAudioModeAsync({allowsRecording:false});
+   if(!wanted.current){const restored=await restoreAudioModeAfterStop();if(restored===false&&mounted.current)setError(AUDIO_MODE_RESTORE_WARNING);}
    if(mounted.current){setRecording(false);if(info.exists&&!next.segments.some(item=>item.id===id&&item.ready))setError('Ses bölümü boş veya 8 MB sınırını aşıyor. Yarım kalan bölümü kaldırıp yeniden kaydedin.');}
   })();
   cutting.current=work;void work.finally(()=>{if(cutting.current===work)cutting.current=null}).catch(()=>{});return work;
  }
- async function rotate(){if(gate.current||!wanted.current)return;gate.current=true;try{await cut();if(wanted.current)await startChunk();void drain()}catch(e){wanted.current=false;if(mounted.current){if(active.current&&!status.isRecording){stopped.current=true;setRecording(false)}else if(!active.current)setRecording(false);setError(e instanceof Error?e.message:'Mikrofon kesildi; yerel kayıtları kontrol edin.')}}finally{gate.current=false}}
- async function start(){if(!audioInputAllowed()){setError(audioLimitMessage);return;}if(gate.current||disabled||storageBlocked||!consent||!ready||!canResumeVoiceDraft(draft.current))return;gate.current=true;setWorking(true);setError('');try{const permission=await requestRecordingPermissionsAsync();if(!permission.granted)throw Error('Muayene kaydı için mikrofon izni verin.');if(!mounted.current||!consentRef.current)return;await setAudioModeAsync({allowsRecording:true,playsInSilentMode:true,shouldPlayInBackground:false});if(!consentRef.current){await setAudioModeAsync({allowsRecording:false});return}if(AppState.currentState!=='active'||!focus.current)throw Error('Kayıt için uygulamayı ön plana getirin.');if(!consentRef.current)return;wanted.current=true;await startChunk()}catch(e){wanted.current=false;if(mounted.current){if(active.current&&!status.isRecording){stopped.current=true;setRecording(false)}else setRecording(Boolean(active.current));setError(e instanceof Error?e.message:'Mikrofon başlatılamadı.')}}finally{gate.current=false;if(mounted.current)setWorking(false)}}
- async function pause(background=false){wanted.current=false;if(background)controller.current?.abort();if(gate.current)return;gate.current=true;if(mounted.current)setWorking(true);try{await cut();if(!background&&consentRef.current)await drain();else if(background&&mounted.current)setError('Uygulama arka plana alındı; kayıt durdu. Bekleyen sesleri kontrol ederek devam edin.');else if(mounted.current)setError('Onay geri çekildi; bekleyen ses bölümü cihazda korundu ve aktarılmadı.')}catch(e){if(mounted.current){if(active.current&&!status.isRecording){stopped.current=true;setRecording(false)}setError(e instanceof Error?e.message:'Kayıt durdurulamadı; ses dosyası korunuyor.')}}finally{gate.current=false;if(mounted.current)setWorking(false)}}
- async function finish(){if(gate.current||disabled||draft.current.ended)return;wanted.current=false;gate.current=true;setWorking(true);setError('');try{await cut();if(!consentRef.current){setError('Onay geri çekildi; bekleyen ses bölümü cihazda korundu. Klinik değerlendirme başlatılmadı.');return}await drain();if(!consentRef.current){setError('Onay geri çekildi; klinik değerlendirme başlatılmadı.');return}if(draft.current.segments.some(segment=>segment.transcribed)){setStorageBlocked(true);setError('Konuşma metni güvenli taslağa kaydedildi ancak geçici ses dosyası silinemedi. Temizliği yeniden deneyin; aynı ses yeniden AI hizmetine gönderilmeyecek.');return}if(draft.current.segments.length){setError(previous=>previous||'Bekleyen sesler yazıya çevrilmeden klinik değerlendirme başlatılamaz.');return}if(!draft.current.transcript.trim())throw Error('Muayene metni henüz yok.');await persist({...draft.current,ended:true});if(mounted.current)finishCallback.current(draft.current.transcript,draft.current.sessionId||'')}catch(e){if(mounted.current)setError(e instanceof Error?e.message:'Muayene bitirilemedi; taslak korundu.')}finally{gate.current=false;if(mounted.current)setWorking(false)}}
+ async function rotate(){if(gate.current||!wanted.current)return;gate.current=true;try{await cut();if(wanted.current)await startChunk();void drain()}catch(e){wanted.current=false;if(mounted.current){if(active.current&&!status.isRecording){stopped.current=true;setRecording(false)}else if(!active.current)setRecording(false);setError(e instanceof Error?e.message:'Mikrofon kesildi; yerel kayıtları kontrol edin.')}if(stopped.current){const restored=await restoreAudioModeAfterStop();if(restored===false&&mounted.current)setError(previous=>appendAudioModeWarning(previous,false));}}finally{gate.current=false}}
+ async function start(){if(!audioInputAllowed()){setError(audioLimitMessage);return;}if(gate.current||disabled||storageBlocked||!consent||!ready||!canResumeVoiceDraft(draft.current))return;gate.current=true;setWorking(true);setError('');try{const permission=await requestRecordingPermissionsAsync();if(!permission.granted)throw Error('Muayene kaydı için mikrofon izni verin.');if(!mounted.current||!consentRef.current)return;await setAudioModeAsync({allowsRecording:true,playsInSilentMode:true,shouldPlayInBackground:false});if(!consentRef.current){const restored=await restoreAudioModeAfterStop();if(restored===false&&mounted.current)setError(AUDIO_MODE_RESTORE_WARNING);return}if(AppState.currentState!=='active'||!focus.current)throw Error('Kayıt için uygulamayı ön plana getirin.');if(!consentRef.current)return;wanted.current=true;await startChunk();if(!active.current&&stopped.current){wanted.current=false;const restored=await restoreAudioModeAfterStop();if(restored===false&&mounted.current)setError(AUDIO_MODE_RESTORE_WARNING);}}catch(e){wanted.current=false;if(mounted.current){if(active.current&&!status.isRecording){stopped.current=true;setRecording(false)}else setRecording(Boolean(active.current));setError(e instanceof Error?e.message:'Mikrofon başlatılamadı.')}if(stopped.current){const restored=await restoreAudioModeAfterStop();if(restored===false&&mounted.current)setError(previous=>appendAudioModeWarning(previous,false));}}finally{gate.current=false;if(mounted.current)setWorking(false)}}
+ async function pause(background=false){wanted.current=false;if(background)controller.current?.abort();if(gate.current)return;gate.current=true;if(mounted.current)setWorking(true);try{const hadActiveSegment=Boolean(active.current);await cut();if(!hadActiveSegment){const restored=await restoreAudioModeAfterStop();if(restored===false&&mounted.current)setError(AUDIO_MODE_RESTORE_WARNING);}if(!background&&consentRef.current)await drain();else if(background&&mounted.current)setError('Uygulama arka plana alındı; kayıt durdu. Bekleyen sesleri kontrol ederek devam edin.');else if(mounted.current)setError('Onay geri çekildi; bekleyen ses bölümü cihazda korundu ve aktarılmadı.')}catch(e){if(active.current&&!status.isRecording){stopped.current=true;if(mounted.current)setRecording(false)}if(stopped.current){const restored=await restoreAudioModeAfterStop();if(restored===false&&mounted.current)setError(previous=>appendAudioModeWarning(e instanceof Error?e.message:'Kayıt durdurulamadı; ses dosyası korunuyor.',false));else if(mounted.current)setError(e instanceof Error?e.message:'Kayıt durdurulamadı; ses dosyası korunuyor.')}else if(mounted.current)setError(e instanceof Error?e.message:'Kayıt durdurulamadı; ses dosyası korunuyor.')}finally{gate.current=false;if(mounted.current)setWorking(false)}}
+ async function finish(){if(gate.current||disabled||draft.current.ended)return;wanted.current=false;gate.current=true;setWorking(true);setError('');try{const hadActiveSegment=Boolean(active.current);await cut();if(!hadActiveSegment){const restored=await restoreAudioModeAfterStop();if(restored===false&&mounted.current)setError(AUDIO_MODE_RESTORE_WARNING);}if(!consentRef.current){setError('Onay geri çekildi; bekleyen ses bölümü cihazda korundu. Klinik değerlendirme başlatılmadı.');return}await drain();if(!consentRef.current){setError('Onay geri çekildi; klinik değerlendirme başlatılmadı.');return}if(draft.current.segments.some(segment=>segment.transcribed)){setStorageBlocked(true);setError('Konuşma metni güvenli taslağa kaydedildi ancak geçici ses dosyası silinemedi. Temizliği yeniden deneyin; aynı ses yeniden AI hizmetine gönderilmeyecek.');return}if(draft.current.segments.length){setError(previous=>previous||'Bekleyen sesler yazıya çevrilmeden klinik değerlendirme başlatılamaz.');return}if(!draft.current.transcript.trim())throw Error('Muayene metni henüz yok.');await persist({...draft.current,ended:true});if(mounted.current)finishCallback.current(draft.current.transcript,draft.current.sessionId||'')}catch(e){const restored=stopped.current?await restoreAudioModeAfterStop():null;if(mounted.current)setError(appendAudioModeWarning(e instanceof Error?e.message:'Muayene bitirilemedi; taslak korundu.',restored))}finally{gate.current=false;if(mounted.current)setWorking(false)}}
  useEffect(()=>{if(!focused){controller.current?.abort();if(wanted.current)void pause(true)}},[focused]);
  useEffect(()=>{const listener=AppState.addEventListener('change',state=>{if(state!=='active'){controller.current?.abort();if(wanted.current)void pause(true)}});return()=>listener.remove()},[]);
  useEffect(()=>{
