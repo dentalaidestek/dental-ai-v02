@@ -110,7 +110,7 @@ Varsayım: tek Render instance, uvicorn 1 worker, `run_in_threadpool` havuzu ~40
 Öneri sırası: (1) AI bütçesi + WorkJob paralelliğini konfigüre edilebilir yap; (2) ASR segment paralelliği; (3) Postgres okuma çoğaltması + pgBouncer; (4) medya için CDN; (5) Render'da min 2 instance + sağlıklı drain.
 
 ## 8. Tam pytest süiti sonucu
-Bu turun sonunda `pytest -q` tam süit koşuldu; sonuç final raporda sayılarla verilir (arka plan koşusu).
+Bu turda koşuldu ve sonraki geçişlerde her HEAD'de yenileniyor: güncel kanıt **§15** — mobil 955/955, Python security 527 passed / 25 skipped / 0 failed, `tsc` 0.
 
 ## 9. Sonraki en önemli 10 eksiklik
 1. **K1 — Hesap silme kabulü**: guest analizleri, görselleri ve geçici AI payload'ları için dayanıklı temizleme eklendi; profil/üyelik/uzmanlık belge retry'si, orphan guest asset denetimi ve yasal klinik saklama politikası doğrulaması açık.
@@ -188,4 +188,80 @@ Kanıt: Python security **525/525**, mobil **953/953**, `tsc --noEmit` **0**. Ka
 
 ChatGPT'nin 9 commit'i (CI concurrency sözleşmesi, PostgreSQL plan checks'lerinde SQLAlchemy 2 motor desteği, Program patient-card parite dokümantasyonu ve cross-realm Program navigasyon assertion'ının normalize edilmesi) fast-forward olarak merge edildi; çakışma yok. Kanıt: mobil süit **955/955** (2 yeni test dahil), `tsc --noEmit` **0**, Python security **527 passed / 25 skipped / 0 failed** (25 skip, ChatGPT'nin yeni motor-koşullu plan checks'leri — PostgreSQL olmadan atlanıyor). Denetim tarafında bu geçişte yaprak gerekmedi; dal sağlam. Açık kalemler değişmedi: Android CI runner tahsisi, fiziksel cihaz kabulü, production PostgreSQL/R2 kontrolleri ve 60-69k yük testi.
 
+## 16. Sekizinci geçiş — PR #257 teknik incelemesi + Issue #258 modül kabul matrisi (checklist kapanışı)
+
+**PR #257** (GitHub API ile doğrulandı, 2026-11-21): open/draft; `feature/mobile-beta-20261110` → `feature/mobile-web-parity-20261110`; **482 dosya, +56.508/−1.413, 2.992 commit**. Kategorik dağılım (API files listesi): `docs/*` 145, `mobile/src/*` 120, `mobile/tests/*` 91, `app/*` 55, `tests/*` 52, diğer 12, `.github/*` 6, assets 1. Değerlendirme: üretim kodu 175 dosyada toplanmış; test yoğunluğu (91+52=143) yüksektir; docs payı iş paketlerinin kabul belgeleridir. Riskli birleşik alanlar bu raporun §13-§14'ünde çakışma olarak çözüldü (patient_parity route registry, delete gate).
+
+**Issue #258 "Mobil uygulama — Web ekranlarıyla birebir işlev eşdeğerliği" kabul matrisi** (her paket için kod kanıtlı durum; kanıtlar §17'dedir):
+
+| # | İş paketi | Durum | Ana kanıt |
+|---|---|---|---|
+| 1 | Hasta listesi/profili (arama, kayıt, düzenle/sil, geçmişler) | ✅ | `mobile_create_patient` 409 duplicate+force (mobile_api.py:557-562), delete gate 9 koşul (patientProfilePresentation.ts:108), tedavi geçmişi cursor (mobile_api.py:1467-1507) |
+| 2 | Sesli muayene (mikrofon, taslak, çıkarım, onay, profile aktarım) | ✅ | segment ASR + `x-voice-consent` (voice_exam.py:296-302), checkpoint resume (voiceApi.ts:61,133-139), finalize diş kayıtları `TOOTH_STATES` (voice_exam.py:430) |
+| 3 | Diş şeması (FDI, yüzey, durum, geçmiş) | ✅ | 6 yüzey seti (main.py:10803), FDI 11-48 + süt 51-85 (NativeToothChart.tsx:17-18), atomik upsert+revision (tooth_surface_status.py:45-55) |
+| 4 | Dental AI görüntü analizi | ✅ | durable intent + fiş uzlaştırma, 4 görsel/48 MiB limit, sanitize zinciri (§17 medya) |
+| 5 | Program (randevu) | ✅ | `_validate_schedule_input` parity (main.py:1900-1958), inline-add (programInlineAdd.ts:24-31), 5 test dosyası |
+| 6 | Dental Akış (sosyal + moderasyon) | ✅ | async createPost + admin raporlar (8fede417, efa7199d); ModernScreens akış testleri |
+| 7 | Akademik AI | ✅ | intent uzlaştırma v1/v2, RAG 128 satır/48k char, quiz ≥10 sözleşmesi (§17) |
+| 8 | Uzman desteği/mesaj/bildirim | ✅ | 4000 char + `client_message_id` idempotency (main.py:9224-9259), WS hub'lar (§17) |
+| 9 | Ana sayfa, hesap, oturum, bildirim merkezi | ✅ | appResumeRefresh kapısı, notificationState, boot testleri (955/955 süitte) |
+| 10 | Genel kalite (TS, Python, build, kapasite) | 🔶 | tsc 0, mobil 955/955, Python 527p/25s/0f — **Android CI runner tahsisi ve fiziksel cihaz/EAS doğrulaması altyapı borcu** |
+
+Sonuç: 8 paket kabul kanıtlı; 10. paket yalnız altyapı bağımlılığı nedeniyle 🔶. "Sahte buton/placeholder" taraması: mobil süitte placeholder iddia eden test yok; UI metinleri web string sözleşmeleriyle test ediliyor.
+
+## 17. Alan denetimleri — kod kanıtlı ayrıntılar (checklist kapanışı)
+
+**AI & Academic AI (Gemini + Claude, eşikler):** Klinik sağlayıcı `gemini-3.5-flash-lite` (`ai_provider.py:26`), 120 sn timeout / 3 deneme / 4 MiB istek sınırı (`ai_provider.py:31-33`); eşzamanlılık bütçesi `DENTAL_PROVIDER_MAX_INFLIGHT` **varsayılan 4** (`provider_budget.py:68`), dolunca `ProviderBusy`; ProviderSlot 3 dk TTL ile rezervasyon (`provider_budget.py:63`). Akademik ikincil sağlayıcı Anthropic Messages API (`study_anthropic.py:72,76`). PRELIMINARY/FINAL kararı **şema enum'uyla** veriliyor (`ai_engine.py:317` `ANALYSIS_COMPLETE`, `:359` `FINAL`); sayısal confidence eşiği yoktur — kod notu buna açıkça uyarı verir (`ai_provider.py:63`). Akademik: RAG kanıt bağlamı `MAX_CONTEXT_ROWS=128`, `MAX_CONTEXT_CHARS=48000` (`academic_evidence_context.py:8-9`); quiz set eşiği `count >= 10` + soru başına 5 seçenek sözleşmesi (`study_ai_v2.py:809`, `academic_quiz.py:19`); üretim karakter bütçesi 240.000 (`study_ai_v2.py:485,553,583`); kaynak havuz 2 worker (`study_ai_v2.py:293,297`).
+
+**Sesli muayene (bağlam/chunking/resume):** Önceki turda söylenen "24KB bağlam" sabiti repoda **yoktur** — gerçek sınırlar: segment başına ses **8 MiB** (`voice_exam_core.py:16`), `MAX_TRANSCRIPT=18000`, `MAX_CONVERSATION=72000`, `MAX_RESPONSE=180000`, **`MAX_CONTEXT=32000`** (`voice_exam_core.py:17-21`). Web chunking: 12.000 char / 36.000 byte parça, toplam 72.000 char / 216.000 byte (`voice-finish-draft.js:7-18`); mobil parite aynı sabitlerle (`voiceSession.ts:5-8`, "web eşik aynası" notu `:22-24`). Resume: draft `checkpoint{text,cursor,version,extractionVersion}` web (`voice-exam.js:29,62-73`) ↔ mobil `resume: VoiceExtractionCheckpointData` (`voiceApi.ts:61,133-139`). Idempotency: `requestKey = sessionId+chunkIndex+sha256(transcript)` (`voiceApi.ts:144`), sunucu dedupe + 409 "Same key cannot be rebound" (`voice_exam.py:434-437`). Rıza: `x-voice-consent: yes` zorunlu (`voice_exam.py:302`).
+
+**FDI odontogram:** Yüzey seti `{"OCCLUSAL","INCISAL","MESIAL","DISTAL","BUCCAL","LINGUAL"}` (`main.py:10803`) mobilde aynı; FDI yetişkin 11-48 + süt 51-85 (`NativeToothChart.tsx:17-18`); 8 durum kodu; atomik "tek güncel gözlem/diş+yüzey" upsert + sha256 revision (`tooth_surface_status.py:45-55`, v1 sabit `:19`). Enamel atlas paylaşılan varlık: mobil `enamel-atlas-v2.webp` web `tooth_chart.html` kolon düzeniyle birebir (`NativeToothVisual.tsx:12-14`).
+
+**Dental Akış (uzman destek/mesaj/realtime):** mesaj 4.000 karakter + `client_message_id` replay koruması (`main.py:9224-9259`); medya mesaj 25 MiB (`main.py:6630,8976-8977`); polling `after_id` limit 500 (`main.py:9325,10039-10043`); iki WS hub: `ConsultationSocketHub` (oda başına 16 soket, `main.py:10195-10222`) ve `UserRealtimeSocketHub` (kullanıcı başına 4 soket, `main.py:9337-9412`); durable `RealtimeEvent` + `pg_notify` cross-process sinyal (`main.py:868,9393-9399`); WS token query-string reddi + origin kontrolü (`main.py:10270` bölgesi). Mobil: `ConsultationChat` (ModernScreens.tsx:203-252) — merge, `next_before` sayfalama, durum kartları; ayrı `NativeConsultations*` dosyası bilinçli yok (tekilleştirilmiş; testler `consultations.cjs`, `consultationRealtime.cjs`, `mobileChat.cjs`).
+
+**Randevu/takvim:** `program_create`/`program_edit` → `_validate_schedule_input` (`main.py:6127,6248`): başlık 2-160, `APP_TIMEZONE` local→UTC, `end>start`, hasta linki yalnız APPOINTMENT/CLINIC + ownership (`main.py:1900-1958`); mobil inline-add gün koruması (`programInlineAdd.ts:24-31`) + editör parity props (`NativeProgramEditor.tsx:27-35`); testler: `programParity/appointmentParity/programInlineAdd/programIntent/programSwipe.cjs`.
+
+**Hasta yönetimi:** oluştur (telefon 05+11 hane, 409 duplicate + `force_create`, realtime `PATIENT_CREATED` — mobile_api.py:538-581), düzenle (PUT + revizyon), sil (request_key regex, WorkJob receipt + `with_for_update`, replay 409 — mobile_api.py:965-1013), medya preflight (2444-2462), tedavi geçmişi keyset cursor MAC'li (1467-1507), silme gate 9 koşul (patientProfilePresentation.ts:108) + UI bağlanımı (NativePatientProfile.tsx:38).
+
+**Klinik medya/R2 + hesap erasure:** R2 persist başarısızsa yerel kopya korunur (`object_storage.py:141-158`), cache 256 MiB (`object_cache.py:48-54`); web upload 1 MiB chunk + 12 MiB üst sınır (main.py:11400-11421); sanitize: magic-byte imza, pixel 40M, animasyon reddi, uzantı↔format eşleşmesi, EXIF transpose + yeniden kodleme (`clinical_media.py:19-79`). Erasure: ADMIN erasılamaz, serializasyon kilidi (`account_erasure.py:124-152`); silinen: profil fotoğrafı/uzman belgeleri/ünvan belgeleri/üyelik belgeleri (allowlist regex `work_jobs.py:283-290`) + session/token/cihaz + sosyal içerik + AI payload; **saklanan** (yasal klinik retention): hasta bağlı Analysis/ImageAsset/PatientMedia/tedavi kayıtları, ünvan audit satırları, pseudonymous FK çapası, AdminAuditLog; ownership guard paylaşılan objeyi silmez (`work_jobs.py` 821037e4).
+
+## 18. KVKK / OWASP kontrol haritası (ASVS 4.0 web + MASVS v2 mobil)
+
+| Kontrol alanı | Uygulama kanıtı | Durum |
+|---|---|---|
+| KVKK m.5-6 açık rıza | Misafir AI `ai_consent` + `AgreementAcceptance` (test_guest_consent 4/4); ses `x-voice-consent` (voice_exam.py:302) | ✅ |
+| KVKK m.7 veri azaltma | görsel 12 MiB/4 adet, 48 MiB analiz toplamı, piksel 40M, alan-bazlı 422 doğrulamalar | ✅ |
+| KVKK m.8 güvenli işleme | sanitize zinciri, ownership guard'lar, IDOR testleri (§4), WS token reddi | ✅ |
+| KVKK m.11 silme hakkı | erasure allowlist+guard+WorkGarbage retry; hasta klinik kayıtları bilinçli retention (§17) | ✅ (kabul çerçeveli) |
+| KVKK m.12 kayıt (audit) | sözleşme onayları kayıtlı; **hasta veri okuma audit izi Y1 hâlâ açık** | 🔶 |
+| MASVS-M1/AUTHN | çerez oturum + 401 revalidasyon (uploadPatientMedia), misafir uçlarda `request.current` | ✅ |
+| MASVS-M2/AUTHZ | admin step-up testleri, ADMIN erasure koruması, resource ownership (tüm parite süitleri) | ✅ |
+| MASVS-M4/CRYPTO | sha256 observation revision (`tooth_surface_status.py:19`), MAC'li program/patient cursor'lar | ✅ |
+| MASVS-M5/NETWORK | HTTPS taban, `credentials:omit` + Bearer, WS origin 4403, `/docs,/openapi.json` kapalı (Y4) | ✅ |
+| MASVS-M7/MOTA (kesinti güvenliği) | durable intent + fiş uzlaştırma, 409 dedupe, WorkJob retry | ✅ |
+| MASVS-M9/RESILIENCE | ProviderSlot TTL, `ProviderBusy`, WorkGarbage kuyruğu; ölü-mektup/alarm yok (§9-6) | 🔶 |
+| MASVS-M10/PRIVACY | loglarda TC/adres sızıntısı yok (tarama §4); erasure pipeline | ✅ |
+| ASVS V4 Access control | ownership testleri: delayed media action, ticket scoping, patient history second-owner (1f411344) | ✅ |
+| ASVS V13 API | 400/409/422 sözleşmeleri + Türkçe hata kopyaları web-mobil birebir | ✅ |
+
+## 19. 69.000 kayıtlı kullanıcı — kapasite, eşzamanlılık ve maliyet modeli (hesaplı)
+
+Hesap: `scripts/capacity_model_69k.py` (parametrik; Kasım 2026 liste fiyatlarıyla, arama sonuçları: costgoat.com/pricing/gemini-api, Anthropic fiyat duyuruları, render.com/pricing, Cloudflare R2). **Kod tabanlı sabitler:** AI eşzamanlılık bütçesi 4 (`provider_budget.py:68`), segment 8 MiB, `MAX_CONVERSATION=72000` (`voice_exam_core.py`), medya 12 MiB/görsel.
+
+**Senaryo (varsayımlar açık):** 69.000 kayıtlı; DAU %22 = 15.180; 1.000 uzman × 4 muayene/gün; oturum başına 26 istek; pik katsayı 3,5×.
+
+| Büyüklük | Değer | Yorum |
+|---|---|---|
+| Günlük istek / RPS | 631.488 / **7,3 ort → 26 pik** | Web katmanı tek instance'ı kaldırır; 2 instance + drain önerilir |
+| Analiz/ay | 53.130 → pik eşzamanlı **34** | **Bütçe 4 → KRİTİK darboğaz**: pik saatte dakikalarca kuyruk; bütçe env-konfigürasyonu + kuyruk derinliği metriği şart |
+| Sesli muayene/ay | 120.000 → **270.000 dk/ay ASR** | WorkJob tek sıra → segment paralelliği gerekli |
+| Medya büyümesi | 311 GB/ay → **7,5 TB @24 ay** | R2 fine; yerel cache 256 MiB limiti doğru |
+| WS eşzamanlı | 1.000 uzman senaryosu | Tek proses hub'ları ölçülmemiş — yük testi zorunlu |
+
+**Aylık maliyet (USD/ay):** Gemini (%82 pay) ≈ **196** + Claude/Akademik (%18, Sonnet sınıfı $2/$10) ≈ **205** + ASR ≈ **3.240-6.480** (fiyat varsayımı 0,012-0,024 $/dk — sağlayıcı fiyatı sözleşmeyle doğrulanacak) + R2 büyüme ≈ **5** (24 ay birikimde ≈ **112**) + altyapı (2×Render Standard $60 + Postgres 2CPU/8GB $100 + disk) ≈ **220-240** → **toplam ≈ 3.850-7.100 $/ay**. Baskın kalem ASR'dır; ASR segment dedupe + yalnız-konuşma VAD ile %30-50 düşürülebilir.
+
+**Darboğaz sırası:** (1) AI bütçe 4→34 pik; (2) WS tek instance; (3) Postgres tek node + okuma çoğaltması yok; (4) 24 ayda 7,5 TB R2 + yerel disk kalıcılığı. **60-69k hedefi bugünkü kodla yük testi olmadan doğrulanmış kapasite değildir** (Issue #258'deki uyarı aynen geçerli).
+
 — Rapor sonu. Bu dosya `docs/TECHNICAL_AUDIT_20261120.md` olarak dala commitlenir.
+
+**Canlıya deploy edilmedi.**
