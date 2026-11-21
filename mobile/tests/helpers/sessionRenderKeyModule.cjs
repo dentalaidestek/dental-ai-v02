@@ -10,6 +10,6 @@ const output = ts.transpileModule(source, {
     target: ts.ScriptTarget.ES2020,
   },
 }).outputText;
-const exports = {};
-require('node:vm').runInNewContext(output, { exports });
-module.exports = exports;
+const helperExports = {};
+require('node:vm').runInNewContext(output, { exports: helperExports });
+module.exports = helperExports;
