@@ -16,7 +16,7 @@ export function clinicalMediaImageKey(owner:string,mediaId:number,variant:Clinic
 
 /** Build a non-secret React identity for private analysis images. Never put a bearer token in a key or test identifier. */
 export function clinicalAnalysisImageKey(scope:string,analysisId:number,assetId:number,revision:number):string{
- if(typeof scope!=='string'||!/^clinical-vision-scope-[1-9]\\d*$/.test(scope)||
+ if(typeof scope!=='string'||!/^clinical-vision-scope-[1-9]\d*$/.test(scope)||
     !Number.isSafeInteger(analysisId)||analysisId<=0||
     !Number.isSafeInteger(assetId)||assetId<=0||
     !Number.isSafeInteger(revision)||revision<0)
