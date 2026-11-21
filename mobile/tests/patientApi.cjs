@@ -278,6 +278,8 @@ test('native patient edit sends the loaded revision and rejects malformed revisi
  try{
   await editPatient('token',8,{first_name:'Synthetic',last_name:'Patient',expected_revision:revision});
   assert.equal(body.expected_revision,revision);
+  global.fetch=async()=>reply({ok:true,patient:{id:8},edit_revision:'bad'});
+  await assert.rejects(()=>editPatient('token',8,{first_name:'Synthetic',last_name:'Patient',expected_revision:revision}),/Hasta güncelleme yanıtı doğrulanamadı/);
   global.fetch=()=>{throw Error('unexpected network call')};
   await assert.rejects(()=>editPatient('token',8,{first_name:'Synthetic',last_name:'Patient',expected_revision:'bad'}),/kayıt sürümü/);
  }finally{global.fetch=original}
