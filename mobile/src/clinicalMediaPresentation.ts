@@ -14,6 +14,16 @@ export function clinicalMediaImageKey(owner:string,mediaId:number,variant:Clinic
  return 'clinical-media:'+owner+':'+variant+':'+mediaId;
 }
 
+/** Build a non-secret React identity for private analysis images. Never put a bearer token in a key or test identifier. */
+export function clinicalAnalysisImageKey(scope:string,analysisId:number,assetId:number,revision:number):string{
+ if(typeof scope!=='string'||!scope||scope.length>128||/\\s/.test(scope)||
+    !Number.isSafeInteger(analysisId)||analysisId<=0||
+    !Number.isSafeInteger(assetId)||assetId<=0||
+    !Number.isSafeInteger(revision)||revision<0)
+  throw Error('Klinik analiz görsel kapsamı doğrulanamadı.');
+ return 'clinical-analysis:'+scope+':'+analysisId+':'+assetId+':'+revision;
+}
+
 /** Force the native image pipeline to revalidate the owner-authorized private URL. */
 export function clinicalMediaImageSource(uri:string,token:string){
  if(typeof token!=='string'||!token.trim()||/\s/.test(token)||token.length>8192||
