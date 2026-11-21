@@ -52,4 +52,9 @@ Follow-up commits on the same feature branch:
 - Expanded the shared contract test to cover all of those renderers and extended the React hook test to rotate on token, patient and account changes.
 - A local isolated Node smoke check of the bridge passed: callable default export plus five scope transitions, with no credential text in any key.
 
-The smoke check is intentionally not represented as a full beta-suite pass. Final feature-branch head is now `f3a310ce748b70442a4521d4d8bb41341c151060`. No new Actions run is associated with this head; Security Recovery run #2305 remains pending without job records. The fixed harnesses therefore still need a fresh current-head CI execution before the recovery can be marked green.
+The smoke check is intentionally not represented as a full beta-suite pass. The code-fix head was `f3a310ce748b70442a4521d4d8bb41341c151060`; this documentation follow-up makes the final branch head `f52b9e8ee1f5306e6da7b863591cf377fcecbf99`. No new Actions run is associated with this head; Security Recovery run #2305 remains pending without job records. The fixed harnesses therefore still need a fresh current-head CI execution before the recovery can be marked green.
+
+
+## 60k-scale follow-up gap
+
+The same branch review found that `WorkJob.enqueue()` uses one PostgreSQL transaction-scoped advisory lock for every admission, then counts all queued/running jobs before enforcing the global 1,000-job cap (and per-owner 32-job cap). This preserves an exact global bound but serializes admission during bursts. Render also sets `DENTAL_PROVIDER_MAX_INFLIGHT=4`. The technical audit's 34-peak-analysis concurrency is a planning estimate, not a measured load result. These limits and the lock were deliberately left unchanged; next validation is an instrumented burst test measuring admission wait, queue depth/age, provider occupancy and completion throughput before selecting a safe sharded/atomic admission design.
