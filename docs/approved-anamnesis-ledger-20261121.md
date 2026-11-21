@@ -54,3 +54,16 @@ Those assertions/fixtures were updated to preserve the current revision and ledg
 The follow-up commits are on `feature/mobile-web-parity-20261110`, current PR head: `4820fbea35ecfad43d8991ab1e32af5ce2539f23`. The first retry pair (Android #4667 / Security Recovery #2366) was cancelled before any jobs were created and provides no test result. The latest code/test head `3812ea9967abe14fd690e4f00c14b4c44e37ed2b` triggered Android #4673 and Security Recovery #2372; both were pending at the last status check. The final `4820fbea` commit only updates this document and is outside the workflows' path filters, so #4673/#2372 are the source-validation runs to await. PostgreSQL migration/concurrency acceptance remains blocked until Security Recovery reaches its PostgreSQL test step.
 
 No production database migration, patient-data mutation, main merge, or live deployment was performed.
+
+
+## Latest CI root-cause follow-up — 21 November 2026
+
+The PR merge-head Security Recovery run #2374 executed the Python suite and reported 595 passed / 1 failed. The only failure was
+`tests/test_voice_exam.py::test_native_bearer_voice_auth_rejects_unverified_expired_and_non_doctor_sessions`.
+The fixture's test-only `User.email_verified_at` used `default_factory=datetime.utcnow`, unlike the production `app.main.User` model whose omitted verification timestamp is `None`. Explicitly constructing `User(..., email_verified_at=None)` therefore persisted a verified timestamp in the fixture. The failing assertion exposed a fixture modeling error, not a production authentication regression. The fixture now defaults to `None`, while its two seeded doctor accounts explicitly receive verified timestamps; the unverified-token assertion remains unchanged.
+
+A second schema-integrity gap was found during the same review: startup and the revision-21 idempotent migration checked the covering lookup index but did not verify the unique `(analysis_id, field_key)` provenance contract. Both paths now fail closed when that named unique constraint is absent, preserving existing ledger rows instead of silently accepting duplicate provenance. Migration tests assert the constraint on a successful backfill and verify that a malformed revision-21 ledger is rejected without changing its revision or contents.
+
+The PostgreSQL concurrency regression now additionally simulates an older legacy backfill inserted after newer approvals and a mismatched-owner row. It evaluates the same `MAX(analysis_id)` selection and owner/patient scope used by `reviewed_history_payload()`, proving that the delayed older row cannot replace the current approval and the foreign-owner row is excluded.
+
+These fixes are committed to the feature branch. Their acceptance remains dependent on fresh Security Recovery CI reaching both the Python and PostgreSQL steps. No staging or production database was changed; no main merge or deployment was performed.
