@@ -21,8 +21,9 @@ compiled.filename = filename;
 compiled.paths = Module._nodeModulePaths(path.dirname(filename));
 compiled._compile(output, filename);
 
-if (typeof compiled.exports.nextSessionRenderKey !== 'function') {
-  throw new TypeError('sessionRenderKey.ts did not expose nextSessionRenderKey');
+if (typeof compiled.exports.nextSessionRenderKey !== 'function' ||
+    typeof compiled.exports.resolveSessionRenderIdentity !== 'function') {
+  throw new TypeError('sessionRenderKey.ts did not expose the opaque render identity contract');
 }
 
 module.exports = compiled.exports;
