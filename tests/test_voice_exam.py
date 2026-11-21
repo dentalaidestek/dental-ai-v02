@@ -159,6 +159,7 @@ def test_native_bearer_session_can_apply_and_read_only_its_own_approved_anamnesi
     assert saved.status_code == 200
     history = client.get('/patients/1/voice-exam/history', headers=headers)
     assert history.status_code == 200
+    assert 'no-store' in history.headers.get('cache-control', '').lower()
     assert set(history.json()['fields']) == {'medical_history', 'medications', 'allergies'}
     assert history.json()['fields']['medical_history']['quote'] == ''
     assert client.get('/patients/2/voice-exam/history', headers=headers).status_code == 404
@@ -177,6 +178,15 @@ def test_native_bearer_voice_auth_rejects_unverified_expired_and_non_doctor_sess
         assert client.get('/patients/1/voice-exam/history', headers=headers).status_code == 401
     with Session(engine) as session:
         assert session.get(SessionToken, expired_hash) is None
+
+
+def test_native_bearer_session_revocation_takes_effect_without_a_cookie(app_client):
+    client, engine = app_client
+    headers, token_hash = _bearer_headers(engine, 'revoked-token')
+    with Session(engine) as session:
+        session.delete(session.get(SessionToken, token_hash))
+        session.commit()
+    assert client.get('/patients/1/voice-exam/history', headers=headers).status_code == 401
 
 
 def test_native_bearer_admin_requires_the_existing_second_factor_marker(app_client):
