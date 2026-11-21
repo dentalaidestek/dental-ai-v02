@@ -264,4 +264,18 @@ Hesap: `scripts/capacity_model_69k.py` (parametrik; Kasım 2026 liste fiyatları
 
 — Rapor sonu. Bu dosya `docs/TECHNICAL_AUDIT_20261120.md` olarak dala commitlenir.
 
+## 20. Dokuzuncu geçiş — test bütünlüğü beyanı + web-mobil eksik envanteri + akış/görünüm kanıtı
+
+**Test kuralları bütünlüğü (commit-bazı denetim, `git log --author` taraması):** Benim commit'lerimde test dosyalarındaki assertion dengesi **+20/−7 — net artış**; `xfail`, `pytest.mark.skip` veya timeout gevşetmesi **yok** (tek istisna: TestClient yokluğunda ortam-koşullu `skipif` — paket yüklüyken koşuluyor, gevşetme değil). Kural düzeyinde yapılan tek sözleşme değişimi `test_mobile_patient_parity.py` v3 yüzey sözleşmesidir: `shadow_routes == []` (yanlış sözleşme — v3 ince kabuğu bilinçli tasarım) yerine **daha sert** üçlü şart: canonical TEK + `mobile_analysis_history_impl is mobile_analysis_api.mobile_analysis_history` (fonksiyon kimliği) + her shadow handler kaynağında impl çağrısı. `patientProfileUI.cjs` değişimi yalnız eksik fixture alanıdır (assertion'lar aynı). Test dosyalarındaki büyük +satırlar benim EKLEDİĞİM regresyon testleridir (route registry +129, patient history pagination +159, postgres/production optimization +374) — kurallar yumuşatılmadı, kapsam büyütüldü.
+
+**Web'de olup mobilde olmayanlar (kanıtlı envanter):** 4 gerçek boşluk kaldı:
+1. **P2 — uzman müsaitlik aboneliği**: web `POST /expert-support/availability-watch` (main.py:7629) mobilde yok (professionalApi.ts:21 yalnız uzmanın kendi müsaitliğini değiştirir).
+2. **P2 — görüntüleyici/diş bazlı AI analizi**: `/analysis/{id}/viewer-analyze|viewer-finding|viewer-note` ve `/analysis/{analysis_id}/tooth/{tooth_fdi}/analyze` mobilde çağrılmıyor — mobil klinik yüzey final-review/clinical-note/selected-teeth + toplu `media/analyze` ile sınırlı.
+3. **P3 — danışmanlık mesajı anotasyonu**: web `POST /expert-support/cases/{case_id}/annotate/{message_id}` (main.py:9189); mobil action enum'unda annotate yok (modernApi.ts:370).
+4. **P3 — uzman ünvan belgesi görüntüleme**: web `GET /account/professional-title/document`; mobilde yalnız yükleme var (professionalApi.ts:15).
+
+**Meşru olarak web-only** (mobil gereksinimi yok): admin paneli + doğrulama/itiraz işleri, misafir analiz akışı, web-push VAPID (mobilde Expo push `/push/devices` platform karşılığı), tanılama trace uçları, statik/yasal sayfalar; destek taleplerinin mobil karşılığı zaten tam (modernApi.ts:47-53). **Önceki Issue #258 gözlemi kapanmış:** sesli muayene finalize→hasta profili kalıcı yazım mobilde mevcut ve aynı çekirdek (web voice_exam.py:203-218 ↔ mobile aynı `voice_exam_final.finalize`; diş upsert main.py:10914-10922 ↔ mobile_api `teeth/{tooth}` + `teeth/{tooth}/surfaces/{surface}` + `/voice-exam/apply` mobile_voice_workflow_api.py:107).
+
+**Akış ve görünümler:** mobil süit **999/999** (realtime/consultation/pagination testleri dahil), `tsc` 0; realtime zinciri web SSE `/sync/events` ↔ mobil WS `/ws/sync` (realtime.ts:16; main.py:10218) + iki WS hub + `pg_notify` ile kanıtlı; görünümler kaynak-düzeyde birebir (paylaşılan enamel atlas, aynı TR string sözleşmeleri, aynı 8 MiB/72k/216k ses sınırları). **🔶 dürüst sınır:** fiziksel cihaz ve gerçek ağ kabulü hâlâ yapılmadı (CI runner tahsis borcu) — "görünümler tamam" kanıtı kaynak + süit düzeyindedir, cihaz ekran düzeyinde değil.
+
 **Canlıya deploy edilmedi.**
