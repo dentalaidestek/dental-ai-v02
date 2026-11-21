@@ -69,7 +69,7 @@ def stream_complete_answer(provider, options, retrieval, *, allow_continuation=T
         before = len(answer)
         prefix = ''
         previous = answer
-provider_stream=_provider_chunks(provider,call_options)
+        provider_stream=_provider_chunks(provider,call_options)
         try:
             for chunk in provider_stream:
                 if not chunk:
@@ -149,7 +149,7 @@ def stream_complete_structured_answer(provider, options, *, expected_count=None)
                 + json.dumps(saved,ensure_ascii=False))
         chunks=[]
         last_heartbeat=time.monotonic()
-provider_stream=_provider_chunks(provider,call)
+        provider_stream=_provider_chunks(provider,call)
         try:
             for chunk in provider_stream:
                 if chunk:
