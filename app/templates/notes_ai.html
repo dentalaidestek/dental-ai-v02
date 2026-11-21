@@ -699,6 +699,14 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
                 runTimer=setTimeout(()=>followRun(id,activePending,activeUserMessage),400);
                 return;
             }
+            if(data.run && data.run.status==='CANCEL_FAILED') {
+                clearTimeout(runTimer);cancelRequested=false;
+                const thinking=activePending && activePending.querySelector('.study-thinking');
+                if(thinking)thinking.textContent='Durdurma doğrulanamadı.';
+                status.textContent=data.run.error || 'Sağlayıcı bağlantısının kapandığı doğrulanamadı.';
+                activeRun=null;activePending=null;activeUserMessage=null;setWorking(false);
+                return;
+            }
             if(!data.run || data.run.status!=='CANCELLED')throw new Error('Sunucu iptali doğrulamadı; çalışma devam ediyor.');
             clearTimeout(runTimer);
             cancelRequested=false;
@@ -740,6 +748,13 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
                 addAnswerActions(pending);
                 status.textContent='';activeRun=null;activePending=null;activeUserMessage=null;setWorking(false);refreshLearning();refreshQuizzes();if(learningChannel)learningChannel.postMessage('updated');
                 scrollChatBottom();return;
+            }
+            if (run.status==='CANCEL_FAILED') {
+                const failedThinking=pending.querySelector('.study-thinking');
+                if(failedThinking)failedThinking.textContent='Durdurma doğrulanamadı.';
+                pending.classList.remove('pending');
+                status.textContent=run.error || 'Sağlayıcı bağlantısının kapandığı doğrulanamadı.';
+                activeRun=null;activePending=null;activeUserMessage=null;cancelRequested=false;setWorking(false);return;
             }
             if (run.status==='CANCELLED') {
                 const thinking=pending.querySelector('.study-thinking');
