@@ -683,7 +683,7 @@ function CommentThread({
     const request = replyGeneration.current;
     setBusy(true);
     try {
-      const page = await api.getComments(token, postId, next || 0, item.id);
+      const page = await api.getComments(token, postId, next || 0, item.id, 10);
       if (request !== replyGeneration.current) return;
       setReplies((v) => [
         ...v,
