@@ -712,7 +712,7 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
         } catch(error) {
             status.textContent=error.message || 'İşlem durdurulamadı.';
             setWorking(!!activeRun);
-        } finally {cancelInFlight=false;send.classList.remove('study-stop-pending');if(activeRun)send.disabled=false;}
+        } finally {cancelInFlight=false;send.classList.remove('study-stop-pending');if(activeRun)setWorking(true);}
     }
     async function followRun(id,pending,userMessage) {
         try {
