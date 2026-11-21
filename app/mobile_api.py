@@ -68,7 +68,7 @@ from app.main import (
     _patient_edit_revision,
     _record_realtime_event, _publish_realtime_event, on_loop,
     _support_user_can_reply, _support_unread_count, _support_unread_map, _mark_support_read, UserReport, _ensure_report_support_tickets,
-    _cancel_pending_program_reminders, _resolve_notifications, _record_program_realtime_event, _utcnow_naive,
+    _cancel_pending_program_reminders, _resolve_notifications, _record_program_realtime_event, _program_dashboard_realtime_payload, _utcnow_naive,
     _ensure_email_verification_challenge, _verify_email_code,
 )
 
@@ -394,12 +394,15 @@ def mobile_me(user: User = Depends(_mobile_user)):
 
 
 @router.get("/dashboard")
-def mobile_dashboard(user: User = Depends(_mobile_user)):
+def mobile_dashboard(response: Response, user: User = Depends(_mobile_user)):
+    # The dashboard contains patient identity, clinical-analysis metadata and
+    # schedule details. It must never enter a shared or persistent HTTP cache.
+    _mobile_private_no_store(response)
     with Session(engine, expire_on_commit=False) as session:
         patient_query = (
             select(Patient)
             .where(Patient.owner_user_id == user.id)
-            .order_by(Patient.created_at.desc())
+            .order_by(Patient.created_at.desc(), Patient.id.desc())
         )
         recent_patients = [_patient_payload(p) for p in session.exec(patient_query.limit(8)).all()]
 
@@ -412,6 +415,31 @@ def mobile_dashboard(user: User = Depends(_mobile_user)):
             .join(Patient, Patient.id == Analysis.patient_id)
             .where(Patient.owner_user_id == user.id)
         ).one()
+
+        # One bounded owner-scoped join supplies the three native dashboard
+        # rows. Keep clinical_notes, file paths and direct identifiers out of
+        # this lightweight response; the full result remains behind its
+        # existing patient-scoped analysis endpoint.
+        analysis_rows = session.exec(
+            select(Analysis, Patient)
+            .join(Patient, Patient.id == Analysis.patient_id)
+            .where(Patient.owner_user_id == user.id)
+            .order_by(Analysis.id.desc())
+            .limit(3)
+        ).all()
+        recent_analyses = [
+            {
+                "id": analysis.id,
+                "patient_id": analysis.patient_id,
+                "patient_name": (
+                    f"{patient.first_name or ''} {patient.last_name or ''}".strip() or "Hasta"
+                ),
+                "tooth_number": analysis.tooth_number,
+                "status": analysis.status,
+                "created_at": analysis.created_at,
+            }
+            for analysis, patient in analysis_rows
+        ]
 
         now = datetime.utcnow()
         upcoming_events = session.exec(
@@ -440,6 +468,11 @@ def mobile_dashboard(user: User = Depends(_mobile_user)):
             for e in upcoming_events
         ]
 
+        # Use the same local-time/recurrence-aware snapshot as the web home.
+        # Program realtime events carry this exact versioned payload, allowing
+        # native to patch the card without reloading the entire dashboard.
+        program_snapshot = _program_dashboard_realtime_payload(session, user.id)
+
         return {
             "user": _user_payload(session, user),
             "stats": {
@@ -449,8 +482,10 @@ def mobile_dashboard(user: User = Depends(_mobile_user)):
             },
             "recent_patients": recent_patients,
             "upcoming_events": upcoming,
+            "recent_analyses": recent_analyses,
+            "dashboard_event": program_snapshot["dashboard_event"],
+            "dashboard_event_label": program_snapshot["dashboard_event_label"],
         }
-
 
 @router.get("/patients")
 def mobile_patients(
