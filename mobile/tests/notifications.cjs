@@ -37,8 +37,10 @@ test('mark-all snapshot rejects an invalid cutoff instead of reading everything'
 
 test('native notification center exposes explicit mark-all and reconciles remote read events',()=>{
  const source=fs.readFileSync(path.join(__dirname,'../src/ModernScreens.tsx'),'utf8');
+ // 944a07c8 taşındı: read-event sözleşmesi artık notificationRefresh.ts'te yaşar.
+ const refresh=fs.readFileSync(path.join(__dirname,'../src/notificationRefresh.ts'),'utf8');
  assert.ok(source.includes('markAllNotificationsRead(token,seenBefore)'));
- assert.ok(source.includes('"NOTIFICATIONS_READ"'));
+ assert.ok(refresh.includes('"NOTIFICATIONS_READ"'));
  assert.ok(source.includes('Tümünü okundu işaretle'));
  assert.ok(source.includes('applyNotificationReadAllSnapshot'));
  assert.ok(source.includes('unread:result.unread_count'));
