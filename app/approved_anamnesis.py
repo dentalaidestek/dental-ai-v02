@@ -41,14 +41,18 @@ class ApprovedAnamnesis(SQLModel, table=True):
     __tablename__ = "approvedanamnesis"
     __table_args__ = (
         UniqueConstraint("analysis_id", "field_key", name="uq_approvedanamnesis_analysis_field"),
-        Index("ix_approvedanamnesis_patient_field_id", "patient_id", "field_key", "id"),
-        Index("ix_approvedanamnesis_owner_patient", "owner_user_id", "patient_id"),
+        # Covers the owner/patient filter and per-field latest-row grouping in
+        # reviewed_history_payload without redundant single-column indexes.
+        Index(
+            "ix_approvedanamnesis_owner_patient_field_id",
+            "owner_user_id", "patient_id", "field_key", "id",
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
-    owner_user_id: int = Field(index=True)
-    patient_id: int = Field(index=True)
+    owner_user_id: int
+    patient_id: int
     field_key: str = Field(max_length=32)
     value: str = Field(max_length=3000)
-    analysis_id: int = Field(index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    analysis_id: int
+    created_at: datetime = Field(default_factory=datetime.utcnow)

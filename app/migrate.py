@@ -746,6 +746,17 @@ def _upgrade_approved_anamnesis_schema(main):
         ).scalar()
         table_exists = inspect(connection).has_table(table.name)
         if revision == APPROVED_ANAMNESIS_REVISION and table_exists:
+            for index in table.indexes:
+                index.create(connection, checkfirst=True)
+            for legacy_index in (
+                "ix_approvedanamnesis_patient_field_id",
+                "ix_approvedanamnesis_owner_patient",
+                "ix_approvedanamnesis_owner_user_id",
+                "ix_approvedanamnesis_patient_id",
+                "ix_approvedanamnesis_analysis_id",
+                "ix_approvedanamnesis_created_at",
+            ):
+                connection.execute(text(f"DROP INDEX IF EXISTS {legacy_index}"))
             return True
         # A fresh database starts at the current revision after init_db(); it
         # still needs the additive table created. Existing revision-20 databases
@@ -756,6 +767,17 @@ def _upgrade_approved_anamnesis_schema(main):
             if not inspect(connection).has_table(required):
                 raise RuntimeError(f"Approved anamnesis migration requires {required}")
         table.create(connection, checkfirst=True)
+        for index in table.indexes:
+            index.create(connection, checkfirst=True)
+        for legacy_index in (
+            "ix_approvedanamnesis_patient_field_id",
+            "ix_approvedanamnesis_owner_patient",
+            "ix_approvedanamnesis_owner_user_id",
+            "ix_approvedanamnesis_patient_id",
+            "ix_approvedanamnesis_analysis_id",
+            "ix_approvedanamnesis_created_at",
+        ):
+            connection.execute(text(f"DROP INDEX IF EXISTS {legacy_index}"))
 
         # Keep memory bounded even for large archives. Each page is ordered by
         # immutable Analysis.id and each legacy analysis/field pair is unique.
