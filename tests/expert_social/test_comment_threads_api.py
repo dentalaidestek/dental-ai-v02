@@ -374,7 +374,7 @@ def test_additive_comment_like_schema_preserves_revision_and_checks_both_indexes
     assert {row["referred_table"] for row in foreign_keys} == {"socialcomment", "user"}
     assert all(row["options"]["ondelete"] == "CASCADE" for row in foreign_keys)
     with engine.connect() as connection:
-        assert connection.execute(text("SELECT version FROM dental_social_revision WHERE id=1")).scalar_one() == 2
+        assert connection.execute(text("SELECT version FROM dental_social_revision WHERE id=1")).scalar_one() == 3
     with engine.begin() as connection:
         SocialCommentLike.__table__.drop(connection)
     with pytest.raises(RuntimeError):

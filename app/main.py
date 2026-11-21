@@ -29,6 +29,14 @@ from dental_rag.rag import (
     get_specialty_relevant_context,
 )
 from app.clinical_rag_router import route_clinical_case
+from app.clinical_media import sanitize_clinical_media_image
+from app.tooth_surface_status import (
+    observation_revision,
+    upsert_tooth_observation,
+    upsert_tooth_surface_observation,
+    valid_fdi_tooth_number,
+    is_applicable_tooth_surface,
+)
 from app.vision_llm_context import structured_vision_payload
 from app.modality_classifier import classify_dental_image
 from vision_service.tooth_evidence import build_tooth_evidence_package
@@ -51,7 +59,8 @@ from app.database import create_app_engine
 from app.expert_social_identity import expert_display_name
 from app.auth_rate import AuthRateBucket, LOGIN_WINDOW_SECONDS, LOGIN_MAX_FAILURES, admit as admit_auth_attempt, clear as clear_auth_attempt
 from app import work_jobs
-from app.upload_io import copy_image
+from app.upload_io import copy_image, validate_upload_batch, validate_path_batch
+from app.upload_limits import (MAX_PATIENT_MEDIA_FILES, MAX_PATIENT_MEDIA_FILE_BYTES, MAX_PATIENT_MEDIA_BATCH_BYTES, MAX_ANALYSIS_IMAGES, MAX_ANALYSIS_IMAGE_BYTES, MAX_ANALYSIS_BATCH_BYTES, MAX_CLINICAL_IMAGE_PIXELS)
 from app.provider_budget import ProviderCounter, ProviderSlot, ProviderBusy
 from app.object_cache import scoped as storage_scoped, CacheCapacityError
 from app.object_storage import ObjectStorageError
@@ -80,6 +89,8 @@ from app.expert_consultation_requests import (
 )
 from app.academic_learning import StudyLearningState,StudyReview,StudyAttempt
 from app.academic_study_runs import StudyRun
+from app.academic_course_receipts import StudyCourseCreateReceipt
+from app.academic_material_upload_receipts import StudyMaterialUploadReceipt
 from app.academic_recovery_store import AcademicRecoveryEvent
 from app.study_retrieval_v2 import materialize_visual_sources, invalidate_retrieval_caches, invalidate_user_retrieval_caches
 from app.study_v2_service import (
@@ -115,7 +126,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSON
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from sqlmodel import Field, Session, SQLModel, create_engine, select
-from sqlalchemy import String, cast, delete, func, or_ as sa_or, text
+from sqlalchemy import Index, String, cast, delete, func, or_ as sa_or, text
 from sqlalchemy.exc import IntegrityError
 
 try:
@@ -280,6 +291,42 @@ class SupportTicketReadState(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
+class MobilePushDevice(SQLModel, table=True):
+    """User-scoped Expo device registration; no patient content is stored here."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(index=True)
+    device_id: str = Field(index=True)
+    # Hash of the installation-held proof; never persist the raw proof or Expo token in delivery rows.
+    device_proof_hash: Optional[str] = None
+    expo_push_token: str = Field(index=True, unique=True)
+    platform: str
+    enabled: bool = True
+    updated_at: datetime = Field(default_factory=_utcnow_naive)
+
+
+class MobilePushDelivery(SQLModel, table=True):
+    """Minimal per-event/device Expo receipt state; never stores notification content or raw tokens."""
+    __table_args__ = (
+        Index("uq_mobilepushdelivery_event_device", "event_id", "device_id", unique=True),
+        Index("ix_mobilepushdelivery_due", "status", "next_check_at", "lease_until", "id"),
+    )
+    id: Optional[int] = Field(default=None, primary_key=True)
+    event_id: int = Field(index=True)
+    user_id: int = Field(index=True)
+    device_id: str = Field(index=True)
+    token_fingerprint: str
+    ticket_id: Optional[str] = Field(default=None, unique=True, index=True)
+    status: str = Field(default="SENDING", index=True)
+    error_code: Optional[str] = None
+    attempts: int = 0
+    next_check_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    lease_token: Optional[str] = None
+    lease_until: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
+    updated_at: datetime = Field(default_factory=_utcnow_naive)
+    checked_at: Optional[datetime] = None
+
+
 class AdminNotice(SQLModel, table=True):
     """Durable non-message notification.
 
@@ -291,14 +338,14 @@ class AdminNotice(SQLModel, table=True):
     user_id: int = Field(index=True)
     title: str
     message: str
-    is_read: bool = False  # legacy compatibility; read_at is authoritative for new notices
+    is_read: bool = False  # Canonical read state used by web and native notification centers.
     notice_type: str = Field(default="ADMIN", index=True)
     related_type: Optional[str] = Field(default=None, index=True)
     related_id: Optional[str] = Field(default=None, index=True)
     dedup_key: Optional[str] = Field(default=None, index=True)
     target_url: Optional[str] = None
     status: str = Field(default="ACTIVE", index=True)
-    read_at: Optional[datetime] = Field(default=None, index=True)
+    read_at: Optional[datetime] = Field(default=None, index=True)  # Read timestamp for retention/audit; it does not override is_read.
     resolved_at: Optional[datetime] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
@@ -408,6 +455,9 @@ class Analysis(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow_naive)
 
 class ToothStatus(SQLModel, table=True):
+    __table_args__ = (
+        Index("uq_toothstatus_patient_tooth", "patient_id", "tooth_number", unique=True),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     patient_id: int = Field(index=True)
     tooth_number: str = Field(index=True)
@@ -418,6 +468,9 @@ class ToothStatus(SQLModel, table=True):
 
 class ToothSurfaceStatus(SQLModel, table=True):
     __tablename__ = "toothsurfacestatus"
+    __table_args__ = (
+        Index("uq_toothsurfacestatus_patient_tooth_surface", "patient_id", "tooth_number", "surface", unique=True),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     patient_id: int = Field(index=True)
@@ -429,6 +482,9 @@ class ToothSurfaceStatus(SQLModel, table=True):
 
 
 class Treatment(SQLModel, table=True):
+    __table_args__ = (
+        Index("ix_treatment_patient_created_id", "patient_id", "created_at", "id"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     patient_id: int = Field(index=True)
     tooth_number: Optional[str] = Field(default=None, index=True)
@@ -728,6 +784,76 @@ class ConsultationMessage(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
+class ConsultationMessageReceipt(SQLModel, table=True):
+    """Compact per-sender idempotency receipt; stores only a digest and message ID."""
+    case_id: int = Field(primary_key=True)
+    sender_user_id: int = Field(primary_key=True)
+    client_message_id: str = Field(primary_key=True, max_length=96)
+    payload_hash: str = Field(max_length=64)
+    message_id: int
+    created_at: datetime = Field(default_factory=_utcnow_naive)
+
+
+def _normalize_consultation_client_message_id(value: Optional[str]) -> Optional[str]:
+    key = str(value or "").strip()
+    if not key:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9_-]{16,96}", key):
+        raise HTTPException(status_code=422, detail="Geçersiz mesaj istek anahtarı.")
+    return key
+
+
+def _consultation_message_payload_hash(
+    case_id: int, sender_user_id: int, message_type: str, content: Optional[str],
+    reply_to_message_id: Optional[int], raw_bytes: Optional[bytes] = None,
+) -> str:
+    payload = {
+        "case_id": case_id,
+        "sender_user_id": sender_user_id,
+        "message_type": message_type,
+        "content": "" if raw_bytes is not None else (content or ""),
+        "reply_to_message_id": reply_to_message_id,
+        "media_sha256": hashlib.sha256(raw_bytes).hexdigest() if raw_bytes is not None else None,
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _consultation_message_payload(case: ConsultationCase, message: ConsultationMessage, client_message_id: Optional[str]):
+    return {
+        "id": message.id,
+        "sender_user_id": message.sender_user_id,
+        "message_type": message.message_type,
+        "content": message.content,
+        "media_url": f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,
+        "reply_to_message_id": message.reply_to_message_id,
+        "created_at": message.created_at.isoformat(),
+        "client_message_id": client_message_id,
+        "has_media": bool(message.media_path),
+    }
+
+
+def _consultation_message_receipt_replay(
+    session: Session, case: ConsultationCase, sender_user_id: int,
+    client_message_id: Optional[str], payload_hash: str,
+):
+    if not client_message_id:
+        return None, None
+    receipt = session.exec(select(ConsultationMessageReceipt).where(
+        ConsultationMessageReceipt.case_id == case.id,
+        ConsultationMessageReceipt.sender_user_id == sender_user_id,
+        ConsultationMessageReceipt.client_message_id == client_message_id,
+    )).first()
+    if not receipt:
+        return None, None
+    if not hmac.compare_digest(receipt.payload_hash, payload_hash):
+        return None, ("Bu mesaj anahtarı farklı içerik için kullanılmış.", 409)
+    message = session.get(ConsultationMessage, receipt.message_id)
+    if not message or message.case_id != case.id or message.sender_user_id != sender_user_id:
+        return None, ("Bu mesajın saklama süresi sona ermiş.", 410)
+    return _consultation_message_payload(case, message, client_message_id), None
+
+
 class ConsultationMediaDeletion(SQLModel, table=True):
     """Committed outbox: retry attachment removal after message deletion commits."""
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -822,6 +948,17 @@ class ScheduleEvent(SQLModel, table=True):
     Tarihler UTC olarak saklanır. timezone_name alanı, ileride Android/iOS
     bildirimlerinin doğru yerel saate kurulabilmesi için kayıtla birlikte tutulur.
     """
+    # Native create retries use the event row itself as a durable receipt. Web
+    # events leave both fields NULL; the unique owner/key pair permits many NULLs.
+    __table_args__ = (
+        Index("uq_scheduleevent_owner_client_request", "owner_user_id",
+              "client_request_hash", unique=True),
+        # Program reads are owner-scoped. Composite indexes avoid scanning all
+        # of one owner's historical rows for a bounded calendar or snapshot page.
+        Index("ix_scheduleevent_owner_start_at", "owner_user_id", "start_at"),
+        Index("ix_scheduleevent_owner_created_at", "owner_user_id", "created_at"),
+        Index("ix_scheduleevent_owner_updated_at", "owner_user_id", "updated_at"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     owner_user_id: int = Field(index=True)
     event_type: str = Field(index=True)
@@ -839,15 +976,32 @@ class ScheduleEvent(SQLModel, table=True):
     timezone_name: str = "Europe/Istanbul"
     created_at: datetime = Field(default_factory=_utcnow_naive)
     updated_at: datetime = Field(default_factory=_utcnow_naive)
+    client_request_hash: Optional[str] = None
+    client_payload_hash: Optional[str] = None
 
 
 class ProgramReminderJob(SQLModel, table=True):
     """Durable occurrence-specific queue for Program reminders."""
+    __table_args__ = (
+        # The worker claims due jobs in run_at order and cancels jobs by event
+        # or owner. Keep these hot paths indexable as the durable queue grows.
+        # The reminder worker and wakeup query only read PENDING rows. A partial
+        # ordered index excludes terminal history and avoids scanning old DONE rows
+        # before the first due reminder when LIMIT is used.
+        Index(
+            "ix_programreminderjob_pending_run_at",
+            "run_at",
+            postgresql_where=text("status = 'PENDING'"),
+            sqlite_where=text("status = 'PENDING'"),
+        ),
+        Index("ix_programreminderjob_event_status", "schedule_event_id", "status"),
+        Index("ix_programreminderjob_owner_status", "owner_user_id", "status"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     schedule_event_id: int = Field(index=True)
     owner_user_id: int = Field(index=True)
     occurrence_start_at: datetime = Field(index=True)
-    run_at: datetime = Field(index=True)
+    run_at: datetime
     reminder_minutes: int
     event_updated_at: datetime
     dedup_key: str = Field(index=True, unique=True)
@@ -1355,14 +1509,22 @@ def _event_occurrences(event: ScheduleEvent, range_start: datetime, range_end: d
     return result
 
 
-def _user_schedule_occurrences(session: Session, user_id: int, range_start: datetime, range_end: datetime):
+def _user_schedule_occurrences(
+    session: Session,
+    user_id: int,
+    range_start: datetime,
+    range_end: datetime,
+    snapshot_at: Optional[datetime] = None,
+    include_patient_details: bool = True,
+):
+    """Expand owner events; optionally freeze rows and skip unused patient hydration."""
     range_end_utc = (
         range_end.replace(tzinfo=APP_TIMEZONE)
         .astimezone(timezone.utc)
         .replace(tzinfo=None)
     )
     range_start_utc = range_start.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
-    events = session.exec(
+    query = (
         select(ScheduleEvent)
         .where(ScheduleEvent.owner_user_id == user_id)
         .where(ScheduleEvent.status != "DELETED")
@@ -1376,26 +1538,29 @@ def _user_schedule_occurrences(session: Session, user_id: int, range_start: date
                 ScheduleEvent.recurrence_until >= range_start.date().isoformat(),
             )
         )
-        .order_by(ScheduleEvent.start_at)
-    ).all()
+    )
+    if snapshot_at is not None:
+        # ScheduleEvent timestamps are stored as naive UTC values.
+        query = query.where(ScheduleEvent.created_at <= snapshot_at).where(ScheduleEvent.updated_at <= snapshot_at)
+    events = session.exec(query.order_by(ScheduleEvent.start_at)).all()
 
     occurrences = []
     for event in events:
         occurrences.extend(_event_occurrences(event, range_start, range_end))
 
-    patient_ids = {item["patient_id"] for item in occurrences if item.get("patient_id")}
     patient_map = {}
-    if patient_ids:
-        patients = session.exec(
-            select(Patient)
-            .where(Patient.id.in_(patient_ids))
-            .where(Patient.owner_user_id == user_id)
-        ).all()
-        patient_map = {patient.id: patient for patient in patients}
+    if include_patient_details:
+        patient_ids = {item["patient_id"] for item in occurrences if item.get("patient_id")}
+        if patient_ids:
+            patients = session.exec(
+                select(Patient)
+                .where(Patient.id.in_(patient_ids))
+                .where(Patient.owner_user_id == user_id)
+            ).all()
+            patient_map = {patient.id: patient for patient in patients}
 
     for item in occurrences:
-        patient = patient_map.get(item.get("patient_id"))
-        item["patient"] = patient
+        item["patient"] = patient_map.get(item.get("patient_id")) if include_patient_details else None
     return sorted(occurrences, key=lambda item: item["start_local"])
 
 
@@ -1765,6 +1930,10 @@ def _validate_schedule_input(
     title = title.strip()
     location = location.strip()
     notes = notes.strip()
+    if len(location) > 160:
+        return None, "Konum en fazla 160 karakter olabilir."
+    if len(notes) > 2000:
+        return None, "Notlar en fazla 2000 karakter olabilir."
     recurrence_rule = recurrence_rule.strip().upper() or "NONE"
     recurrence_until = recurrence_until.strip()
 
@@ -1924,6 +2093,19 @@ def _parse_study_material_ids(raw_value: Optional[str]) -> list[int]:
 def init_db():
     SQLModel.metadata.create_all(engine)
     with engine.begin() as conn:
+        # Native Program receipts are nullable on web-created events. Keep the
+        # unique owner/request index present on both fresh and legacy databases.
+        if engine.dialect.name == "postgresql":
+            conn.exec_driver_sql('ALTER TABLE scheduleevent ADD COLUMN IF NOT EXISTS client_request_hash VARCHAR')
+            conn.exec_driver_sql('ALTER TABLE scheduleevent ADD COLUMN IF NOT EXISTS client_payload_hash VARCHAR')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_scheduleevent_owner_client_request ON scheduleevent(owner_user_id, client_request_hash)')
+        elif engine.dialect.name == "sqlite":
+            columns = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("scheduleevent")').fetchall()}
+            if "client_request_hash" not in columns:
+                conn.exec_driver_sql('ALTER TABLE scheduleevent ADD COLUMN client_request_hash VARCHAR')
+            if "client_payload_hash" not in columns:
+                conn.exec_driver_sql('ALTER TABLE scheduleevent ADD COLUMN client_payload_hash VARCHAR')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS uq_scheduleevent_owner_client_request ON scheduleevent(owner_user_id, client_request_hash)')
         # Additive migration for existing installations; create_all handles fresh databases.
         if engine.dialect.name == "postgresql":
             conn.exec_driver_sql('CREATE TABLE IF NOT EXISTS adminverifiedsession (token_hash VARCHAR PRIMARY KEY, user_id INTEGER NOT NULL)')
@@ -2627,7 +2809,7 @@ def send_brevo_password_reset_email(
         ) from exc
 
 
-app = FastAPI(title="DENTAL-AI", version="0.1.0")
+app = FastAPI(title="DENTAL-AI", version="0.1.0", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(RequestLimits, max_bytes=int(os.getenv("DENTAL_MAX_REQUEST_BYTES", str(128 * 1024 * 1024))))
 
 from app.object_cache import StorageScopeMiddleware
@@ -3236,13 +3418,37 @@ def _profile_photo_url(user: Optional[User]) -> Optional[str]:
     return f"/profile-photo/{user.id}?v={_profile_photo_version(user.profile_photo_path)}"
 
 
+def _queue_uncommitted_account_asset_cleanup(reference: Optional[str]) -> None:
+    """Persist cleanup for a newly written account asset whose DB transaction failed.
+
+    Do not delete directly: the failed write may still share a legacy or
+    idempotently reused key with current metadata. The collector performs the
+    authoritative reference check before touching object storage.
+    """
+    if not reference:
+        return
+    try:
+        from app.work_jobs import enqueue_account_asset_cleanup, is_account_asset_reference
+        if not is_account_asset_reference(str(reference)):
+            logger.warning("Uncommitted account asset is outside the cleanup allowlist")
+            return
+        with Session(engine, expire_on_commit=False) as cleanup_session:
+            if enqueue_account_asset_cleanup(cleanup_session, str(reference)):
+                cleanup_session.commit()
+    except Exception:
+        logger.warning("Uncommitted account asset cleanup could not be queued", exc_info=True)
+
+
 def _remove_replaced_profile_photo(previous: Optional[str], current: Optional[str]) -> None:
-    """Remove only the superseded object, after the DB points at the new object."""
+    """Legacy fallback only; current generated keys are queued in the metadata transaction."""
     if previous and previous != current:
+        from app.work_jobs import is_account_asset_reference
+        if is_account_asset_reference(previous):
+            return
         try:
             storage_delete(previous)
         except Exception:
-            logger.warning("Superseded profile photo could not be removed", exc_info=True)
+            logger.warning("Legacy superseded profile photo could not be removed", exc_info=True)
 
 
 @app.get("/profile-photo/{user_id}")
@@ -3283,13 +3489,15 @@ def account_profile_photo(request: Request, profile_photo_data: str = Form(...))
             db_user = s.get(User, user.id)
             previous_path = db_user.profile_photo_path
             db_user.profile_photo_path = path
+            from app.work_jobs import enqueue_replaced_account_asset_cleanup
+            enqueue_replaced_account_asset_cleanup(s, previous_path, path)
             s.add(db_user)
             photo_version=_profile_photo_version(path)
             photo_event=_record_realtime_event(s,user.id,"PROFILE_PHOTO_UPDATED","user",user.id,
                 {"user_id":user.id,"photo_url":f"/profile-photo/{user.id}?v={photo_version}","version":photo_version})
             s.commit()
     except Exception:
-        storage_delete(path)
+        _queue_uncommitted_account_asset_cleanup(path)
         raise
     _remove_replaced_profile_photo(previous_path, path)
     on_loop(_publish_realtime_event, photo_event)
@@ -3396,23 +3604,31 @@ def professional_title_document_upload(request: Request, credential_document: Up
             return HTMLResponse("Bekleyen bir unvan değişikliği bulunamadı.", status_code=409)
         destination = UPLOAD_DIR / "expert_title_changes" / f"user_{user.id}" / f"title_{uuid.uuid4().hex}{suffix}"
         destination.parent.mkdir(parents=True, exist_ok=True)
-        storage_write_bytes(destination, document_bytes, content_type=allowed[suffix])
-        pending.credential_document_path = str(destination)
-        pending.credential_document_name = Path(credential_document.filename).name[:240]
-        pending.credential_document_mime = allowed[suffix]
-        pending.status = "PENDING_REVIEW"
-        pending.submitted_at = _utcnow_naive()
-        pending.updated_at = _utcnow_naive()
-        s.add(pending)
-        _, notice_event, _ = _notify_user(
-            s, user_id=user.id, actor_user_id=user.id, notice_type="EXPERT_TITLE_CHANGE_SUBMITTED",
-            title="Yeni unvan belgeniz incelemede",
-            message=f"{pending.requested_title} için gönderdiğiniz belge incelemeye alındı. Mevcut doğrulanmış unvanınızla vaka almaya devam edebilirsiniz.",
-            related_type="expert_title_change", related_id=pending.id,
-            dedup_key=f"expert-title-change-submitted:{pending.id}:{pending.submitted_at.isoformat()}",
-            target_url="/expert-support/profile",
-        )
-        s.commit()
+        previous_document_path = pending.credential_document_path
+        try:
+            storage_write_bytes(destination, document_bytes, content_type=allowed[suffix])
+            pending.credential_document_path = str(destination)
+            pending.credential_document_name = Path(credential_document.filename).name[:240]
+            pending.credential_document_mime = allowed[suffix]
+            pending.status = "PENDING_REVIEW"
+            pending.submitted_at = _utcnow_naive()
+            pending.updated_at = _utcnow_naive()
+            s.add(pending)
+            from app.work_jobs import enqueue_replaced_account_asset_cleanup
+            enqueue_replaced_account_asset_cleanup(s, previous_document_path, str(destination))
+            _, notice_event, _ = _notify_user(
+                s, user_id=user.id, actor_user_id=user.id, notice_type="EXPERT_TITLE_CHANGE_SUBMITTED",
+                title="Yeni unvan belgeniz incelemede",
+                message=f"{pending.requested_title} için gönderdiğiniz belge incelemeye alındı. Mevcut doğrulanmış unvanınızla vaka almaya devam edebilirsiniz.",
+                related_type="expert_title_change", related_id=pending.id,
+                dedup_key=f"expert-title-change-submitted:{pending.id}:{pending.submitted_at.isoformat()}",
+                target_url="/expert-support/profile",
+            )
+            s.commit()
+        except Exception:
+            s.rollback()
+            _queue_uncommitted_account_asset_cleanup(str(destination))
+            raise
     if notice_event:
         on_loop(_publish_realtime_event, notice_event)
     return RedirectResponse("/account?section=professional#professional-info", status_code=303)
@@ -4612,6 +4828,7 @@ def upload_study_materials(
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(default=[]),
     chat_upload: bool = Form(False),
+    client_request_key: Optional[str] = None,
 ):
     user = get_current_user(request)
     if not user:
@@ -4637,8 +4854,20 @@ def upload_study_materials(
         return HTMLResponse("Yüklenecek PDF veya görsel seçin.", status_code=400)
     if len(selected) > STUDY_MAX_UPLOAD_COUNT:
         return HTMLResponse(f"Tek seferde en fazla {STUDY_MAX_UPLOAD_COUNT} dosya yükleyebilirsiniz.", status_code=400)
+    if client_request_key is not None and (
+        not re.fullmatch(r"[A-Za-z0-9_-]{16,80}", client_request_key) or len(selected) != 1
+    ):
+        return JSONResponse({"ok": False, "error": "Geçersiz veya çoklu dosya aktarım anahtarı."}, status_code=422)
 
+    from sqlalchemy.exc import IntegrityError
+    from app.academic_material_upload_receipts import (
+        material_upload_payload_hash,
+        public_material_upload_receipt,
+    )
     saved_paths: list[Path] = []
+    pending_receipt_data = None
+    new_receipt_payload = None
+    replay_receipt_payload = None
     try:
         with Session(engine, expire_on_commit=False) as s:
             course = _owned_study_course(s, user, course_id)
@@ -4662,6 +4891,7 @@ def upload_study_materials(
                 destination = destination_dir / stored_name
                 saved_paths.append(destination)
                 total = 0
+                content_hasher = hashlib.sha256() if client_request_key else None
                 with destination.open("wb") as output:
                     while True:
                         chunk = upload.file.read(1024 * 1024)
@@ -4671,6 +4901,8 @@ def upload_study_materials(
                         if total > STUDY_MAX_FILE_BYTES:
                             raise ValueError("Bir ders notu dosyası en fazla 150 MB olabilir.")
                         output.write(chunk)
+                        if content_hasher is not None:
+                            content_hasher.update(chunk)
                 if not _study_file_has_valid_signature(destination, extension):
                     raise ValueError("Seçilen dosyalardan biri geçerli PDF, JPG, PNG veya WEBP değil.")
                 storage_persist_file(destination, content_type=mime_type)
@@ -4698,6 +4930,19 @@ def upload_study_materials(
                     size_bytes=total,
                 )
                 pending_materials.append(material)
+                if client_request_key:
+                    content_sha256 = content_hasher.hexdigest()
+                    pending_receipt_data = {
+                        "content_sha256": content_sha256,
+                        "payload_hash": material_upload_payload_hash(
+                            owner_user_id=user.id,
+                            course_id=course_id,
+                            filename=original_name,
+                            mime_type=mime_type,
+                            size_bytes=total,
+                            content_sha256=content_sha256,
+                        ),
+                    }
                 # Default-off shadow build. It never changes the live V1 ask
                 # path; enabling it only prepares a V2 generation for later
                 # benchmark/canary comparison.
@@ -4710,14 +4955,50 @@ def upload_study_materials(
             live_user = s.get(User, user.id)
             if not course or not live_user or not live_user.is_active:
                 raise ValueError("Ders silindi veya erişim yetkiniz değişti.")
-            for material in pending_materials:
-                s.add(material)
-                s.flush()
-                enqueue_material_v2(s, material)
-            if legacy_indexing_required():
-                work_jobs.enqueue(s, kind="LEGACY_INDEX", resource_type="COURSE", resource_id=course_id)
-            course.updated_at = _utcnow_naive()
-            s.add(course)
+            if client_request_key:
+                receipt = s.exec(select(StudyMaterialUploadReceipt).where(
+                    StudyMaterialUploadReceipt.owner_user_id == user.id,
+                    StudyMaterialUploadReceipt.course_id == course_id,
+                    StudyMaterialUploadReceipt.request_key == client_request_key,
+                )).first()
+                if receipt is not None:
+                    if not hmac.compare_digest(receipt.payload_hash, pending_receipt_data["payload_hash"]):
+                        raise HTTPException(409, "İstek anahtarı farklı dosya içeriği için kullanılmış.")
+                    existing_material = s.exec(select(StudyMaterial).where(
+                        StudyMaterial.id == receipt.material_id,
+                        StudyMaterial.course_id == course_id,
+                        StudyMaterial.owner_user_id == user.id,
+                    )).first()
+                    if existing_material is None:
+                        raise HTTPException(410, "Bu istekle yüklenen kaynak daha sonra silinmiş.")
+                    replay_receipt_payload = public_material_upload_receipt(receipt, existing_material)
+                    added = 0
+                else:
+                    material = pending_materials[0]
+                    s.add(material)
+                    s.flush()
+                    receipt = StudyMaterialUploadReceipt(
+                        owner_user_id=user.id,
+                        course_id=course_id,
+                        request_key=client_request_key,
+                        payload_hash=pending_receipt_data["payload_hash"],
+                        content_sha256=pending_receipt_data["content_sha256"],
+                        material_id=material.id,
+                    )
+                    s.add(receipt)
+                    s.flush()
+                    new_receipt_payload = public_material_upload_receipt(receipt, material)
+                    enqueue_material_v2(s, material)
+            else:
+                for material in pending_materials:
+                    s.add(material)
+                    s.flush()
+                    enqueue_material_v2(s, material)
+            if not replay_receipt_payload:
+                if legacy_indexing_required():
+                    work_jobs.enqueue(s, kind="LEGACY_INDEX", resource_type="COURSE", resource_id=course_id)
+                course.updated_at = _utcnow_naive()
+                s.add(course)
             s.commit()
             # === TEMP_STUDY_TRACE_UPLOAD_COMMIT_BEGIN ===
             trace_event(
@@ -4727,6 +5008,33 @@ def upload_study_materials(
                 elapsed_ms=round((_study_trace_time.perf_counter() - _upload_trace_started) * 1000, 1),
             )
             # === TEMP_STUDY_TRACE_UPLOAD_COMMIT_END ===
+    except IntegrityError:
+        for path in saved_paths:
+            try:
+                storage_delete(path)
+            except Exception:
+                logger.warning("Duplicate Academic upload object cleanup failed", exc_info=True)
+        if client_request_key and pending_receipt_data:
+            with Session(engine) as replay_session:
+                receipt = replay_session.exec(select(StudyMaterialUploadReceipt).where(
+                    StudyMaterialUploadReceipt.owner_user_id == user.id,
+                    StudyMaterialUploadReceipt.course_id == course_id,
+                    StudyMaterialUploadReceipt.request_key == client_request_key,
+                )).first()
+                if receipt is not None:
+                    if not hmac.compare_digest(receipt.payload_hash, pending_receipt_data["payload_hash"]):
+                        raise HTTPException(409, "İstek anahtarı farklı dosya içeriği için kullanılmış.")
+                    material = replay_session.exec(select(StudyMaterial).where(
+                        StudyMaterial.id == receipt.material_id,
+                        StudyMaterial.course_id == course_id,
+                        StudyMaterial.owner_user_id == user.id,
+                    )).first()
+                    if material is None:
+                        raise HTTPException(410, "Bu istekle yüklenen kaynak daha sonra silinmiş.")
+                    replay_receipt_payload = public_material_upload_receipt(receipt, material)
+            if replay_receipt_payload:
+                return JSONResponse({"ok": True, "receipt": replay_receipt_payload})
+        raise
     except ValueError as exc:
         # === TEMP_STUDY_TRACE_UPLOAD_VALUE_ERROR_BEGIN ===
         trace_event(
@@ -4755,11 +5063,21 @@ def upload_study_materials(
             storage_delete(path)
         raise
 
+    if replay_receipt_payload:
+        for path in saved_paths:
+            try:
+                storage_delete(path)
+            except Exception:
+                logger.warning("Replayed Academic upload object cleanup failed", exc_info=True)
+        return JSONResponse({"ok": True, "receipt": replay_receipt_payload})
+
     # Index once after upload; the user does not wait for embedding work.
     # === TEMP_STUDY_TRACE_UPLOAD_SCHEDULE_BEGIN ===
     trace_event("upload.index.scheduled", course_id=course_id)
     background_tasks.add_task(_wake_academic_modal_indexer)
     # === TEMP_STUDY_TRACE_UPLOAD_SCHEDULE_END ===
+    if client_request_key:
+        return JSONResponse({"ok": True, "receipt": new_receipt_payload})
     if chat_upload:
         return JSONResponse({'ok': True, 'added': added, 'ready': False})
     return RedirectResponse(f"/notes/courses/{course_id}", status_code=303)
@@ -5434,6 +5752,21 @@ def study_run_status(request:Request,course_id:int,run_id:int):
     return JSONResponse({'ok':True,'run':result},headers={'Cache-Control':'no-store'})
 
 
+@app.post('/notes/courses/{course_id}/ai/runs/{run_id}/cancel')
+def study_run_cancel(request:Request,course_id:int,run_id:int):
+    from app.academic_study_runs import cancel_run,payload
+    user=get_current_user(request)
+    if not user:return JSONResponse({'ok':False},status_code=401)
+    with Session(engine) as session:
+        if not _owned_study_course(session,user,course_id):
+            return JSONResponse({'ok':False},status_code=404)
+        row=cancel_run(session,run_id=run_id,owner=user.id,course=course_id)
+        if row is None:return JSONResponse({'ok':False},status_code=404)
+        session.commit()
+        result=payload(session,row)
+    return JSONResponse({'ok':True,'run':result},headers={'Cache-Control':'no-store'})
+
+
 @app.get('/notes/courses/{course_id}/ai/learning')
 def study_learning_status(request:Request,course_id:int):
     from app.academic_learning import context
@@ -6068,8 +6401,16 @@ def program_copy_to_days(
             target_dates.append(parsed)
 
     with Session(engine, expire_on_commit=False) as s:
-        source = s.get(ScheduleEvent, event_id)
-        if not source or source.owner_user_id != user.id or source.status == "DELETED":
+        # Serialize copies of the same source event on PostgreSQL. A second
+        # device must see the first copy transaction's committed target rows
+        # before deciding whether another copy is needed.
+        source = s.exec(
+            select(ScheduleEvent)
+            .where(ScheduleEvent.id == event_id)
+            .where(ScheduleEvent.owner_user_id == user.id)
+            .with_for_update()
+        ).first()
+        if not source or source.status == "DELETED":
             return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
         if source.recurrence_rule != "NONE":
             return HTMLResponse(
@@ -6097,12 +6438,65 @@ def program_copy_to_days(
             local_end = local_start + duration if duration else None
             start_utc = local_start.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None)
             end_utc = local_end.replace(tzinfo=APP_TIMEZONE).astimezone(timezone.utc).replace(tzinfo=None) if local_end else None
+
+            # A copy retry is a durable mutation, not a new appointment. Use the
+            # existing owner-scoped Program receipt columns (schema revision 15)
+            # so a lost HTTP response cannot duplicate the same source/day copy.
+            # The source row is locked above, serializing concurrent copies on
+            # PostgreSQL; the unique owner/key index is the final race fence.
+            copy_request_hash = hashlib.sha256(
+                f"dental-ai:program-copy:v1:{user.id}:{source.id}:{target_date.isoformat()}".encode("utf-8")
+            ).hexdigest()
+            copy_payload = {
+                "source_event_id": source.id,
+                "target_date": target_date.isoformat(),
+                "event_type": source.event_type,
+                "title": source.title,
+                "start_at": start_utc.isoformat(),
+                "end_at": end_utc.isoformat() if end_utc else None,
+                "patient_id": copied_patient_id,
+                "location": source.location,
+                "notes": source.notes,
+                "reminder_minutes": source.reminder_minutes,
+                "notification_enabled": source.notification_enabled,
+                "timezone_name": source.timezone_name or "Europe/Istanbul",
+            }
+            copy_payload_hash = hashlib.sha256(
+                json.dumps(
+                    copy_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                ).encode("utf-8")
+            ).hexdigest()
+            copy_receipt = s.exec(
+                select(ScheduleEvent)
+                .where(ScheduleEvent.owner_user_id == user.id)
+                .where(ScheduleEvent.client_request_hash == copy_request_hash)
+                .with_for_update()
+            ).first()
+            if copy_receipt:
+                if copy_receipt.client_payload_hash != copy_payload_hash:
+                    return HTMLResponse(
+                        "Bu gün için daha önce oluşturulan kopyanın içeriği değişti. Mevcut kaydı düzenleyin.",
+                        status_code=409,
+                    )
+                continue
+
+            # A matching title/time alone is not a duplicate: clinics often
+            # have different patients or event types with the same label.
+            # Match the copied event's complete scheduling identity so a
+            # different appointment is never silently suppressed.
             duplicate = s.exec(
                 select(ScheduleEvent)
                 .where(ScheduleEvent.owner_user_id == user.id)
                 .where(ScheduleEvent.status != "DELETED")
+                .where(ScheduleEvent.event_type == source.event_type)
                 .where(ScheduleEvent.title == source.title)
                 .where(ScheduleEvent.start_at == start_utc)
+                .where(ScheduleEvent.end_at == end_utc)
+                .where(ScheduleEvent.patient_id == copied_patient_id)
+                .where(ScheduleEvent.location == source.location)
+                .where(ScheduleEvent.notes == source.notes)
+                .where(ScheduleEvent.reminder_minutes == source.reminder_minutes)
+                .where(ScheduleEvent.notification_enabled == source.notification_enabled)
             ).first()
             if duplicate:
                 continue
@@ -6120,6 +6514,8 @@ def program_copy_to_days(
                 recurrence_rule="NONE",
                 recurrence_until=None,
                 timezone_name=source.timezone_name or "Europe/Istanbul",
+                client_request_hash=copy_request_hash,
+                client_payload_hash=copy_payload_hash,
             )
             s.add(copied_event)
             s.flush()
@@ -6333,6 +6729,7 @@ def _save_profile_photo(user_id: int, encoded: str) -> str:
         raise ValueError("Profil fotoğrafı okunamadı.") from exc
     if not raw or len(raw) > 8 * 1024 * 1024:
         raise ValueError("Profil fotoğrafı en fazla 8 MB olabilir.")
+    destination = None
     try:
         with Image.open(io.BytesIO(raw)) as source:
             source.verify()
@@ -6341,11 +6738,17 @@ def _save_profile_photo(user_id: int, encoded: str) -> str:
             image = ImageOps.fit(image, (512, 512), method=Image.Resampling.LANCZOS)
             photo_dir = UPLOAD_DIR / "profile_photos"
             photo_dir.mkdir(parents=True, exist_ok=True)
-            destination = photo_dir / ("user_" + str(user_id) + "_" + hashlib.sha256(raw).hexdigest()[:16] + ".jpg")
+            destination = photo_dir / ("user_" + str(user_id) + "_" + uuid.uuid4().hex[:16] + ".jpg")
             image.save(destination, "JPEG", quality=90, optimize=True)
             storage_persist_file(destination, content_type="image/jpeg")
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        if destination is not None:
+            _queue_uncommitted_account_asset_cleanup(str(destination))
         raise ValueError("Geçerli bir profil fotoğrafı yükleyin.") from exc
+    except Exception:
+        if destination is not None:
+            _queue_uncommitted_account_asset_cleanup(str(destination))
+        raise
     return str(destination)
 
 
@@ -6624,6 +7027,7 @@ def _purge_consultation_messages(session: Session, case: ConsultationCase, now: 
         session.exec(delete(WebPushMessageDelivery).where(WebPushMessageDelivery.realtime_event_id.in_(event_ids)))
         session.exec(delete(RealtimeEvent).where(RealtimeEvent.entity_type == "consultation_message", RealtimeEvent.entity_id.in_(message_ids)))
     session.exec(delete(ConsultationMessage).where(ConsultationMessage.case_id == case.id))
+    session.exec(delete(ConsultationMessageReceipt).where(ConsultationMessageReceipt.case_id == case.id))
     # Patient originals belong to the patient record, not to the chat.
     session.exec(delete(ConsultationCaseMedia).where(ConsultationCaseMedia.case_id == case.id))
     case.messages_deleted_at = now
@@ -7387,6 +7791,8 @@ def expert_support_profile_save(
         if not db_user.profile_photo_path and not profile_photo_data:
             return HTMLResponse("Uzman başvurusu için yüzünüzün net göründüğü profil fotoğrafı zorunludur.", status_code=400)
         document_changed = False
+        credential_upload = None
+        previous_credential_path = profile.credential_document_path
         if credential_document and credential_document.filename:
             suffix = Path(credential_document.filename).suffix.lower()
             allowed = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
@@ -7394,16 +7800,18 @@ def expert_support_profile_save(
                 return HTMLResponse("e-Devlet belgesi PDF, JPG veya PNG olmalıdır.", status_code=400)
             document_bytes = credential_document.file.read(EXPERT_CREDENTIAL_MAX_BYTES + 1)
             if not document_bytes or len(document_bytes) > EXPERT_CREDENTIAL_MAX_BYTES:
-                return HTMLResponse("e-Devlet belgesi boş olamaz ve 10 MB sınırını aşamaz.", status_code=400)
+                return HTMLResponse("Belge boş olamaz ve 10 MB sınırını aşamaz.", status_code=400)
             document_dir = UPLOAD_DIR / "expert_credentials" / f"user_{user.id}"
             document_dir.mkdir(parents=True, exist_ok=True)
             destination = document_dir / f"credential_{uuid.uuid4().hex}{suffix}"
-            storage_write_bytes(destination, document_bytes, content_type=allowed[suffix])
-            profile.credential_document_path = str(destination)
-            profile.credential_document_name = Path(credential_document.filename).name[:240]
-            profile.credential_document_mime = allowed[suffix]
+            credential_upload = (
+                destination,
+                document_bytes,
+                allowed[suffix],
+                Path(credential_document.filename).name[:240],
+            )
             document_changed = True
-        if not profile.credential_document_path:
+        if not profile.credential_document_path and credential_upload is None:
             return HTMLResponse("Unvan ve branşınızı gösteren e-Devlet belgesi zorunludur.", status_code=400)
         next_academic_title = title if title in {"Dr. Öğr. Üyesi", "Doç. Dr.", "Prof. Dr."} else None
         verification_sensitive_change = bool(
@@ -7455,27 +7863,39 @@ def expert_support_profile_save(
         # Profil değişiklikleri doğrulamayı otomatik olarak geçemez.
         if profile.verification_status != "VERIFIED":
             profile.verification_status = "PENDING"
-        if profile_photo_data:
-            try:
-                new_photo_path = _save_profile_photo(user.id, profile_photo_data)
-            except ValueError as exc:
-                return HTMLResponse(str(exc), status_code=400)
-            previous_photo_path = db_user.profile_photo_path
-            db_user.profile_photo_path = new_photo_path
-            s.add(db_user)
-            photo_version = _profile_photo_version(new_photo_path)
-            photo_event = _record_realtime_event(
-                s, user.id, "PROFILE_PHOTO_UPDATED", "user", user.id,
-                {"user_id": user.id, "photo_url": f"/profile-photo/{user.id}?v={photo_version}", "version": photo_version},
-            )
-        s.add(profile)
-        s.flush()
-        profile_events = _record_expert_profile_realtime_events(s, profile)
+        new_credential_path = None
         try:
+            if profile_photo_data:
+                try:
+                    new_photo_path = _save_profile_photo(user.id, profile_photo_data)
+                except ValueError as exc:
+                    return HTMLResponse(str(exc), status_code=400)
+                previous_photo_path = db_user.profile_photo_path
+                db_user.profile_photo_path = new_photo_path
+                s.add(db_user)
+                photo_version = _profile_photo_version(new_photo_path)
+                photo_event = _record_realtime_event(
+                    s, user.id, "PROFILE_PHOTO_UPDATED", "user", user.id,
+                    {"user_id": user.id, "photo_url": f"/profile-photo/{user.id}?v={photo_version}", "version": photo_version},
+                )
+            if credential_upload is not None:
+                destination, document_bytes, document_mime, document_name = credential_upload
+                new_credential_path = str(destination)
+                storage_write_bytes(destination, document_bytes, content_type=document_mime)
+                profile.credential_document_path = new_credential_path
+                profile.credential_document_name = document_name
+                profile.credential_document_mime = document_mime
+            from app.work_jobs import enqueue_replaced_account_asset_cleanup
+            enqueue_replaced_account_asset_cleanup(s, previous_photo_path, new_photo_path)
+            enqueue_replaced_account_asset_cleanup(s, previous_credential_path, new_credential_path)
+            s.add(profile)
+            s.flush()
+            profile_events = _record_expert_profile_realtime_events(s, profile)
             s.commit()
         except Exception:
-            if new_photo_path:
-                storage_delete(new_photo_path)
+            s.rollback()
+            _queue_uncommitted_account_asset_cleanup(new_photo_path)
+            _queue_uncommitted_account_asset_cleanup(new_credential_path)
             raise
     if new_photo_path:
         _remove_replaced_profile_photo(previous_photo_path, new_photo_path)
@@ -8607,15 +9027,19 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
     user = get_current_user(request)
     if not user:
         return JSONResponse({"ok": False, "error": "Oturum gerekli."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
+    status_events: list[RealtimeEvent] = []
+    notification_events: list[RealtimeEvent] = []
+    try:
+        client_key = _normalize_consultation_client_message_id(client_message_id)
+    except HTTPException as exc:
+        return upload_error(str(exc.detail), exc.status_code)
     with Session(engine, expire_on_commit=False) as s:
         case = _locked_consultation_case(s, case_id)
-        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
-            return upload_error("Bu vakaya dosya gönderilemez.")
-        now = _utcnow_naive()
-        notification_events: list[RealtimeEvent] = []
-        status_events: list[RealtimeEvent] = []
-        if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
-            return upload_error("Uzmanın belirttiği başlangıç süresi henüz dolmadı.")
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at:
+            return upload_error("Bu vakaya dosya gönderilemez.", 404)
+        other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+        if _users_blocked(s, user.id, other_id):
+            return upload_error("Bu kullanıcıyla mesajlaşma engellenmiş.", 403)
         # Uploads can take seconds on R2. Do not reserve a PostgreSQL pool slot
         # while reading or publishing the payload; revalidate under a row lock
         # immediately before recording the message.
@@ -8627,6 +9051,41 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
         allowed = {".jpg", ".jpeg", ".png", ".webp", ".pdf", ".m4a", ".mp3", ".wav", ".ogg"}
         if suffix not in allowed:
             return upload_error("Desteklenmeyen dosya türü.")
+        safe_filename = Path(file.filename or "").name[:180] or ("attachment" + suffix)
+        kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
+        # Check a completed upload before writing another object. The second
+        # check below closes the race with another request using the same key.
+        case_query = select(ConsultationCase).where(ConsultationCase.id == case_id)
+        if engine.dialect.name == "postgresql":
+            case_query = case_query.with_for_update()
+        case = s.exec(case_query).first()
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at:
+            return upload_error("Bu vakaya dosya gönderilemez.", 404)
+        other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+        if _users_blocked(s, user.id, other_id):
+            return upload_error("Bu kullanıcıyla mesajlaşma engellenmiş.", 403)
+        if reply_to_message_id:
+            replied = s.get(ConsultationMessage, reply_to_message_id)
+            if not replied or replied.case_id != case.id:
+                reply_to_message_id = None
+        payload_hash = _consultation_message_payload_hash(
+            case.id, user.id, kind, safe_filename, reply_to_message_id, raw,
+        )
+        if client_key:
+            replay, replay_error = _consultation_message_receipt_replay(
+                s, case, user.id, client_key, payload_hash,
+            )
+            if replay_error:
+                message, status_code = replay_error
+                return upload_error(message, status_code)
+            if replay:
+                return JSONResponse({"ok": True, "message": replay, "replayed": True}) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+            return upload_error("Bu vakaya dosya gönderilemez.", 409)
+        now = _utcnow_naive()
+        if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
+            return upload_error("Uzmanın belirttiği başlangıç süresi henüz dolmadı.", 423)
+        s.close()
         case_dir = UPLOAD_DIR / "consultations" / str(case.id)
         case_dir.mkdir(parents=True, exist_ok=True)
         stored = f"{secrets.token_hex(16)}{suffix}"
@@ -8642,24 +9101,48 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
                 case_query = case_query.with_for_update()
             case = s.exec(case_query).first()
             now = _utcnow_naive()
-            if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+            if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at:
                 s.rollback(); s.close()
                 storage_delete(path)
-                return upload_error("Bu vakaya dosya gönderilemez.")
-            if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
+                return upload_error("Bu vakaya dosya gönderilemez.", 404)
+            other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+            if _users_blocked(s, user.id, other_id):
                 s.rollback(); s.close()
                 storage_delete(path)
-                return upload_error("Uzmanın belirttiği başlangıç süresi henüz dolmadı.")
-            if case.status == "WAITING_START" and user.id == case.requester_user_id:
-                case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id); s.add(case)
-                notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
-                status_events.extend(_record_case_status_realtime_events(s, case))
-            kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
+                return upload_error("Bu kullanıcıyla mesajlaşma engellenmiş.", 403)
             if reply_to_message_id:
                 replied = s.get(ConsultationMessage, reply_to_message_id)
                 if not replied or replied.case_id != case.id:
                     reply_to_message_id = None
-            message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=file.filename, media_path=str(path), reply_to_message_id=reply_to_message_id)
+            payload_hash = _consultation_message_payload_hash(
+                case.id, user.id, kind, safe_filename, reply_to_message_id, raw,
+            )
+            if client_key:
+                replay, replay_error = _consultation_message_receipt_replay(
+                    s, case, user.id, client_key, payload_hash,
+                )
+                if replay_error:
+                    message, status_code = replay_error
+                    s.rollback(); s.close()
+                    storage_delete(path)
+                    return upload_error(message, status_code)
+                if replay:
+                    s.rollback(); s.close()
+                    storage_delete(path)
+                    return JSONResponse({"ok": True, "message": replay, "replayed": True}) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+            if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+                s.rollback(); s.close()
+                storage_delete(path)
+                return upload_error("Bu vakaya dosya gönderilemez.", 409)
+            if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
+                s.rollback(); s.close()
+                storage_delete(path)
+                return upload_error("Uzmanın belirttiği başlangıç süresi henüz dolmadı.", 423)
+            if case.status == "WAITING_START" and user.id == case.requester_user_id:
+                case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id); s.add(case)
+                notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
+                status_events.extend(_record_case_status_realtime_events(s, case))
+            message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=safe_filename, media_path=str(path), reply_to_message_id=reply_to_message_id)
             s.add(message)
             if user.id == case.expert_user_id and case.expert_started_at is None:
                 case.expert_started_at = now
@@ -8669,12 +9152,16 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
                     status_events.extend(_record_case_status_realtime_events(s, case))
                 _consultation_event(s, case.id, "EXPERT_FIRST_RESPONSE", user.id); s.add(case)
             _consultation_event(s, case.id, "MEDIA_SENT", user.id, {"type": kind})
-            s.commit(); s.refresh(message)
+            s.flush()
+            if client_key:
+                s.add(ConsultationMessageReceipt(
+                    case_id=case.id, sender_user_id=user.id, client_message_id=client_key,
+                    payload_hash=payload_hash, message_id=message.id,
+                ))
             sender=s.get(User,user.id)
             realtime_events=_record_message_realtime_events(s,case,message,sender)
-            s.commit()
-            safe_client_message_id = client_message_id.strip()[:96] or None
-            payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat(),"client_message_id":safe_client_message_id}}
+            s.commit(); s.refresh(message)
+            payload={"type":"message","message":_consultation_message_payload(case,message,client_key)}
         except Exception:
             s.rollback(); s.close()
             storage_delete(path)
@@ -8819,6 +9306,14 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
     if len(text_value) > 4000:
         if wants_json: return JSONResponse({"ok": False, "error": "Mesaj 4000 karakteri aşamaz."}, status_code=400)
         return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Mesaj 4000 karakteri aşamaz.')}", status_code=303)
+    try:
+        client_key = _normalize_consultation_client_message_id(client_message_id)
+    except HTTPException as exc:
+        if wants_json: return JSONResponse({"ok": False, "error": str(exc.detail)}, status_code=exc.status_code)
+        return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus(str(exc.detail))}", status_code=303)
+    payload_hash = _consultation_message_payload_hash(
+        case_id, user.id, "TEXT", text_value, reply_to_message_id,
+    )
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
         case = _locked_consultation_case(s, case_id)
@@ -8826,7 +9321,20 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
         status_events: list[RealtimeEvent] = []
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+        if case.messages_deleted_at:
+            if wants_json: return JSONResponse({"ok": False, "error": "Bu görüşmenin mesajları artık saklanmıyor."}, status_code=410)
+            return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu görüşmenin mesajları artık saklanmıyor.')}", status_code=303)
+        if client_key:
+            replay, replay_error = _consultation_message_receipt_replay(
+                s, case, user.id, client_key, payload_hash,
+            )
+            if replay_error:
+                message, status_code = replay_error
+                if wants_json: return JSONResponse({"ok": False, "error": message}, status_code=status_code)
+                return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus(message)}", status_code=303)
+            if replay:
+                return JSONResponse({"ok": True, "message": replay, "replayed": True}) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
             if wants_json: return JSONResponse({"ok": False, "error": "Bu danışmanlık şu anda mesajlaşmaya açık değil."}, status_code=409)
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu vaka mesajlaşmaya açık değil.')}", status_code=303)
         # Bekleme süresinde uzman görüşmeyi erken başlatabilir; gönderen hekim süre dolmadan yazamaz.
@@ -8855,6 +9363,12 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
                 reply_to_message_id = None
         message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, content=text_value, reply_to_message_id=reply_to_message_id)
         s.add(message)
+        s.flush()
+        if client_key:
+            s.add(ConsultationMessageReceipt(
+                case_id=case.id, sender_user_id=user.id, client_message_id=client_key,
+                payload_hash=payload_hash, message_id=message.id,
+            ))
         if user.id == case.expert_user_id and case.expert_started_at is None:
             case.expert_started_at = now
             if case.status == "WAITING_START":
@@ -8864,13 +9378,11 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
             _consultation_event(s, case.id, "EXPERT_FIRST_RESPONSE", user.id)
             s.add(case)
         _consultation_event(s, case.id, "MESSAGE_SENT", user.id)
-        s.commit()
-        s.refresh(message)
         sender=s.get(User,user.id)
         realtime_events=_record_message_realtime_events(s,case,message,sender)
         s.commit()
-        safe_client_message_id = client_message_id.strip()[:96] or None
-        payload = {"ok": True, "message": {"id": message.id, "sender_user_id": message.sender_user_id, "message_type": message.message_type, "content": message.content, "reply_to_message_id": message.reply_to_message_id, "created_at": message.created_at.isoformat(), "client_message_id": safe_client_message_id}}
+        s.refresh(message)
+        payload = {"ok": True, "message": _consultation_message_payload(case, message, client_key), "replayed": False}
     on_loop(consultation_socket_hub.broadcast, case_id, {'type': 'message', 'message': payload['message']})
     for realtime_event in status_events + realtime_events:
         on_loop(_publish_realtime_event, realtime_event)
@@ -9138,6 +9650,54 @@ async def _deliver_web_push_for_notice(event: RealtimeEvent) -> None:
         logger.exception("Web Push delivery failed for notice %s", event.entity_id)
 
 
+async def _deliver_mobile_push_for_event(event: RealtimeEvent) -> None:
+    """Mirror web event policy while recording only owner/device-scoped Expo receipts."""
+    if event.event_type not in {"NOTICE_CREATED", "MESSAGE_CREATED"} or not event.id:
+        return
+    try:
+        payload = json.loads(event.payload_json or "{}")
+    except (ValueError, TypeError):
+        payload = {}
+    if event.event_type == "MESSAGE_CREATED" and payload.get("is_outgoing"):
+        return
+    try:
+        from app.mobile_push import is_enabled, send_push_tokens
+        from app.mobile_push_receipts import (
+            complete_mobile_push_deliveries,
+            reserve_mobile_push_deliveries,
+        )
+        if not is_enabled():
+            return
+        with Session(engine, expire_on_commit=False) as session:
+            if event.event_type == "NOTICE_CREATED":
+                notice = session.get(AdminNotice, int(event.entity_id)) if event.entity_id else None
+                if not notice or notice.user_id != event.user_id or notice.status != "ACTIVE":
+                    return
+                title, body = "Dental AI", "Yeni bir bildiriminiz var."
+                route = {"kind": "notification", "notice_id": notice.id}
+            else:
+                title, body = "Dental AI", "Yeni bir uzman mesajınız var."
+                route = {"kind": "consultation", "case_id": payload.get("case_id")}
+            devices = session.exec(select(MobilePushDevice).where(
+                MobilePushDevice.user_id == event.user_id,
+                MobilePushDevice.enabled == True,
+            ).order_by(MobilePushDevice.id).limit(10)).all()
+        if not devices:
+            return
+        reserved = reserve_mobile_push_deliveries(
+            engine, event_id=int(event.id), user_id=int(event.user_id), devices=devices,
+        )
+        if not reserved:
+            return
+        result = await asyncio.to_thread(
+            send_push_tokens, [item["token"] for item in reserved],
+            title=title, body=body, data=route,
+        )
+        complete_mobile_push_deliveries(engine, reserved, result)
+    except Exception:
+        logger.exception("Mobile push delivery failed for event %s", event.id)
+
+
 async def _publish_realtime_event(event: RealtimeEvent) -> None:
     """Publish committed realtime state, then best-effort optional Web Push."""
     await user_realtime_socket_hub.send(event.user_id, _realtime_event_payload(event))
@@ -9145,6 +9705,7 @@ async def _publish_realtime_event(event: RealtimeEvent) -> None:
         await _deliver_web_push_for_notice(event)
     elif event.event_type == "MESSAGE_CREATED":
         await _deliver_web_push_for_message(event)
+    await _deliver_mobile_push_for_event(event)
 
 
 def _notify_user(
@@ -10287,6 +10848,8 @@ def update_tooth_status(
     status: str = Form(...),
     note: Optional[str] = Form(None),
     surface: Optional[str] = Form(None),
+    expected_revision: str = Form(...),
+    expected_surface_revision: Optional[str] = Form(None),
 ):
     allowed_statuses = {
         "HEALTHY",
@@ -10302,12 +10865,25 @@ def update_tooth_status(
     if status not in allowed_statuses:
         return HTMLResponse("Geçersiz diş durumu", status_code=400)
 
+    if not valid_fdi_tooth_number(tooth_number):
+        return HTMLResponse("Geçersiz FDI diş numarası", status_code=422)
+    if note is not None and len(note) > 2000:
+        return HTMLResponse("Diş notu 2000 karakteri aşamaz", status_code=422)
+    if surface and not is_applicable_tooth_surface(tooth_number, surface):
+        return HTMLResponse("Geçersiz veya bu diş için anatomik olarak uygun olmayan yüzey", status_code=422)
+
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
 
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_revision):
+        return HTMLResponse("Diş kaydı sürümü eksik veya geçersiz. Sayfayı yenileyin.", status_code=422)
+    if surface and not re.fullmatch(r"[0-9a-f]{64}", expected_surface_revision or ""):
+        return HTMLResponse("Diş yüzeyi sürümü eksik veya geçersiz. Sayfayı yenileyin.", status_code=422)
+    if expected_surface_revision and not re.fullmatch(r"[0-9a-f]{64}", expected_surface_revision):
+        return HTMLResponse("Diş yüzeyi sürümü geçersiz. Sayfayı yenileyin.", status_code=422)
     with Session(engine, expire_on_commit=False) as s:
-        patient = s.get(Patient, patient_id)
+        patient = s.exec(select(Patient).where(Patient.id == patient_id).with_for_update()).first()
 
         if not patient:
             return HTMLResponse("Hasta bulunamadı", status_code=404)
@@ -10315,85 +10891,41 @@ def update_tooth_status(
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
 
-        # Diş yüzeyi seçildiyse yüzey durumunu kaydet
-        allowed_surfaces = {
-            "OCCLUSAL",
-            "INCISAL",
-            "MESIAL",
-            "DISTAL",
-            "BUCCAL",
-            "LINGUAL",
-        }
-
+        current_tooth = s.exec(select(ToothStatus).where(
+            ToothStatus.patient_id == patient_id, ToothStatus.tooth_number == tooth_number
+        )).first()
+        if not hmac.compare_digest(
+            observation_revision(current_tooth, kind="tooth", patient_id=patient_id, tooth_number=tooth_number),
+            expected_revision,
+        ):
+            return HTMLResponse("Diş başka bir oturumda güncellendi. Güncel şemayı yükleyip yeniden uygulayın.", status_code=409)
         if surface:
-            if surface not in allowed_surfaces:
-                return HTMLResponse("Geçersiz diş yüzeyi", status_code=400)
+            current_surface = s.exec(select(ToothSurfaceStatus).where(
+                ToothSurfaceStatus.patient_id == patient_id,
+                ToothSurfaceStatus.tooth_number == tooth_number,
+                ToothSurfaceStatus.surface == surface,
+            )).first()
+            if not hmac.compare_digest(
+                observation_revision(current_surface, kind="surface", patient_id=patient_id,
+                                     tooth_number=tooth_number, surface=surface),
+                expected_surface_revision,
+            ):
+                return HTMLResponse("Diş yüzeyi başka bir oturumda güncellendi. Güncel şemayı yükleyip yeniden uygulayın.", status_code=409)
 
-            existing_surface = s.exec(
-                select(ToothSurfaceStatus).where(
-                    (ToothSurfaceStatus.patient_id == patient_id)
-                    & (ToothSurfaceStatus.tooth_number == tooth_number)
-                    & (ToothSurfaceStatus.surface == surface)
-                )
-            ).first()
-
-            if existing_surface:
-                existing_surface.status = status
-                existing_surface.note = note.strip() if note else None
-                existing_surface.updated_at = _utcnow_naive()
-            else:
-                surface_status = ToothSurfaceStatus(
-                    patient_id=patient_id,
-                    tooth_number=tooth_number,
-                    surface=surface,
-                    status=status,
-                    note=note.strip() if note else None,
-                )
-                s.add(surface_status)
-
-        existing = s.exec(
-            select(ToothStatus).where(
-                (ToothStatus.patient_id == patient_id)
-                & (ToothStatus.tooth_number == tooth_number)
+        normalized_note = note.strip() if note else None
+        updated_at = _utcnow_naive()
+        if surface:
+            upsert_tooth_surface_observation(
+                s, ToothSurfaceStatus, patient_id, tooth_number,
+                surface, status, normalized_note, updated_at,
             )
-        ).first()
-
-        if existing:
-            existing.status = status
-            existing.note = note.strip() if note else None
-            existing.updated_at = _utcnow_naive()
-        else:
-            tooth = ToothStatus(
-                patient_id=patient_id,
-                tooth_number=tooth_number,
-                status=status,
-                note=note.strip() if note else None,
-            )
-            s.add(tooth)
+        upsert_tooth_observation(
+            s, ToothStatus, patient_id, tooth_number, status, normalized_note, updated_at,
+        )
 
 
-        # Tedavi geçmişine otomatik kayıt
-        treatment_statuses = {
-            "CARIES": "Çürük",
-            "FILLING": "Dolgu",
-            "CROWN": "Kron",
-            "ROOT_CANAL": "Kanal Tedavisi",
-            "EXTRACTED": "Diş Çekimi",
-            "IMPLANT": "İmplant",
-            "OTHER": "Diğer",
-        }
-
-        treatment_name = treatment_statuses.get(status)
-
-        if treatment_name:
-            treatment = Treatment(
-                patient_id=patient_id,
-                tooth_number=tooth_number,
-                treatment_name=treatment_name,
-                treatment_date=_utcnow_naive().strftime("%Y-%m-%d"),
-                doctor_note=note.strip() if note else None,
-            )
-            s.add(treatment)
+        # A clinical observation is not evidence that a procedure was performed.
+        # Completed treatments are recorded explicitly via the treatment workflow.
 
         s.commit()
 
@@ -10509,6 +11041,26 @@ def tooth_chart(request: Request, patient_id: int):
                 ToothStatus.patient_id == patient_id
             )
         ).all()
+        surface_statuses = s.exec(
+            select(ToothSurfaceStatus).where(ToothSurfaceStatus.patient_id == patient_id)
+        ).all()
+        tooth_revisions = {
+            number: observation_revision(next((item for item in statuses if item.tooth_number == number), None),
+                                          kind="tooth", patient_id=patient_id, tooth_number=number)
+            for number in (
+                [f"{q}{n}" for q in "1234" for n in "12345678"] +
+                [f"{q}{n}" for q in "5678" for n in "12345"]
+            )
+        }
+        surface_revisions = {
+            f"{tooth_number}:{surface}": observation_revision(
+                next((row for row in surface_statuses
+                      if row.tooth_number == tooth_number and row.surface == surface), None),
+                kind="surface", patient_id=patient_id, tooth_number=tooth_number, surface=surface,
+            )
+            for tooth_number in tooth_revisions
+            for surface in ("OCCLUSAL", "INCISAL", "MESIAL", "DISTAL", "BUCCAL", "LINGUAL")
+        }
 
         status_map = {
             item.tooth_number: item.status
@@ -10587,6 +11139,8 @@ def tooth_chart(request: Request, patient_id: int):
                 "primary_lower_teeth": primary_lower_teeth,
                 "latest_analysis_tooth": latest_analysis_tooth,
                 "tooth_notes": {item.tooth_number: item.note or "" for item in statuses},
+                "tooth_revisions": tooth_revisions,
+                "surface_revisions": surface_revisions,
             },
         )
 
@@ -10606,6 +11160,28 @@ def patient_realtime_snapshot(request: Request, patient_id: int):
         return {"ok": True, "patient": _patient_realtime_snapshot(patient, profile, include_private=include_private)}
 
 
+def _patient_edit_revision(patient: Patient, profile: Optional[PatientProfile]) -> str:
+    """Opaque optimistic-concurrency token for editable patient identity fields.
+
+    This is not an authorization credential. Ownership is always checked separately.
+    Including PatientProfile.address keeps web and native edits on one revision.
+    """
+    values = {
+        "patient_id": int(patient.id or 0),
+        "owner_user_id": int(patient.owner_user_id or 0),
+        "first_name": patient.first_name or "",
+        "last_name": patient.last_name or "",
+        "phone": patient.phone or "",
+        "birth_date": patient.birth_date or "",
+        "age": patient.age,
+        "tc_kimlik_no": patient.tc_kimlik_no or "",
+        "chief_complaint": patient.chief_complaint or "",
+        "address": profile.address if profile and profile.address else "",
+    }
+    canonical = json.dumps(values, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(b"dental-ai-patient-edit-v1:" + canonical).hexdigest()
+
+
 @app.post("/patients/{patient_id}/edit")
 @offload
 def edit_patient(
@@ -10618,6 +11194,7 @@ def edit_patient(
     tc_kimlik_no: Optional[str] = Form(None),
     address: Optional[str] = Form(None),
     chief_complaint: Optional[str] = Form(None),
+    expected_revision: Optional[str] = Form(None),
 ):
     user = get_current_user(request)
     if not user:
@@ -10636,10 +11213,26 @@ def edit_patient(
             calculated_age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
         except ValueError:
             return HTMLResponse("Doğum tarihi geçersiz.", status_code=400)
+    expected_revision = (expected_revision or "").strip() or None
+    if expected_revision and not re.fullmatch(r"[0-9a-f]{64}", expected_revision):
+        return HTMLResponse("Hasta kayıt sürümü geçersiz. Sayfayı yenileyin.", status_code=400)
     with Session(engine, expire_on_commit=False) as s:
-        patient = _owned_patient(s, user, patient_id)
-        if not patient:
+        patient_query = select(Patient).where(Patient.id == patient_id)
+        if s.get_bind().dialect.name == "postgresql":
+            patient_query = patient_query.with_for_update()
+        patient = s.exec(patient_query).first()
+        if (
+            not patient
+            or (user.role != "ADMIN" and patient.owner_user_id != user.id)
+            or (user.role == "ADMIN" and patient.owner_user_id not in {None, user.id})
+        ):
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+        profile = s.exec(select(PatientProfile).where(PatientProfile.patient_id == patient.id)).first()
+        if expected_revision and not hmac.compare_digest(_patient_edit_revision(patient, profile), expected_revision):
+            return HTMLResponse(
+                "Hasta bilgileri başka bir oturumda güncellendi. Güncel kaydı yükleyip değişikliklerinizi yeniden uygulayın.",
+                status_code=409,
+            )
         patient.first_name = first_name
         patient.last_name = last_name
         patient.birth_date = birth_date or None
@@ -10647,7 +11240,6 @@ def edit_patient(
         patient.phone = phone
         patient.tc_kimlik_no = tc_kimlik_no.strip() if tc_kimlik_no else None
         patient.chief_complaint = chief_complaint.strip() if chief_complaint else None
-        profile = s.exec(select(PatientProfile).where(PatientProfile.patient_id == patient.id)).first()
         if not profile:
             profile = PatientProfile(patient_id=patient.id)
         profile.address = address.strip() if address else None
@@ -10700,17 +11292,23 @@ def patient_detail(request: Request, patient_id: int):
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
 
-        analyses = s.exec(
+        from app.patient_history_pagination import HISTORY_PAGE_SIZE, history_page_slice
+
+        analysis_rows = s.exec(
             select(Analysis).where(
                 Analysis.patient_id == patient_id
-            ).order_by(Analysis.created_at.desc())
+            ).order_by(Analysis.created_at.desc(), Analysis.id.desc())
+            .limit(HISTORY_PAGE_SIZE + 1)
         ).all()
+        analyses, analyses_next_cursor = history_page_slice(analysis_rows)
 
-        treatments = s.exec(
+        treatment_rows = s.exec(
             select(Treatment).where(
                 Treatment.patient_id == patient_id
-            ).order_by(Treatment.created_at.desc())
+            ).order_by(Treatment.created_at.desc(), Treatment.id.desc())
+            .limit(HISTORY_PAGE_SIZE + 1)
         ).all()
+        treatments, treatments_next_cursor = history_page_slice(treatment_rows)
 
         patient_profile = s.exec(
             select(PatientProfile).where(
@@ -10737,26 +11335,62 @@ def patient_detail(request: Request, patient_id: int):
             ).all():
                 analysis_assets.setdefault(asset.analysis_id, []).append(asset)
 
-        patient_media = s.exec(
-            select(PatientMedia).where(
+        from app.clinical_media_gallery import (
+            CLINICAL_MEDIA_GALLERY_PAGE_SIZE,
+            media_page_slice,
+        )
+        media_query = select(PatientMedia).where(
+            PatientMedia.patient_id == patient_id,
+            PatientMedia.owner_user_id == media_owner_id,
+        ).order_by(PatientMedia.id.desc()).limit(CLINICAL_MEDIA_GALLERY_PAGE_SIZE + 1)
+        media_rows = s.exec(media_query).all()
+        patient_media, patient_media_next_before = media_page_slice(media_rows)
+        patient_media_total = int(s.exec(
+            select(func.count(PatientMedia.id)).where(
                 PatientMedia.patient_id == patient_id,
                 PatientMedia.owner_user_id == media_owner_id,
-            ).order_by(PatientMedia.uploaded_at.desc())
-        ).all()
+            )
+        ).one() or 0)
+
+        # Surface only explicitly saved voice-review fields on the owning clinician's
+        # patient profile. Never derive anamnesis from arbitrary analysis notes.
+        voice_history = {'fields': {}, 'notice': ''}
+        if patient.owner_user_id == user.id:
+            from app.voice_exam import reviewed_history_payload
+            from app import main as main_module
+            voice_history = reviewed_history_payload(s, main_module, user, patient_id) or voice_history
 
         return templates.TemplateResponse(
             request=request,
             name="patient_detail.html",
             context={
                 "patient": patient,
+                "analysis_image_limit": MAX_ANALYSIS_IMAGES,
+            "analysis_image_max_bytes": MAX_ANALYSIS_IMAGE_BYTES,
+            "analysis_batch_max_bytes": MAX_ANALYSIS_BATCH_BYTES,
+                "patient_media_upload_limit": MAX_PATIENT_MEDIA_UPLOAD_FILES,
+                "patient_media_max_file_bytes": MAX_PATIENT_MEDIA_FILE_BYTES,
+                "patient_media_max_batch_bytes": MAX_PATIENT_MEDIA_BATCH_BYTES,
                 "patient_profile": patient_profile,
+                "patient_edit_revision": _patient_edit_revision(patient, patient_profile),
                 "analyses": analyses,
+                "analyses_next_cursor": analyses_next_cursor,
+                "analyses_has_more": analyses_next_cursor is not None,
                 "voice_review_ids": voice_review_ids,
+                "voice_history": voice_history,
                 "treatments": treatments,
+                "treatments_next_cursor": treatments_next_cursor,
+                "treatments_has_more": treatments_next_cursor is not None,
                 "analysis_assets": analysis_assets,
                 "patient_media": patient_media,
+                "patient_media_total": patient_media_total,
+                "patient_media_next_before": patient_media_next_before,
+                "patient_media_has_more": patient_media_next_before is not None,
             },
         )
+
+
+MAX_PATIENT_MEDIA_UPLOAD_FILES = MAX_PATIENT_MEDIA_FILES  # Shared archive count contract.
 
 
 def _patient_media_has_valid_signature(path: Path, extension: str) -> bool:
@@ -10809,11 +11443,16 @@ def upload_patient_media(
         return HTMLResponse("Geçersiz klinik görüntü türü.", status_code=400)
 
     allowed_extensions = {".jpg", ".jpeg", ".png", ".webp"}
-    max_bytes = 12 * 1024 * 1024
+    max_bytes = MAX_PATIENT_MEDIA_FILE_BYTES
     saved_paths: list[Path] = []
     selected_files = [upload for upload in files if upload and upload.filename]
-    if len(selected_files) > 12:
-        return HTMLResponse("Tek seferde en fazla 12 görüntü yükleyebilirsiniz.", status_code=400)
+    if len(selected_files) > MAX_PATIENT_MEDIA_UPLOAD_FILES:
+        return HTMLResponse(f"Tek seferde en fazla {MAX_PATIENT_MEDIA_UPLOAD_FILES} görüntü yükleyebilirsiniz.", status_code=400)
+    try:
+        validate_upload_batch(selected_files, maximum_file=MAX_PATIENT_MEDIA_FILE_BYTES,
+                              maximum_total=MAX_PATIENT_MEDIA_BATCH_BYTES)
+    except HTTPException as exc:
+        return HTMLResponse(str(exc.detail), status_code=exc.status_code)
 
     try:
         with Session(engine, expire_on_commit=False) as auth_session:
@@ -10843,11 +11482,14 @@ def upload_patient_media(
                         break
                     total += len(chunk)
                     if total > max_bytes:
-                        raise ValueError("Bir görüntü en fazla 12 MB olabilir.")
+                        raise ValueError("Bir görüntü en fazla 12 MiB olabilir.")
                     buffer.write(chunk)
 
             if not _patient_media_has_valid_signature(destination, extension):
                 raise ValueError("Seçilen dosyalardan biri geçerli bir JPG, PNG veya WEBP görüntüsü değil.")
+            # The browser upload path must apply the same orientation and
+            # metadata privacy rules as native uploads before durable storage.
+            sanitize_clinical_media_image(destination, extension, max_pixels=40_000_000)
             storage_persist_file(destination)
             pending_media.append(PatientMedia(
                 patient_id=patient_id,
@@ -10909,13 +11551,60 @@ def patient_media_file(request: Request, patient_id: int, media_id: int):
     return FileResponse(path, headers={"Cache-Control":"private, no-store"})
 
 
-@app.post("/patients/{patient_id}/media/{media_id}/delete")
-def delete_patient_media(request: Request, patient_id: int, media_id: int):
+@app.get("/patients/{patient_id}/media/page")
+def patient_media_gallery_page(request: Request, patient_id: int, before: Optional[int] = None):
+    """Cookie-authenticated, bounded gallery paging for the web patient profile."""
+    from app.clinical_media_gallery import (
+        CLINICAL_MEDIA_GALLERY_PAGE_SIZE,
+        normalize_media_page_cursor,
+        serialize_media_page,
+    )
+
+    def private_json(payload, status_code=200):
+        result = JSONResponse(payload, status_code=status_code)
+        result.headers.update({
+            "Cache-Control": "private, no-store",
+            "Pragma": "no-cache",
+            "Vary": "Cookie",
+            "X-Content-Type-Options": "nosniff",
+        })
+        return result
+
     user = get_current_user(request)
     if not user:
-        return RedirectResponse("/login", status_code=303)
+        return private_json({"ok": False, "error": "Oturum gerekli."}, 401)
+    try:
+        before_id = normalize_media_page_cursor(before)
+    except ValueError:
+        return private_json({"ok": False, "error": "Geçersiz galeri imleci."}, 400)
 
-    file_path = None
+    with Session(engine, expire_on_commit=False) as s:
+        patient = s.get(Patient, patient_id)
+        if not patient:
+            return private_json({"ok": False, "error": "Hasta bulunamadı."}, 404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return private_json({"ok": False, "error": "Bu hastaya erişim yetkiniz yok."}, 403)
+        media_owner_id = patient.owner_user_id if patient.owner_user_id is not None else user.id
+        query = select(PatientMedia).where(
+            PatientMedia.patient_id == patient_id,
+            PatientMedia.owner_user_id == media_owner_id,
+        )
+        if before_id is not None:
+            query = query.where(PatientMedia.id < before_id)
+        rows = s.exec(
+            query.order_by(PatientMedia.id.desc()).limit(CLINICAL_MEDIA_GALLERY_PAGE_SIZE + 1)
+        ).all()
+        payload = serialize_media_page(rows, patient_id, CLINICAL_MEDIA_GALLERY_PAGE_SIZE)
+    return private_json(payload)
+
+
+@app.get("/patients/{patient_id}/media/{media_id}/thumbnail")
+def patient_media_thumbnail(request: Request, patient_id: int, media_id: int):
+    """Serve a private, lazily generated derivative without exposing storage keys."""
+    user = get_current_user(request)
+    if not user:
+        return HTMLResponse("Yetkisiz erişim.", status_code=401)
+
     with Session(engine, expire_on_commit=False) as s:
         patient = s.get(Patient, patient_id)
         media = s.get(PatientMedia, media_id)
@@ -10925,12 +11614,96 @@ def delete_patient_media(request: Request, patient_id: int, media_id: int):
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
         if user.role != "ADMIN" and media.owner_user_id != user.id:
             return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
+        reference = media.file_path
+        if not reference:
+            return HTMLResponse("Klinik görüntü dosyası bulunamadı.", status_code=404)
+
+    from app.clinical_media_thumbnail import ensure_thumbnail, delete_thumbnail
+    try:
+        path = ensure_thumbnail(reference)
+        # The row can be deleted or reassigned while R2 hydration/generation runs.
+        # Recheck patient + media ownership before serving the derivative.
+        with Session(engine, expire_on_commit=False) as verify:
+            current_patient = verify.get(Patient, patient_id)
+            current_media = verify.get(PatientMedia, media_id)
+            still_owned = bool(
+                current_patient
+                and current_media
+                and current_media.patient_id == patient_id
+                and current_media.file_path == reference
+                and (
+                    user.role == "ADMIN"
+                    or (
+                        current_patient.owner_user_id == user.id
+                        and current_media.owner_user_id == user.id
+                    )
+                )
+            )
+        if not still_owned:
+            try:
+                delete_thumbnail(reference)
+            except Exception:
+                logger.exception("Failed to clean orphan clinical thumbnail for media_id=%s", media_id)
+            return HTMLResponse("Klinik görüntü bulunamadı.", status_code=404)
+    except FileNotFoundError:
+        return HTMLResponse("Klinik görüntü dosyası bulunamadı.", status_code=404)
+    except ValueError:
+        return HTMLResponse("Klinik görüntü önizlemesi oluşturulamadı.", status_code=415)
+    except Exception:
+        logger.exception("Clinical media thumbnail generation failed for media_id=%s", media_id)
+        return HTMLResponse(
+            "Önizleme deposuna şu anda erişilemiyor.",
+            status_code=503,
+            headers={"Retry-After": "2", "Cache-Control": "private, no-store"},
+        )
+
+    return FileResponse(
+        path,
+        media_type="image/jpeg",
+        filename=f"clinical-{media_id}-thumbnail.jpg",
+        content_disposition_type="inline",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Pragma": "no-cache",
+            "Vary": "Cookie",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        },
+    )
+
+
+@app.post("/patients/{patient_id}/media/{media_id}/delete")
+def delete_patient_media(request: Request, patient_id: int, media_id: int):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    file_path = None
+    queued = False
+    with Session(engine, expire_on_commit=False) as s:
+        patient_query = select(Patient).where(Patient.id == patient_id)
+        if engine.dialect.name == "postgresql":
+            patient_query = patient_query.with_for_update()
+        patient = s.exec(patient_query).first()
+        media = s.get(PatientMedia, media_id)
+        if not patient or not media or media.patient_id != patient_id:
+            return HTMLResponse("Klinik görüntü bulunamadı.", status_code=404)
+        if user.role != "ADMIN" and patient.owner_user_id != user.id:
+            return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+        if user.role != "ADMIN" and media.owner_user_id != user.id:
+            return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
         file_path = media.file_path
+        from app.clinical_media_thumbnail import thumbnail_reference
+        thumbnail_path = thumbnail_reference(file_path) if file_path else None
+        queued = work_jobs.enqueue_patient_media_cleanup(s, file_path) if file_path else True
+        thumbnail_queued = work_jobs.enqueue_patient_media_cleanup(s, thumbnail_path) if thumbnail_path else True
         s.delete(media)
         s.commit()
 
-    if file_path:
+    if file_path and not queued:
         storage_delete(file_path)
+    if thumbnail_path and not thumbnail_queued:
+        storage_delete(thumbnail_path)
     return RedirectResponse(f"/patients/{patient_id}#clinical-media", status_code=303)
 
 
@@ -10940,27 +11713,44 @@ def delete_all_patient_media(request: Request, patient_id: int):
     if not user:
         return RedirectResponse("/login", status_code=303)
 
-    file_paths: list[str] = []
+    fallback_paths: list[str] = []
     with Session(engine, expire_on_commit=False) as s:
-        patient = s.get(Patient, patient_id)
+        patient_query = select(Patient).where(Patient.id == patient_id)
+        if engine.dialect.name == "postgresql":
+            patient_query = patient_query.with_for_update()
+        patient = s.exec(patient_query).first()
         if not patient:
             return HTMLResponse("Hasta bulunamadı", status_code=404)
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
             return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
 
         media_owner_id = patient.owner_user_id if patient.owner_user_id is not None else user.id
-        media_items = s.exec(
-            select(PatientMedia).where(
+        # Bound ORM memory while keeping the patient row locked for the entire
+        # metadata-delete transaction. Uploads and other deletes take the same lock.
+        while True:
+            media_query = select(PatientMedia).where(
                 PatientMedia.patient_id == patient_id,
                 PatientMedia.owner_user_id == media_owner_id,
-            )
-        ).all()
-        for media in media_items:
-            file_paths.append(media.file_path)
-            s.delete(media)
+            ).order_by(PatientMedia.id).limit(100)
+            if engine.dialect.name == "postgresql":
+                media_query = media_query.with_for_update()
+            media_items = s.exec(media_query).all()
+            if not media_items:
+                break
+            for media in media_items:
+                from app.clinical_media_thumbnail import thumbnail_reference
+                if not work_jobs.enqueue_patient_media_cleanup(s, media.file_path):
+                    fallback_paths.append(media.file_path)
+                thumbnail_path = thumbnail_reference(media.file_path)
+                if not work_jobs.enqueue_patient_media_cleanup(s, thumbnail_path):
+                    fallback_paths.append(thumbnail_path)
+                s.delete(media)
+            s.flush()
+            s.expunge_all()
         s.commit()
 
-    for file_path in file_paths:
+    # Only legacy/unrecognized paths retain the old synchronous fallback.
+    for file_path in fallback_paths:
         storage_delete(file_path)
     return RedirectResponse(f"/patients/{patient_id}#clinical-media", status_code=303)
 
@@ -11085,8 +11875,8 @@ def new_analysis(
     requested_ids = _parse_patient_media_ids(media_ids)
     if media_id is not None and media_id not in requested_ids:
         requested_ids.insert(0, media_id)
-    if len(requested_ids) > 12:
-        return HTMLResponse("Tek analizde en fazla 12 kayıtlı görüntü seçebilirsiniz.", status_code=400)
+    if len(requested_ids) > MAX_ANALYSIS_IMAGES:
+        return HTMLResponse(f"Tek analizde en fazla {MAX_ANALYSIS_IMAGES} kayıtlı görüntü seçebilirsiniz.", status_code=400)
 
     selected_media: list[PatientMedia] = []
     with Session(engine, expire_on_commit=False) as s:
@@ -11113,6 +11903,7 @@ def new_analysis(
             "patient": patient,
             "selected_media": selected_media,
             "selected_media_ids": ",".join(str(media.id) for media in selected_media),
+            "analysis_image_limit": MAX_ANALYSIS_IMAGES,
         },
     )
 
@@ -12085,8 +12876,15 @@ def create_guest_analysis(
     background_tasks: BackgroundTasks,
     tooth_number: Optional[str] = Form(None),
     clinical_notes: Optional[str] = Form(None),
+    ai_consent: Optional[str] = Form(None),
     images: list[UploadFile] = File(default=[]),
 ):
+    if ai_consent != "on":
+        return HTMLResponse(
+            "Analiz başlatmak için radyograf ve klinik bilgilerinizin yapay zekâ ile işlenmesine açık rıza vermeniz gerekir.",
+            status_code=400,
+        )
+
     user = get_current_user(request)
 
     if not user:
@@ -12100,6 +12898,11 @@ def create_guest_analysis(
             status="ANALYZING",
         )
 
+        s.add(AgreementAcceptance(
+            user_id=user.id,
+            agreement_type="AI_GUEST_ANALYSIS",
+            agreement_version=LEGAL_VERSION,
+        ))
         s.add(analysis)
         s.commit()
         s.refresh(analysis)
@@ -12129,6 +12932,7 @@ def create_guest_analysis(
             destination = UPLOAD_DIR / stored_name
 
             copy_image(image.file, destination)
+            sanitize_clinical_media_image(destination, extension, max_pixels=40_000_000)
 
             storage_persist_file(destination)
 
@@ -12142,8 +12946,46 @@ def create_guest_analysis(
 
             pending_assets.append(asset)
 
-        live_user = s.get(User, user.id)
+        # Serialize the final guest-upload publication with account erasure.
+        # Erasure locks the same User row before deleting guest rows and assets.
+        live_user_stmt = select(User).where(User.id == user.id)
+        if s.get_bind().dialect.name == "postgresql":
+            live_user_stmt = live_user_stmt.with_for_update()
+        live_user = s.exec(
+            live_user_stmt.execution_options(populate_existing=True)
+        ).first()
         if not live_user or not live_user.is_active:
+            orphan_references = [
+                asset.file_path for asset in pending_assets if asset.file_path
+            ]
+            s.rollback()
+            if orphan_references:
+                # The GuestAnalysis row may already have been erased while
+                # uploads were being written. Queue those uncommitted assets
+                # in a separate transaction so the cleanup survives this rollback.
+                try:
+                    with Session(engine, expire_on_commit=False) as cleanup_session:
+                        rejected = 0
+                        for reference in orphan_references:
+                            if not work_jobs.enqueue_guest_analysis_cleanup(
+                                cleanup_session, reference
+                            ):
+                                rejected += 1
+                        cleanup_session.commit()
+                    if rejected:
+                        logger.warning(
+                            "Guest upload cleanup allowlist rejected %s object(s)",
+                            rejected,
+                        )
+                except Exception:
+                    logger.exception(
+                        "Guest upload cleanup receipt could not be persisted"
+                    )
+                    for reference in orphan_references:
+                        try:
+                            storage_delete(reference)
+                        except Exception:
+                            logger.exception("Guest upload cleanup fallback failed")
             raise work_jobs.WorkCancelled("OWNER_UNAVAILABLE")
         s.add_all(pending_assets)
         s.flush()
@@ -12183,8 +13025,8 @@ def create_analysis(
         if existing_media_id is not None and existing_media_id not in requested_media_ids:
             requested_media_ids.insert(0, existing_media_id)
         new_image_count = sum(1 for img in images if img and img.filename)
-        if len(requested_media_ids) + new_image_count > 4:
-            return HTMLResponse("Tek analizde toplam en fazla 4 görüntü kullanabilirsiniz.", status_code=400)
+        if len(requested_media_ids) + new_image_count > MAX_ANALYSIS_IMAGES:
+            return HTMLResponse(f"Tek analizde kayıtlı ve yeni görüntülerin toplamı en fazla {MAX_ANALYSIS_IMAGES} olabilir.", status_code=400)
 
         selected_media_items: list[tuple[PatientMedia, Path]] = []
         selected_media_rows = []
@@ -12204,6 +13046,25 @@ def create_analysis(
             if media_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"} or not media_path.is_file():
                 return HTMLResponse("Seçilen klinik görüntü dosyası bulunamadı.", status_code=404)
             selected_media_items.append((media, media_path))
+
+        # Reject oversized batches before creating an Analysis row or staging
+        # any clinical bytes. Saved media is re-counted from private storage;
+        # new multipart sizes come from Starlette's parsed byte counter.
+        try:
+            new_bytes = validate_upload_batch(
+                [image for image in images if image and image.filename],
+                maximum_file=MAX_ANALYSIS_IMAGE_BYTES,
+                maximum_total=MAX_ANALYSIS_BATCH_BYTES,
+            )
+            saved_bytes = validate_path_batch(
+                [path for _, path in selected_media_items],
+                maximum_file=MAX_ANALYSIS_IMAGE_BYTES,
+                maximum_total=MAX_ANALYSIS_BATCH_BYTES,
+            )
+            if new_bytes + saved_bytes > MAX_ANALYSIS_BATCH_BYTES:
+                raise HTTPException(413, "Kayıtlı ve yeni görüntülerin toplamı en fazla 48 MiB olabilir.")
+        except HTTPException as exc:
+            return HTMLResponse(str(exc.detail), status_code=exc.status_code)
 
         analysis = Analysis(
             patient_id=patient_id,
@@ -12229,7 +13090,11 @@ def create_analysis(
                 f"{uuid.uuid4().hex}{source_ext}"
             )
             destination = UPLOAD_DIR / stored_name
-            shutil.copy2(selected_media_path, destination)
+            with selected_media_path.open("rb") as source:
+                copy_image(source, destination, maximum=MAX_ANALYSIS_IMAGE_BYTES)
+            # Legacy gallery objects are sanitized again on the analysis copy
+            # before classification/provider work; the archived original is untouched.
+            sanitize_clinical_media_image(destination, source_ext, max_pixels=40_000_000)
             storage_persist_file(destination)
             pending_assets.append(ImageAsset(
                 analysis_id=analysis.id,
@@ -12257,6 +13122,7 @@ def create_analysis(
             destination = UPLOAD_DIR / stored_name
 
             copy_image(image.file, destination)
+            sanitize_clinical_media_image(destination, extension, max_pixels=40_000_000)
 
             storage_persist_file(destination)
 
@@ -12973,7 +13839,7 @@ def admin_center_support_message(request: Request, ticket_id: int, message: str 
                 notice_type="SUPPORT_MESSAGE",title="Destek Ekibinden yeni mesaj",
                 message="Uzman bildiriminiz hakkında yeni bir mesaj var." if ticket.source_type=="REPORT" else "Destek talebinizde yeni bir mesaj var.",
                 related_type="support_ticket",related_id=ticket.id,
-                dedup_key=f"support-message:{support_message.id}",target_url="/support-request",
+                dedup_key=f"support-message:{support_message.id}",target_url=f"/support-request?ticket_id={ticket.id}",
             )
         for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():
             peer_events.append(_record_realtime_event(
@@ -13023,7 +13889,7 @@ def admin_center_support_update(request: Request, ticket_id: int, status: str = 
                 related_type="support_ticket",
                 related_id=ticket.id,
                 dedup_key=f"support-ticket:{ticket.id}:{status}:{ticket.updated_at.isoformat()}",
-                target_url="/support-request",
+                target_url=f"/support-request?ticket_id={ticket.id}",
             )
             user_status_event=_record_realtime_event(
                 s,ticket.user_id,"SUPPORT_TICKET_UPDATED","support_ticket",ticket.id,
@@ -13071,7 +13937,7 @@ def admin_center_report_update(request: Request, report_id: int, status: str = F
                 related_type="user_report",
                 related_id=report.id,
                 dedup_key=f"user-report:{report.id}:{status}",
-                target_url="/support-request",
+                target_url=f"/support-request?ticket_id={linked_ticket.id}" if linked_ticket else "/support-request",
             )
         for peer in s.exec(select(User).where(User.role=="ADMIN",User.is_active==True,User.id!=admin.id)).all():admin_events.append(_record_realtime_event(s,peer.id,"USER_REPORT_UPDATED","user_report",report.id,{"report_id":report.id,"status":status,"case_id":report.case_id,"requires_fragment":False}))
         s.add(AdminAuditLog(admin_user_id=admin.id,action="USER_REPORT_"+status,target_user_id=report.reported_user_id,detail=f"#{report.id}"));s.commit()
@@ -14479,9 +15345,8 @@ app.include_router(mobile_router)
 from app.mobile_analysis_api import router as mobile_analysis_router
 app.include_router(mobile_analysis_router)
 from app.mobile_modern_api_v3 import router as mobile_modern_router
-_mobile_mounted_routes = {(method, route.path) for route in app.routes for method in getattr(route, "methods", ())}
-mobile_modern_router.routes[:] = [route for route in mobile_modern_router.routes
-    if not any((method, route.path) in _mobile_mounted_routes for method in getattr(route, "methods", ()))]
+from app.mobile_route_registry import remove_shadowed_routes as _remove_shadowed_mobile_routes
+_remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)
 app.include_router(mobile_modern_router)
 
 
@@ -14503,3 +15368,7 @@ templates.env.globals['voice_exam_enabled'] = voice_exam_enabled
 # Member-only expert posts and structured publications.
 from app.expert_social_api import register as register_expert_social
 register_expert_social(app, _study_trace_sys.modules[__name__])
+
+# Cookie-session patient history pages share the same server-rendered cards as the first page.
+from app.patient_history_web import router as patient_history_web_router
+app.include_router(patient_history_web_router)

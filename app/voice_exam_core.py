@@ -30,6 +30,14 @@ class VoiceError(ValueError):
     pass
 
 
+class VoiceBusy(VoiceError):
+    """Capacity rejection happens before a provider call and is safe to retry."""
+
+
+class VoiceConfigurationError(VoiceError):
+    """Missing provider configuration is detected before any provider request."""
+
+
 def enabled():
     return os.getenv('VOICE_EXAM_ENABLED', '0') == '1'
 
@@ -812,9 +820,9 @@ def extract(*, data=None, mime=None, transcript=None, context=None, transcriptio
     key = os.getenv('GEMINI_API_KEY', '')
     model = os.getenv('VOICE_EXAM_GEMINI_MODEL') or os.getenv('DENTAL_CLINICAL_AI_MODEL', 'gemini-3.5-flash-lite')
     if data is not None and (not key or not re.fullmatch(r'gemini-[A-Za-z0-9._-]{1,100}', model)):
-        raise VoiceError('Sesli muayene için Gemini yapılandırması hazır değil.')
+        raise VoiceConfigurationError('Sesli muayene için Gemini yapılandırması hazır değil.')
     if not _capacity.acquire(blocking=False):
-        raise VoiceError('Ses çözümleme meşgul. Kaydın korunuyor; biraz sonra tekrar dene.')
+        raise VoiceBusy('Ses çözümleme meşgul. Kaydın korunuyor; biraz sonra tekrar dene.')
     try:
         if data is not None:
             mime = validate_audio(data, mime or '')

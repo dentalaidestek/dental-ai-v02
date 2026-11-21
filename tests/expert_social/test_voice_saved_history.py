@@ -104,7 +104,10 @@ def test_job_lookup_is_single_distinct_and_excludes_wrong_owner_kind_type_and_pe
     finally:
         event.remove(engine, 'before_cursor_execute', capture)
     assert response.context.get('voice_review_ids') == {1}
-    assert len(statements) == 1 and 'select distinct' in statements[0].casefold()
+    # Sayfa başına tek DISTINCT iş sorgusu ve geçmiş listesini iş durumuna
+    # bağlayan ikinci sorgu: ikisi de workjob tablosuna dokunur, ilki DISTINCT.
+    assert len(statements) == 2 and 'select distinct' in statements[0].casefold()
+    assert 'join workjob' in statements[1].casefold() or 'workjob' in statements[1].casefold()
     rows = history_rows(response.text)
     for ident in (5, 6, 7, 8, 10):
         assert 'Analiz #' + str(ident) in rows[ident] and 'Yarım kaldı' in rows[ident]

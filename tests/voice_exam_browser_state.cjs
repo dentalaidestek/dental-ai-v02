@@ -30,6 +30,9 @@ class El{
  vm.runInNewContext(fs.readFileSync('app/static/voice-exam.js','utf8'),box);
  await new Promise(setImmediate);
  get('[data-voice-consent]').checked=true;get('[data-voice-transcript]').value='Özel hayat metni. Soğuk içemiyorum.';
+ root.dispatchEvent({type:'voice-live-state',detail:{active:true}});
+ assert.equal(get('[data-voice-consent]').disabled,false,'Consent can be withdrawn while the live microphone is active');
+ root.dispatchEvent({type:'voice-live-state',detail:{active:false}});
  await get('[data-voice-text]').handlers.click();
  assert.equal(get('[data-voice-fields]').children.length,1);
  assert.equal(get('[data-voice-fields]').children[0].querySelector('input').checked,false);

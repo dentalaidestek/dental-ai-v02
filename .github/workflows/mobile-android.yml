@@ -1,26 +1,28 @@
 name: Mobile Android CI
 
+# Scope automatic checks to the mobile parity branch and its PR target.
+# PR synchronize events run once per head update; avoid duplicate push/PR builds.
 on:
-  push:
-    branches:
-      - 'mobile/**'
-      - 'feature/mobile-*'
-      - 'work/security-privacy-*'
   pull_request:
+    branches:
+      - feature/mobile-beta-20261110
     paths:
-      - 'mobile/**'
-      - 'app/mobile_api.py'
-      - 'app/mobile_analysis_api.py'
-      - 'app/mobile_modern_api.py'
-      - 'app/mobile_modern_api_v3.py'
-      - 'app/main.py'
-      - 'app/expert_social_api.py'
-      - '.github/workflows/mobile-android.yml'
+      - ".github/workflows/mobile-android.yml"
+      - "mobile/**"
+      - "docs/account-erasure-guest-cleanup-20261120.md"
+      - "app/**"
+      - "tests/**"
   workflow_dispatch:
-
+concurrency:
+  group: mobile-android-${{ github.event.pull_request.head.ref || github.ref }}
+  # Do not cancel an in-flight typecheck/export/APK build when the next commit lands.
+  # GitHub keeps only the latest pending run for this PR group.
+  cancel-in-progress: false
 jobs:
   typecheck:
     runs-on: ubuntu-latest
+    # A hung step must end the job on its own instead of stalling the live log.
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: mobile
@@ -29,13 +31,88 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci
-      - run: npm test
-      - run: npx expo export --platform android --platform ios
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Install mobile dependencies
+        id: install
+        run: |
+          set -o pipefail
+          npm ci 2>&1 | tee "$RUNNER_TEMP/mobile-install.log"
+      - name: Preserve dependency installation diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-install-diagnostics
+          path: ${{ runner.temp }}/mobile-install.log
+          if-no-files-found: warn
+          retention-days: 7
+      # Keep independent diagnostics running even if an earlier check fails.
+      # Skip them only when installation fails or the workflow is cancelled.
+      - name: TypeScript typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee "$RUNNER_TEMP/mobile-typecheck.log"
+      - name: Preserve TypeScript diagnostics
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-typecheck-diagnostics
+          path: ${{ runner.temp }}/mobile-typecheck.log
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Print failed check summary
+        if: ${{ always() }}
+        run: |
+          echo "## Mobile CI diagnostics" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f "$RUNNER_TEMP/mobile-install.log" ]; then
+            echo "### Dependency install (last 45 lines)" >> "$GITHUB_STEP_SUMMARY"
+            echo '~~~text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 45 "$RUNNER_TEMP/mobile-install.log" >> "$GITHUB_STEP_SUMMARY"
+            echo '~~~' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f "$RUNNER_TEMP/mobile-typecheck.log" ]; then
+            echo "### TypeScript (last 75 lines)" >> "$GITHUB_STEP_SUMMARY"
+            echo '~~~text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 75 "$RUNNER_TEMP/mobile-typecheck.log" >> "$GITHUB_STEP_SUMMARY"
+            echo '~~~' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Session and authentication tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run test:session
+      - name: Realtime and pagination tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run test:realtime
+      - name: Mobile beta regression tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          npm run test:beta 2>&1 | tee "$RUNNER_TEMP/mobile-beta-tests.log"
+      - name: Preserve beta regression diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-beta-test-diagnostics
+          path: ${{ runner.temp }}/mobile-beta-tests.log
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Summarize beta regression failure
+        if: ${{ failure() }}
+        run: |
+          if [ -f "$RUNNER_TEMP/mobile-beta-tests.log" ]; then
+            echo "## Mobile beta regression diagnostics" >> "$GITHUB_STEP_SUMMARY"
+            echo '~~~text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 120 "$RUNNER_TEMP/mobile-beta-tests.log" >> "$GITHUB_STEP_SUMMARY"
+            echo '~~~' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Export Android and iOS JavaScript bundles
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npx expo export --platform android --platform ios
   beta-apk:
-    needs: typecheck
+    # Build an installable internal APK independently so test failures remain visible
+    # without blocking device evaluation; never deploy or publish this artifact.
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 55
     defaults:
       run:
         working-directory: mobile
@@ -50,18 +127,63 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      # React Native's Gradle build re-downloads the distribution and every
+      # Android dependency on each run without this cache; that is what makes
+      # the build look stuck near the end of the download phase.
+      - name: Cache Gradle distribution and dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
       - uses: android-actions/setup-android@v3
         with:
           # The action defaults to the retired `tools` package. Install only
           # supported SDK packages so setup can reach the actual APK build.
           packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
-      - run: npm ci
-      - run: npx expo prebuild --platform android --no-install
+      - name: Install APK build dependencies
+        run: |
+          set -o pipefail
+          npm ci 2>&1 | tee "$RUNNER_TEMP/mobile-apk-install.log"
+      - name: Generate Android project
+        run: |
+          set -o pipefail
+          npx expo prebuild --platform android --no-install 2>&1 | tee "$RUNNER_TEMP/mobile-apk-prebuild.log"
       # Standalone JS bundle, signed with the generated development key only.
       # This is an internal test APK, never a store signing credential.
-      - run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --max-workers=2
+      - name: Assemble internal Android release
+        run: |
+          set -o pipefail
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --max-workers=2 2>&1 | tee "$RUNNER_TEMP/mobile-apk-gradle.log"
         working-directory: mobile/android
+      - name: Preserve APK build diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-apk-diagnostics
+          path: |
+            ${{ runner.temp }}/mobile-apk-install.log
+            ${{ runner.temp }}/mobile-apk-prebuild.log
+            ${{ runner.temp }}/mobile-apk-gradle.log
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Summarize APK build failure
+        if: ${{ failure() }}
+        run: |
+          echo "## Android APK diagnostics" >> "$GITHUB_STEP_SUMMARY"
+          for phase in install prebuild gradle; do
+            file="$RUNNER_TEMP/mobile-apk-$phase.log"
+            if [ -f "$file" ]; then
+              echo "### $phase (last 80 lines)" >> "$GITHUB_STEP_SUMMARY"
+              echo '~~~text' >> "$GITHUB_STEP_SUMMARY"
+              tail -n 80 "$file" >> "$GITHUB_STEP_SUMMARY"
+              echo '~~~' >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: dental-ai-beta-arm64

@@ -78,6 +78,10 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: VOICE_ASR_RECEIPT_KEY
+        sync: false
+      - key: PATIENT_MEDIA_RECEIPT_KEY
+        sync: false
       - key: COHERE_API_KEY
         sync: false
       - key: GROQ_API_KEY
@@ -97,6 +101,10 @@ services:
       - key: WEB_PUSH_VAPID_PUBLIC_KEY
         sync: false
       - key: WEB_PUSH_VAPID_SUBJECT
+        sync: false
+      - key: MOBILE_PUSH_ENABLED
+        sync: false
+      - key: EXPO_ACCESS_TOKEN
         sync: false
       - key: BREVO_API_KEY
         sync: false

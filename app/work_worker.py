@@ -39,13 +39,15 @@ def run_one(engine):
     # Service erasure and result cleanup even under continuous clinical load.
     from app.work_jobs import collect_garbage, prune_history
     from app.study_deletion_worker import run_deletion_slice
+    from app.mobile_push_receipts import run_mobile_push_receipt_maintenance
     collect_garbage(engine)
     prune_history(engine)
+    push_receipt_work = run_mobile_push_receipt_maintenance(engine)
     with Session(engine, expire_on_commit=False) as session:
         deletion = run_deletion_slice(session)
     job = claim(engine)
     if job is None:
-        return deletion != 'IDLE'
+        return deletion != 'IDLE' or push_receipt_work
     token = current_job.set(job)
     started = time.monotonic()
     try:

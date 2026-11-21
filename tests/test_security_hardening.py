@@ -75,9 +75,12 @@ def test_native_app_disables_backup_and_cleartext():
 
 def test_protected_clinical_media_is_not_browser_cached():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
-    start = source.index("def patient_media_file")
-    block = source[start:source.index("def delete_patient_media", start)]
-    assert 'Cache-Control":"private, no-store' in block
+    block = source.split("def patient_media_file", 1)[1].split(
+        '@app.get("/patients/{patient_id}/media/page")', 1
+    )[0]
+    assert "patient.owner_user_id != user.id" in block
+    assert "media.owner_user_id != user.id" in block
+    assert 'FileResponse(path, headers={"Cache-Control":"private, no-store"})' in block
 
 
 def test_admin_login_uses_same_brute_force_throttle():
@@ -138,7 +141,31 @@ def test_password_reset_requests_are_throttled():
 
 def test_native_analysis_assets_are_not_browser_cached():
     source = (ROOT / "app/mobile_analysis_api.py").read_text(encoding="utf-8")
-    assert 'Cache-Control": "private, no-store"' in source
+    assert "from app.mobile_api import _mobile_private_no_store, _mobile_user" in source
+    legacy = source.split('@router.get("/analyses/{analysis_id}/legacy-radiograph")', 1)[1].split(
+        '@router.get("/analyses/{analysis_id}/assets/{asset_id}")', 1
+    )[0]
+    asset = source.split('@router.get("/analyses/{analysis_id}/assets/{asset_id}")', 1)[1].split(
+        '@router.get("/analyses")', 1
+    )[0]
+    assert "_mobile_private_no_store(response)" in legacy
+    assert "_mobile_private_no_store(response)" in asset
+
+
+def test_native_analysis_r2_hydration_is_offloaded_after_authorization_session():
+    source = (ROOT / "app/mobile_analysis_api.py").read_text(encoding="utf-8")
+    legacy = source.split('@router.get("/analyses/{analysis_id}/legacy-radiograph")', 1)[1].split(
+        '@router.get("/analyses/{analysis_id}/assets/{asset_id}")', 1
+    )[0]
+    asset = source.split('@router.get("/analyses/{analysis_id}/assets/{asset_id}")', 1)[1].split(
+        '@router.get("/analyses")', 1
+    )[0]
+    for block in (legacy, asset):
+        assert "async def mobile_" in block
+        assert "await run_in_threadpool(storage_ensure_local, file_path)" in block
+        assert block.index("with Session(") < block.index("await run_in_threadpool")
+    assert "storage_ensure_local(analysis.radiograph_path)" not in legacy
+    assert "storage_ensure_local(asset.file_path)" not in asset
 
 
 def test_clinical_ai_router_redacts_direct_patient_identifiers():
@@ -282,10 +309,14 @@ def test_account_deletion_expires_browser_cookies_with_root_path():
 
 def test_native_media_file_enforces_media_owner_as_well_as_patient_owner():
     source = (ROOT / "app/mobile_api.py").read_text(encoding="utf-8")
-    block = source.split('def mobile_patient_media_file', 1)[1].split('def _mobile_access_token', 1)[0]
-    assert 'media.patient_id!=patient_id' in block
-    assert 'media.owner_user_id!=user.id' in block
-    assert 'Cache-Control":"private, no-store' in block
+    block = source.split("async def mobile_patient_media_file", 1)[1].split(
+        "async def _invoke_patient_web", 1
+    )[0]
+    compact = "".join(block.split())
+    assert "media.patient_id!=patient_id" in compact
+    assert "patient.owner_user_id!=user.id" in compact
+    assert "media.owner_user_id!=user.id" in compact
+    assert "_mobile_private_no_store(result)" in compact
 
 def test_e2ee_message_storage_has_ciphertext_envelopes_without_forcing_plaintext():
     source = (ROOT / "app/main.py").read_text(encoding="utf-8")
@@ -304,7 +335,7 @@ def test_e2ee_device_keys_are_client_public_keys_and_migration_is_versioned():
     assert "public_key: str" in source
     assert "revoked_at" in source
     migration = (ROOT / "app/migrate.py").read_text(encoding="utf-8")
-    assert "REVISION = 12" in migration
+    assert "REVISION = 14" in migration
     assert "e2eedevicekey" in migration
     assert "consultationmessage ADD COLUMN IF NOT EXISTS e2ee_ciphertext" in migration
     assert "supportticketmessage ADD COLUMN IF NOT EXISTS e2ee_ciphertext" in migration
@@ -351,3 +382,20 @@ def test_private_document_responses_are_not_cacheable():
     MAIN = (ROOT / "app/main.py").read_text(encoding="utf-8")
     assert 'return FileResponse(path, media_type=mime_type, headers={"Cache-Control": "private, no-store"})' in MAIN
     assert 'content_disposition_type="inline", headers={"Cache-Control": "private, no-store"}' in MAIN
+
+
+def test_native_legacy_radiograph_fallback_is_owner_scoped_and_private():
+    source = (ROOT / "app/mobile_analysis_api.py").read_text(encoding="utf-8")
+    detail = source.split('@router.get("/analyses/{analysis_id}")', 1)[1].split(
+        '@router.post("/analyses/{analysis_id}/ai")', 1
+    )[0]
+    assert '"legacy_radiograph_available": bool(analysis.radiograph_path)' in detail
+    assert '"radiograph_path":' not in detail
+
+    route = source.split('@router.get("/analyses/{analysis_id}/legacy-radiograph")', 1)[1].split(
+        '@router.get("/analyses/{analysis_id}/assets/{asset_id}")', 1
+    )[0]
+    assert "_access(session, user, analysis_id)" in route
+    assert "run_in_threadpool(storage_ensure_local, file_path)" in route
+    assert "_mobile_private_no_store(response)" in route
+    assert "FileResponse(" in route

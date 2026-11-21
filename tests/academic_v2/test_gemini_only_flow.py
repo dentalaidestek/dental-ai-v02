@@ -141,13 +141,16 @@ def test_indexed_ocr_is_used_without_original_page_io(monkeypatch, session, kind
 def test_both_chat_endpoints_have_only_gemini_gateway():
     source = (Path(__file__).resolve().parents[2] / 'app/main.py').read_text()
     tree = ast.parse(source)
+    gateway_calls = set()
     for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {'study_ai_ask', 'study_ai_ask_stream'}:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {'study_ai_ask', 'study_ai_ask_stream', '_run_owned_study_request'}:
             assert not any(isinstance(item, ast.Name) and item.id == 'use_v2' for item in ast.walk(node))
             calls = {ast.unparse(item.func) for item in ast.walk(node) if isinstance(item, ast.Call)}
-            assert 'understand_study_request' in calls and 'retrieve_understood_course_context' in calls
             assert not calls & {'retrieve_course_context', 'retrieve_course_context_v2', 'ask_study_ai',
                                 'recover_course_context', 'should_block_academic_question', 'study_v2_reads_enabled'}
+            gateway_calls |= calls
+    # 35c2397a: endpointler gateway'i helper'a devreder; çağrılar birleşik sette aranır.
+    assert 'understand_study_request' in gateway_calls and 'retrieve_understood_course_context' in gateway_calls
 
 
 @pytest.mark.parametrize('role', ['assistant', 'ASSISTANT'])

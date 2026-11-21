@@ -13,6 +13,7 @@ def quiz():
         'options':['Basion','Orbitale','Sella','Gonion','Nasion'],'correct':'B',
         'rationale':'Kaynak Frankfort düzlemini Porion ve Orbitale ile tanımlar.',
         'fact':'Frankfort düzlemi Porion ve Orbitale noktalarından geçer.',
+        'topic':'Frankfort düzlemi','asked_truth':True,'statements':[],'option_combinations':[],
         'source':'Orto.pdf, sayfa 18','material_id':24,'page':18}]}
 
 

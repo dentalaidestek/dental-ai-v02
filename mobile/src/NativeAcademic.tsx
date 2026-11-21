@@ -1,0 +1,201 @@
+import React,{useEffect,useRef,useState} from 'react';
+import {ActivityIndicator,Alert,AppState,FlatList,KeyboardAvoidingView,Platform,Pressable,StyleSheet,Text,TextInput,View} from 'react-native';
+import {useIsFocused} from '@react-navigation/native';
+import * as SecureStore from 'expo-secure-store';
+import * as Crypto from 'expo-crypto';
+import * as Picker from 'expo-document-picker';
+import * as A from './academicApi';
+import {chunkedDraftStore} from './socialDraft';
+import {uploadAcademic,removeAcademicCacheFile} from './nativeAcademicFiles';
+import {hashAcademicCacheFile,isPrivateAcademicCacheUri} from './academicFileHash';
+import {createAcademicUploadQueue,parseAcademicUploadQueue,replaceAcademicUploadIntent,mergeAcademicUploadIntent,removeAcademicUploadIntent,serializeAcademicUploadQueue} from './academicUploadQueue';
+import NativeAcademicFile from './NativeAcademicFile';
+import NativeAnswerText from './NativeAnswerText';
+import NativeAcademicSource from './NativeAcademicSource';
+import NativeAcademicComposer from './NativeAcademicComposer';
+import NativeAcademicAnswerActions from './NativeAcademicAnswerActions';
+import {academicAnswerShareText} from './academicAnswerActions';
+const store=chunkedDraftStore(SecureStore,Crypto.randomUUID),failure=(e:unknown)=>e instanceof Error?e.message:'İşlem tamamlanamadı.';
+function Button({label,onPress,disabled=false}:{label:string;onPress:()=>void;disabled?:boolean}){return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[s.button,disabled&&{opacity:.45}]}><Text style={s.action}>{label}</Text></Pressable>}
+export default function NativeAcademic({token,userId}:{token:string;userId:number}){const [course,setCourse]=useState<A.Course|null>(null);return course?<CourseView key={token+':'+userId+':'+course.id} token={token} userId={userId} course={course} back={()=>setCourse(null)}/>:<Library key={token+':'+userId} token={token} userId={userId} select={setCourse}/>}
+function Library({token,userId,select}:{token:string;userId:number;select:(c:A.Course)=>void}){
+ const [items,setItems]=useState<A.Course[]>([]),[cursor,setCursor]=useState<number|null>(null),[q,setQ]=useState(''),[title,setTitle]=useState(''),[description,setDescription]=useState(''),[editor,setEditor]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[uncertainIntent,setUncertain]=useState<A.CourseCreateIntent|null>(null),[createIntentInvalid,setCreateIntentInvalid]=useState(false),[createReceiptDeleted,setCreateReceiptDeleted]=useState(false),alive=useRef(true),lock=useRef(false),createKey=`dai.academic.course-create.${userId}`;
+ useEffect(()=>{void(async()=>{let pending:A.CourseCreateIntent|null=null,invalid=false;try{const raw=await SecureStore.getItemAsync(createKey);if(raw)pending=A.parseCourseCreateIntent(raw,userId)}catch{invalid=true;if(alive.current)setCreateIntentInvalid(true)}if(alive.current&&pending){setUncertain(pending);setEditor(true)}await load(undefined,pending);if(alive.current&&invalid)setError('Bekleyen ders oluşturma kaydı doğrulanamadı. Yinelenen ders oluşmasını önlemek için yeni oluşturma kilitli.');})();return()=>{alive.current=false}},[]);
+ async function load(before?:number,recovery?:A.CourseCreateIntent|null){
+  if(lock.current)return;lock.current=true;setBusy(true);setError('');
+  const uncertain=recovery===undefined?uncertainIntent:recovery;
+  try{
+   if(uncertain?.request_key&&!before){
+    const receipt=await A.courseCreateReceipt(token,uncertain.request_key);
+    if(receipt){if(alive.current){setItems([{...receipt.course,material_count:receipt.materials.length}]);setCursor(null);await SecureStore.deleteItemAsync(createKey);setUncertain(null);setCreateReceiptDeleted(false);select(receipt.course)}return}
+   }
+   const v=await A.library(token,uncertain?.title||q,before);
+   if(alive.current){
+    if(uncertain&&!before){
+     const created=A.findCreatedCourse(v.items,uncertain);
+     if(created){setItems(v.items);setCursor(v.next_before);try{await SecureStore.deleteItemAsync(createKey)}catch{}setUncertain(null);select(created);return}
+    }
+    setItems(old=>before?[...old,...v.items.filter(i=>!old.some(o=>o.id===i.id))]:v.items);setCursor(v.next_before);
+   }
+  }catch(e){if(alive.current){const status=e&&typeof e==='object'&&'status' in e?Number((e as {status?:unknown}).status):0;if(status===410)setCreateReceiptDeleted(true);setError(failure(e))}}
+  finally{lock.current=false;if(alive.current)setBusy(false)}
+ }
+ async function sendCreate(pending:A.CourseCreateIntent,checkReceipt=false){
+  const requestKey=pending.request_key;if(lock.current||!requestKey)return;lock.current=true;setBusy(true);setError('');
+  try{
+   await SecureStore.setItemAsync(createKey,JSON.stringify(pending));
+   if(!alive.current)return;setUncertain(pending);
+   if(checkReceipt){const existing=await A.courseCreateReceipt(token,requestKey);if(existing){await SecureStore.deleteItemAsync(createKey);if(alive.current){setUncertain(null);setCreateReceiptDeleted(false);select(existing.course)}return}}
+   const v=await A.createCourse(token,pending.title,pending.description,requestKey);
+   await SecureStore.deleteItemAsync(createKey);
+   if(alive.current){setUncertain(null);setCreateReceiptDeleted(false);select(v.course)}
+  }catch(e){if(alive.current){const status=e&&typeof e==='object'&&'status' in e?Number((e as {status?:unknown}).status):0;if(status===410)setCreateReceiptDeleted(true);else if(status===404){void SecureStore.deleteItemAsync(createKey).catch(()=>{});setUncertain(null);setError('Sunucu ders oluşturma özelliğini desteklemiyor (404). Kayıt sunucuda oluşmadı; sunucu güncellemesinden sonra tekrar deneyebilirsiniz.')}else{setError(failure(e));setUncertain(pending)}}}
+  finally{lock.current=false;if(alive.current)setBusy(false)}
+ }
+ function create(){
+  if(lock.current||uncertainIntent||createIntentInvalid)return;
+  const pending:A.CourseCreateIntent={version:2,user:userId,title:title.trim(),description:description.trim(),known_ids:items.map(item=>item.id),request_key:Crypto.randomUUID()};
+  void sendCreate(pending);
+ }
+ async function checkCreateReceipt(){
+  if(lock.current||!uncertainIntent)return;
+  if(!uncertainIntent.request_key){void load();return}
+  lock.current=true;setBusy(true);setError('');
+  try{const existing=await A.courseCreateReceipt(token,uncertainIntent.request_key);if(existing){await SecureStore.deleteItemAsync(createKey);if(alive.current){setUncertain(null);setCreateReceiptDeleted(false);select(existing.course)}}else if(alive.current)setError('Sunucuda bu istek anahtarı için kayıt bulunamadı. Aynı istek anahtarıyla güvenli yeniden deneyebilirsiniz.')}
+  catch(e){if(alive.current){const status=e&&typeof e==='object'&&'status' in e?Number((e as {status?:unknown}).status):0;if(status===410)setCreateReceiptDeleted(true);else if(status===404){void SecureStore.deleteItemAsync(createKey).catch(()=>{});setUncertain(null);setError('Sunucuda bu istek için makbuz bulunamadı (404). Bekleyen ders isteği temizlendi; sunucu güncellemesinden sonra yeni istek açabilirsiniz.')}else setError(failure(e))}}
+  finally{lock.current=false;if(alive.current)setBusy(false)}
+ }
+ function retryCreate(){if(uncertainIntent?.request_key)void sendCreate(uncertainIntent,true)}
+ async function startFreshCreate(){
+  if(lock.current||!createReceiptDeleted)return;lock.current=true;setBusy(true);setError('');
+  try{await SecureStore.deleteItemAsync(createKey);if(alive.current){setUncertain(null);setCreateReceiptDeleted(false);setTitle('');setDescription('')}}
+  catch(e){if(alive.current)setError('Eski ders isteği yerel depodan kaldırılamadı. '+failure(e))}
+  finally{lock.current=false;if(alive.current)setBusy(false)}
+ }
+ return <View style={s.page}><Text style={s.heading}>Akademik AI</Text><Text style={s.meta}>Dersler, kaynaklar ve kayıtlı çalışmalar</Text><View style={s.row}><TextInput style={[s.input,{flex:1}]} value={q} onChangeText={setQ} maxLength={120} placeholder="Ders ara"/><Button label="Ara" onPress={()=>void load()} disabled={busy}/></View><Button label={editor?'Yeni Ders Formunu Kapat':'Yeni Ders'} onPress={()=>setEditor(v=>!v)} disabled={busy}/>{editor&&<View style={s.panel}><TextInput accessibilityLabel="Ders adı" style={s.input} value={title} onChangeText={setTitle} maxLength={120} placeholder="Ders adı"/><TextInput style={s.input} value={description} onChangeText={setDescription} maxLength={500} placeholder="Açıklama" multiline/><Button label="Dersi Oluştur" onPress={()=>void create()} disabled={busy||!!uncertainIntent||createIntentInvalid||title.trim().length<2}/>{uncertainIntent&&<><Text style={s.error}>Oluşturma sonucu belirsiz. Sunucu fişi doğrulanana veya aynı anahtarla güvenli yeniden deneme yapılana kadar yeni bir ders isteği açılmaz.</Text><Button label="Sunucu kaydını doğrula" onPress={()=>void checkCreateReceipt()} disabled={busy}/>{uncertainIntent.request_key&&<Button label="Aynı isteği güvenle yeniden dene" onPress={()=>retryCreate()} disabled={busy}/>}<Button label="Ders Listesini Yeniden Kontrol Et" onPress={()=>void load()} disabled={busy}/>{createReceiptDeleted&&<Button label="Yeni ders isteği başlat" onPress={()=>void startFreshCreate()} disabled={busy}/>}</>}{createIntentInvalid&&<Text style={s.error}>Bekleyen ders kaydı doğrulanamadı. Güvenli yeniden deneme için destek gerekir; yeni oluşturma kilitli.</Text>}</View>}{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{busy&&<ActivityIndicator/>}<FlatList data={items} keyExtractor={c=>String(c.id)} refreshing={busy} onRefresh={()=>void load()} renderItem={({item})=><Pressable style={s.panel} accessibilityRole="button" onPress={()=>select(item)}><Text style={s.title}>{item.title}</Text><Text style={s.meta}>{item.material_count||0} kaynak · {item.description}</Text></Pressable>} ListEmptyComponent={!busy?<Text style={s.meta}>{error?'Dersler alınamadı.':'Henüz ders bulunmuyor.'}</Text>:null} ListFooterComponent={cursor?<Button label="Diğer Dersler" onPress={()=>void load(cursor)} disabled={busy}/>:null}/></View>
+}
+function CourseView({token,userId,course,back}:{token:string;userId:number;course:A.Course;back:()=>void}){
+ const [learning,setLearning]=useState<A.Learning|null>(null),[data,setData]=useState<A.Workspace|null>(null),[messages,setMessages]=useState<A.Message[]>([]),[older,setOlder]=useState<number|null>(null),[quizzes,setQuizzes]=useState<A.Quiz[]>([]),[index,setIndex]=useState<A.IndexStatus|null>(null),[run,setRun]=useState<A.Run|null>(null),[intent,setIntent]=useState<A.RunIntent|null>(null),[ready,setReady]=useState(false),[broken,setBroken]=useState(false),[question,setQuestion]=useState(''),[view,setView]=useState<'chat'|'sources'|'quiz'>('chat'),[title,setTitle]=useState(course.title),[editing,setEditing]=useState(false),[busy,setBusy]=useState(false),[progress,setProgress]=useState<number|null>(null),[error,setError]=useState(''),[uploadUnknown,setUploadUnknown]=useState(''),[uploadIntent,setUploadIntent]=useState<A.UploadIntent|null>(null),[uploadQueue,setUploadQueue]=useState<A.UploadIntent[]>([]);
+ const alive=useRef(true),lock=useRef(false),controller=useRef<AbortController|null>(null),runRef=useRef<A.Run|null>(null),runVersion=useRef(0),focused=useIsFocused(),[foreground,setForeground]=useState(AppState.currentState==='active'),key=`dai.academic.run.${userId}.${course.id}`,uploadKey=`dai.academic.upload.${userId}.${course.id}`,uploadQueueKey=`dai.academic.uploads.${userId}.${course.id}`;
+ function accept(r:A.Run|null){runVersion.current+=1;runRef.current=r;if(alive.current)setRun(r)}
+ async function refresh(){
+  const [w,t,q,i,l]=await Promise.allSettled([A.workspace(token,course.id),A.timeline(token,course.id),A.quizzes(token,course.id),A.indexStatus(token,course.id),A.learning(token,course.id)]);
+  if(!alive.current)return;
+  const blocking:string[]=[],advisory:string[]=[];
+  if(w.status==='fulfilled')setData(w.value);else{setData(null);blocking.push('Ders bilgileri: '+failure(w.reason))}
+  if(t.status==='fulfilled'){setMessages(t.value.items);setOlder(t.value.next_before)}else{setMessages([]);setOlder(null);blocking.push('Çalışma geçmişi: '+failure(t.reason))}
+  if(q.status==='fulfilled')setQuizzes(q.value.quizzes);else{setQuizzes([]);advisory.push('Soru geçmişi: '+failure(q.reason))}
+  if(i.status==='fulfilled')setIndex(i.value);else{setIndex(null);advisory.push('Kaynak durumu: '+failure(i.reason))}
+  if(l.status==='fulfilled')setLearning(l.value.learning);else{setLearning(null);advisory.push('Çalışma özeti: '+failure(l.reason))}
+  if(alive.current){setError([...blocking,...advisory].join('\n'));setBroken(blocking.length>0)}
+  if(blocking.length)throw Error(blocking.join('\n'));
+ }
+ async function restore(){const raw=await store.getItemAsync(key);if(raw){const saved=A.parseIntent(raw,userId,course.id);if(alive.current){setIntent(saved);setQuestion(saved.message)}const r=await A.receipt(token,course.id,saved.request_key);accept(r);if(r){await store.deleteItemAsync(key);if(alive.current){setIntent(null);setQuestion('')}}}else accept(await A.activeRun(token,course.id));}
+ async function persistUploadQueue(items:A.UploadIntent[]){
+  if(items.length){
+   const queue=createAcademicUploadQueue(userId,course.id,items);
+   await store.setItemAsync(uploadQueueKey,serializeAcademicUploadQueue(queue));
+   if(alive.current){setUploadQueue(queue.items);setUploadIntent(queue.items[0]||null);setUploadUnknown(queue.items[0]?.name||'')}
+  }else{
+   await store.deleteItemAsync(uploadQueueKey);
+   if(alive.current){setUploadQueue([]);setUploadIntent(null);setUploadUnknown('')}
+  }
+ }
+ async function reconcileUpload(pending:A.UploadIntent):Promise<boolean>{
+  const receipt=await A.uploadReceipt(token,course.id,pending.request_key);
+  if(!receipt)return false;
+  if(receipt.name!==pending.name||receipt.mime!==pending.mime||(pending.size!==null&&receipt.size!==pending.size))throw Error('Sunucudaki Akademik AI dosya fişi bekleyen dosyayla eşleşmiyor.');
+  if(pending.version===3&&pending.content_sha256!==receipt.content_sha256)throw Error('Sunucudaki kaynak, kaydedilmiş aktarımın içerik özetiyle eşleşmiyor. Yerel dosya korundu.');
+  const local=await hashAcademicCacheFile(pending.uri);
+  if(local&&local.content_sha256!==receipt.content_sha256)throw Error('Aynı ad ve boyuttaki yerel dosyanın içeriği sunucu fişinden farklı. Dosya silinmedi.');
+  if(local&&local.size!==receipt.size)throw Error('Yerel Akademik AI dosyasının boyutu sunucu fişiyle eşleşmiyor. Dosya silinmedi.');
+  if(!await removeAcademicCacheFile(pending.uri))throw Error('Sunucu kaydı bulundu ancak yerel kopya güvenli biçimde temizlenemedi.');
+  return true;
+ }
+ async function restoreUpload(){
+  const raw=await store.getItemAsync(uploadQueueKey);
+  let queue:ReturnType<typeof parseAcademicUploadQueue>|null=null,adoptedLegacy=false;
+  if(raw){
+   try{queue=parseAcademicUploadQueue(raw,userId,course.id)}
+   catch(e){if(alive.current){setUploadUnknown(raw);setError(failure(e))}return}
+  }
+  const legacyRaw=await SecureStore.getItemAsync(uploadKey);
+  if(legacyRaw){
+   let legacy:A.UploadIntent;
+   try{legacy=A.parseUploadIntent(legacyRaw,userId,course.id)}
+   catch(e){if(alive.current){setUploadUnknown(legacyRaw);setError(failure(e))}return}
+   if(queue){
+    try{queue=mergeAcademicUploadIntent(queue,legacy)}
+    catch(e){if(alive.current){setUploadUnknown(legacy.name);setError(failure(e))}return}
+    await persistUploadQueue(queue?.items||[]);
+    await SecureStore.deleteItemAsync(uploadKey);
+   }else if(alive.current){
+    adoptedLegacy=true;
+    queue=createAcademicUploadQueue(userId,course.id,[legacy]);
+    setUploadQueue(queue.items);setUploadIntent(queue.items[0]||null);setUploadUnknown(queue.items[0]?.name||'');
+   }
+  }else if(queue&&alive.current){
+   setUploadQueue(queue.items);setUploadIntent(queue.items[0]||null);setUploadUnknown(queue.items[0]?.name||'');
+  }
+  if(!queue)return;
+  let remaining=[...queue.items];
+  for(const pending of [...queue.items]){
+   if(!alive.current)return;
+   try{if(await reconcileUpload(pending))remaining=remaining.filter(item=>item.request_key!==pending.request_key)}
+   catch(e){if(alive.current)setError(failure(e))}
+  }
+  await persistUploadQueue(remaining);
+  if(adoptedLegacy&&!remaining.length&&alive.current)await SecureStore.deleteItemAsync(uploadKey);
+  if(!remaining.length&&alive.current)await refresh();
+ }
+ async function processUploadQueue(initial:A.UploadIntent[],reconcileFirst=true){
+  let remaining=[...initial];
+  for(const original of [...initial]){
+   if(!alive.current)return;
+   const pending=remaining.find(item=>item.request_key===original.request_key);
+   if(!pending)continue;
+   if(reconcileFirst&&await reconcileUpload(pending)){
+    remaining=remaining.filter(item=>item.request_key!==pending.request_key);
+    await persistUploadQueue(remaining);
+    continue;
+   }
+   if(!alive.current)return;
+   const local=await hashAcademicCacheFile(pending.uri,data?.max_file_bytes);
+   if(!alive.current)return;
+   if(!local)throw Error('Bekleyen Akademik AI dosyası cihaz önbelleğinde bulunamadı. Sunucu fişi yoksa güvenli yeniden yükleme yapılamaz.');
+   if(pending.size!==null&&pending.size!==local.size)throw Error('Bekleyen dosyanın boyutu değişmiş. Eski istek anahtarıyla yeniden yükleme engellendi.');
+   let bound=pending;
+   if(pending.version===3){
+    if(pending.content_sha256!==local.content_sha256)throw Error('Bekleyen dosyanın içeriği değişmiş. Eski istek anahtarıyla yeniden yükleme engellendi.');
+   }else{
+    bound={...pending,version:3,size:local.size,content_sha256:local.content_sha256};
+    remaining=remaining.map(item=>item.request_key===bound.request_key?bound:item);
+    await persistUploadQueue(remaining);
+    if(!alive.current)return;
+   }
+   controller.current=new AbortController();setProgress(0);
+   await uploadAcademic(token,course.id,{uri:bound.uri,name:bound.name,mimeType:bound.mime,size:local.size},bound.request_key,bound.content_sha256!,data!.max_file_bytes,p=>{if(alive.current)setProgress(p)},controller.current.signal);
+   remaining=remaining.filter(item=>item.request_key!==bound.request_key);
+   await persistUploadQueue(remaining);
+  }
+  if(alive.current){setProgress(null);await refresh()}
+ }
+ async function retryUpload(){
+  if(!uploadQueue.length||!data)return;
+  await perform(()=>processUploadQueue(uploadQueue));
+ }
+ useEffect(()=>{const sub=AppState.addEventListener('change',state=>setForeground(state==='active'));void(async()=>{try{await Promise.all([refresh(),restore(),restoreUpload()]);if(alive.current)setReady(true)}catch(e){if(alive.current){setError(failure(e));setBroken(true)}}})();return()=>{alive.current=false;sub.remove();controller.current?.abort()}},[]);
+ const runBusy=A.busyRun(run),indexPending=A.indexNeedsPolling(index);
+ useEffect(()=>{if(!focused||!foreground||!ready||(!runBusy&&!indexPending))return;let stopped=false,timer:ReturnType<typeof setTimeout>,fails=0,nextIndexAt=0;async function poll(){try{const current=runRef.current;if(A.busyRun(current)){const version=runVersion.current;const next=await A.runStatus(token,course.id,current!.id);if(!stopped&&version===runVersion.current){accept(next);if(next?.status==='DONE')await refresh()}}if(indexPending&&Date.now()>=nextIndexAt){nextIndexAt=Date.now()+15000;const status=await A.indexStatus(token,course.id);if(!stopped)setIndex(status)}fails=0}catch(e){fails++;if(!stopped)setError(failure(e))}if(!stopped&&(runBusy||indexPending))timer=setTimeout(()=>void poll(),Math.min(30000,Math.max(runBusy?5000:15000,5000*2**fails)))}timer=setTimeout(()=>void poll(),runBusy?5000:15000);return()=>{stopped=true;clearTimeout(timer)}},[focused,foreground,ready,runBusy,indexPending]);
+ async function perform(work:()=>Promise<unknown>){if(lock.current)return;lock.current=true;setBusy(true);setError('');try{await work()}catch(e){if(alive.current)setError(failure(e))}finally{lock.current=false;if(alive.current)setBusy(false)}}
+ async function cancelCurrentRun(){const current=runRef.current;if(!A.busyRun(current))return;await perform(async()=>{try{const result=await A.cancelRun(token,course.id,current!.id);if(!alive.current)return;if(!result)throw Error('İptal isteği sunucuda henüz doğrulanmadı. Durumu yenileyin.');accept(result);if(result.status==='DONE')await refresh();if(A.busyRun(result))throw Error('İptal isteği sunucuda henüz doğrulanmadı. Durumu yenileyin.')}catch(e){if(alive.current){try{const latest=await A.runStatus(token,course.id,current!.id);if(!alive.current||!latest)return;accept(latest);if(!A.busyRun(latest)){if(latest.status==='DONE')await refresh();return}}catch{}}throw e}})}
+ async function start(text:string){if(!alive.current||!ready||broken||A.busyRun(runRef.current))return;await perform(async()=>{let pending=intent;if(!pending){pending={user:userId,course:course.id,request_key:Crypto.randomUUID(),message:text.trim()};if(!pending.message||pending.message.length>8000)throw Error('Sorunuzu 1–8000 karakter olarak yazın.');await store.setItemAsync(key,JSON.stringify(pending));if(!alive.current)return;setIntent(pending)}const existing=await A.receipt(token,course.id,pending.request_key);if(!alive.current)return;const result=existing||await A.createRun(token,course.id,pending);accept(result);await store.deleteItemAsync(key);if(alive.current){setIntent(null);setQuestion('')}if(result?.status==='DONE')await refresh()})}
+ async function pick(){await perform(async()=>{const result=await Picker.getDocumentAsync({type:['application/pdf','image/jpeg','image/png','image/webp'],multiple:true,copyToCacheDirectory:true});if(!alive.current||result.canceled||!data||!result.assets.length)return;if(uploadQueue.length)throw Error('Önce bekleyen Akademik dosya kuyruğunu tamamlayın.');if(result.assets.length>data.max_upload_count||result.assets.length>12)throw Error('Tek seferde en fazla '+data.max_upload_count+' dosya seçin.');const names=result.assets.map(asset=>asset.name.toLowerCase());if(new Set(names).size!==names.length)throw Error('Aynı dosya adını tek aktarımda birden fazla kez seçmeyin.');const pending=result.assets.map(asset=>{const mime=A.academicMimeFromName(asset.name);if(!mime)throw Error('PDF/JPG/PNG/WEBP dosyası seçin.');const supplied=(asset.mimeType||'').trim().toLowerCase();if(supplied&&supplied!=='application/octet-stream'&&supplied!==mime)throw Error('Dosya uzantısı ile içerik türü eşleşmiyor.');if(!isPrivateAcademicCacheUri(asset.uri))throw Error('Seçilen dosya uygulamanın özel önbelleğinde değil.');if(Number.isSafeInteger(asset.size)&&Number(asset.size)<1)throw Error('Boş veya geçersiz dosya seçildi.');if(Number.isSafeInteger(asset.size)&&Number(asset.size)>data.max_file_bytes)throw Error('Bir dosya dersin boyut sınırını aşıyor.');return {version:2,user:userId,course:course.id,name:asset.name,mime,uri:asset.uri,size:Number.isSafeInteger(asset.size)&&Number(asset.size)>0?Number(asset.size):null,request_key:Crypto.randomUUID()} as A.UploadIntent});const queue=createAcademicUploadQueue(userId,course.id,pending);/* durable-first invariant: await persistUploadQueue(queue.items) always precedes await processUploadQueue(queue.items) */await persistUploadQueue(queue.items);await processUploadQueue(queue.items,false)})}
+ const disabled=busy||!ready,quizItems=messages.flatMap(m=>m.quiz?[quizzes.find(x=>x.message_id===m.id)||m.quiz]:[]);
+ function renderQuiz(quiz:A.Quiz){return <View key={quiz.message_id} style={s.panel}>{quiz.questions.map(q=><View key={q.number} style={{gap:8,marginBottom:20}}><Text style={s.title}>{q.number}. {q.stem}</Text>{q.options.map((option,n)=>{const choice='ABCDE'[n];return <Pressable key={choice} accessibilityRole="radio" accessibilityState={{checked:q.result?.selected===choice,disabled:disabled||!!q.result}} disabled={disabled||!!q.result} onPress={()=>void perform(async()=>{const result=await A.answer(token,course.id,quiz.message_id,q.number,choice);if(!result.quiz)throw Error('Cevap kaydedildi; soru setini yeniden açın.');if(alive.current)setQuizzes(old=>[...old.filter(v=>v.message_id!==result.quiz.message_id),result.quiz]);const l=await A.learning(token,course.id);if(alive.current)setLearning(l.learning)})} style={[s.input,q.result?.selected===choice&&s.selected]}><Text style={s.body}>{choice}) {option}</Text></Pressable>})}{q.result&&<><Text style={[s.title,{color:q.result.correct?'#167348':'#B42318'}]}>{q.result.correct?'Doğru':'Doğru cevap: '+q.result.correct_choice}</Text>{!!q.rationale&&<Text style={s.body}>{q.rationale}</Text>}{!!q.source&&<Text style={s.meta}>Kaynak: {q.source}</Text>}</>}</View>)}</View>}
+ const header=<View style={{gap:12}}><Button label="Derslerime Dön" onPress={back}/><Text style={s.heading}>{data?.course.title||course.title}</Text>{learning&&<View style={s.panel}><Text style={s.title}>Çalışma Durumum</Text><Text style={s.meta}>{learning.practiced_facts} bilgi · {learning.correct} doğru · {learning.wrong} yanlış · {learning.due_count} tekrar bekliyor</Text>{learning.review.map((r,n)=><Text key={n} style={s.meta}>{r.fact} · {r.source}</Text>)}<Button label="Eksiklerimden 5 Soru" disabled={disabled||runBusy||!!intent||!index?.ready||!(learning.weak_count||learning.due_count)} onPress={()=>void start("Son değerlendirmelerimde yanlış yaptığım veya tekrar zamanı gelen konulardan, notlara dayanarak 5 yeni soru hazırla. Önceki soruları tekrarlama, cevap anahtarını şimdilik gösterme.")}/></View>}<View style={s.row}>{(['chat','sources','quiz'] as const).map(v=><Button key={v} label={v==='chat'?'Çalışma':v==='sources'?'Kaynaklar':'Sorular'} onPress={()=>setView(v)}/>)}</View>{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}<Button label="Durumu Yenile" disabled={busy} onPress={()=>void perform(async()=>{await refresh();await restore();if(alive.current){setBroken(false);setReady(true)}})}/>{index&&<View style={s.panel}><Text style={s.title}>{index.ready?'Kaynaklar çalışmaya hazır':'Kaynak durumu: '+index.state} · {index.completed}/{index.total}</Text>{index.files.map(f=><Text key={f.id} style={s.meta}>{f.filename}: {f.message||f.state}</Text>)}</View>}{!!uploadUnknown&&<View style={s.panel}><Text style={s.error}>Kontrol edilmesi gereken aktarım: {uploadIntent?.name||uploadUnknown}. {uploadQueue.length>1?`Kuyrukta ${uploadQueue.length} dosya var; kalanlar da güvenli biçimde saklandı.`:''} Önce kaynak listesini yenileyin; dosya sunucuda kayıtlı olabilir.</Text>{uploadIntent?<><Button label="Sunucu Kaydını Doğrula" disabled={busy} onPress={()=>void perform(async()=>{if(!await reconcileUpload(uploadIntent))throw Error('Bu istek anahtarı için sunucu fişi henüz bulunamadı. Yerel dosya korunuyor; aynı anahtarla güvenli yeniden deneyebilirsiniz.');const queue=createAcademicUploadQueue(userId,course.id,uploadQueue),next=removeAcademicUploadIntent(queue,uploadIntent.request_key);await persistUploadQueue(next?.items||[]);if(!next)await refresh()})}/><Button label="Aynı Anahtarla Güvenli Yeniden Dene" disabled={busy||!data} onPress={()=>void retryUpload()}/></>:<Text style={s.error}>Bu aktarım eski sürümden geliyor ve doğrulanabilir bir sunucu fişi taşımıyor. Yanlış dosyayı eşleştirmemek için otomatik kurtarma kilitli.</Text>}</View>}{run&&<View style={s.panel}><Text style={s.title}>{run.stage} · {run.status}</Text><Text style={s.meta}>{run.question}</Text>{!!run.partial&&<NativeAnswerText value={run.partial}/>} {!!run.error&&<Text style={s.error}>{run.error}</Text>}{runBusy&&<><ActivityIndicator/><Text style={s.meta}>Çalışma sunucuda sürer; ekranı kapatıp tekrar açabilirsiniz.</Text><Button label={busy?'Durduruluyor...':'Bu işlemi durdur'} disabled={busy} onPress={()=>void cancelCurrentRun()}/></>}{['FAILED','INTERRUPTED'].includes(run.status)&&<Button label="Aynı Soruyu Yeniden Dene" disabled={disabled||!index?.ready||!!intent} onPress={()=>void start(run.question)}/>}</View>}{intent&&<View style={s.panel}><Text style={s.error}>Bekleyen isteğin sonucu henüz doğrulanmadı. Yeni bir üretim başlatılmaz.</Text><Text style={s.body}>{intent.message}</Text><Button label="Kaydı Kontrol Et ve İsteği Vazgeç" disabled={disabled||runBusy} onPress={()=>void perform(async()=>{const existing=await A.receipt(token,course.id,intent.request_key);if(existing){accept(existing);throw Error("İstek sunucuda kayıtlı. Durumu yenileyin.")}await store.deleteItemAsync(key);if(alive.current){setIntent(null);setBroken(false)}})}/><Button label="Aynı İsteği Doğrula / Sürdür" disabled={disabled||broken||runBusy} onPress={()=>void start(intent.message)}/></View>}{busy&&<ActivityIndicator/>}</View>;
+ function sources(){return <FlatList data={data?.materials||[]} keyExtractor={m=>String(m.id)} ListHeaderComponent={<>{header}<View style={s.panel}><Text style={s.meta}>PDF/JPG/PNG/WEBP · dosya başına {(data?.max_file_bytes||0)/1024/1024} MB. İndeksleme sunucuda devam eder.</Text><Button label="Kaynak Dosyası Ekle" disabled={disabled||!!uploadUnknown} onPress={()=>void pick()}/>{progress!==null&&<Text style={s.meta}>Aktarım: %{Math.round(progress*100)}</Text>}<Button label={editing?'Ders Ayarlarını Kapat':'Ders Ayarları'} onPress={()=>setEditing(v=>!v)} disabled={busy}/>{editing&&<><TextInput style={s.input} value={title} onChangeText={setTitle} maxLength={120}/><Button label="Ders Adını Kaydet" disabled={disabled||title.trim().length<2} onPress={()=>void perform(async()=>{await A.renameCourse(token,course.id,title.trim());await refresh()})}/><Button label="Yeni Sohbet / Geçmişi Temizle" disabled={disabled||runBusy||!!intent} onPress={()=>Alert.alert("Sohbeti temizle","Bu dersin sohbet geçmişi temizlensin mi?",[{text:"Vazgeç",style:"cancel"},{text:"Temizle",style:"destructive",onPress:()=>void perform(async()=>{await A.clearHistory(token,course.id);accept(null);await refresh()})}])}/><Button label="Dersi ve Çalışmalarını Sil" disabled={disabled||runBusy} onPress={()=>Alert.alert('Dersi sil','Ders, kaynaklar ve çalışmalar silinecek.',[{text:'Vazgeç',style:'cancel'},{text:'Sil',style:'destructive',onPress:()=>void perform(async()=>{await A.deleteCourse(token,course.id);if(alive.current)back()})}])}/></>}</View></>} renderItem={({item})=><View style={s.panel}><Text style={s.title}>{item.name}</Text><Text style={s.meta}>{Math.round(item.size/1024)} KB · {item.index_status}</Text><NativeAcademicFile key={item.id} token={token} course={course.id} path={item.url} name={item.name} mime={item.mime}/><NativeAcademicSource token={token} course={course.id} material={item.id}/><Button label="Kaynağı Sil" disabled={disabled||runBusy} onPress={()=>Alert.alert('Kaynağı sil','Bu kaynağa bağlı sorular yeniden doğrulama gerektirebilir.',[{text:'Vazgeç',style:'cancel'},{text:'Sil',style:'destructive',onPress:()=>void perform(async()=>{await A.deleteMaterial(token,course.id,item.id);await refresh()})}])}/></View>} ListFooterComponent={data?.next_before?<Button label="Diğer Kaynaklar" disabled={busy} onPress={()=>void perform(async()=>{const next=await A.workspace(token,course.id,data.next_before!);if(alive.current)setData(v=>v?{...next,materials:[...v.materials,...next.materials.filter(m=>!v.materials.some(old=>old.id===m.id))]}:next)})}/>:null}/>}
+ function conversation(){return <><FlatList<A.Message|A.Quiz> style={{flex:1}} keyboardShouldPersistTaps="handled" data={view==='quiz'?quizItems:messages} keyExtractor={m=>String('message_id' in m?m.message_id:m.id)} ListHeaderComponent={<>{header}{view==='chat'&&<View style={s.panel}><Text style={s.meta}>Yanıtları kaynaklarıyla kontrol edin. AI yanıtı akademik doğrulamanın yerini tutmaz. Soru alanı ekranın altında sabit kalır.</Text><View style={s.row}>{[["Özetle","Bu ders notlarını sınav odaklı ve yüksek verimli şekilde özetle. Önce ana başlıkları, sonra kritik ayrıntıları ver."],["Bana Öğret","Bu ders notlarıyla adım adım çalışalım. İlk konudan başla: kısa bir açıklama ve nottan bir örnek ver, sonra anlamamı kontrol eden tek bir soru sor ve yanıtımı bekle. Sonraki anlatımı cevabıma göre ayarla."]].map(([label,prompt])=><Button key={label} label={label} disabled={disabled||!index?.ready||!!intent||broken||runBusy} onPress={()=>void start(prompt)}/>)}{[5,20].map(n=><Button key={n} label={n+' Soru Hazırla'} disabled={disabled||!index?.ready||!!intent||broken||runBusy} onPress={()=>void start(`Ders kaynaklarına dayanarak ${n} adet açıklamalı çoktan seçmeli soru hazırla.`)}/>)}</View></View>}{older&&<Button label="Önceki Çalışmalar" disabled={busy} onPress={()=>void perform(async()=>{const next=await A.timeline(token,course.id,older);if(alive.current){setMessages(old=>[...next.items.filter(m=>!old.some(o=>o.id===m.id)),...old]);setOlder(next.next_before)}})}/>}</>} renderItem={({item})=>{if('message_id' in item)return renderQuiz(item);const m=item,q=m.quiz&&(quizzes.find(x=>x.message_id===m.id)||m.quiz);return <View style={s.panel}><Text style={s.meta}>{m.role==='USER'?'Siz':'Akademik AI'} · {new Date(m.created_at).toLocaleString('tr-TR')}</Text>{!!m.content&&<NativeAnswerText value={m.content}/>}{q&&renderQuiz(q)}{m.artifact&&(m.artifact.files?.length?m.artifact.files:[m.artifact]).map((f,n)=><NativeAcademicFile key={m.id+':'+n} token={token} course={course.id} path={f.url} name={f.name}/>)}{m.sources.map((source,n)=><Text key={n} style={s.meta}>Kaynak: {source.title||source.display_name||source.filename||'Ders notu'}{source.page?' · s. '+source.page:''}{source.quote?'\n'+source.quote:''}</Text>)}{m.role==='ASSISTANT'&&<NativeAcademicAnswerActions token={token} course={course.id} messageId={m.id} content={academicAnswerShareText(m)} vote={m.vote||'none'} disabled={disabled} onVote={vote=>setMessages(old=>old.map(item=>item.id===m.id?{...item,vote}:item))}/>}</View>}} ListEmptyComponent={ready?<Text style={s.meta}>{view==='quiz'?'Henüz soru seti bulunmuyor.':'Henüz kayıtlı çalışma bulunmuyor.'}</Text>:null}/>{view==='chat'&&<NativeAcademicComposer value={question} onChangeText={setQuestion} onSend={()=>void start(question)} disabled={disabled||!index?.ready||!!intent||broken||runBusy}/>}</>}
+ return <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}><View style={s.page}>{view==='sources'?sources():conversation()}</View></KeyboardAvoidingView>
+}
+const s=StyleSheet.create({page:{flex:1,padding:16,gap:12,backgroundColor:'#F6F8FC'},heading:{fontSize:23,fontWeight:'800',color:'#102033'},title:{fontSize:16,fontWeight:'700',lineHeight:24,color:'#102033'},body:{fontSize:15,lineHeight:24,color:'#102033'},meta:{fontSize:13,lineHeight:21,color:'#53657B'},row:{flexDirection:'row',flexWrap:'wrap',gap:8,alignItems:'center'},panel:{padding:14,borderWidth:1,borderColor:'#DCE3EB',borderRadius:12,backgroundColor:'#FFF',gap:10,marginVertical:7},input:{borderWidth:1,borderColor:'#DCE3EB',borderRadius:9,padding:12,minHeight:46,color:'#102033',backgroundColor:'#FFF'},button:{minHeight:44,padding:12,borderRadius:9,backgroundColor:'#E8F0FF',justifyContent:'center'},action:{color:'#1769AA',fontWeight:'700'},selected:{backgroundColor:'#E8F0FF',borderColor:'#1769AA'},error:{color:'#B42318',fontSize:14,lineHeight:21}});

@@ -1,5 +1,34 @@
 """Bound HTTP admission and multipart bytes before framework spooling."""
 import os
+import re
+
+from app.upload_limits import (
+    MAX_PATIENT_MEDIA_BATCH_BYTES,
+    MAX_PATIENT_MEDIA_FILE_BYTES,
+    MAX_ANALYSIS_BATCH_BYTES,
+)
+
+_MULTIPART_OVERHEAD_BYTES = 256 * 1024
+
+
+def request_body_limit(scope, global_limit: int) -> int:
+    """Return the strictest route-specific raw HTTP body budget.
+
+    The middleware counts actual ASGI body chunks, including multipart framing;
+    Content-Length is only an early-rejection hint.
+    """
+    if scope.get("method", "").upper() != "POST":
+        return global_limit
+    path = scope.get("path", "")
+    if re.fullmatch(r"/patients/[1-9][0-9]*/media", path):
+        route_limit = MAX_PATIENT_MEDIA_BATCH_BYTES + _MULTIPART_OVERHEAD_BYTES
+    elif re.fullmatch(r"/analysis/new/[1-9][0-9]*", path) or path == "/api/mobile/v1/analyses":
+        route_limit = MAX_ANALYSIS_BATCH_BYTES + _MULTIPART_OVERHEAD_BYTES
+    elif re.fullmatch(r"/api/mobile/v1/patients/[1-9][0-9]*/media", path):
+        route_limit = MAX_PATIENT_MEDIA_FILE_BYTES + _MULTIPART_OVERHEAD_BYTES
+    else:
+        return global_limit
+    return min(global_limit, route_limit)
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 
@@ -21,8 +50,9 @@ class RequestLimits:
                                headers={'Retry-After': '5'})(scope, receive, send)
             return
         headers = dict(scope.get('headers', []))
+        body_limit = request_body_limit(scope, self.max_bytes)
         try:
-            if int(headers.get(b'content-length', b'0')) > self.max_bytes:
+            if int(headers.get(b'content-length', b'0')) > body_limit:
                 await JSONResponse({'detail': 'Upload too large'}, status_code=413)(scope, receive, send)
                 return
         except ValueError:
@@ -41,7 +71,7 @@ class RequestLimits:
             message = await receive()
             if message['type'] == 'http.request':
                 total += len(message.get('body', b''))
-                if total > self.max_bytes:
+                if total > body_limit:
                     raise HTTPException(413, 'Upload too large')
             return message
         try:

@@ -140,6 +140,29 @@ def test_review_changes_only_selected_fields_and_is_idempotent(app_client):
         assert len(session.exec(select(WorkJob)).all()) == 1
         assert session.exec(select(WorkJob)).one().payload_json == '{}'
 
+def test_reviewed_voice_history_reads_only_explicitly_saved_anamnesis(app_client):
+    client, engine = app_client
+    approved = {
+        'medical_history': 'Olumsuz beyan: sistemik rahatsızlık yok; geçmişte anjiyo öyküsü',
+        'medications': 'Metformin kullandığını belirtti; doz doğrulanmadı',
+        'allergies': 'Olmadığı belirtildi: Penisilin alerjisi',
+        'family_history': 'Annesinde diyabet öyküsü olduğunu belirtti',
+    }
+    saved = client.post('/patients/1/voice-exam/apply', json=payload(engine, fields=approved))
+    assert saved.status_code == 200
+    analysis_id = saved.json()['analysis_id']
+
+    history = client.get('/patients/1/voice-exam/history')
+    assert history.status_code == 200
+    body = history.json()
+    assert set(body['fields']) == set(approved)
+    for name, value in approved.items():
+        assert body['fields'][name]['value'] == value
+        assert body['fields'][name]['quote'] == ''
+        assert body['fields'][name]['analysis_id'] == analysis_id
+    assert 'Güncel kullanım' in body['notice']
+    assert client.get('/patients/2/voice-exam/history').status_code == 404
+
 
 @pytest.mark.parametrize('path', ['audio', 'text', 'apply'])
 def test_foreign_patient_rejected_before_provider(app_client, monkeypatch, path):

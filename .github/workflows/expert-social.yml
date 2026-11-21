@@ -1,31 +1,7 @@
 name: Expert social profile regression
+# Temporarily manual-only while hosted CI jobs fail before their first step.
+# Restore automatic push/pull_request triggers after runner availability is confirmed.
 on:
-  pull_request:
-    paths:
-      - 'app/expert_social*.py'
-      - 'app/expert_publications.py'
-      - 'app/account_erasure.py'
-      - 'app/main.py'
-      - 'app/migrate.py'
-      - 'app/static/expert-social*'
-      - 'app/static/dental-flow*'
-      - 'app/static/expert-icons/**'
-      - 'app/static/expert-profile-reference.png'
-      - 'app/voice_exam.py'
-      - 'app/static/voice-exam*'
-      - 'app/static/account-history.js'
-      - 'app/templates/base.html'
-      - 'app/templates/dashboard.html'
-      - 'app/templates/features.html'
-      - 'app/voice_exam*.py'
-      - 'tests/test_voice_full_conversation.py'
-      - 'app/templates/voice_exam_panel.html'
-      - 'tests/test_voice_exam*.py'
-      - 'tests/test_voice_anamnesis.py'
-      - 'app/templates/*expert*'
-      - 'app/templates/admin_social.html'
-      - 'tests/expert_social/**'
-      - '.github/workflows/expert-social.yml'
   workflow_dispatch:
 permissions:
   contents: read

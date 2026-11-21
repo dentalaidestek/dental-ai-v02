@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import uuid
 import threading
 from datetime import datetime, timedelta
@@ -29,6 +30,8 @@ from app import (
     object_storage,
 )
 from app.expert_social_models import (
+    SocialAdminStepUpChallenge,
+    SocialAdminStepUpSession,
     SocialPost,
     SocialFollow,
     SocialMedia,
@@ -53,7 +56,9 @@ from app.expert_consultation_requests import consultation_expert_is_verified
 HEADERS = {
     "Cache-Control": "private, no-store",
     "X-Content-Type-Options": "nosniff",
-    "Vary": "Cookie",
+    # The same private route serves cookie-authenticated web and Bearer-authenticated
+    # native clients; include both authorization dimensions even with no-store.
+    "Vary": "Cookie, Authorization, X-Dental-Social-Admin-Step-Up",
 }
 NETWORK_SLOTS = asyncio.Semaphore(3)
 IMAGE_SLOT = threading.BoundedSemaphore(1)
@@ -150,6 +155,11 @@ class ReviewBody(Body):
     status: Literal["PUBLISHED", "REJECTED", "PENDING"]
     version: int = Input(ge=1)
     reason: str = Input(min_length=3, max_length=300)
+
+
+class NativeAdminStepUpVerifyBody(Body):
+    # Malformed codes reach the handler and count against the attempt limit.
+    code: str = Input(max_length=32)
 
 
 class PublicationBody(Body):
@@ -302,11 +312,33 @@ def register(app, main):
                 )
             ):
                 raise HTTPException(403, "İstek doğrulanamadı. Sayfayı yeniden açın.")
-        # Resolve MFA authorization before opening a content transaction. Reuse
-        # it only within this request, so admin reads also need one connection.
-        request.state.social_admin = (
-            main._admin_only(request) if u.role == "ADMIN" and not native else None
-        )
+        # Browser administrators keep the existing cookie + AdminVerifiedSession
+        # contract. Native Bearer sessions require a separate, five-minute,
+        # session-bound SOCIAL_MODERATION step-up token.
+        request.state.social_admin = None
+        if u.role == "ADMIN" and not native:
+            request.state.social_admin = main._admin_only(request)
+        elif (
+            native
+            and u.role == "ADMIN"
+            and (u.email or "").strip().lower() == main.ADMIN_FIXED_EMAIL
+            and u.email_verified_at
+        ):
+            stepup = request.headers.get("x-dental-social-admin-step-up", "")
+            if stepup and len(stepup) <= 256:
+                with Session(main.engine) as session:
+                    grant = session.exec(
+                        select(SocialAdminStepUpSession).where(
+                            SocialAdminStepUpSession.token_hash == main.hash_session_token(stepup),
+                            SocialAdminStepUpSession.user_id == u.id,
+                            SocialAdminStepUpSession.session_hash == main.hash_session_token(token.strip()),
+                            SocialAdminStepUpSession.scope == "SOCIAL_MODERATION",
+                            SocialAdminStepUpSession.expires_at > main._utcnow_naive(),
+                            SocialAdminStepUpSession.revoked_at == None,
+                        )
+                    ).first()
+                if grant:
+                    request.state.social_admin = u
         return u
 
     def admin(request):
@@ -315,6 +347,255 @@ def register(app, main):
         if not user:
             raise HTTPException(403, "Yönetici doğrulaması gerekiyor.")
         return user
+
+    def native_admin_session(request, user):
+        authorization = request.headers.get("authorization", "")
+        scheme, _, raw_token = authorization.partition(" ")
+        raw_token = raw_token.strip()
+        if scheme.lower() != "bearer" or not raw_token:
+            raise HTTPException(403, "Native yönetici oturumu gerekiyor.")
+        if (
+            user.role != "ADMIN"
+            or not user.is_active
+            or (user.email or "").strip().lower() != main.ADMIN_FIXED_EMAIL
+            or not user.email_verified_at
+        ):
+            raise HTTPException(403, "Yönetici doğrulaması gerekiyor.")
+        return raw_token, main.hash_session_token(raw_token)
+
+    @r.post("/admin/step-up")
+    def begin_native_social_admin_step_up(request: Request):
+        user = actor(request)
+        _, session_hash = native_admin_session(request, user)
+        client_ip = request.client.host if request.client else "unknown"
+        admit(main.engine, "social-admin-step-up-send-ip", client_ip, limit=12, window=600)
+        admit(main.engine, "social-admin-step-up-send-user", str(user.id), limit=5, window=600)
+        admit(
+            main.engine,
+            "social-admin-step-up-send-session",
+            f"{user.id}:{session_hash}",
+            limit=3,
+            window=600,
+        )
+        current_time = main._utcnow_naive()
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        # Argon2id makes a database-only offline enumeration of the six-digit
+        # OTP space materially more expensive than a plain SHA-256 digest.
+        code_hash = main.hash_password(code)
+        with Session(main.engine, expire_on_commit=False) as session:
+            live_user = session.exec(
+                select(main.User).where(main.User.id == user.id).with_for_update()
+            ).first()
+            live_session = session.exec(
+                select(main.SessionToken).where(
+                    main.SessionToken.token_hash == session_hash,
+                    main.SessionToken.user_id == user.id,
+                    main.SessionToken.expires_at > current_time,
+                ).with_for_update()
+            ).first()
+            if (
+                not live_user
+                or not live_user.is_active
+                or live_user.role != "ADMIN"
+                or (live_user.email or "").strip().lower() != main.ADMIN_FIXED_EMAIL
+                or not live_user.email_verified_at
+                or not live_session
+            ):
+                raise HTTPException(403, "Yönetici oturumu artık geçerli değil.")
+            # Step-up rows are short-lived credentials, not an audit log.
+            # Opportunistically purge a bounded batch of expired rows on the rare
+            # challenge-issue path; never scan or block the feed/request hot path.
+            expired_challenge_hashes = session.exec(
+                select(SocialAdminStepUpChallenge.session_hash)
+                .where(SocialAdminStepUpChallenge.expires_at <= current_time)
+                .order_by(SocialAdminStepUpChallenge.expires_at.asc())
+                .limit(100)
+            ).all()
+            if expired_challenge_hashes:
+                session.exec(
+                    delete(SocialAdminStepUpChallenge).where(
+                        SocialAdminStepUpChallenge.session_hash.in_(expired_challenge_hashes)
+                    )
+                )
+            expired_grant_hashes = session.exec(
+                select(SocialAdminStepUpSession.token_hash)
+                .where(SocialAdminStepUpSession.expires_at <= current_time)
+                .order_by(SocialAdminStepUpSession.expires_at.asc())
+                .limit(100)
+            ).all()
+            if expired_grant_hashes:
+                session.exec(
+                    delete(SocialAdminStepUpSession).where(
+                        SocialAdminStepUpSession.token_hash.in_(expired_grant_hashes)
+                    )
+                )
+            previous = session.exec(
+                select(SocialAdminStepUpChallenge)
+                .where(SocialAdminStepUpChallenge.session_hash == session_hash)
+                .with_for_update()
+            ).first()
+            if previous and previous.created_at > current_time - timedelta(seconds=60):
+                raise HTTPException(
+                    429,
+                    "Yeni doğrulama kodu istemeden önce 60 saniye bekleyin.",
+                    headers={"Retry-After": "60"},
+                )
+            if previous:
+                session.delete(previous)
+            session.add(
+                SocialAdminStepUpChallenge(
+                    session_hash=session_hash,
+                    user_id=user.id,
+                    code_hash=code_hash,
+                    created_at=current_time,
+                    expires_at=current_time + timedelta(minutes=10),
+                    attempts=0,
+                )
+            )
+            session.commit()
+        try:
+            main.send_email_verification_code(main.ADMIN_FIXED_EMAIL, code)
+        except Exception:
+            with Session(main.engine) as session:
+                failed = session.get(SocialAdminStepUpChallenge, session_hash)
+                if failed and secrets.compare_digest(failed.code_hash, code_hash):
+                    session.delete(failed)
+                    session.commit()
+            main.logger.warning("social.admin_step_up.delivery_failed user_id=%s", user.id)
+            raise HTTPException(
+                503,
+                "Yönetici doğrulama kodu gönderilemedi. Daha sonra tekrar deneyin.",
+            ) from None
+        return JSONResponse(
+            {"ok": True, "expires_in": 600, "delivery": "fixed_mailbox"},
+            headers=HEADERS,
+        )
+
+    @r.post("/admin/step-up/verify")
+    def verify_native_social_admin_step_up(
+        request: Request, body: NativeAdminStepUpVerifyBody
+    ):
+        user = actor(request)
+        _, session_hash = native_admin_session(request, user)
+        client_ip = request.client.host if request.client else "unknown"
+        admit(main.engine, "social-admin-step-up-verify-ip", client_ip, limit=30, window=600)
+        admit(main.engine, "social-admin-step-up-verify-user", str(user.id), limit=25, window=600)
+        admit(
+            main.engine,
+            "social-admin-step-up-verify-session",
+            f"{user.id}:{session_hash}",
+            limit=10,
+            window=600,
+        )
+        current_time = main._utcnow_naive()
+        stepup_token = secrets.token_urlsafe(32)
+        with Session(main.engine, expire_on_commit=False) as session:
+            live_user = session.exec(
+                select(main.User).where(main.User.id == user.id).with_for_update()
+            ).first()
+            live_session = session.exec(
+                select(main.SessionToken).where(
+                    main.SessionToken.token_hash == session_hash,
+                    main.SessionToken.user_id == user.id,
+                    main.SessionToken.expires_at > current_time,
+                ).with_for_update()
+            ).first()
+            challenge = session.exec(
+                select(SocialAdminStepUpChallenge)
+                .where(
+                    SocialAdminStepUpChallenge.session_hash == session_hash,
+                    SocialAdminStepUpChallenge.user_id == user.id,
+                )
+                .with_for_update()
+            ).first()
+            if (
+                not live_user
+                or not live_user.is_active
+                or live_user.role != "ADMIN"
+                or (live_user.email or "").strip().lower() != main.ADMIN_FIXED_EMAIL
+                or not live_user.email_verified_at
+                or not live_session
+                or not challenge
+                or challenge.used_at is not None
+                or challenge.expires_at <= current_time
+                or challenge.attempts >= 5
+            ):
+                raise HTTPException(403, "Kod geçersiz veya süresi dolmuş.")
+            submitted = body.code.strip()
+            if (
+                not re.fullmatch(r"[0-9]{6}", submitted)
+                or not main.verify_password(submitted, challenge.code_hash)
+            ):
+                challenge.attempts += 1
+                session.add(challenge)
+                session.commit()
+                # This is a valid authenticated session with an invalid second
+                # factor. A machine-readable code lets native clients avoid
+                # treating an OTP typo as bearer-session expiry.
+                return JSONResponse(
+                    {
+                        "detail": "Kod yanlış veya geçersiz.",
+                        "code": "SOCIAL_ADMIN_OTP_INVALID",
+                    },
+                    status_code=401,
+                    headers=HEADERS,
+                )
+            challenge.used_at = current_time
+            session.add(challenge)
+            previous_grants = session.exec(
+                select(SocialAdminStepUpSession)
+                .where(
+                    SocialAdminStepUpSession.session_hash == session_hash,
+                    SocialAdminStepUpSession.revoked_at == None,
+                )
+                .with_for_update()
+            ).all()
+            for grant in previous_grants:
+                grant.revoked_at = current_time
+                session.add(grant)
+            session.add(
+                SocialAdminStepUpSession(
+                    token_hash=main.hash_session_token(stepup_token),
+                    user_id=user.id,
+                    session_hash=session_hash,
+                    scope="SOCIAL_MODERATION",
+                    expires_at=current_time + timedelta(minutes=5),
+                    created_at=current_time,
+                )
+            )
+            session.commit()
+        return JSONResponse(
+            {
+                "ok": True,
+                "token": stepup_token,
+                "expires_in": 300,
+                "scope": "SOCIAL_MODERATION",
+            },
+            headers=HEADERS,
+        )
+
+    @r.post("/admin/step-up/revoke")
+    def revoke_native_social_admin_step_up(request: Request):
+        user = actor(request)
+        _, session_hash = native_admin_session(request, user)
+        raw_stepup = request.headers.get("x-dental-social-admin-step-up", "")
+        if raw_stepup and len(raw_stepup) <= 256:
+            with Session(main.engine, expire_on_commit=False) as session:
+                grant = session.exec(
+                    select(SocialAdminStepUpSession)
+                    .where(
+                        SocialAdminStepUpSession.token_hash == main.hash_session_token(raw_stepup),
+                        SocialAdminStepUpSession.user_id == user.id,
+                        SocialAdminStepUpSession.session_hash == session_hash,
+                        SocialAdminStepUpSession.scope == "SOCIAL_MODERATION",
+                    )
+                    .with_for_update()
+                ).first()
+                if grant and grant.revoked_at is None:
+                    grant.revoked_at = main._utcnow_naive()
+                    session.add(grant)
+                    session.commit()
+        return JSONResponse({"ok": True}, headers=HEADERS)
 
     def expert(s, user_id, *, lock=False, write=False):
         stmt = select(main.ExpertProfile).where(main.ExpertProfile.user_id == user_id)

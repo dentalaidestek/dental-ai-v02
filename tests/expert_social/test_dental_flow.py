@@ -109,6 +109,7 @@ def test_discovery_cursors_survive_deleted_boundaries_and_enforce_limits(env):
     second = client.get(PREFIX+'discover', params={'before':boundary,'limit':30}).json()
     assert [r['id'] for r in second['items']] == [ident for ident in ids[::-1] if ident < boundary]
     assert second['next_cursor'] is None
+    assert 'specialties' not in second
     assert client.get(PREFIX+'discover', params={'limit':31}).status_code == 422
 
 
@@ -129,6 +130,7 @@ def test_feed_metadata_and_query_count_are_batched(env):
         finally: event.remove(engine, 'before_cursor_execute', count)
         assert response.status_code == 200, response.text
         counts.append(len(statements))
+        assert response.json()['specialties'] == list(main.EXPERT_SPECIALTIES)
         rows = response.json()['items']
         assert all(row['author_specialty'] == 'Ortodonti' for row in rows)
         assert all(row['author_followed'] == (row['author_id'] == 1) for row in rows)
