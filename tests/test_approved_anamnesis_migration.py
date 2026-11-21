@@ -99,7 +99,7 @@ def test_fresh_revision_21_database_still_creates_the_ledger():
     engine.dispose()
 
 
-def test_revision20_existing_ledger_created_by_init_db_is_still_backfilled():
+def test_revision20_existing_ledger_table_is_still_backfilled():
     engine = create_engine("sqlite://")
     table = ApprovedAnamnesis.__table__
     with engine.begin() as connection:
@@ -162,6 +162,7 @@ def test_patient_delete_removes_approved_anamnesis_only_after_owner_authorizatio
     from sqlmodel import Session, select
     from app import main
 
+    assert main.ApprovedAnamnesis is ApprovedAnamnesis
     engine = create_engine("sqlite://", poolclass=StaticPool,
                            connect_args={"check_same_thread": False})
     main.SQLModel.metadata.create_all(
