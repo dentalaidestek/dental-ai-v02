@@ -137,7 +137,9 @@ test('patient detail never renders stale clinical data after account or patient 
  const source=fs.readFileSync(require.resolve('../App.tsx'),'utf8');
  const screen=source.slice(source.indexOf('function PatientDetailScreen('),source.indexOf('function PatientStack('));
  const profile=fs.readFileSync(require.resolve('../src/NativePatientProfile.tsx'),'utf8');
- assert.match(screen,/NativePatientProfile key=\{token\+":"\+id\}/,'navigation must remount the patient boundary');
+ assert.ok(source.includes('import useSessionRenderKey from \"./src/useSessionRenderKey\";'),'patient navigation must use the opaque session-key hook');
+ assert.ok(screen.includes('const profileRenderKey=useSessionRenderKey(`${token}:${userId}:${id}`);'),'account and patient changes must rotate the private render scope');
+ assert.ok(screen.includes('NativePatientProfile key={profileRenderKey}'),'navigation must remount the patient boundary without exposing the bearer token');
  assert.ok(profile.includes('if(owner.current!==scope){owner.current=scope;request.current++;}'),'scope changes synchronously invalidate requests');
  assert.ok(profile.includes('if(!current()||seq!==request.current)return false'),'stale requests cannot commit');
  assert.ok(profile.includes('if(!detail||loadedScope!==scope)'),'hide previous patient before effects');
