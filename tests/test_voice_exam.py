@@ -327,6 +327,39 @@ def test_reapproving_field_preserves_prior_provenance_and_returns_latest_value(a
         ]
 
 
+def test_history_uses_source_analysis_order_when_backfill_inserts_older_row_later(app_client):
+    client, engine = app_client
+    with Session(engine) as session:
+        # The newer approval is already in the ledger. A later legacy backfill
+        # inserts the older source analysis afterward and therefore gets a
+        # larger ledger row ID; source Analysis chronology must still win.
+        session.add_all([
+            ApprovedAnamnesis(
+                owner_user_id=1, patient_id=1, field_key='allergies',
+                value='Yeni alerji beyanı', analysis_id=900,
+            ),
+            ApprovedAnamnesis(
+                owner_user_id=1, patient_id=1, field_key='allergies',
+                value='Eski alerji beyanı', analysis_id=100,
+            ),
+        ])
+        session.commit()
+
+    history = client.get('/patients/1/voice-exam/history')
+    assert history.status_code == 200, history.text
+    field = history.json()['fields']['allergies']
+    assert field['value'] == 'Yeni alerji beyanı'
+    assert field['analysis_id'] == 900
+    with Session(engine) as session:
+        rows = session.execute(
+            select(ApprovedAnamnesis.__table__.c.id, ApprovedAnamnesis.__table__.c.analysis_id)
+            .where(ApprovedAnamnesis.__table__.c.field_key == 'allergies')
+            .order_by(ApprovedAnamnesis.__table__.c.id)
+        ).all()
+        assert rows[0][1] == 900 and rows[1][1] == 100
+        assert rows[0][0] < rows[1][0]
+
+
 def test_idempotent_review_does_not_duplicate_approved_anamnesis_rows(app_client):
     client, engine = app_client
     data = payload(engine, request_key='e' * 32, fields={'allergies': 'Alerji yok beyanı'})
