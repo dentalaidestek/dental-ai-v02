@@ -85,6 +85,32 @@ test('patient profile quick-action tiles are accessible and retain their native 
  assert.ok(text(tree.toJSON()).includes('Yeni tedavi kaydı'),'treatment tile must open the existing treatment editor');
  await renderer.act(async()=>tree.unmount());
 });
+test('mobile patient profile matches the web four-column action palette and compact hero',async()=>{
+ const Profile=component({getPatient:async()=>patient(8)});let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
+ const flatten=value=>Array.isArray(value)?value.flatMap(flatten):value&&typeof value==='object'?[value]:[];
+ const labels=['Diş Şeması','AI Analiz','Randevu','Tedavi'];
+ const colors=['#1769F5','#8B39E8','#FF4F60','#08B978'];
+ const tiles=tree.root.findAllByType('Pressable').filter(node=>labels.includes(node.props.accessibilityLabel));
+ assert.deepEqual(tiles.map(node=>node.props.accessibilityLabel),labels);
+ for(let i=0;i<tiles.length;i++){
+  const slot=flatten(tiles[i].parent.props.style);
+  const tile=flatten(tiles[i].props.style);
+  assert.ok(slot.some(style=>style.width==='25%'),'web mobile profile uses four equal quick-action columns');
+  assert.ok(tile.some(style=>style.minHeight===70&&style.flexDirection==='column'),'quick actions use the compact 70pt stacked tile');
+  assert.ok(tile.some(style=>style.backgroundColor===colors[i]),'quick action colors follow the web blue/purple/red/green order');
+  assert.ok(!text(tiles[i].toJSON()).includes(presentationExports.patientProfileQuickActions()[i].description),'native tiles do not add the web-absent description text');
+ }
+ const avatar=tree.root.findAllByType('View').find(node=>flatten(node.props.style).some(style=>style.width===50&&style.height===50&&style.borderRadius===25));
+ assert.ok(avatar,'the mobile hero uses the web 50pt circular avatar');
+ const chips=tree.root.findAllByType('View').filter(node=>flatten(node.props.style).some(style=>style.borderRadius===999&&style.backgroundColor==='#F8FAFC'));
+ assert.ok(chips.length>=3,'age, phone and patient number render as separate metadata pills');
+ const content=text(tree.toJSON());
+ assert.ok(content.includes('0 yaş'));
+ assert.ok(content.includes('SYN-8'));
+ await renderer.act(async()=>tree.unmount());
+});
+
 test('profile identity displays an unnamed fallback and does not hide age zero',async()=>{
  const base=patient(10);base.patient.first_name=null;base.patient.last_name=null;
  const Profile=component({getPatient:async()=>base});let tree;
