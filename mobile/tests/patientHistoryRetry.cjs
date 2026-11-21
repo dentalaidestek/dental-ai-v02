@@ -18,6 +18,12 @@ vm.runInNewContext(compile('src/patientHistoryPresentation.ts'),{exports:history
 
 const appResumeRefresh={};
 vm.runInNewContext(compile('src/appResumeRefresh.ts'),{exports:appResumeRefresh,Date,Math,Number,String,Error,Promise,Array,Object});
+const historyImages={};
+vm.runInNewContext(compile('src/patientAnalysisHistoryImages.ts'),{
+ exports:historyImages,
+ require:name=>name==='./api'?{API_BASE:'https://dentalai.tr/api/mobile/v1'}:(()=>{throw new Error('Unexpected history-image import '+name)})(),
+ Date,Math,Number,String,Error,Promise,Array,Object
+});
 
 function loadHistory(getPatientAnalysisHistoryPage){
  const exports={};
@@ -35,6 +41,7 @@ function loadHistory(getPatientAnalysisHistoryPage){
    if(name==='./patientAnalysisPresentation')return presentation;
    if(name==='./patientHistoryPresentation')return historyPresentation;
    if(name==='./appResumeRefresh')return appResumeRefresh;
+   if(name==='./patientAnalysisHistoryImages')return historyImages;
    throw new Error('Unexpected import '+name);
   },
   Date,Math,Number,String,Error,Promise,Array,Object,Set

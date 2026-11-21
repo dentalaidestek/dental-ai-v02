@@ -16,23 +16,23 @@ const {toothChartSurfaceForTooth,toothChartSurfaceSelection}=require('../src/too
 const native=fs.readFileSync(require.resolve('../src/NativeToothChart.tsx'),'utf8');
 const web=fs.readFileSync(require.resolve('../../app/templates/tooth_chart.html'),'utf8');
 const codes=number=>toothSurfaceOptionsForTooth(number).map(([code])=>code);
+const allFdiToothNumbers=[..."1234"].flatMap(quadrant=>[..."12345678"].map(unit=>quadrant+unit)).concat([..."5678"].flatMap(quadrant=>[..."12345"].map(unit=>quadrant+unit)));
 
-test('web and native charts expose the same anatomical FDI surface contract',()=>{
- for(const number of ['11','23','31','43','51','63','71','83','14','18','24','48','54','55','64','85']){
-  assert.deepEqual(webOptions(number),codes(number),number);
- }
+test('web and native charts expose the same anatomical FDI surface contract for all 52 teeth',()=>{
+ assert.equal(allFdiToothNumbers.length,52);
+ for(const number of allFdiToothNumbers)assert.deepEqual(webOptions(number),codes(number),number);
 });
 
-test('anterior teeth expose INCISAL and never OCCLUSAL',()=>{
- for(const number of ['11','13','21','23','31','43','51','53','61','83']){
+test('every anterior permanent and primary tooth exposes INCISAL and never OCCLUSAL',()=>{
+ for(const number of allFdiToothNumbers.filter(value=>Number(value[1])<=3)){
   const options=webOptions(number);
   assert.equal(options[0],'INCISAL',number);
   assert.ok(!options.includes('OCCLUSAL'),number);
  }
 });
 
-test('posterior teeth expose OCCLUSAL and never INCISAL',()=>{
- for(const number of ['14','18','24','28','34','48','54','55','64','85']){
+test('every posterior permanent and primary tooth exposes OCCLUSAL and never INCISAL',()=>{
+ for(const number of allFdiToothNumbers.filter(value=>Number(value[1])>=4)){
   const options=webOptions(number);
   assert.equal(options[0],'OCCLUSAL',number);
   assert.ok(!options.includes('INCISAL'),number);

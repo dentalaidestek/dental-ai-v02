@@ -25,3 +25,27 @@ The existing `test:beta` command already includes `patientProfileUI.cjs`, `patie
 ## Safety and remaining acceptance
 
 No patient record, production database, migration, provider prompt, clinical taxonomy, main branch, deployment or store release was changed. The branch remains a draft PR. New GitHub Actions results and Android device screenshots/touch tests are required before calling the UI accepted. This change does not claim 60,000-user capacity; load testing remains a separate staging gate.
+
+
+## 2026-11-21 follow-up — server-side anatomical FDI surface validation
+
+### Web-first trace
+
+Re-read `app/templates/tooth_chart.html` and `static/tooth-chart/surface-options.js`, then traced the web POST handler in `app/main.py`, the native single-surface and multi-surface handlers in `app/mobile_api.py`, and the shared observation upsert module.
+
+The browser and native selectors already exposed the correct five surfaces per tooth, but both backend write boundaries only checked whether a surface name belonged to the six-value enum. A direct or stale client could therefore persist OCCLUSAL on an anterior tooth or INCISAL on a posterior tooth. The UI was correct; the server-side clinical data contract was incomplete.
+
+### Fix
+
+- Added one shared FDI validator and anatomical surface applicability contract in `app/tooth_surface_status.py`.
+- Permanent and primary FDI teeth 1–3 in each quadrant accept INCISAL; units 4–8 (permanent) and 4–5 (primary) accept OCCLUSAL. MESIAL, DISTAL, BUCCAL and LINGUAL remain available for both.
+- The web form handler now rejects an impossible surface before opening the write transaction.
+- Native single-surface and whole-tooth multi-surface endpoints apply the same shared rule before querying or mutating records.
+- The existing mobile FDI helper now delegates to the shared validator instead of maintaining a second implementation.
+- No migration or destructive cleanup was added; existing legacy observations are not rewritten.
+
+### Regression coverage
+
+`tests/test_tooth_surface_status.py` now exhaustively checks all 52 valid permanent/primary FDI identifiers, invalid identifiers, anterior/posterior applicability, web rejection, native single-surface rejection, native multi-surface rejection, and valid INCISAL/OCCLUSAL writes. It verifies that only the two anatomically valid synthetic observations reach the database.
+
+The new tests are included in the existing Security Recovery pytest command through `tests/test_tooth_surface_status.py`. They are committed but await the current-head GitHub Actions result. No real patient records were used.

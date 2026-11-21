@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 
 from test_mobile_chat_actions import chat, _SESSION_TOKEN
 from app import main, mobile_api, migrate
+from app.tooth_surface_status import applicable_tooth_surfaces, is_applicable_tooth_surface, valid_fdi_tooth_number
 
 
 def test_web_and_native_tooth_writes_converge_on_one_owner_scoped_row(chat, monkeypatch):
@@ -234,3 +235,112 @@ def test_web_tooth_chart_posts_snapshot_revision_and_rejects_stale_form(chat, mo
             main.ToothStatus.patient_id == 28, main.ToothStatus.tooth_number == "36"
         )).one()
         assert tooth.status == "CARIES"
+
+
+
+def test_anatomical_surface_contract_matches_permanent_and_primary_fdi_teeth():
+    for quadrant in "1234":
+        for unit in "12345678":
+            tooth = quadrant + unit
+            expected_axial = "INCISAL" if int(unit) <= 3 else "OCCLUSAL"
+            assert applicable_tooth_surfaces(tooth) == {
+                expected_axial, "MESIAL", "DISTAL", "BUCCAL", "LINGUAL"
+            }
+    for quadrant in "5678":
+        for unit in "12345":
+            tooth = quadrant + unit
+            expected_axial = "INCISAL" if int(unit) <= 3 else "OCCLUSAL"
+            assert applicable_tooth_surfaces(tooth) == {
+                expected_axial, "MESIAL", "DISTAL", "BUCCAL", "LINGUAL"
+            }
+
+    assert valid_fdi_tooth_number("11")
+    assert valid_fdi_tooth_number("85")
+    for invalid in (None, 11, "", "19", "49", "56", "89", "abc"):
+        assert not valid_fdi_tooth_number(invalid)
+        assert applicable_tooth_surfaces(invalid) == frozenset()
+
+    assert is_applicable_tooth_surface("11", "INCISAL")
+    assert is_applicable_tooth_surface("51", "INCISAL")
+    assert is_applicable_tooth_surface("14", "OCCLUSAL")
+    assert is_applicable_tooth_surface("55", "OCCLUSAL")
+    assert not is_applicable_tooth_surface("11", "OCCLUSAL")
+    assert not is_applicable_tooth_surface("51", "OCCLUSAL")
+    assert not is_applicable_tooth_surface("14", "INCISAL")
+    assert not is_applicable_tooth_surface("55", "INCISAL")
+
+
+def test_web_and_native_reject_anatomically_invalid_surface_writes(chat, monkeypatch):
+    client, engine = chat
+    monkeypatch.setattr(main, "engine", engine)
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    with Session(engine) as session:
+        session.add(main.Patient(id=38, anonymous_id="SYNTHETIC-FDI-SURFACE-38", owner_user_id=1))
+        session.commit()
+
+    web_user = main.User(
+        id=1, username="chat-user-1", display_name="Synthetic 1", role="DOCTOR",
+        is_active=True, email_verified_at=main._utcnow_naive(),
+    )
+    monkeypatch.setattr(main, "get_current_user", lambda _request: web_user)
+    page = client.get("/patients/38/teeth")
+    assert page.status_code == 200, page.text
+    tooth_revisions = json.loads(re.search(r"const TOOTH_REVISIONS\s*=\s*(\{.*?\});", page.text).group(1))
+    surface_revisions = json.loads(re.search(r"const SURFACE_REVISIONS\s*=\s*(\{.*?\});", page.text).group(1))
+
+    invalid_web = client.post(
+        "/patients/38/teeth/11",
+        data={
+            "status": "CARIES",
+            "note": "must not be stored",
+            "surface": "OCCLUSAL",
+            "expected_revision": tooth_revisions["11"],
+            "expected_surface_revision": surface_revisions["11:OCCLUSAL"],
+        },
+        follow_redirects=False,
+    )
+    assert invalid_web.status_code == 422, invalid_web.text
+
+    invalid_native_surface = client.put(
+        "/api/mobile/v1/patients/38/teeth/11/surfaces/OCCLUSAL",
+        json={"status": "CARIES", "note": "must not be stored", "expected_revision": None},
+    )
+    assert invalid_native_surface.status_code == 422, invalid_native_surface.text
+
+    invalid_native_batch = client.post(
+        "/api/mobile/v1/patients/38/teeth/11",
+        json={
+            "status": "CARIES",
+            "note": "must not be stored",
+            "surfaces": ["OCCLUSAL"],
+            "surface_revisions": {"OCCLUSAL": None},
+            "expected_revision": None,
+        },
+    )
+    assert invalid_native_batch.status_code == 422, invalid_native_batch.text
+
+    valid_native_anterior = client.post(
+        "/api/mobile/v1/patients/38/teeth/11",
+        json={
+            "status": "CARIES",
+            "note": "valid incisal observation",
+            "surfaces": ["INCISAL"],
+            "surface_revisions": {"INCISAL": None},
+            "expected_revision": None,
+        },
+    )
+    assert valid_native_anterior.status_code == 200, valid_native_anterior.text
+
+    valid_native_posterior = client.put(
+        "/api/mobile/v1/patients/38/teeth/55/surfaces/OCCLUSAL",
+        json={"status": "FILLING", "note": "valid occlusal observation", "expected_revision": None},
+    )
+    assert valid_native_posterior.status_code == 200, valid_native_posterior.text
+
+    with Session(engine) as session:
+        stored = session.exec(select(main.ToothSurfaceStatus).where(
+            main.ToothSurfaceStatus.patient_id == 38
+        )).all()
+        assert {(item.tooth_number, item.surface) for item in stored} == {
+            ("11", "INCISAL"), ("55", "OCCLUSAL")
+        }
