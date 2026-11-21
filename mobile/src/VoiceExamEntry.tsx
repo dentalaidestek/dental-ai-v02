@@ -90,7 +90,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  const [sourceRetryable,setSourceRetryable]=useState(false);
  function invalidateSourceReview(){sourceFingerprint.current="";sourceSnapshot.current="";setSourceRetryable(false);}
  scope.current=token+":"+(selected?.id||0);accountScope.current=token+":"+(userId||0);
- useEffect(()=>{const enterExam=startAfterSelection.current;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);invalidateSourceReview();setClinicalError("");setTranscript("");setConsent(false);setHistoryFields({});setHistoryNotice("");setHistoryError("");setHistoryLoading(false);setHistoryConfirmed(false);setHistoryApplied(false);setStage(enterExam?"exam":"select")},[token,selected?.id]);
+ useEffect(()=>{const routePatientSelected=typeof initialPatientId==="number"&&selected?.id===initialPatientId;const enterExam=startAfterSelection.current||routePatientSelected;startAfterSelection.current=false;generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);invalidateSourceReview();setClinicalError("");setTranscript("");setConsent(false);setHistoryFields({});setHistoryNotice("");setHistoryError("");setHistoryLoading(false);setHistoryConfirmed(false);setHistoryApplied(false);setStage(enterExam?"exam":"select")},[token,selected?.id,initialPatientId]);
  useEffect(()=>{setCreatingAnonymous(false);setSelected(null);setAudioBusy(false);setApplyBusy(false)},[token]);
  useEffect(()=>{let active=true;if(initialPatientId){void getPatient(token,initialPatientId).then(r=>{if(active)setSelected(r.patient)}).catch(()=>{if(active)setError("Seçili hasta bulunamadı veya erişim izni yok.")})}return()=>{active=false}},[token,initialPatientId]);
  async function createAnonymousPatient(){
@@ -360,18 +360,41 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   </View>
  </ScrollView>;
  return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:40}}>
-  <Text style={{fontSize:25,fontWeight:"800",color:navy}}>Sesli Muayene</Text>
-  <Text style={{color:muted,marginTop:7,lineHeight:21}}>Hastayı seçin, kaydı başlatın ve canlı konuşma metnini izleyin. Klinik çıkarım muayene bitince, kayıt ise hekim onayıyla yapılır.</Text>
-  <View style={{backgroundColor:"white",borderRadius:18,padding:16,borderWidth:1,borderColor:line,marginTop:18}}>
-   <Text style={{fontWeight:"800",color:navy,marginBottom:9}}>Hasta seçimi</Text>
-   <Pressable accessibilityRole="button" accessibilityState={{busy:creatingAnonymous,disabled:creatingAnonymous||!userId}} disabled={creatingAnonymous||!userId} onPress={()=>void createAnonymousPatient()} style={{backgroundColor:"#1769AA",padding:15,borderRadius:13,alignItems:"center",opacity:(creatingAnonymous||!userId)?0.5:1}}>
-    {creatingAnonymous?<ActivityIndicator color="white"/>:<Text style={{color:"white",fontWeight:"800"}}>Yeni hastayla başla →</Text>}
+  <View style={{backgroundColor:"#EAF7FF",borderWidth:1,borderColor:"#DCECF5",borderRadius:22,padding:20,overflow:"hidden"}}>
+   <View style={{width:54,height:54,borderRadius:18,backgroundColor:"#D8ECF8",alignItems:"center",justifyContent:"center",marginBottom:14}}>
+    <Text style={{fontSize:27}}>🎙️</Text>
+   </View>
+   <Text style={{fontSize:10,fontWeight:"900",letterSpacing:1.4,color:"#397C98"}}>KLİNİK ASİSTANINIZ</Text>
+   <Text style={{fontSize:29,lineHeight:35,fontWeight:"900",letterSpacing:-0.5,color:"#10263E",marginTop:7}}>Sesli Muayene</Text>
+   <Text style={{fontSize:14,lineHeight:21,color:"#38576D",marginTop:7}}>Görüşmeye odaklanın. Muayene notlarını birlikte düzenleyelim.</Text>
+  </View>
+  <View accessibilityLabel="Muayene adımları" style={{flexDirection:"row",marginTop:14,marginBottom:2}}>
+   {[["1","Hasta seç"],["2","Görüşmeyi başlat"],["3","Kontrol et ve kaydet"]].map(([number,label],index)=><View key={number} style={{flex:1,minWidth:0,marginRight:index===2?0:7,padding:9,borderRadius:13,borderWidth:1,borderColor:"#E1EAF2",backgroundColor:"white"}}>
+    <View style={{width:25,height:25,borderRadius:13,backgroundColor:"#E3F2FA",alignItems:"center",justifyContent:"center",marginBottom:7}}><Text style={{fontSize:12,fontWeight:"900",color:"#13344F"}}>{number}</Text></View>
+    <Text style={{fontSize:11,lineHeight:15,fontWeight:"700",color:"#38576D"}}>{label}</Text>
+   </View>)}
+  </View>
+  <View style={{backgroundColor:"white",borderRadius:18,padding:17,borderWidth:1,borderColor:line,marginTop:14}}>
+   <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",marginBottom:8}}>
+    <Text style={{fontSize:18,fontWeight:"900",color:navy}}>Yeni hastayla başla</Text>
+    <Text style={{fontSize:11,color:muted}}>İsim bilgisi gerekmez</Text>
+   </View>
+   <Text style={{fontSize:13,lineHeight:20,color:muted,marginBottom:14}}>Yeni bir hasta kaydı açılır. Görüşmede netleşen bilgileri muayene sonunda kontrol ederek ekleyebilirsiniz.</Text>
+   <Pressable accessibilityRole="button" accessibilityState={{busy:creatingAnonymous,disabled:creatingAnonymous||!userId}} disabled={creatingAnonymous||!userId} onPress={()=>void createAnonymousPatient()} style={{backgroundColor:navy,padding:15,borderRadius:13,alignItems:"center",opacity:(creatingAnonymous||!userId)?0.5:1}}>
+    {creatingAnonymous?<ActivityIndicator color="white"/>:<Text style={{color:"white",fontWeight:"800"}}>Yeni hasta ile devam et →</Text>}
    </Pressable>
-   <Text style={{color:muted,textAlign:"center",marginVertical:12}}>veya mevcut hastayı seç</Text>
-   <NativePatientSelect key={patientSelectRenderKey} token={token} value={selected} onChange={setSelected} disabled={creatingAnonymous}/>
+  </View>
+  <View style={{backgroundColor:"white",borderRadius:18,padding:17,borderWidth:1,borderColor:line,marginTop:12}}>
+   <Text style={{fontSize:18,fontWeight:"900",color:navy,marginBottom:7}}>Mevcut hastayı seç</Text>
+   <Text style={{fontSize:13,color:muted,marginBottom:11}}>Ad, soyad veya hasta kodu</Text>
+   <NativePatientSelect key={patientSelectRenderKey} token={token} value={selected} onChange={setSelected} disabled={creatingAnonymous} searchTitle="Mevcut hastayı seç" searchHint="Sesli muayeneye bağlanacak hastayı bulun" emptyLabel="Ad, soyad veya hasta kodu ile hasta seçin" searchPlaceholder="Ad, soyad veya hasta kodu ile ara"/>
    {!!error&&<Text accessibilityRole="alert" style={{color:"#B42318",marginTop:10,lineHeight:20}}>{error}</Text>}
-   <Pressable accessibilityRole="button" disabled={creatingAnonymous} onPress={()=>{if(selected)setStage("exam");else setError("Önce bir hasta seçin.")}} style={{marginTop:18,backgroundColor:navy,padding:15,borderRadius:13,alignItems:"center",opacity:creatingAnonymous?0.5:1}}><Text style={{color:"white",fontWeight:"800"}}>{selected?"Muayeneye Devam Et":"Hasta Seçerek Devam Et"}</Text></Pressable>
-   <Text style={{fontSize:12,color:muted,marginTop:10,lineHeight:18}}>Muayene bilgileri yalnızca hekim onayıyla hasta dosyasına kaydedilir. Yeni hasta kaydı boş bir klinik dosya açar; bilgileri yalnızca hekim onayıyla eklersiniz.</Text>
+   <Pressable accessibilityRole="button" accessibilityState={{disabled:creatingAnonymous}} disabled={creatingAnonymous} onPress={()=>{if(selected)setStage("exam");else setError("Önce bir hasta seçin.")}} style={{marginTop:16,backgroundColor:navy,padding:15,borderRadius:13,alignItems:"center",opacity:creatingAnonymous?0.5:1}}><Text style={{color:"white",fontWeight:"800"}}>{selected?"Muayeneye Devam Et":"Hasta Seçerek Devam Et"}</Text></Pressable>
+   <Text style={{fontSize:12,color:muted,marginTop:11,lineHeight:18}}>Muayene bilgileri yalnızca hekim onayıyla hasta dosyasına kaydedilir. Yeni hasta kaydı boş bir klinik dosya açar; bilgileri yalnızca hekim onayıyla eklersiniz.</Text>
+  </View>
+  <View style={{padding:16,backgroundColor:"#EEF8FD",borderWidth:1,borderColor:"#DCECF5",borderRadius:16,marginTop:12}}>
+   <Text style={{fontSize:14,fontWeight:"900",color:"#173B58"}}>Mikrofon sizin kontrolünüzde</Text>
+   <Text style={{fontSize:12,lineHeight:19,color:"#38576D",marginTop:5}}>Hasta seçmek mikrofonu açmaz. Görüşmedeki kişileri bilgilendirip işleme onayını verdikten sonra dinlemeyi başlatırsınız. Kaydedilecek alanları son adımda siz seçersiniz.</Text>
   </View>
  </ScrollView>
 }
