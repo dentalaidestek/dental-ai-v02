@@ -13,7 +13,7 @@ The web wrapper switches the authenticated image URL and modality for each selec
 
 Starting head: `d524d54ebefee75574ebab70e00f60fa7f0cf7a0`.
 
-- Android run [44859166468](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44859166468): TypeScript typecheck passed; session/auth and realtime/pagination passed; Expo Android/iOS export passed; the independent APK job passed. The beta suite had 914 tests: 914 passed? No — 914 total, 2 failed and 912 passed? The runner summary reports 916 tests, 914 passed and 2 failed. The failures were the two newly added viewer retry/switch tests.
+- Android run [44859166468](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44859166468): TypeScript typecheck passed; session/auth and realtime/pagination passed; Expo Android/iOS export passed; the independent APK job passed. The beta suite reported 916 tests: 914 passed and 2 failed. The failures were the two newly added viewer retry/switch tests.
 - The failing assertions read `ReactTestInstance.key`. The installed React 19 test renderer does not expose the special React `key` as a normal test-instance field, so both assertions observed `undefined`. The application key expression itself was present.
 - Security Recovery [44859166504](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44859166504): Python security/PostgreSQL, Native Voice, Academic, Program and Social passed. Native Clinical ran the same viewer test file and failed on the same two assertions (256 passed, 2 failed); this was not a separate clinical authorization failure.
 
