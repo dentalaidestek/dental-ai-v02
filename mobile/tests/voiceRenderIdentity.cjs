@@ -41,3 +41,27 @@ test('native voice consent discloses the same Gemini transcription and Claude re
  assert.ok(source.includes('bu tam anonimleştirme garantisi değildir'));
  assert.ok(source.includes('Ham ses ve tam konuşma dökümü hasta dosyasına otomatik yazılmaz'));
 });
+
+test('native voice entry follows the web patient-first hierarchy and privacy guidance',()=>{
+ for(const fragment of [
+  'KLİNİK ASİSTANINIZ',
+  'Görüşmeye odaklanın. Muayene notlarını birlikte düzenleyelim.',
+  'Yeni hastayla başla',
+  'İsim bilgisi gerekmez',
+  'Mevcut hastayı seç',
+  'Ad, soyad veya hasta kodu',
+  'Mikrofon sizin kontrolünüzde',
+  'Hasta seçmek mikrofonu açmaz.',
+  'Kaydedilecek alanları son adımda siz seçersiniz.',
+  'searchTitle="Mevcut hastayı seç"',
+  'searchHint="Sesli muayeneye bağlanacak hastayı bulun"',
+  'emptyLabel="Ad, soyad veya hasta kodu ile hasta seçin"'
+ ])assert.ok(source.includes(fragment),fragment);
+ assert.match(source,/\[\["1","Hasta seç"\],\["2","Görüşmeyi başlat"\],\["3","Kontrol et ve kaydet"\]\]/);
+});
+
+test('a patient-specific native voice route opens the examination without a redundant selection step',()=>{
+ assert.ok(source.includes('routePatientSelected=typeof initialPatientId==="number"&&selected?.id===initialPatientId'));
+ assert.ok(source.includes('const enterExam=startAfterSelection.current||routePatientSelected'));
+ assert.ok(source.includes('setStage(enterExam?"exam":"select")'));
+});
