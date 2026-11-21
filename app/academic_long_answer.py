@@ -20,8 +20,10 @@ def _provider_chunks(provider, options):
     finally:
         close=getattr(stream,'close',None)
         if callable(close):
-            try: close()
-            except Exception: pass
+            try:
+                close()
+            except Exception as exc:
+                raise RuntimeError('Akademik AI sağlayıcı akışı kapatılamadı.') from exc
 
 
 def _without_repeated_tail(previous, following):
