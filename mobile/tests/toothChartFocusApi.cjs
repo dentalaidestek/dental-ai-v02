@@ -7,6 +7,10 @@ const directoryPresentation={};
 const directorySource=fs.readFileSync(require.resolve('../src/patientDirectoryPresentation.ts'),'utf8');
 const directoryCode=ts.transpileModule(directorySource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
 vm.runInNewContext(directoryCode,{exports:directoryPresentation});
+const dashboardPresentation={};
+const dashboardSource=fs.readFileSync(require.resolve('../src/dashboardPresentation.ts'),'utf8');
+const dashboardCode=ts.transpileModule(dashboardSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+vm.runInNewContext(dashboardCode,{exports:dashboardPresentation});
 
 function loadApi(fetchImpl){
  const source=fs.readFileSync(require.resolve('../src/api.ts'),'utf8');
@@ -17,6 +21,7 @@ function loadApi(fetchImpl){
   require:name=>{
    if(name==='./sessionExpiry')return{reportSessionExpiry(){},revalidateSession:async()=>{}};
    if(name==='./patientDirectoryPresentation')return directoryPresentation;
+   if(name==='./dashboardPresentation')return dashboardPresentation;
    throw Error('unexpected import '+name);
   },
   fetch:fetchImpl,
