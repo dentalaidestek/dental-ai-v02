@@ -1252,3 +1252,25 @@ At `f48c1b39fa67508d64c971199a6ba607c0da83bd`, Android typecheck, session/auth, 
 ### Validation and next gate
 
 The repaired head has not yet received fresh completed Android/Security Recovery results in this work package. Do not call the five VM failures fixed until those jobs rerun green. No local typecheck/test result is claimed, no web/backend or provider behavior was changed, and no main merge, live deploy, APK/IPA release, migration or patient-data operation occurred. Next: verify current-head CI, then resume web-first patient-profile, clinical-media and AI-analysis parity; 60,000-user scale remains un-certified and needs dedicated load testing.
+
+
+## 2026-11-22 — Revision-21 anamnesis index integrity and PostgreSQL CI correction
+
+Web-first review was repeated before this follow-up: patient_detail.html renders only the owner-scoped voice_history.fields supplied by reviewed_history_payload; the native NativePatientProfile mounts NativePatientVoiceHistory, which reads the same root-mounted voice history API. The profile edit revision, treatment receipts, clinical media and FDI quick actions were not replaced or bypassed.
+
+### Verified starting CI
+- Android run #4682 on starting head 7b0ca8f: TypeScript typecheck, session/auth, realtime/pagination, 985 beta regressions, Hermes export, Android APK assembly and artifact upload all succeeded.
+- Security Recovery #2381 on starting head 7b0ca8f: Python security suite succeeded; PostgreSQL optimization had 28 passed / 1 failed. The only failure was the second migrate.apply() assertion in test_program_pending_reminder_index_migration_upgrades_revision19_and_is_idempotent, which still expected revision 20. The migration log showed revision 21 after the approved-anamnesis migration. Updated only that final-state assertion to 21; earlier revision-20 partial-migration assertions remain unchanged.
+
+### New source-level finding and correction
+The approved-anamnesis query index was checked by name only. A malformed index with the expected name but wrong columns could therefore pass require_schema; a revision-21 migration retry could also silently accept it because CREATE INDEX ... IF NOT EXISTS does not replace a same-name index. The migration/startup guard now verifies the exact non-unique columns owner_user_id, patient_id, field_key, analysis_id and PostgreSQL indisvalid. A malformed same-name index fails closed without changing revision or existing ledger rows; a missing index is recreated when safe.
+
+Additional voice regressions prove that partial approval of one field does not erase other previously approved fields, and a stale revision cannot replace or duplicate existing anamnesis.
+
+### Commits in this follow-up
+- d11028c — correct the repeated full-release migration assertion to revision 21
+- 794f627 — validate the exact approved-anamnesis query index at migration and startup
+- 2ead7cc — malformed/missing index migration and startup regressions
+- db40960 — partial approval retention and stale-revision data-preservation regressions
+
+The new tests are committed but have not yet been executed on this updated head. The only verified green Android run and the one-failure Security run above predate these commits. No local repository checkout or workflow-dispatch action is available through the current GitHub connector, so no new test result is claimed until a workflow run is associated with the new head. No staging or production database was modified; no main merge or live deployment occurred.
