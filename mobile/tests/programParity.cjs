@@ -276,7 +276,7 @@ test('native editor mirrors web title copy and caps location at 160 characters',
 
 
 test('uncertain program edit verifies the server and closes only when the saved fields match',async()=>{
- const original={id:7,event_type:'APPOINTMENT',title:'Old visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const original={id:7,event_type:'APPOINTMENT',title:'Old visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
  const updated={...original,title:'Updated visit'};
  let reads=0,writes=0,saved=0;
  const Editor=component('NativeProgramEditor',{
@@ -297,7 +297,7 @@ test('uncertain program edit verifies the server and closes only when the saved 
 });
 
 test('uncertain program edit does not claim success when the server still has old values',async()=>{
- const original={id:7,event_type:'APPOINTMENT',title:'Old visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const original={id:7,event_type:'APPOINTMENT',title:'Old visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
  let reads=0,writes=0,saved=0;
  const Editor=component('NativeProgramEditor',{
   getProgramEvent:async()=>{reads++;return original},
