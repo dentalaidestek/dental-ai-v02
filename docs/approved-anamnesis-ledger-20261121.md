@@ -8,7 +8,7 @@ The web clinician approval action remains the only writer: `POST /patients/{pati
 2. The existing minimal, idempotent `VOICE_REVIEW` `WorkJob` receipt (no transcript/audio/provider payload).
 3. One append-only `approvedanamnesis` row for each selected allowlisted anamnesis field, retaining `owner_user_id`, `patient_id`, `field_key`, `value`, and the original `analysis_id`.
 
-The new table is an append-only ledger, not a mutable "current value" cache. The latest row by monotonically assigned row ID is the current approved statement for that patient/field; older approvals and their original Analysis IDs remain queryable. Patient-row locking serializes approvals for the same patient, and the unique `(analysis_id, field_key)` constraint prevents duplicate field provenance. Replaying the same request key returns the existing analysis before inserting another ledger row. The covering `(owner_user_id, patient_id, field_key, id)` index supports the profile's owner-scoped latest-value query without separate owner, patient, analysis, and timestamp indexes.
+The new table is an append-only ledger, not a mutable "current value" cache. The row with the greatest source `analysis_id` is the current approved statement for that patient/field; older approvals and their original Analysis IDs remain queryable. This remains correct if a legacy backfill inserts an older source analysis after a newer approval already exists. Patient-row locking serializes approvals for the same patient, and the unique `(analysis_id, field_key)` constraint prevents duplicate field provenance. Replaying the same request key returns the existing analysis before inserting another ledger row. The covering `(owner_user_id, patient_id, field_key, analysis_id)` index supports the profile's owner-scoped latest-value query without separate owner, patient, row-ID, and timestamp indexes.
 
 ## Read behavior and privacy
 
@@ -25,7 +25,8 @@ The migration uses a transaction-scoped PostgreSQL advisory lock, bounded lock/s
 ## Regression coverage added
 
 - More than 12 later reviews do not hide an older allergy value.
-- Re-approval returns the latest value while retaining earlier rows and their original Analysis IDs.
+- Re-approval returns the latest source Analysis while retaining earlier rows and their original Analysis IDs.
+- A newer preexisting ledger approval remains current when migration later inserts an older legacy source row; ordering uses source `analysis_id`, not ledger insertion order.
 - Idempotent replay does not duplicate ledger rows.
 - Migration backfills 503 records across multiple 500-row pages, excludes non-voice work, preserves owner/patient/source IDs, and is safe to retry.
 - A fresh database already stamped revision 21 still creates the table.
