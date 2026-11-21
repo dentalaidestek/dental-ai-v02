@@ -433,7 +433,7 @@ def test_cancelled_generation_closes_provider_iterator(monkeypatch):
     def checkpoint(*args,**kwargs):
         calls.append(1)
         if len(calls)>1:raise ValueError('cancelled')
-    ticks=iter([0.0,3.0])
+    ticks=iter([0.0,0.0,3.0])
     monkeypatch.setattr(runs,'checkpoint',checkpoint)
     monkeypatch.setattr(runs.time,'monotonic',lambda:next(ticks))
     with pytest.raises(ValueError):
