@@ -25,7 +25,7 @@ def parse_approved_fields(notes: str | None) -> dict[str, str]:
     values: dict[str, str] = {}
     if not isinstance(notes, str) or not notes:
         return values
-    for paragraph in notes.split("\\n\\n"):
+    for paragraph in notes.split("\n\n"):
         for key, label in HISTORY_LABELS.items():
             prefix = label + ": "
             if paragraph.startswith(prefix):
