@@ -207,3 +207,98 @@ def test_attachment_download_requires_session(parity):
     saved=c.headers.pop("Authorization")
     assert c.get(f"/api/mobile/v1/consultations/1/attachments/{message_id}").status_code==401
     c.headers["Authorization"]=saved
+
+
+# ---------------------------------------------------------------------------
+# Route 3: GET /api/mobile/v1/messages/unread-count
+# ---------------------------------------------------------------------------
+
+def test_messages_unread_count_is_self_scoped_with_web_count_semantics(parity):
+    c,engine=parity
+    # (b) yetki: the web badge answers anonymous browsers with {"count": 0};
+    # native must instead force revalidateSession, so the mobile contract is 401.
+    saved=c.headers.pop("Authorization")
+    assert c.get("/api/mobile/v1/messages/unread-count").status_code==401
+    c.headers["Authorization"]=saved
+    sent_ids=[]
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[2]
+    for index in range(3):
+        sent=c.post("/api/mobile/v1/consultations/1/messages",
+            json={"content":"Synthetic "+str(index),"client_message_id":"parity-unread-"+str(index).zfill(4)})
+        assert sent.status_code==200,sent.text
+        sent_ids.append(sent.json()["message"]["id"])
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[1]
+    # (a) kendi sayacı: only the listening side counts incoming messages; the
+    # expert never counts their own outgoing traffic.
+    assert c.get("/api/mobile/v1/messages/unread-count").json()=={"count":3}
+    assert c.get("/api/mobile/v1/messages/unread-count").json()=={"count":3}
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[2]
+    assert c.get("/api/mobile/v1/messages/unread-count").json()=={"count":0}
+    # (e) yanlış hesap: an account without cases never borrows another user's
+    # badge, and repeated reads stay stable without writing rows.
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[4]
+    assert c.get("/api/mobile/v1/messages/unread-count").json()=={"count":0}
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[1]
+    # count semantics: a fresh REQUESTED case counts at least one for the
+    # assigned expert before any message exists (web _consultation_unread_total).
+    with Session(engine) as session:
+        session.add(main.ConsultationCase(id=3,requester_user_id=1,expert_user_id=3,specialty="Endodonti",
+            clinical_summary="Synthetic",question="Synthetic",status="REQUESTED",
+            expert_response_deadline=main._utcnow_naive()+timedelta(hours=1)))
+        session.commit()
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[3]
+    fresh=c.get("/api/mobile/v1/messages/unread-count").json()
+    assert fresh=={"count":1}
+    # The shared web read cursor clears the badge (mobile /consultations/{id}/read).
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[1]
+    read=c.post("/api/mobile/v1/consultations/1/read",json={"through_id":sent_ids[-1]})
+    assert read.status_code==200,read.text
+    assert c.get("/api/mobile/v1/messages/unread-count").json()=={"count":0}
+    # A conversation the user hid themselves stops counting until restored.
+    assert c.post("/api/mobile/v1/consultations/1/actions",json={"action":"delete"}).status_code==200
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[2]
+    reply=c.post("/api/mobile/v1/consultations/1/messages",
+        json={"content":"Cevap silindi sonra","client_message_id":"parity-unread-after-delete1"})
+    assert reply.status_code==200,reply.text
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[1]
+    assert c.get("/api/mobile/v1/messages/unread-count").json()=={"count":0}
+    assert c.post("/api/mobile/v1/consultations/1/actions",json={"action":"restore"}).status_code==200
+    assert c.get("/api/mobile/v1/messages/unread-count").json()=={"count":1}
+
+
+# ---------------------------------------------------------------------------
+# Route 4: GET /api/mobile/v1/notifications/unread-count
+# ---------------------------------------------------------------------------
+
+def test_notification_unread_count_is_self_scoped_active_only(parity):
+    c,engine=parity
+    saved=c.headers.pop("Authorization")
+    assert c.get("/api/mobile/v1/notifications/unread-count").status_code==401
+    c.headers["Authorization"]=saved
+    with Session(engine) as session:
+        session.add_all([
+            main.AdminNotice(user_id=1,title="Aktif",message="Synthetic",notice_type="TEST",status="ACTIVE",is_read=False),
+            main.AdminNotice(user_id=1,title="Okundu",message="Synthetic",notice_type="TEST",status="ACTIVE",is_read=True),
+            main.AdminNotice(user_id=1,title="Arşiv",message="Synthetic",notice_type="TEST",status="RESOLVED",is_read=False),
+            main.AdminNotice(user_id=2,title="Diğer hesap",message="Synthetic",notice_type="TEST",status="ACTIVE",is_read=False),
+        ])
+        session.commit()
+        other_notice_id=session.exec(select(main.AdminNotice).where(
+            main.AdminNotice.user_id==2)).one().id
+    badge=c.get("/api/mobile/v1/notifications/unread-count")
+    assert badge.status_code==200
+    # only the signed-in user's ACTIVE unread notices are counted; the endpoint
+    # must not leak notice bodies.
+    assert set(badge.json())=={"unread_count"} and badge.json()["unread_count"]==1
+    listing=c.get("/api/mobile/v1/notifications").json()
+    own_id=next(item["id"] for item in listing["items"] if item["title"]=="Aktif")
+    assert c.post(f"/api/mobile/v1/notifications/{own_id}/read").json()["ok"] is True
+    assert c.get("/api/mobile/v1/notifications/unread-count").json()=={"unread_count":0}
+    # (e) yanlış hesap: user2's badge is untouched and user1 cannot mark or even
+    # resolve user2's notice (mobile_notification_read ownership rule).
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[2]
+    assert c.get("/api/mobile/v1/notifications/unread-count").json()=={"unread_count":1}
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[1]
+    wrong=c.post(f"/api/mobile/v1/notifications/{other_notice_id}/read")
+    assert wrong.status_code==404 and wrong.json()["detail"]=="Bildirim bulunamadı."
+    assert c.get("/api/mobile/v1/notifications/unread-count").json()=={"unread_count":0}
