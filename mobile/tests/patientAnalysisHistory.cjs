@@ -12,6 +12,7 @@ const presentationExports={};
 const presentationSource=fs.readFileSync(require.resolve('../src/patientAnalysisPresentation.ts'),'utf8');
 const presentationCode=ts.transpileModule(presentationSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
 vm.runInNewContext(presentationCode,{exports:presentationExports});
+const sessionRenderKeyExports=require('./helpers/useSessionRenderKeyModule.cjs');
 const historyPresentationExports={};
 const historyPresentationSource=fs.readFileSync(require.resolve('../src/patientHistoryPresentation.ts'),'utf8');
 const historyPresentationCode=ts.transpileModule(historyPresentationSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
@@ -62,6 +63,7 @@ function loadHistory({assets,legacy=true,fetchPage,getAnalysis}={}){
    if(name==='./patientAnalysisPresentation')return presentationExports;
    if(name==='./appResumeRefresh')return appResumeRefreshExports;
    if(name==='./patientHistoryPresentation')return historyPresentationExports;
+    if(name==='./useSessionRenderKey')return sessionRenderKeyExports;
    if(name==='./patientAnalysisHistoryImages')return patientHistoryImageExports;
    throw new Error('Unexpected import '+name);
   },
