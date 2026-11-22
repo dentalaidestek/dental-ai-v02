@@ -33,3 +33,16 @@ These test modules are already included in the Security Recovery Python test com
 ## Validation boundary
 
 The code and test changes are committed to the feature branch. A new branch-head workflow run must execute before any test pass is claimed. The current GitHub integration can read Actions runs and logs but does not expose a workflow-dispatch action; if the PR event does not start Security Recovery, repository Actions must be dispatched by an authorized maintainer. No main merge, live deployment, migration, or patient-data mutation was performed.
+
+
+## Follow-up — canonical web/native attachment contract
+
+The web attachment handler previously checked only filename extension and byte limit, while the native adapter performed its own signature checks. The shared web handler now verifies image/document/audio signatures and sanitizes still images with the existing clinical-media sanitizer (including EXIF/XMP removal). The native adapter applies its stricter image byte and pixel caps before dispatching to that same handler.
+
+Both attachment download paths now resolve the latest per-user inbox state instead of an arbitrary historical row. A locally deleted conversation no longer exposes an attachment through a stale direct URL. Web and native downloads use private no-store responses, the appropriate `Vary` header and `nosniff`.
+
+The message receipt now echoes its exact case ID and client intent key. Native code rejects acknowledgements whose case/key differs from the pending upload, as well as malformed receipt payloads.
+
+Added regressions cover web signature spoofing, metadata stripping, same-key replay/conflict, latest inbox state, cross-case message IDs, native receipt binding and PostgreSQL concurrent same-key attachment retries. The PostgreSQL concurrency test runs when `TEST_POSTGRES_URL` is configured by Security Recovery.
+
+No production data or media were used. Changes remain on the feature branch; no main merge or live deployment was performed. Branch-head CI must complete before test success is claimed.
