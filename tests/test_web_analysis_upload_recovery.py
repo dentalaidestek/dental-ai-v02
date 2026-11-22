@@ -1,5 +1,6 @@
 """Web analysis upload failure recovery must match the native durable cleanup contract."""
 import io
+import pytest
 from datetime import timedelta
 from pathlib import Path
 
@@ -164,4 +165,16 @@ def test_web_unsupported_image_extension_is_rejected_before_analysis_allocation(
         assert session.exec(select(main.Analysis)).all() == []
         assert session.exec(select(main.ImageAsset)).all() == []
         assert session.exec(select(work_jobs.WorkJob)).all() == []
+        assert session.exec(select(work_jobs.WorkGarbage)).all() == []
+
+
+
+def test_web_recovery_rejects_cleanup_key_from_another_analysis(chat):
+    _client, engine = chat
+    foreign_reference = "uploads/analysis_43_" + ("d" * 32) + ".png"
+
+    with pytest.raises(RuntimeError, match="cleanup key was rejected"):
+        main._recover_failed_web_analysis_upload(42, [foreign_reference])
+
+    with Session(engine) as session:
         assert session.exec(select(work_jobs.WorkGarbage)).all() == []
