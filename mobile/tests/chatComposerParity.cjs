@@ -22,10 +22,13 @@ test('attachment options collapse behind the plus button without losing pending 
  assert.ok(composer.includes('{pendingId&&file&&<Text'),'pending attachment notice survives the collapse');
  assert.ok(composer.includes('{!!error&&<Text style={{color:"#B42318"}}>{error}</Text>}'),'error text survives the collapse');
 });
-test('api maps a bare 404 Not Found to a Turkish version-mismatch hint',()=>{
- const api=src('api.ts');
+test('api maps a bare 404 Not Found to the shared server-route compatibility hint',()=>{
+ const api=src('api.ts'),modern=src('modernApi.ts'),compatibility=src('apiCompatibility.ts');
  assert.ok(api.includes('rawDetail==="Not Found"'),'English FastAPI detail is detected');
- assert.ok(api.includes('Sunucuda istenen kayıt bulunamadı (404)'),'users see a Turkish explanation instead of "Not Found"');
+ assert.ok(api.includes('MISSING_API_ROUTE_MESSAGE'),'primary API uses the shared hint');
+ assert.ok(modern.includes('MISSING_API_ROUTE_MESSAGE'),'modern API uses the same hint');
+ assert.ok(compatibility.includes('Sunucuda istenen API rotası bulunamadı (404)'),'users are told that the server route is missing');
+ assert.ok(!compatibility.includes('uygulamayı güncelle'),'do not send users to update the app for a server route gap');
 });
 test('academic course create treats 404 as a definitive failure and unlocks the form',()=>{
  const academic=src('NativeAcademic.tsx');
