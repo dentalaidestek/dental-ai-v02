@@ -1,9 +1,56 @@
 """Method-aware route deduplication for the canonical mobile API registry.
 
-FastAPI may keep included APIRouter objects lazy. Compare source routers before
-mounting, and remove only the HTTP method/path pairs already owned by an
-earlier router. Multi-method routes retain any non-conflicting methods.
+FastAPI 0.141 keeps included routers lazy. Inspect their effective route
+contexts instead of assuming app.routes is a flat list of APIRoute objects.
+This keeps route ownership checks correct across supported FastAPI versions
+and prevents a second reconciliation pass from mounting duplicates.
 """
+
+
+def iter_registered_routes(routes):
+    """Yield effective routes, recursively expanding FastAPI lazy includes.
+
+    Older FastAPI releases expose copied APIRoute objects directly. Newer
+    releases expose an included-router object whose public routing behavior is
+    represented by effective_candidates(). Use capability detection rather
+    than importing FastAPI's private class so this helper also works with the
+    older, eagerly-expanded route list.
+    """
+    visited_includes = set()
+
+    def walk(items):
+        for route in items or ():
+            effective_candidates = getattr(route, "effective_candidates", None)
+            if callable(effective_candidates):
+                marker = id(route)
+                if marker in visited_includes:
+                    continue
+                visited_includes.add(marker)
+                yield from walk(effective_candidates())
+                low_priority = getattr(route, "effective_low_priority_routes", None)
+                if callable(low_priority):
+                    yield from walk(low_priority())
+                continue
+            yield route
+
+    yield from walk(routes)
+
+
+def _route_path(route):
+    path = getattr(route, "path", None)
+    if not isinstance(path, str):
+        path = getattr(route, "path_format", None)
+    return path if isinstance(path, str) else None
+
+
+def _endpoint_symbol(endpoint):
+    import inspect
+
+    endpoint = inspect.unwrap(endpoint)
+    return (
+        getattr(endpoint, "__module__", None),
+        getattr(endpoint, "__qualname__", getattr(endpoint, "__name__", None)),
+    )
 
 
 def remove_shadowed_routes(primary_routers, candidate_router):
@@ -14,8 +61,8 @@ def remove_shadowed_routes(primary_routers, candidate_router):
     """
     mounted_methods = {}
     for primary_router in primary_routers:
-        for route in getattr(primary_router, "routes", ()):
-            path = getattr(route, "path", None)
+        for route in iter_registered_routes(getattr(primary_router, "routes", ())):
+            path = _route_path(route)
             methods = getattr(route, "methods", None)
             if not isinstance(path, str) or not methods:
                 continue
@@ -29,7 +76,7 @@ def remove_shadowed_routes(primary_routers, candidate_router):
 
     kept = []
     for route in routes:
-        path = getattr(route, "path", None)
+        path = _route_path(route)
         methods = getattr(route, "methods", None)
         if not isinstance(path, str) or not methods:
             kept.append(route)
@@ -50,69 +97,74 @@ def remove_shadowed_routes(primary_routers, candidate_router):
     return candidate_router
 
 
-
 def include_missing_routes(app, source_router):
-    """Mount routes added to a router after an earlier circular import include.
+    """Mount routes added after an earlier include, without duplicate owners.
 
-    main and the native adapters import each other for shared models and auth
-    helpers. If an adapter is first imported while main is still initializing,
-    FastAPI may include only the routes present at that moment. Reconcile by
-    prefixed path, HTTP method and endpoint source symbol, adding only missing
-    operations and refusing conflicting owners.
+    FastAPI versions with lazy includes automatically expose routes added to
+    the original router. Older versions snapshot the route list at include
+    time. Flatten effective routes first so this function is idempotent in
+    both implementations and fails closed if an existing path/method already
+    has a different endpoint owner.
     """
     from copy import copy
     from fastapi import APIRouter
-    import inspect
 
     prefix = getattr(source_router, "prefix", "") or ""
 
-    def endpoint_symbol(endpoint):
-        endpoint = inspect.unwrap(endpoint)
-        return (
-            getattr(endpoint, "__module__", None),
-            getattr(endpoint, "__qualname__", getattr(endpoint, "__name__", None)),
-        )
-
     def full_path(route):
-        path = getattr(route, "path", None)
-        if not isinstance(path, str):
-            path = getattr(route, "path_format", None)
-        if not isinstance(path, str):
+        path = _route_path(route)
+        if path is None:
             return None
-        if prefix and not path.startswith(prefix.rstrip("/") + "/"):
-            return prefix.rstrip("/") + (path if path.startswith("/") else "/" + path)
-        return path
+        normalized_prefix = prefix.rstrip("/")
+        if not normalized_prefix:
+            return path
+        if path == normalized_prefix or path.startswith(normalized_prefix + "/"):
+            return path
+        return normalized_prefix + (path if path.startswith("/") else "/" + path)
 
     existing = {}
-    for route in getattr(app, "routes", ()):
-        path = getattr(route, "path", None)
-        if not isinstance(path, str):
+
+    def remember(key, symbol):
+        owner = existing.get(key)
+        if owner is not None and owner != symbol:
+            method, path = key
+            label = f"{method} {path}" if method else path
+            raise RuntimeError(
+                f"mobile route ownership conflict for {label}: "
+                f"{owner[0]}.{owner[1]} vs {symbol[0]}.{symbol[1]}"
+            )
+        existing[key] = symbol
+
+    for route in iter_registered_routes(getattr(app, "routes", ())):
+        path = _route_path(route)
+        if path is None:
             continue
         methods = getattr(route, "methods", None) or ()
-        symbol = endpoint_symbol(getattr(route, "endpoint", None))
+        symbol = _endpoint_symbol(getattr(route, "endpoint", None))
         if methods:
             for method in methods:
-                existing[(path, str(method).upper())] = symbol
+                remember((str(method).upper(), path), symbol)
         else:
-            existing[(path, None)] = symbol
+            remember((None, path), symbol)
 
     missing = []
-    for route in getattr(source_router, "routes", ()):
+    for route in iter_registered_routes(getattr(source_router, "routes", ())):
         path = full_path(route)
         if path is None:
             continue
         methods = getattr(route, "methods", None) or ()
-        symbol = endpoint_symbol(getattr(route, "endpoint", None))
+        symbol = _endpoint_symbol(getattr(route, "endpoint", None))
         if methods:
             remaining = set()
             for method in methods:
-                key = (path, str(method).upper())
+                normalized_method = str(method).upper()
+                key = (normalized_method, path)
                 owner = existing.get(key)
                 if owner is None:
                     remaining.add(method)
                 elif owner != symbol:
                     raise RuntimeError(
-                        f"mobile route ownership conflict for {str(method).upper()} {path}: "
+                        f"mobile route ownership conflict for {normalized_method} {path}: "
                         f"{owner[0]}.{owner[1]} vs {symbol[0]}.{symbol[1]}"
                     )
             if not remaining:
@@ -121,9 +173,9 @@ def include_missing_routes(app, source_router):
             cloned.methods = remaining
             missing.append(cloned)
             for method in remaining:
-                existing[(path, str(method).upper())] = symbol
+                existing[(str(method).upper(), path)] = symbol
         else:
-            key = (path, None)
+            key = (None, path)
             owner = existing.get(key)
             if owner is not None:
                 if owner != symbol:
