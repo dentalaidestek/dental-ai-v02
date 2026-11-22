@@ -6248,6 +6248,29 @@ def program_create(
     return RedirectResponse("/program?saved=1", status_code=303)
 
 
+def _schedule_event_revision(event: ScheduleEvent) -> str:
+    """Opaque optimistic-concurrency token for one owned Program event version."""
+    updated_at = event.updated_at
+    if updated_at.tzinfo is not None:
+        updated_at = updated_at.astimezone(timezone.utc).replace(tzinfo=None)
+    source = (
+        f"dental-ai:program-event-revision:v1:{event.owner_user_id}:"
+        f"{event.id}:{updated_at.isoformat(timespec='microseconds')}"
+    )
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def _touch_schedule_event(event: ScheduleEvent) -> None:
+    """Advance the event version monotonically even for same-clock-tick writes."""
+    now = _utcnow_naive()
+    current = event.updated_at
+    if current.tzinfo is not None:
+        current = current.astimezone(timezone.utc).replace(tzinfo=None)
+    if now <= current:
+        now = current + timedelta(microseconds=1)
+    event.updated_at = now
+
+
 @app.get("/program/{event_id}/edit", response_class=HTMLResponse)
 def program_edit_page(request: Request, event_id: int):
     user = get_current_user(request)
@@ -6290,6 +6313,8 @@ def program_edit_page(request: Request, event_id: int):
             "initial_notification": event.notification_enabled,
             "initial_recurrence": event.recurrence_rule,
             "initial_recurrence_until": event.recurrence_until or "",
+            "expected_revision": _schedule_event_revision(event),
+            "revision_conflict": False,
             "error": None,
         },
     )
@@ -6311,22 +6336,22 @@ def program_edit(
     notification_enabled: Optional[str] = Form(None),
     recurrence_rule: str = Form("NONE"),
     recurrence_until: str = Form(""),
+    expected_revision: str = Form(""),
 ):
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
 
     with Session(engine, expire_on_commit=False) as s:
-        event = s.get(ScheduleEvent, event_id)
+        event = s.exec(
+            select(ScheduleEvent)
+            .where(ScheduleEvent.id == event_id)
+            .with_for_update()
+        ).first()
         if not event or event.owner_user_id != user.id or event.status == "DELETED":
             return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
 
-        payload, error = _validate_schedule_input(
-            s, user, event_type, title, start_at, end_at, patient_id,
-            location, notes, reminder_minutes, notification_enabled,
-            recurrence_rule, recurrence_until,
-        )
-        if error:
+        def render_form(error: str, status_code: int, revision_conflict: bool = False):
             patient_query = (
                 select(Patient)
                 .where(Patient.owner_user_id == user.id)
@@ -6352,14 +6377,35 @@ def program_edit(
                     "initial_notification": (reminder_minutes or "").strip().upper() != "NONE",
                     "initial_recurrence": recurrence_rule,
                     "initial_recurrence_until": recurrence_until,
+                    "expected_revision": expected_revision,
+                    "revision_conflict": revision_conflict,
                     "error": error,
                 },
-                status_code=400,
+                status_code=status_code,
             )
+
+        current_revision = _schedule_event_revision(event)
+        if (
+            not re.fullmatch(r"[0-9a-f]{64}", expected_revision or "")
+            or not hmac.compare_digest(expected_revision, current_revision)
+        ):
+            return render_form(
+                "Bu program kaydı başka bir oturumda değiştirildi. Yerel taslağınız korundu; kaydetmeden önce güncel kaydı yeniden yükleyin.",
+                409,
+                True,
+            )
+
+        payload, error = _validate_schedule_input(
+            s, user, event_type, title, start_at, end_at, patient_id,
+            location, notes, reminder_minutes, notification_enabled,
+            recurrence_rule, recurrence_until,
+        )
+        if error:
+            return render_form(error, 400)
 
         for key, value in payload.items():
             setattr(event, key, value)
-        event.updated_at = _utcnow_naive()
+        _touch_schedule_event(event)
         s.add(event)
         s.flush()
         _sync_program_reminder(s, event)
@@ -6374,8 +6420,6 @@ def program_edit(
         on_loop(_publish_realtime_event, realtime_event)
 
     return RedirectResponse("/program?saved=1", status_code=303)
-
-
 
 
 @app.post("/program/{event_id}/copy")
@@ -6543,7 +6587,11 @@ def program_complete(request: Request, event_id: int):
         return RedirectResponse("/login", status_code=303)
 
     with Session(engine, expire_on_commit=False) as s:
-        event = s.get(ScheduleEvent, event_id)
+        event = s.exec(
+            select(ScheduleEvent)
+            .where(ScheduleEvent.id == event_id)
+            .with_for_update()
+        ).first()
         if not event or event.owner_user_id != user.id or event.status == "DELETED":
             return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
         if event.recurrence_rule != "NONE":
@@ -6552,7 +6600,7 @@ def program_complete(request: Request, event_id: int):
                 status_code=400,
             )
         event.status = "COMPLETED"
-        event.updated_at = _utcnow_naive()
+        _touch_schedule_event(event)
         s.add(event)
         _cancel_pending_program_reminders(s, event.id)
         realtime_events = _resolve_notifications(
@@ -6575,11 +6623,15 @@ def program_delete(request: Request, event_id: int):
         return RedirectResponse("/login", status_code=303)
 
     with Session(engine, expire_on_commit=False) as s:
-        event = s.get(ScheduleEvent, event_id)
+        event = s.exec(
+            select(ScheduleEvent)
+            .where(ScheduleEvent.id == event_id)
+            .with_for_update()
+        ).first()
         if not event or event.owner_user_id != user.id or event.status == "DELETED":
             return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
         event.status = "DELETED"
-        event.updated_at = _utcnow_naive()
+        _touch_schedule_event(event)
         s.add(event)
         _cancel_pending_program_reminders(s, event.id)
         realtime_events = _resolve_notifications(
