@@ -19,6 +19,26 @@ export type VoiceDeviceCheckFileSystem={
  deleteAsync(uri:string,options:{idempotent:true}):Promise<unknown>;
 };
 
+const PRIVATE_CACHE_CHILD=/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}$/;
+
+/** Safe fallback for a recorder artifact whose expected .m4a name failed validation. */
+export function isPrivateVoiceDeviceCheckCacheChildUri(uri:unknown,cacheDirectory:string|null|undefined):uri is string{
+ if(typeof uri!=='string'||typeof cacheDirectory!=='string'||!cacheDirectory.startsWith('file:///')||!cacheDirectory.endsWith('/')||!uri.startsWith(cacheDirectory))return false;
+ const filename=uri.slice(cacheDirectory.length);
+ return PRIVATE_CACHE_CHILD.test(filename)&&filename!=='.'&&filename!=='..';
+}
+
+export async function removePrivateVoiceDeviceCheckCacheChildFile(uri:unknown,cacheDirectory:string|null|undefined,fileSystem:VoiceDeviceCheckFileSystem):Promise<boolean>{
+ if(!isPrivateVoiceDeviceCheckCacheChildUri(uri,cacheDirectory))return false;
+ try{
+  const before=await fileSystem.getInfoAsync(uri);
+  if(!before.exists)return true;
+  await fileSystem.deleteAsync(uri,{idempotent:true});
+  const after=await fileSystem.getInfoAsync(uri);
+  return after.exists!==true;
+ }catch{return false;}
+}
+
 /** Delete only a validated cache file and confirm that it is absent afterward. */
 export async function removePrivateVoiceDeviceCheckFile(
  uri:unknown,cacheDirectory:string|null|undefined,fileSystem:VoiceDeviceCheckFileSystem
