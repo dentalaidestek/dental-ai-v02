@@ -163,6 +163,17 @@ def test_worker_deletes_unreferenced_thumbnail_and_removes_its_receipt(media_eng
         assert session.exec(select(work_jobs.WorkGarbage)).all() == []
 
 
+def test_analysis_asset_cleanup_receipt_has_a_grace_window(media_engine):
+    reference = analysis_asset_path()
+    with Session(media_engine) as session:
+        assert work_jobs.enqueue_analysis_asset_cleanup(session, reference)
+        session.commit()
+        row = session.exec(
+            select(work_jobs.WorkGarbage).where(work_jobs.WorkGarbage.reference == reference)
+        ).one()
+        assert row.available_at > work_jobs.now()
+
+
 def test_worker_deletes_unreferenced_analysis_asset_and_removes_its_receipt(media_engine, monkeypatch):
     reference = analysis_asset_path()
     with Session(media_engine) as session:
