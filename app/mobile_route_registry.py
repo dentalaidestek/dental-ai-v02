@@ -53,6 +53,16 @@ def _endpoint_symbol(endpoint):
     )
 
 
+def _router_path(router, route):
+    path = _route_path(route)
+    if path is None:
+        return None
+    prefix = (getattr(router, "prefix", "") or "").rstrip("/")
+    if not prefix or path == prefix or path.startswith(prefix + "/"):
+        return path
+    return prefix + (path if path.startswith("/") else "/" + path)
+
+
 def remove_shadowed_routes(primary_routers, candidate_router):
     """Remove method/path collisions from a candidate router in place.
 
@@ -62,7 +72,7 @@ def remove_shadowed_routes(primary_routers, candidate_router):
     mounted_methods = {}
     for primary_router in primary_routers:
         for route in iter_registered_routes(getattr(primary_router, "routes", ())):
-            path = _route_path(route)
+            path = _router_path(primary_router, route)
             methods = getattr(route, "methods", None)
             if not isinstance(path, str) or not methods:
                 continue
@@ -76,7 +86,7 @@ def remove_shadowed_routes(primary_routers, candidate_router):
 
     kept = []
     for route in routes:
-        path = _route_path(route)
+        path = _router_path(candidate_router, route)
         methods = getattr(route, "methods", None)
         if not isinstance(path, str) or not methods:
             kept.append(route)
@@ -112,15 +122,7 @@ def include_missing_routes(app, source_router):
     prefix = getattr(source_router, "prefix", "") or ""
 
     def full_path(route):
-        path = _route_path(route)
-        if path is None:
-            return None
-        normalized_prefix = prefix.rstrip("/")
-        if not normalized_prefix:
-            return path
-        if path == normalized_prefix or path.startswith(normalized_prefix + "/"):
-            return path
-        return normalized_prefix + (path if path.startswith("/") else "/" + path)
+        return _router_path(source_router, route)
 
     normalized_prefix = prefix.rstrip("/")
 
