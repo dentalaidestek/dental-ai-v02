@@ -43,6 +43,7 @@ def test_cleanup_admission_accepts_only_server_generated_media_object_keys(media
         "uploads/patient_42_" + ("a" * 32) + ".exe",
         "uploads/patient_42_" + ("a" * 32) + ".thumb.thumb.jpg",
         "uploads/patient-media/patient_42_" + ("a" * 32) + ".thumb.exe",
+        "uploads/patient-media/patient_42_" + ("a" * 32) + ".thumb.png",
         "uploads/patient-media/patient_42_" + ("a" * 32) + ".thumb.jpg/extra",
     ):
         assert not work_jobs.is_patient_media_reference(unsafe)
