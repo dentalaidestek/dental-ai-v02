@@ -85,4 +85,4 @@ Validation boundary: the source/test/workflow commits are on the PR branch. The 
 
 ## Isolated runtime check — 2026-11-22
 
-Ran the committed seven-case Node test against the current inline validator body with a synthetic DOM dataset fixture on Node v22.16.0: **7 passed, 0 failed**. The first harness attempt exposed a missing HTMLInputElement.addEventListener mock; the fixture was corrected to register and invoke the file-input change handler before accepting this result. This isolated check is not a full repository checkout or a substitute for the pending GitHub Android/Security Recovery workflows.
+Ran the committed eight-case Node test against the current inline validator body with a synthetic DOM dataset fixture on Node v22.16.0: **8 passed, 0 failed**. The first harness attempt exposed a missing HTMLInputElement.addEventListener mock; the fixture was corrected to register and invoke the file-input change handler before accepting this result. This isolated check is not a full repository checkout or a substitute for the pending GitHub Android/Security Recovery workflows.
