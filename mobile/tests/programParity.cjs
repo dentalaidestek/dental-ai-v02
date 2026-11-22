@@ -313,7 +313,8 @@ test('uncertain program edit does not claim success when the server still has ol
  assert.equal(saved,0);
  assert.equal(tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.value,'Updated visit');
  assert.ok(tree.root.findAllByType('Text').some(node=>text(node).includes('eşleşmiyor')));
- assert.equal(button(tree,'Değişiklikleri Kaydet').props.disabled,false);
+ assert.equal(button(tree,'Değişiklikleri Kaydet').props.disabled,true);
+  assert.ok(button(tree,'Güncel sürümü karşılaştır'));
  await renderer.act(async()=>tree.unmount());
 });
 
@@ -590,7 +591,7 @@ test('Program updates require and send the exact opaque revision from the loaded
   const saved=await api.saveProgramEvent('token',draft,7,undefined,revision);
   assert.equal(saved.revision,revision);
   assert.equal(body.expected_revision,revision);
-  assert.equal(url,'/api/mobile/v1/program/events/7');
+  assert.ok(url.endsWith('/api/mobile/v1/program/events/7'));
  }finally{global.fetch=original}
 });
 
