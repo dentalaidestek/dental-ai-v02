@@ -32,6 +32,8 @@ def test_same_upload_key_and_bytes_reuse_committed_analysis_and_job(chat,monkeyp
     again=post(c,raw);assert again.status_code==200 and again.json()['analysis_id']==first.json()['analysis_id']
     receipt=c.get('/api/mobile/v1/analyses/uploads/receipt?patient_id=8&request_key=synthetic-upload-key-001')
     assert receipt.status_code==200 and receipt.json()['receipt']['analysis_id']==first.json()['analysis_id']
+    assert receipt.headers.get("cache-control") == "private, no-store"
+    assert "authorization" in receipt.headers.get("vary", "").lower()
     assert receipt.json()['receipt']['job_id']==first.json()['job_id']
     with Session(engine) as s:
         assert len(s.exec(select(main.Analysis)).all())==1
