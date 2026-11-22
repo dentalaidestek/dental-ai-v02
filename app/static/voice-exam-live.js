@@ -87,7 +87,11 @@
       preview.textContent='';stateChanged(hasListened?'paused':'idle');
       announce('Onay geri çekildi. Mikrofon kapatıldı; biriken konuşma metni korundu.');
     }else if(state==='listening'){void stop(false)}
-    else if(state==='stopping'){finished=false}
+    else if(state==='stopping'){
+      finished=false;
+      // Publish the withdrawal immediately; the final server flush may still be in flight.
+      root.dataset.liveFinished='false';
+    }
   }
   consent.addEventListener('change',consentChanged);
   stateChanged('idle');
