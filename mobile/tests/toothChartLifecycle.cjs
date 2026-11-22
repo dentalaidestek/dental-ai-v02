@@ -556,3 +556,108 @@ test('tooth history tab scopes analyses and cursor-paged treatments to the selec
  assert.deepEqual(calls,[{tooth:'36',cursor:null},{tooth:'36',cursor:'cursor-older'}]);
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('a stale whole-tooth save requires an explicit refresh and preserves the clinician draft',async()=>{
+ focused=false;lastEvent=null;appListeners=[];
+ const initial=patient(8,'Ada','HEALTHY',35);
+ initial.teeth[0].revision='a'.repeat(64);
+ const remote=patient(8,'Ada','FILLING',35);
+ remote.teeth[0].revision='b'.repeat(64);
+ remote.teeth[0].note='Remote note';
+ let reads=0;const writes=[];
+ const Chart=chartComponent({
+  getPatient:async()=>++reads===1?initial:remote,
+  updateTooth:async(...args)=>{
+   writes.push(args[3]);
+   if(writes.length===1)throw Object.assign(new Error('stale tooth revision'),{status:409});
+   return{ok:true};
+  }
+ });
+ let tree;
+ const press=async(label)=>{
+  const item=tree.root.findAllByType('Pressable').find(node=>
+   node.props.accessibilityLabel===label||
+   node.findAllByType('Text').some(child=>flat(child.children)===label)
+  );
+  assert.ok(item,'missing control '+label);
+  await renderer.act(async()=>item.props.onPress());
+ };
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush();await flush()});
+ await press('Diş 11, Sağlıklı');
+ await press('Diş durumu: Çürük');
+ await press('Durumu Kaydet');
+ await renderer.act(async()=>{await flush();await flush()});
+ assert.equal(writes.length,1);
+ let save=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children)==='Durumu Kaydet'));
+ assert.ok(save);
+ assert.equal(save.props.disabled,true,'a stale revision cannot be submitted again');
+ assert.ok(tree.root.findAllByType('Pressable').some(node=>node.props.accessibilityLabel==='Güncel diş kaydını yükle'));
+ await press('Güncel diş kaydını yükle');
+ await renderer.act(async()=>{await flush();await flush()});
+ assert.equal(writes.length,1,'refresh must never auto-save or replay the draft');
+ assert.match(flat(tree.toJSON()),/Sunucudaki son durum: Dolgu\. Not: Remote note/);
+ save=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children)==='Durumu Kaydet'));
+ assert.equal(save.props.disabled,false,'the explicit refresh enables a deliberate retry');
+ await press('Durumu Kaydet');
+ await renderer.act(async()=>{await flush();await flush()});
+ assert.equal(writes.length,2);
+ assert.equal(writes[1].expected_revision,'b'.repeat(64),'retry must use the refreshed server revision');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('a stale surface save refreshes the correct FDI surface while retaining its independent draft',async()=>{
+ focused=false;lastEvent=null;appListeners=[];
+ const initial=patient(8,'Ada','HEALTHY',35);
+ initial.surfaces=[{id:4,tooth_number:'11',surface:'INCISAL',status:'HEALTHY',note:'Old surface note',revision:'c'.repeat(64)}];
+ const remote=patient(8,'Ada','HEALTHY',35);
+ remote.surfaces=[{id:4,tooth_number:'11',surface:'INCISAL',status:'FILLING',note:'Remote surface note',revision:'d'.repeat(64)}];
+ let reads=0;const writes=[];
+ const Chart=chartComponent({
+  getPatient:async()=>++reads===1?initial:remote,
+  updateToothSurface:async(...args)=>{
+   writes.push(args[4]);
+   if(writes.length===1)throw Object.assign(new Error('stale surface revision'),{status:409});
+   return{ok:true};
+  }
+ });
+ let tree;
+ const press=async(label)=>{
+  const item=tree.root.findAllByType('Pressable').find(node=>
+   node.props.accessibilityLabel===label||
+   node.findAllByType('Text').some(child=>flat(child.children)===label)
+  );
+  assert.ok(item,'missing control '+label);
+  await renderer.act(async()=>item.props.onPress());
+ };
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush();await flush()});
+ await press('Diş 11, Sağlıklı');
+ const incisal=tree.root.findAllByType('Pressable').filter(node=>node.findAllByType('Text').some(child=>flat(child.children)==='İnsizal')).at(-1);
+ assert.ok(incisal,'independent incisal surface editor must be available for FDI 11');
+ await renderer.act(async()=>incisal.props.onPress());
+ const caries=tree.root.findAllByType('Pressable').filter(node=>node.findAllByType('Text').some(child=>flat(child.children)==='Çürük')).at(-1);
+ assert.ok(caries,'surface-specific status control must be available');
+ await renderer.act(async()=>caries.props.onPress());
+ const note=tree.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Yüzey klinik notu');
+ assert.ok(note);
+ await renderer.act(async()=>note.props.onChangeText('Local surface draft'));
+ await press('Yüzeyi Kaydet');
+ await renderer.act(async()=>{await flush();await flush()});
+ assert.equal(writes.length,1);
+ const save=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children)==='Yüzeyi Kaydet'));
+ assert.ok(save);
+ assert.equal(save.props.disabled,true,'stale surface revision must block another write');
+ await press('Güncel diş kaydını yükle');
+ await renderer.act(async()=>{await flush();await flush()});
+ assert.equal(writes.length,1,'surface refresh must not write the local draft');
+ assert.match(flat(tree.toJSON()),/Sunucudaki son durum: Dolgu\. Not: Remote surface note/);
+ const preserved=tree.root.findAllByType('TextInput').find(node=>node.props.accessibilityLabel==='Yüzey klinik notu');
+ assert.equal(preserved.props.value,'Local surface draft');
+ const retry=tree.root.findAllByType('Pressable').find(node=>node.findAllByType('Text').some(child=>flat(child.children)==='Yüzeyi Kaydet'));
+ assert.equal(retry.props.disabled,false);
+ await press('Yüzeyi Kaydet');
+ await renderer.act(async()=>{await flush();await flush()});
+ assert.equal(writes.length,2);
+ assert.equal(writes[1].expected_revision,'d'.repeat(64),'surface retry must use the refreshed surface revision');
+ await renderer.act(async()=>tree.unmount());
+});
