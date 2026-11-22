@@ -1357,10 +1357,10 @@ Starting PR HEAD: `23e504adef451eb83a3a3fc2ba5685c1fcff4614`.
 - Made Dental Flow and clinical-media source regressions accept either one-line or parenthesized import formatting while retaining the router ordering checks.
 
 ### Commits in this follow-up
-- `pending` — restore canonical mobile API mount
-- `pending` — repair route-registry regression scope and prefix contract
-- `pending` — exercise explicit voice cleanup confirmation
-- `pending` — make Dental Flow route import regression formatting-independent
-- `pending` — make clinical media route import regression formatting-independent
+- `4740c350` — restore canonical mobile API mount
+- `960512ad` — repair route-registry helper scope (followed by prefix correction in `4fa3621e`)
+- `0fc7562e` — exercise explicit voice cleanup confirmation
+- `71e9c431` — make Dental Flow route import regression formatting-independent (regex escaping corrected in `495a2225`)
+- `4e4b6358` — make clinical media route import regression formatting-independent (regex escaping corrected in `f761c0f2`)
 
-Final-head Android, Python/PostgreSQL, native security and browser regressions must run after these commits. No local pytest or typecheck execution is claimed in this connector-only session. No patient data, storage object, staging/production database, main branch or live deployment was changed.
+Code changes through `f761c0f2` are the final code head for this follow-up; the subsequent tracker-only commit does not alter application or test code. Final-head Android, Python/PostgreSQL, native security and browser regressions must run after these code commits. No local pytest or typecheck execution is claimed in this connector-only session. No patient data, storage object, staging/production database, main branch or live deployment was changed.
