@@ -30,3 +30,16 @@ No upload receipt, file hash, encrypted vault, image URL, storage object, server
 The parent-head Android CI and Security Recovery were green before these render-key changes. Latest-head runs are the authority for this new test; until those jobs start and finish, the clinical-media regression is committed but not yet reported as passed. No local checkout was available for independent test execution.
 
 No main merge, production deployment, APK publication, migration or patient-data operation was performed.
+
+
+## 2026-11-22 follow-up — remove credential-bearing gallery state
+
+A second pass found that the earlier composer-key fix did not remove the bearer token from the gallery's own state fence: `loadedOwner` and `pendingOwner` received the raw `userId:token:patientId` string. The value was not displayed, but React state and diagnostics could retain the credential unnecessarily.
+
+- Replaced the locally assembled owner string with the shared `useSessionRenderKey` hook.
+- The hook retains the credential-bearing comparison scope only in its private ref and returns an opaque process-local key.
+- `loadedOwner`, `pendingOwner`, the stale-response fence and the image/composer cache identity now use that opaque key.
+- The upload draft's SecureStore key remains account + patient scoped; server receipt keys and encrypted image vault paths are unchanged.
+- The existing `patientMediaAccountSwitch.cjs` test is already included in `npm run test:beta`; the harness now loads the real production hook. New runtime regressions assert that no bearer token enters React state and that a refreshed token for the same patient rejects late responses from the expired session.
+
+No API contract, upload receipt, image fingerprint, encrypted vault, storage object, patient media row or clinical note changed. The latest parent-head Android and Security Recovery workflows were green before this change; this new code/test set still requires its own final-head CI.
