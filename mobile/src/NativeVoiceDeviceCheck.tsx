@@ -174,7 +174,6 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
    const audioModeRestored=await resetAudioMode();notifyBusy(false);
    if(mounted.current){setPhase('complete');setStopPending(false);setCleanupPending(!cleanupVerified);setResult(!cleanupVerified?resultText.cleanup_failed:!audioModeRestored?resultText.audio_mode_restore_failed:(error instanceof Error?error.message:'Mikrofon testi başlatılamadı.'));}
   }
-  }
  }
  useEffect(()=>{
   const subscription=AppState.addEventListener('change',state=>{
@@ -202,7 +201,7 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
    {phase==='testing'&&<Pressable accessibilityRole="button" onPress={()=>void cancel()} style={{backgroundColor:'#FEE4E2',borderRadius:11,padding:13,justifyContent:'center'}}><Text style={{color:'#B42318',fontWeight:'800'}}>Durdur</Text></Pressable>}
   </View>
   {busyPhase&&<View style={{flexDirection:'row',alignItems:'center',gap:9,marginTop:10}}><ActivityIndicator color={blue}/><Text accessibilityLiveRegion="polite" style={{color:muted}}>{phase==='testing'?'Birkaç kelime söyleyin. Test altı saniye sonra otomatik kapanır.':'Mikrofon hazırlanıyor…'}</Text></View>}
-  {!!result&&<Text accessibilityLiveRegion="polite" accessibilityRole={stopPending||cleanupPending||audioModeBlocked?'alert':undefined} style={{color:phase==='complete'&&result===resultText.passed?'#067647':cleanupPending?'#B42318':muted,lineHeight:20,marginTop:12}}>{result}</Text>}
+  {!!result&&<Text accessibilityLiveRegion="polite" accessibilityRole={stopPending||cleanupPending||audioModeBlocked?'alert':undefined} style={{color:phase==='complete'&&result===resultText.passed?'#067647':stopPending||cleanupPending?'#B42318':muted,lineHeight:20,marginTop:12}}>{result}</Text>}
   {(stopPending||cleanupPending||audioModeBlocked)&&<Pressable accessibilityRole="button" disabled={busyPhase} onPress={()=>void retryCleanup()} style={{marginTop:10,borderWidth:1,borderColor:'#B42318',borderRadius:11,padding:12,alignItems:'center'}}>
    <Text style={{color:'#B42318',fontWeight:'800',textAlign:'center'}}>{stopPending?'Mikrofonu güvenle durdurmayı yeniden dene':cleanupPending&&audioModeBlocked?'Geçici ses dosyasını ve cihaz ses yönlendirmesini yeniden dene':cleanupPending?'Geçici ses dosyasını silmeyi yeniden dene':'Cihaz ses yönlendirmesini yeniden dene'}</Text>
   </Pressable>}
