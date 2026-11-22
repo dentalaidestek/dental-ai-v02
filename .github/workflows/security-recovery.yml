@@ -172,4 +172,4 @@ jobs:
         run: python -m pytest tests/test_postgres_optimization.py -q
       - name: Validate web form and live voice browser regressions
         if: always()
-        run: node --test tests/auth_form_submit.cjs tests/account_history.cjs tests/profile_flow_ui.cjs tests/voice_live_browser.cjs
+        run: node --test tests/auth_form_submit.cjs tests/account_history.cjs tests/profile_flow_ui.cjs tests/voice_live_browser.cjs tests/analysis_new_upload_form.cjs
