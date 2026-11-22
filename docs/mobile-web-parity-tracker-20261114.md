@@ -1252,3 +1252,47 @@ At `f48c1b39fa67508d64c971199a6ba607c0da83bd`, Android typecheck, session/auth, 
 ### Validation and next gate
 
 The repaired head has not yet received fresh completed Android/Security Recovery results in this work package. Do not call the five VM failures fixed until those jobs rerun green. No local typecheck/test result is claimed, no web/backend or provider behavior was changed, and no main merge, live deploy, APK/IPA release, migration or patient-data operation occurred. Next: verify current-head CI, then resume web-first patient-profile, clinical-media and AI-analysis parity; 60,000-user scale remains un-certified and needs dedicated load testing.
+
+
+## 2026-11-22 — Five-route parity regressions (PR #257 audit wave)
+
+Web-first trace before any edit: for each of the five routes that exist only on
+`feature/mobile-web-parity-20261110` and not on `origin/live-main`, the canonical
+web handler was read first (attachments upload/serving, `expert_support_media_message`
+and `expert_support_message_media`; badge counts, `consultation_unread_count` and
+`account_notifications`; expert rules text, `expert_support_performance_info`), then
+the mobile adapter was compared against it.
+
+### Drift findings and resolutions
+
+- Attachments upload/serving: ownership, participant and blocked-user predicates,
+  lifecycle gating (409/423) and the sender-scoped `ConsultationMessageReceipt`
+  idempotency already mirror the web handlers; the client already generates a
+  stable persisted `client_message_id` per queued upload and recovers through
+  `/consultations/{id}/message-receipt`. No code change was needed; regressions
+  now lock the behavior (replay, payload-hash conflict, cross-sender isolation,
+  lost-response recovery, outsider/wrong-pairing 404, anonymous 401).
+- Mobile-only extra gating kept intentionally (stricter than web, not drift to
+  fix): attachment download refuses soft-deleted conversations and per-user hidden
+  states, and serves `private, no-store` instead of the web's immutable cache —
+  both consistent with the native hidden-chat UX and bearer-authenticated media.
+- Anonymous badge responses: web returns `{"count":0}`/`{"unread_count":0}` for
+  logged-out browsers; native intentionally answers 401 so `revalidateSession`
+  runs instead of painting a fake empty badge. Locked as the native contract.
+- Notification count semantics: web runs `_expire_seen_notifications` before
+  counting, but it only expires read notices, so the ACTIVE+unread predicate and
+  the badge value are identical without it. No change.
+- Real drift fixed: `GET /experts/performance-info` returned only
+  `{ok,content}` while the native `ExpertPerformanceInfo` type and
+  `NativeExpertPerformance` read `title`/`body`/`sections`, so the canonical web
+  copy was never rendered. The adapter now parses the template h1 and per-section
+  h2/body pairs and returns the additive fields next to `ok`/`content`.
+
+### Coverage
+
+`tests/test_parity_five_routes_regressions.py` locks the 5x5 matrix (ownership,
+authorization, idempotency, same-key recovery, wrong-account) for the five
+routes; `mobile/tests/fiveRoutesParityContract.cjs` pins each client call to the
+exact server path/method, response field names, the 120s upload deadline, the
+Bearer image-uri pattern, the 401 `revalidateSession` flow, the unchanged Turkish
+copy and the absence of these routes on live main.
