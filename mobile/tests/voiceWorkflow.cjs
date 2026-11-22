@@ -151,6 +151,19 @@ function nativeVoiceAudioModule(files,transcribe){
  if(typeof transcribe==='function')exports.transcribeNativeRecording=transcribe;
  return exports;
 }
+test('orphaned recorder artifacts are removed only from a direct app-private cache child',async()=>{
+ const files=new Map([['file:///cache/unexpected.tmp',{exists:true,size:80}],['file:///outside/unexpected.m4a',{exists:true,size:80}]]);
+ const api=nativeVoiceAudioModule(files);
+ assert.equal(api.isPrivateVoiceCacheChildUri('file:///cache/unexpected.tmp'),true);
+ assert.equal(api.isPrivateVoiceCacheChildUri('file:///cache/nested/unexpected.tmp'),false);
+ assert.equal(api.isPrivateVoiceCacheChildUri('file:///cache/../outside/unexpected.tmp'),false);
+ assert.equal(api.isPrivateVoiceCacheChildUri('file:///outside/unexpected.m4a'),false);
+ assert.equal(await api.removePrivateVoiceCacheChildFile('file:///cache/unexpected.tmp'),true);
+ assert.equal(files.get('file:///cache/unexpected.tmp').exists,false);
+ assert.equal(await api.removePrivateVoiceCacheChildFile('file:///outside/unexpected.m4a'),false);
+ assert.equal(files.get('file:///outside/unexpected.m4a').exists,true,'outside paths are never passed to file deletion');
+});
+
 function recorderUI({saved=null,loadDraft=null,transcribe=async()=>({transcript:'Synthetic dictated speech',revision:'r'}),stopFailures=0,stopFailureStopsRecorder=false,stopGate=null,permissionGate=null,prepareFailureAt=0,audioModeFailureAt=0,restoredFileInfo={exists:true,size:1024}}={}){
  const exports={},store=new Map(),calls=[],modeCalls=[],timers=[],files=new Map(),state={isRecording:false,durationMillis:0,mediaServicesDidReset:false};
  
