@@ -3876,18 +3876,38 @@ def mobile_case_shared_media(case_id: int, link_id: int, user: User = Depends(_m
 @router.post("/consultations/{case_id}/attachments")
 async def mobile_chat_upload(case_id: int, response: Response, file: UploadFile = File(...),
                              reply_to_message_id: Optional[int] = Form(None),
-                             client_message_id: str = Form(""),
+                             client_message_id: str = Form(..., min_length=16, max_length=96),
                              token: str = Depends(_mobile_access_token),
                              user: User = Depends(_mobile_user)):
     _mobile_private_no_store(response)
     response.headers["X-Content-Type-Options"] = "nosniff"
     from app import main as web
+    # A mobile attachment is always a recoverable mutation. Reject a missing or
+    # malformed intent key before reading the multipart body or allocating storage.
+    client_key = web._normalize_consultation_client_message_id(client_message_id)
+    if not client_key:
+        raise HTTPException(status_code=422, detail="Ek gönderimi için işlem anahtarı zorunludur.")
     with Session(engine, expire_on_commit=False) as session:
         case = session.get(ConsultationCase, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at:
             raise HTTPException(status_code=404, detail="Görüşme bulunamadı.")
+        latest_inbox_state = session.exec(
+            select(ConsultationInboxState)
+            .where(ConsultationInboxState.case_id == case_id, ConsultationInboxState.user_id == user.id)
+            .order_by(ConsultationInboxState.id.desc())
+        ).first()
+        if latest_inbox_state and latest_inbox_state.deleted_at:
+            raise HTTPException(status_code=404, detail="Önce görüşmeyi geri yükleyin.")
         if web._users_blocked(session, user.id, case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id):
             raise HTTPException(status_code=403, detail="Engellenen görüşmeye ek gönderilemez.")
+        # Cheap preflight only: the canonical web handler rechecks all lifecycle
+        # conditions under its case lock before persisting the attachment.
+        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+            raise HTTPException(status_code=409, detail="Bu vakaya dosya gönderilemez.")
+        now = web._utcnow_naive()
+        if (case.status == "WAITING_START" and user.id == case.requester_user_id
+                and case.consultation_start_deadline and now < case.consultation_start_deadline):
+            raise HTTPException(status_code=423, detail="Uzmanın belirttiği başlangıç süresi henüz dolmadı.")
     from io import BytesIO
     suffix = Path(file.filename or "").suffix.lower()
     image_suffixes = {".jpg", ".jpeg", ".png", ".webp"}
@@ -3901,7 +3921,7 @@ async def mobile_chat_upload(case_id: int, response: Response, file: UploadFile 
     try:
         return await _mobile_chat_dispatch(
             web.expert_support_media_message, request, case_id, clean,
-            reply_to_message_id, client_message_id,
+            reply_to_message_id, client_key,
         )
     finally:
         await clean.close()
