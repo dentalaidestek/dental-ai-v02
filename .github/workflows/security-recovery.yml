@@ -54,7 +54,7 @@ jobs:
       - name: Validate clinical result schema, restart recovery and web viewer parity
         run: |
           set -o pipefail
-          node --test tests/clinicalWorkflow.cjs tests/visionViewer.cjs tests/patientApi.cjs tests/analysisHistoryScope.cjs tests/patientProfileUI.cjs tests/patientVoiceHistory.cjs tests/voiceEvidence.cjs tests/voiceApi.cjs tests/voiceWorkflow.cjs tests/patientHistoryWebPaging.cjs tests/patientHistoryRetry.cjs tests/patientAnalysisHistoryCursor.cjs tests/patientTreatmentPresentation.cjs tests/patientTreatmentHistoryExpansion.cjs 2>&1 | tee "$RUNNER_TEMP/native-clinical-security.log"
+          node --test tests/clinicalWorkflow.cjs tests/analysisRefresh.cjs tests/visionViewer.cjs tests/patientApi.cjs tests/analysisHistoryScope.cjs tests/patientProfileUI.cjs tests/patientVoiceHistory.cjs tests/voiceEvidence.cjs tests/voiceApi.cjs tests/voiceWorkflow.cjs tests/patientHistoryWebPaging.cjs tests/patientHistoryRetry.cjs tests/patientAnalysisHistoryCursor.cjs tests/patientTreatmentPresentation.cjs tests/patientTreatmentHistoryExpansion.cjs 2>&1 | tee "$RUNNER_TEMP/native-clinical-security.log"
       - name: Preserve native clinical security diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
