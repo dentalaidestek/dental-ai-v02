@@ -280,6 +280,9 @@ _PATIENT_MEDIA_OBJECT = re.compile(
 _GUEST_ANALYSIS_OBJECT = re.compile(
     r"uploads/guest_analysis_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)"
 )
+_ANALYSIS_ASSET_OBJECT = re.compile(
+    r"uploads/analysis_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)"
+)
 _ACCOUNT_ASSET_OBJECT = re.compile(
     r"uploads/(?:"
     r"profile_photos/user_[1-9][0-9]*_[0-9a-f]{16}\.jpg|"
@@ -298,6 +301,11 @@ def is_patient_media_reference(reference: str) -> bool:
 def is_guest_analysis_reference(reference: str) -> bool:
     """Accept only server-generated guest-analysis upload object keys."""
     return isinstance(reference, str) and _GUEST_ANALYSIS_OBJECT.fullmatch(reference) is not None
+
+
+def is_analysis_asset_reference(reference: str) -> bool:
+    """Accept only server-generated, analysis-owned image asset object keys."""
+    return isinstance(reference, str) and _ANALYSIS_ASSET_OBJECT.fullmatch(reference) is not None
 
 
 def is_account_asset_reference(reference: str) -> bool:
@@ -374,6 +382,13 @@ def enqueue_guest_analysis_cleanup(session: Session, reference: str) -> bool:
     if not is_guest_analysis_reference(reference):
         return False
     return _enqueue_cleanup_reference(session, reference, delay_seconds=30)
+
+
+def enqueue_analysis_asset_cleanup(session: Session, reference: str) -> bool:
+    """Queue a generated analysis image after its asset row is rolled back or deleted."""
+    if not is_analysis_asset_reference(reference):
+        return False
+    return _enqueue_cleanup_reference(session, reference, delay_seconds=0)
 
 
 def enqueue_ai_result_cleanup(session: Session, reference: str) -> bool:
