@@ -11,13 +11,14 @@ vm.runInNewContext(refreshSource,{exports:refreshExports,Math});
 const result=(id=7,status='VISION_READY')=>({analysis:{id,status},assets:[],ai_result:null});
 function harness(fetchAnalysis){
  const states=[[],null,null,result(),false,''],previous=[],refs=[],effects=[];
- let stateIndex=0,effectIndex=0,refIndex=0,event={entity_type:'analysis',entity_id:7,event_type:'ANALYSIS_UPDATED',event_id:100},token='synthetic-token';
+ let stateIndex=0,effectIndex=0,refIndex=0,event={entity_type:'analysis',entity_id:7,event_type:'ANALYSIS_UPDATED',event_id:100},token='synthetic-token',lastSessionKey='';
  const react={useCallback:f=>f,useRef:value=>{const i=refIndex++;return refs[i]??(refs[i]={current:value})},useState:()=>{const i=stateIndex++;return [states[i],value=>{states[i]=value}]},useEffect:(f,deps)=>{const i=effectIndex++;if(!previous[i]||deps.some((v,j)=>!Object.is(v,previous[i].deps[j]))){effects.push(()=>{previous[i]?.cleanup?.();previous[i]={deps,cleanup:f()}})}},createElement:()=>null};react.default=react;
+ const useSessionRenderKey=scope=>{const identity=react.useRef(null);identity.current=sessionRenderKeyExports.resolveSessionRenderIdentity(identity.current,scope);lastSessionKey=identity.current.key;return identity.current.key};
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeDentalAI.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const exports={};
- vm.runInNewContext(code,{exports,setTimeout:()=>0,clearTimeout:()=>{},require:name=>name==='react'?react:name==='react-native'?{AppState:{addEventListener:()=>({remove(){}}),currentState:'active'}}:name==='./api'?{getPatients:async()=>({items:[]})}:name==='./analysisApi'?{getAnalysis:fetchAnalysis,analysisPatientLabel:patient=>{const name=[patient.first_name,patient.last_name].map(value=>typeof value==='string'?value.trim():'').filter(Boolean).join(' ');return name||patient.anonymous_id||'Hasta #'+patient.id}}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:name==='./analysisRefresh'?refreshExports:name==='./sessionRenderKey'?sessionRenderKeyExports:{}});
+ vm.runInNewContext(code,{exports,setTimeout:()=>0,clearTimeout:()=>{},require:name=>name==='react'?react:name==='react-native'?{AppState:{addEventListener:()=>({remove(){}}),currentState:'active'}}:name==='./api'?{getPatients:async()=>({items:[]})}:name==='./analysisApi'?{getAnalysis:fetchAnalysis,analysisPatientLabel:patient=>{const name=[patient.first_name,patient.last_name].map(value=>typeof value==='string'?value.trim():'').filter(Boolean).join(' ');return name||patient.anonymous_id||'Hasta #'+patient.id}}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:name==='./analysisRefresh'?refreshExports:name==='./useSessionRenderKey'?{__esModule:true,default:useSessionRenderKey}:{}});
  const render=()=>{stateIndex=0;effectIndex=0;refIndex=0;exports.default({token});while(effects.length)effects.shift()();};
- return {states,render,setEvent:value=>{event=value;render()},setToken:value=>{token=value;render()},unmount:()=>previous.forEach(x=>x?.cleanup?.())};
+ return {states,render,getSessionKey:()=>lastSessionKey,setEvent:value=>{event=value;render()},setToken:value=>{token=value;render()},unmount:()=>previous.forEach(x=>x?.cleanup?.())};
 }
 test('analysis event does not fetch without a verified patient selection',async()=>{
  let requests=0;const h=harness(async()=>{requests++;return result()});
