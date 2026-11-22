@@ -64,3 +64,10 @@ This pass found three additional credential-retention surfaces:
 These did not replace server authorization, but unnecessarily duplicated a bearer credential in long-lived UI refs. They now use the shared opaque session key. Vision requests still send the current render's token to the authenticated API call; stale responses compare only opaque session identity plus analysis/asset/modality. No polling interval, AI request count, image retry cost or server workload was increased.
 
 The VM harnesses for AI recovery, clinical review and vision viewer now load the production hook (or a hook adapter backed by the same production identity resolver for the custom fake-React harness). Additional static regressions cover all three screens and their harness mappings.
+
+
+## CI regression found during this pass
+
+The first Security Recovery after the AI-viewer changes exposed one test-harness omission, not a production-code failure: `patientHistoryRetry.cjs` instantiated `NativePatientHistory` but its VM import map did not provide the newly required `./useSessionRenderKey` hook. The failing test reported `Unexpected import ./useSessionRenderKey`. The other native security jobs in that run completed successfully; the clinical aggregate was red because this one test process exited non-zero.
+
+Fixed the retry harness to load the production hook and added a guard in `sessionRenderKey.cjs` so the retry harness mapping cannot silently regress. A fresh Android CI and Security Recovery were queued for the new HEAD after that fix; until those runs complete, the newly changed tests are **not** claimed as passing.
