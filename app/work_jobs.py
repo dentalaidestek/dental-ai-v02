@@ -430,7 +430,7 @@ def enqueue_replaced_account_asset_cleanup(
 
 def collect_garbage(engine):
     from app.object_storage import delete
-    from app.main import Analysis, ExpertProfile, ExpertTitleChange, GuestAnalysis, GuestImageAsset, PatientMedia, User
+    from app.main import Analysis, ExpertProfile, ExpertTitleChange, GuestAnalysis, GuestImageAsset, ImageAsset, PatientMedia, User
 
     with Session(engine, expire_on_commit=False) as session:
         query = select(WorkGarbage).where(WorkGarbage.available_at <= now()).order_by(WorkGarbage.id).limit(1)
@@ -452,9 +452,10 @@ def collect_garbage(engine):
         reference = str(garbage.reference)
         patient_media = is_patient_media_reference(reference)
         guest_asset = is_guest_analysis_reference(reference)
+        analysis_asset = is_analysis_asset_reference(reference)
         ai_result = is_ai_result_reference(reference)
         account_asset = is_account_asset_reference(reference)
-        if not ai_result and not patient_media and not guest_asset and not account_asset:
+        if not ai_result and not patient_media and not guest_asset and not analysis_asset and not account_asset:
             return
 
         # A cleanup receipt is visible only after metadata deletion commits.
@@ -468,6 +469,18 @@ def collect_garbage(engine):
             in_use = session.exec(
                 select(GuestImageAsset.id).where(GuestImageAsset.file_path == reference).limit(1)
             ).first()
+        elif analysis_asset:
+            in_use = session.exec(
+                select(ImageAsset.id).where(ImageAsset.file_path == reference).limit(1)
+            ).first()
+            if not in_use:
+                in_use = session.exec(
+                    select(Analysis.id).where(Analysis.image_path == reference).limit(1)
+                ).first()
+            if not in_use:
+                in_use = session.exec(
+                    select(Analysis.id).where(Analysis.radiograph_path == reference).limit(1)
+                ).first()
         elif account_asset:
             # A path can be shared by a retained/other account record. Re-check
             # every private identity-document owner before deleting the object.
