@@ -196,15 +196,20 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
         )
         return matches[0]
 
-    media_list = registered(primary_mobile_router, "/patients/{patient_id}/media", "GET")
+    # The canonical GET gallery is owned by the modern v3 router. The
+    # primary router owns the receipt-aware POST upload, so only that POST
+    # shadows the legacy v3 upload adapter during route deduplication.
+    media_list = registered(modern_mobile_router, "/patients/{patient_id}/media", "GET")
     media_upload = registered(primary_mobile_router, "/patients/{patient_id}/media", "POST")
     original_file = registered(primary_mobile_router, "/patients/{patient_id}/media/{media_id}/file", "GET")
     thumbnail = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}/thumbnail", "GET")
     metadata = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}", "GET")
 
-    assert media_list.endpoint.__module__ == "app.mobile_api"
+    assert media_list.endpoint.__module__ == "app.mobile_modern_api_v3"
     assert media_list.endpoint.__name__ == "mobile_patient_media"
-    assert "_mobile_private_no_store(response)" in inspect.getsource(media_list.endpoint)
+    assert "response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in inspect.getsource(media_list.endpoint)
+    assert "Cache-Control" in inspect.getsource(media_list.endpoint)
+    assert "private, no-store" in inspect.getsource(media_list.endpoint)
 
     assert media_upload.endpoint.__module__ == "app.mobile_api"
     assert media_upload.endpoint.__name__ == "mobile_patient_media_upload"
