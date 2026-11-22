@@ -85,6 +85,60 @@ def test_mobile_attachment_upload_rejects_outsider_and_blocked_participant(chat)
         assert session.exec(select(main.ConsultationMessage)).all() == []
 
 
+def test_web_attachment_upload_rejects_a_locally_deleted_inbox(chat):
+    client, engine = chat
+    client.cookies.set(main.SESSION_COOKIE, _SESSION_TOKEN[1])
+    with Session(engine) as session:
+        session.add(main.ConsultationInboxState(
+            case_id=1, user_id=1, deleted_at=main._utcnow_naive(),
+            recover_until=main._utcnow_naive() + timedelta(days=7),
+        ))
+        session.commit()
+    response = client.post(
+        "/expert-support/cases/1/media-message",
+        data={"client_message_id": "native-web-hidden-inbox-0001"},
+        files={"file": ("hidden.png", _png(), "image/png")},
+        headers={"accept": "application/json", "x-requested-with": "fetch"},
+    )
+    assert response.status_code == 404
+    with Session(engine) as session:
+        assert session.exec(select(main.ConsultationMessage)).all() == []
+
+
+def test_web_attachment_rechecks_inbox_after_storage_before_message_commit(chat, monkeypatch):
+    from pathlib import Path
+    client, engine = chat
+    client.cookies.set(main.SESSION_COOKIE, _SESSION_TOKEN[1])
+    stored = []
+
+    def store_then_hide(path, raw, content_type=None):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+        stored.append(Path(path))
+        with Session(engine) as session:
+            session.add(main.ConsultationInboxState(
+                case_id=1, user_id=1, deleted_at=main._utcnow_naive(),
+                recover_until=main._utcnow_naive() + timedelta(days=7),
+            ))
+            session.commit()
+
+    def delete_staged(path):
+        Path(path).unlink(missing_ok=True)
+
+    monkeypatch.setattr(main, "storage_write_bytes", store_then_hide)
+    monkeypatch.setattr(main, "storage_delete", delete_staged)
+    response = client.post(
+        "/expert-support/cases/1/media-message",
+        data={"client_message_id": "native-web-race-inbox-0001"},
+        files={"file": ("race.png", _png(), "image/png")},
+        headers={"accept": "application/json", "x-requested-with": "fetch"},
+    )
+    assert response.status_code == 404
+    assert stored and all(not path.exists() for path in stored)
+    with Session(engine) as session:
+        assert session.exec(select(main.ConsultationMessage)).all() == []
+
+
 def test_attachment_intent_key_is_scoped_to_each_case_participant(chat):
     client, engine = chat
     key = "native-shared-key-per-sender-01"
