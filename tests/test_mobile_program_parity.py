@@ -563,3 +563,13 @@ def test_program_revision_advances_after_complete_and_delete(program):
     assert client.delete(f'/api/mobile/v1/program/events/{ident}').status_code==200
     deleted=client.get(f'/api/mobile/v1/program/events/{ident}').json()['event']['revision']
     assert deleted!=completed
+
+
+def test_web_program_edit_form_posts_revision_and_disables_stale_drafts():
+    from pathlib import Path
+
+    template=(Path(__file__).resolve().parents[1]/'app/templates/program_form.html').read_text(encoding='utf-8')
+    assert 'name="expected_revision"' in template
+    assert 'value="{{ expected_revision or \'\' }}"' in template
+    assert '{% if revision_conflict %}disabled aria-disabled="true"{% endif %}' in template
+    assert 'Güncel kaydı yeniden yükleyin' in template
