@@ -626,3 +626,37 @@ test('native Program edit preserves local draft and requires explicit rebase aft
  assert.equal(saved,1);
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('a second Program edit race requires a second explicit comparison before any further write',async()=>{
+ const rev0='a'.repeat(64),rev1='b'.repeat(64),rev2='c'.repeat(64),rev3='d'.repeat(64);
+ const original={id:7,event_type:'APPOINTMENT',title:'Original',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:'',revision:rev0};
+ const latest1={...original,title:'Web edit one',revision:rev1};
+ const latest2={...original,title:'Web edit two',revision:rev2};
+ let reads=0,writes=0,saved=0;const revisions=[];
+ const Editor=component('NativeProgramEditor',{
+  getProgramEvent:async()=>{reads++;return reads===1?original:reads===2?latest1:latest2},
+  checkProgramConflicts:async()=>({advisory:true,total:0}),
+  saveProgramEvent:async(_token,payload,_id,_key,revision)=>{writes++;revisions.push(revision);if(writes<3)throw Object.assign(new Error('another writer won'),{status:409});return{...latest2,...payload,id:7,status:'ACTIVE',start_local:payload.start_at,revision:rev3}}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),eventId:7,onSaved(){saved++},onClose(){}}));await tick()});
+ await renderer.act(async()=>tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.onChangeText('My local draft'));
+ await renderer.act(async()=>button(tree,'Değişiklikleri Kaydet').props.onPress());
+ assert.equal(writes,1);assert.equal(saved,0);
+ await renderer.act(async()=>button(tree,'Güncel sürümü karşılaştır').props.onPress());
+ assert.ok(text(tree.root).includes('Web edit one'));
+ await renderer.act(async()=>button(tree,'Yerel taslağı son sürüme uygula').props.onPress());
+ await renderer.act(async()=>button(tree,'Değişiklikleri Kaydet').props.onPress());
+ assert.equal(writes,2);assert.equal(saved,0);
+ assert.equal(tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.value,'My local draft');
+ assert.equal(button(tree,'Değişiklikleri Kaydet').props.disabled,true);
+ await renderer.act(async()=>button(tree,'Güncel sürümü karşılaştır').props.onPress());
+ assert.ok(text(tree.root).includes('Web edit two'));
+ assert.equal(writes,2);
+ await renderer.act(async()=>button(tree,'Yerel taslağı son sürüme uygula').props.onPress());
+ await renderer.act(async()=>button(tree,'Değişiklikleri Kaydet').props.onPress());
+ assert.equal(writes,3);assert.equal(saved,1);
+ assert.deepEqual(revisions,[rev0,rev1,rev2]);
+ await renderer.act(async()=>tree.unmount());
+});
