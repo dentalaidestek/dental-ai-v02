@@ -1428,3 +1428,24 @@ The first intermediate Android run after the profile scope change, [#45031297510
 The same run's voice UI test also exposed a test-only false negative: a fixed 150-character substring did not reach the parent busy notification in the retry branch. That assertion now checks ordering relative to the next audio-mode recovery block. The corresponding native voice Security Recovery failure on [#45031337939](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/45031337939) was the same stale assertion; its native-clinical job, including the new same-patient/different-account late-response regression, passed.
 
 The current branch head must still complete both Android and Security Recovery. Intermediate typecheck/profile results do not substitute for final-head CI, and no APK from a failed beta suite is considered accepted.
+
+
+## 2026-11-22 — analysis refresh CI harness root causes
+
+### Starting-head evidence
+PR #257 head was `0e7f5df5878bee0351f7f282e34bbc259c2277bd`. Android run [#45054527911](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/45054527911) executed on GitHub-hosted runners:
+- TypeScript typecheck passed.
+- Session/auth passed (20/20).
+- Realtime/pagination failed (48/52): four `analysisRefresh.cjs` cases threw `(0, useSessionRenderKey_1.default) is not a function`.
+- Beta regressions failed (1,031/1,032): one account-scope assertion in `sessionRenderKey.cjs` expected a single exact source substring that no longer matched the valid comma-separated declaration in `NativeAccount.tsx`.
+- Android and iOS Expo bundle export passed. The ARM64 APK Gradle assemble was still running when inspected.
+
+### Root causes and corrections
+The realtime harness compiled `NativeDentalAI.tsx`, whose production import is `./useSessionRenderKey`, but its VM resolver still exposed the lower-level `./sessionRenderKey` helper. The component therefore received no callable default hook. The harness now bridges the real opaque identity resolver through its mocked React `useRef`, matching the production hook's default-export contract. A focused regression verifies key stability within a session and rotation after credential change without embedding the credential in the key.
+
+The beta failure was a brittle string assertion, not a production account-scope defect. `NativeAccount.tsx` already initializes `scope` from `accountRenderKey` and updates `scope.current` from that same key; the declaration also initializes `changed` in the same statement. The test now parses the TypeScript AST and checks the initializer and assignment semantically.
+
+The `analysisRefresh.cjs` suite is also added to the Security Recovery native-clinical job so patient/account selection and stale-result isolation are covered there as well as Android CI.
+
+### Validation boundary
+These changes require fresh PR-head Android and Security Recovery runs. The starting-head TypeScript check and Expo exports were green, but the realtime/beta suites were not. Security Recovery run #2617 was pending with no job records when this entry was written. No production handler, patient record, database, R2 object, main branch or live deployment was changed. The 60,000-user target remains unverified.
