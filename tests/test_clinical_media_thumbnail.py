@@ -204,30 +204,30 @@ def test_web_patient_gallery_uses_private_thumbnail_route_and_bounded_cursor_pag
 def test_native_media_list_and_metadata_responses_are_private_after_route_deduplication():
     from pathlib import Path
 
+    mobile = Path("app/mobile_api.py").read_text(encoding="utf-8")
     api = Path("app/mobile_modern_api_v3.py").read_text(encoding="utf-8")
     main = Path("app/main.py").read_text(encoding="utf-8")
 
-    list_start = api.index('@router.get("/patients/{patient_id}/media")')
-    list_end = api.index('@router.post("/patients/{patient_id}/media")', list_start)
-    list_route = api[list_start:list_end]
+    list_start = mobile.index('@router.get("/patients/{patient_id}/media")')
+    list_end = mobile.index('@router.delete("/patients/{patient_id}/media/{media_id}")', list_start)
+    active_list_route = mobile[list_start:list_end]
 
     meta_start = api.index('@router.get("/patients/{patient_id}/media/{media_id}")')
     meta_end = api.index('@router.get("/notifications")', meta_start)
-    meta_route = api[meta_start:meta_end]
+    active_meta_route = api[meta_start:meta_end]
 
-    assert "response:Response" in list_route
-    assert "response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in list_route
-    assert "_user_owned_patient(s,user,patient_id)" in list_route
-    assert "PatientMedia.owner_user_id==user.id" in list_route
-    assert "response:Response" in meta_route
-    assert "response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in meta_route
-    assert "_user_owned_patient(s,user,patient_id)" in meta_route
-    assert "row.owner_user_id!=user.id" in meta_route
+    assert "_mobile_private_no_store(response)" in active_list_route
+    assert "patient.owner_user_id != user.id" in active_list_route
+    assert "PatientMedia.owner_user_id == user.id" in active_list_route
+    assert "response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in active_meta_route
+    assert "_user_owned_patient(s,user,patient_id)" in active_meta_route
+    assert "row.owner_user_id!=user.id" in active_meta_route
 
-    # app/main.py removes duplicate mobile method/path pairs from the earlier
-    # router before mounting v3, so the tested canonical handler is the active one.
-    assert "_remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)" in main
-    assert "app.include_router(mobile_modern_router)" in main
+    # The primary mobile_api router is mounted first. The registry removes
+    # colliding methods from the v3 candidate router, not from the primary.
+    assert main.index("app.include_router(mobile_router)") < main.index(
+        "_remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)"
+    ) < main.index("app.include_router(mobile_modern_router)")
 
     for header in (
         '"Cache-Control": "private, no-store"',
@@ -236,4 +236,5 @@ def test_native_media_list_and_metadata_responses_are_private_after_route_dedupl
         '"X-Content-Type-Options": "nosniff"',
     ):
         assert header in api
+    assert "_mobile_private_no_store" in mobile
 
