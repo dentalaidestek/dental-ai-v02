@@ -23,7 +23,7 @@ from app.main import (
     _record_realtime_event, _publish_realtime_event, on_loop,
 )
 from app.mobile_api import _mobile_private_no_store, _mobile_user
-from app.work_jobs import WorkJob
+from app.work_jobs import WorkJob, enqueue_analysis_asset_cleanup
 from app.analysis_upload_receipts import (
     AnalysisUploadReceiptConflict,
     AnalysisUploadReceiptCorrupt,
@@ -342,61 +342,86 @@ async def create_mobile_analysis(
         session.flush()
         session.refresh(analysis)
 
-        assets = []
-        Path('uploads').mkdir(parents=True,exist_ok=True)
-        # Validate every saved and newly picked image before publishing any
-        # clinical file or allocating a durable VISION job.
-        with tempfile.TemporaryDirectory(prefix='.analysis-stage-',dir='uploads') as staging:
-            staged=[]
-            for media in selected_media:
-                try:
-                    source=Path(await run_in_threadpool(storage_ensure_local,media.file_path))
-                except FileNotFoundError as exc:
-                    raise HTTPException(404,"Seçilen klinik görüntü dosyası bulunamadı.") from exc
-                ext=source.suffix.lower()
-                stored=f'analysis_{analysis.id}_{uuid.uuid4().hex}{ext}'
-                temporary=Path(staging)/stored
-                destination=Path('uploads')/stored
-                await run_in_threadpool(_copy_validated_existing_analysis_image,source,temporary)
-                staged.append((temporary,destination))
-                assets.append(ImageAsset(
-                    analysis_id=analysis.id,
-                    original_filename=Path(media.original_filename).name,
-                    stored_filename=stored,
-                    file_path=str(destination),
-                    image_type=await run_in_threadpool(classify_dental_image,str(temporary)),
+        published_references = []
+        try:
+            assets = []
+            Path('uploads').mkdir(parents=True,exist_ok=True)
+            # Validate every saved and newly picked image before publishing any
+            # clinical file or allocating a durable VISION job.
+            with tempfile.TemporaryDirectory(prefix='.analysis-stage-',dir='uploads') as staging:
+                staged=[]
+                for media in selected_media:
+                    try:
+                        source=Path(await run_in_threadpool(storage_ensure_local,media.file_path))
+                    except FileNotFoundError as exc:
+                        raise HTTPException(404,"Seçilen klinik görüntü dosyası bulunamadı.") from exc
+                    ext=source.suffix.lower()
+                    stored=f'analysis_{analysis.id}_{uuid.uuid4().hex}{ext}'
+                    temporary=Path(staging)/stored
+                    destination=Path('uploads')/stored
+                    await run_in_threadpool(_copy_validated_existing_analysis_image,source,temporary)
+                    staged.append((temporary,destination))
+                    assets.append(ImageAsset(
+                        analysis_id=analysis.id,
+                        original_filename=Path(media.original_filename).name,
+                        stored_filename=stored,
+                        file_path=str(destination),
+                        image_type=await run_in_threadpool(classify_dental_image,str(temporary)),
+                    ))
+                for image in valid:
+                    name=Path(image.filename).name
+                    ext=Path(name).suffix.lower()
+                    stored=f'analysis_{analysis.id}_{uuid.uuid4().hex}{ext}'
+                    temporary=Path(staging)/stored
+                    destination=Path('uploads')/stored
+                    await run_in_threadpool(_copy_validated_analysis_image,image,temporary)
+                    staged.append((temporary,destination))
+                    image_type=await run_in_threadpool(classify_dental_image,str(temporary))
+                    assets.append(ImageAsset(analysis_id=analysis.id,original_filename=name,stored_filename=stored,file_path=str(destination),image_type=image_type))
+                session.add_all(assets)
+                session.flush()
+                # Reserve canonical queue capacity before any storage publication.
+                # Match the canonical web handler: image-backed work uses VISION;
+                # clinical-context-only work uses the preliminary analysis queue.
+                job=_enqueue_work(session,'VISION' if assets else 'PRELIMINARY','ANALYSIS',analysis.id)
+                for temporary,destination in staged:
+                    # Record before move/persist so even a partial local/R2 write is
+                    # covered by the durable cleanup receipt after rollback.
+                    published_references.append(str(destination))
+                    shutil.move(str(temporary),str(destination))
+                    await run_in_threadpool(storage_persist_file,destination)
+            if receipt_key:
+                session.add(WorkJob(
+                    owner_user_id=user.id, resource_id=analysis.id, resource_type='ANALYSIS',
+                    kind='UPLOAD_RECEIPT', source_hash=receipt_fingerprint,
+                    dedupe_key=receipt_key, status='DONE',
+                    payload_json=json.dumps(
+                        {'job_id':job.id, 'fingerprint_version':1},
+                        sort_keys=True, separators=(',', ':'),
+                    ),
                 ))
-            for image in valid:
-                name=Path(image.filename).name
-                ext=Path(name).suffix.lower()
-                stored=f'analysis_{analysis.id}_{uuid.uuid4().hex}{ext}'
-                temporary=Path(staging)/stored
-                destination=Path('uploads')/stored
-                await run_in_threadpool(_copy_validated_analysis_image,image,temporary)
-                staged.append((temporary,destination))
-                image_type=await run_in_threadpool(classify_dental_image,str(temporary))
-                assets.append(ImageAsset(analysis_id=analysis.id,original_filename=name,stored_filename=stored,file_path=str(destination),image_type=image_type))
-            session.add_all(assets)
-            session.flush()
-            # Reserve canonical queue capacity before any storage publication.
-            # Match the canonical web handler: image-backed work uses VISION;
-            # clinical-context-only work uses the preliminary analysis queue.
-            job=_enqueue_work(session,'VISION' if assets else 'PRELIMINARY','ANALYSIS',analysis.id)
-            for temporary,destination in staged:
-                shutil.move(str(temporary),str(destination))
-                await run_in_threadpool(storage_persist_file,destination)
-        if receipt_key:
-            session.add(WorkJob(
-                owner_user_id=user.id, resource_id=analysis.id, resource_type='ANALYSIS',
-                kind='UPLOAD_RECEIPT', source_hash=receipt_fingerprint,
-                dedupe_key=receipt_key, status='DONE',
-                payload_json=json.dumps(
-                    {'job_id':job.id, 'fingerprint_version':1},
-                    sort_keys=True, separators=(',', ':'),
-                ),
-            ))
-        realtime=_record_realtime_event(session,user.id,"ANALYSIS_CREATED","analysis",analysis.id,{"analysis_id":analysis.id,"patient_id":patient_id,"status":analysis.status,"tooth_number":analysis.tooth_number})
-        session.commit(); await _publish_realtime_event(realtime)
+            realtime=_record_realtime_event(session,user.id,"ANALYSIS_CREATED","analysis",analysis.id,{"analysis_id":analysis.id,"patient_id":patient_id,"status":analysis.status,"tooth_number":analysis.tooth_number})
+            session.commit(); await _publish_realtime_event(realtime)
+        except Exception:
+            # File publication can succeed for an earlier image before a later
+            # R2 write or the database commit fails. Roll back the Analysis and
+            # ImageAsset rows, release the checked-out connection, then persist
+            # cleanup receipts in a separate transaction.
+            session.rollback()
+            session.close()
+            if published_references:
+                try:
+                    with Session(engine) as cleanup_session:
+                        for reference in dict.fromkeys(published_references):
+                            if not enqueue_analysis_asset_cleanup(cleanup_session, reference):
+                                raise RuntimeError("Generated analysis asset cleanup key was rejected.")
+                        cleanup_session.commit()
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).exception(
+                        "Failed to enqueue cleanup for a failed clinical image batch"
+                    )
+            raise
         return {
             "ok": True,
             "analysis_id": analysis.id,
