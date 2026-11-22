@@ -3960,11 +3960,3 @@ router.include_router(mobile_academic_router)
 
 from app.mobile_clinical_api import router as mobile_clinical_router
 router.include_router(mobile_clinical_router)
-
-
-# main may have included this APIRouter while a circular import was still
-# initializing it. Reconcile once more after every nested native router has
-# been attached, without duplicating already-mounted path/method operations.
-from app import main as _mobile_main
-from app.mobile_route_registry import include_missing_routes as _include_missing_mobile_routes
-_include_missing_mobile_routes(_mobile_main.app, router)
