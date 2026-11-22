@@ -196,15 +196,15 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
         )
         return matches[0]
 
-    # The canonical GET gallery is owned by the modern v3 router. The
-    # primary router owns the receipt-aware POST upload, so only that POST
-    # shadows the legacy v3 upload adapter during route deduplication.
-    media_list = registered(modern_mobile_router, "/patients/{patient_id}/media", "GET")
+    # The primary router owns both the cache-private GET gallery and the
+    # receipt-aware POST upload. The modern router's duplicate GET/POST
+    # adapters must be removed by method-aware route deduplication.
+    media_list = registered(primary_mobile_router, "/patients/{patient_id}/media", "GET")
     assert not any(
         route_path(route).rstrip("/").endswith("/patients/{patient_id}/media")
         and "GET" in (getattr(route, "methods", None) or set())
-        for route in primary_mobile_router.routes
-    ), "the primary router must not become a second owner of the v3 GET gallery"
+        for route in modern_mobile_router.routes
+    ), "the primary GET gallery must shadow the legacy v3 GET adapter"
     media_upload = registered(primary_mobile_router, "/patients/{patient_id}/media", "POST")
     assert not any(
         route_path(route).rstrip("/").endswith("/patients/{patient_id}/media")
@@ -215,11 +215,9 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
     thumbnail = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}/thumbnail", "GET")
     metadata = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}", "GET")
 
-    assert media_list.endpoint.__module__ == "app.mobile_modern_api_v3"
+    assert media_list.endpoint.__module__ == "app.mobile_api"
     assert media_list.endpoint.__name__ == "mobile_patient_media"
-    assert "response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in inspect.getsource(media_list.endpoint)
-    assert "Cache-Control" in inspect.getsource(media_list.endpoint)
-    assert "private, no-store" in inspect.getsource(media_list.endpoint)
+    assert "_mobile_private_no_store(response)" in inspect.getsource(media_list.endpoint)
 
     assert media_upload.endpoint.__module__ == "app.mobile_api"
     assert media_upload.endpoint.__name__ == "mobile_patient_media_upload"
