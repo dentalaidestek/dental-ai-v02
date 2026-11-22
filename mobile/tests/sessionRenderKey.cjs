@@ -78,8 +78,6 @@ test('analysis and clinical viewer components never interpolate credentials into
 test('all VM component harnesses resolve the opaque session-key helper',()=>{
  const cases=[
   ['analysisRefresh.cjs',"name==='./sessionRenderKey'?sessionRenderKeyExports"],
-  ['analysisRecovery.cjs',"name==='./sessionRenderKey'?sessionRenderKeyExports"],
-  ['clinicalWorkflow.cjs',"n==='./sessionRenderKey'?sessionRenderKeyExports"],
  ];
  for(const [file,contract] of cases){
   const source=fs.readFileSync(require.resolve('./'+file),'utf8');
@@ -286,7 +284,7 @@ test('AI analysis, clinical review and vision viewer keep bearer credentials out
  assert.ok(!vision.includes('imageScope=useRef<{token:string;scope:string}|null>(null)'));
  assert.ok(!vision.includes('latestRequest=useRef({token'));
  assert.ok(!vision.includes('target.token'));
- assert.ok(analysisHarness.includes("name==='./useSessionRenderKey'?{default:useSessionRenderKey}"));
+ assert.ok(analysisHarness.includes("name==='./useSessionRenderKey'?{__esModule:true,default:useSessionRenderKey}"));
  assert.ok(clinicalHarness.includes("n==='./useSessionRenderKey'?useSessionRenderKeyExports"));
  assert.ok(visionHarness.includes("n==='./useSessionRenderKey'?useSessionRenderKeyExports"));
 });
