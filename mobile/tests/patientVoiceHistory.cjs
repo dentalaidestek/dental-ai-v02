@@ -4,6 +4,7 @@ global.IS_REACT_ACT_ENVIRONMENT=true;
 // deepStrictEqual on vm-realm arrays/prototypes would fail cross-realm comparisons.
 require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
 const presentation=require('../src/patientVoiceHistoryPresentation.ts');
+const useSessionRenderKey=require('./helpers/useSessionRenderKeyModule.cjs').default;
 const resumePolicy=require('../src/patientVoiceHistoryRefresh.ts');
 const history=(value='Olumsuz beyan: sistemik rahatsızlık yok')=>({ok:true,revision:'a'.repeat(64),notice:'Önceki hekim onaylı sesli muayene kayıtlarıdır. Güncel kullanım veya hastalık durumu olarak kabul etmeden hastayla doğrulayın.',fields:{medical_history:{value,quote:'',analysis_id:17},medications:{value:'Metformin beyanı',quote:'',analysis_id:17},allergies:{value:'Olmadığı belirtildi: penisilin alerjisi',quote:'',analysis_id:17}}});
 function mount(getVoiceHistory,initialAppState='active'){
@@ -20,7 +21,7 @@ function mount(getVoiceHistory,initialAppState='active'){
   }
  };
  let event=null;
- vm.runInNewContext(source,{exports,Error,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./voiceApi'?{getVoiceHistory}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:name==='./patientVoiceHistoryPresentation'?presentation:name==='./patientVoiceHistoryRefresh'?resumePolicy:{default:name.slice(2)}});
+ vm.runInNewContext(source,{exports,Error,require:name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./voiceApi'?{getVoiceHistory}:name==='./realtime'?{useRealtime:()=>({lastEvent:event})}:name==='./patientVoiceHistoryPresentation'?presentation:name==='./patientVoiceHistoryRefresh'?resumePolicy:name==='./useSessionRenderKey'?{default:useSessionRenderKey}:{default:name.slice(2)}});
  return {
   Component:exports.default,
   setEvent:value=>{event=value},
