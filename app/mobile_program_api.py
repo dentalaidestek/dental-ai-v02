@@ -25,7 +25,8 @@ def _event(session,web,event,user):
         'patient_id':patient.id if patient else None,'patient_name':f'{patient.first_name or ""} {patient.last_name or ""}'.strip() if patient else None,
         'location':event.location or '', 'notes':event.notes or '', 'status':event.status,
         'reminder_minutes':str(event.reminder_minutes) if event.notification_enabled and event.reminder_minutes is not None else 'NONE',
-        'recurrence_rule':event.recurrence_rule,'recurrence_until':event.recurrence_until or ''}
+        'recurrence_rule':event.recurrence_rule,'recurrence_until':event.recurrence_until or '',
+        'revision':web._schedule_event_revision(event)}
 
 _PROGRAM_CURSOR_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,512}$")
 _PROGRAM_CURSOR_TTL = timedelta(minutes=15)
@@ -308,6 +309,67 @@ class ProgramValues(BaseModel):
     recurrence_rule:str='NONE'
     recurrence_until:str=''
     request_key:Optional[str]=Field(default=None,max_length=96)
+    expected_revision:Optional[str]=Field(default=None,pattern=r'^[0-9a-f]{64}
+
+@router.post('/program/conflicts')
+def program_conflicts(response:Response,payload:ProgramValues,exclude_id:Optional[int]=Query(None,ge=1),user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
+    from app import main as web
+    with Session(web.engine,expire_on_commit=False) as session:
+        if exclude_id is not None:_owned(session,web,user,exclude_id)
+        values,error=web._validate_schedule_input(session,user,payload.event_type,payload.title,payload.start_at,payload.end_at,str(payload.patient_id or ''),payload.location,payload.notes,payload.reminder_minutes,None,payload.recurrence_rule,payload.recurrence_until)
+        if error:raise HTTPException(status_code=422,detail=error)
+        start=web._utc_to_local(values['start_at']);end=web._utc_to_local(values['end_at']) if values['end_at'] else start+timedelta(minutes=1)
+        if end==start:end=start+timedelta(minutes=1)
+        occurrences=web._user_schedule_occurrences(session,user.id,web._date_to_local_start(start.date()),web._date_to_local_end(end.date()),include_patient_details=False)
+        conflicts=[item for item in occurrences if item['status']=='ACTIVE' and item['id']!=exclude_id and item['start_local']<end and (item['end_local'] or item['start_local']+timedelta(minutes=1))>start]
+        return {'advisory':True,'total':len(conflicts)}
+
+@router.post('/program/events')
+def create_program_event(response:Response,payload:ProgramValues,user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
+    if not payload.request_key:
+        raise HTTPException(status_code=422,detail='Program isteği anahtarı zorunludur.')
+    try:reminder=None if payload.reminder_minutes=='NONE' else int(payload.reminder_minutes)
+    except ValueError:raise HTTPException(status_code=422,detail='Hatırlatma seçimini kontrol edin.')
+    result=mobile_create_schedule(MobileScheduleCreate(**{**payload.model_dump(),'reminder_minutes':reminder,'notification_enabled':reminder is not None}),user)
+    return program_event(response,result['event']['id'],user)
+
+@router.put('/program/events/{event_id}')
+async def edit_program_event(response:Response,event_id:int,payload:ProgramValues,token:str=Depends(_mobile_access_token),user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
+    from app import main as web
+    if not payload.expected_revision:
+        raise HTTPException(status_code=422,detail='Program kaydı güncel sürüm anahtarı olmadan değiştirilemez.')
+    with Session(web.engine) as session:_owned(session,web,user,event_id)
+    await _invoke(web.program_edit,_mobile_request(token,path=f'/program/{event_id}/edit'),event_id,payload.event_type,payload.title,payload.start_at,payload.end_at,str(payload.patient_id or ''),payload.location,payload.notes,payload.reminder_minutes,'1' if payload.reminder_minutes!='NONE' else None,payload.recurrence_rule,payload.recurrence_until,payload.expected_revision)
+    return program_event(response,event_id,user)
+
+
+class CopyDays(BaseModel):days:list[str]=Field(min_length=1,max_length=7)
+
+@router.post('/program/events/{event_id}/copy')
+async def copy_program_event(response:Response,event_id:int,payload:CopyDays,token:str=Depends(_mobile_access_token),user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
+    from app import main as web
+    with Session(web.engine) as session:_owned(session,web,user,event_id)
+    await _invoke(web.program_copy_to_days,_mobile_request(token),event_id,','.join(payload.days))
+    return {'ok':True}
+
+@router.post('/program/events/{event_id}/complete')
+async def complete_program_event(response:Response,event_id:int,token:str=Depends(_mobile_access_token),user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
+    from app import main as web
+    await _invoke(web.program_complete,_mobile_request(token),event_id)
+    return {'ok':True}
+
+@router.delete('/program/events/{event_id}')
+async def delete_program_event(response:Response,event_id:int,token:str=Depends(_mobile_access_token),user=Depends(_mobile_user)):
+    _mobile_private_no_store(response)
+    from app import main as web
+    await _invoke(web.program_delete,_mobile_request(token),event_id)
+    return {'ok':True}
+)
 
 @router.post('/program/conflicts')
 def program_conflicts(response:Response,payload:ProgramValues,exclude_id:Optional[int]=Query(None,ge=1),user=Depends(_mobile_user)):
