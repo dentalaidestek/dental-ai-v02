@@ -2780,6 +2780,16 @@ def mobile_consultation_message_receipt(
         _mobile_private_no_store(response)
         if case.messages_deleted_at:
             return {"message": None, "deleted": True}
+        # A locally deleted inbox is hidden from this participant until restore.
+        # Match the web attachment-download boundary and never expose receipt
+        # content through a stale direct URL while the conversation is hidden.
+        latest_inbox_state = session.exec(
+            select(ConsultationInboxState)
+            .where(ConsultationInboxState.case_id == case_id, ConsultationInboxState.user_id == user.id)
+            .order_by(ConsultationInboxState.id.desc())
+        ).first()
+        if latest_inbox_state and latest_inbox_state.deleted_at:
+            raise HTTPException(status_code=404, detail="Önce görüşmeyi geri yükleyin.")
         receipt = session.exec(select(web.ConsultationMessageReceipt).where(
             web.ConsultationMessageReceipt.case_id == case.id,
             web.ConsultationMessageReceipt.sender_user_id == user.id,
