@@ -249,11 +249,16 @@ def test_include_missing_routes_reconciles_a_router_that_grows_after_initial_mou
     def late_route():
         return {"source": "late"}
 
-    assert include_missing_routes(app, source) == 1
+    # FastAPI 0.141 uses a lazy include: the original router remains live,
+    # so the late route is already effective and must not be mounted twice.
+    assert include_missing_routes(app, source) == 0
     assert include_missing_routes(app, source) == 0
     mounted = [
-        (route.path, method)
-        for route in app.routes
+        (
+            getattr(route, "path", getattr(route, "path_format", None)),
+            method,
+        )
+        for route in iter_registered_routes(app.routes)
         for method in (getattr(route, "methods", None) or ())
     ]
     assert mounted.count(("/api/mobile/v1/initial", "GET")) == 1
@@ -279,3 +284,28 @@ def test_include_missing_routes_rejects_a_different_existing_endpoint_owner():
     with pytest.raises(RuntimeError, match="mobile route ownership conflict"):
         include_missing_routes(app, source)
 
+
+
+def test_include_missing_routes_flattens_nested_lazy_router_prefixes():
+    from fastapi import APIRouter, FastAPI
+
+    app = FastAPI()
+    root = APIRouter(prefix="/api/mobile/v1")
+    patients = APIRouter(prefix="/patients")
+
+    @patients.get("/{patient_id}/media")
+    def patient_media(patient_id: int):
+        return {"patient_id": patient_id}
+
+    root.include_router(patients)
+    app.include_router(root)
+
+    assert include_missing_routes(app, root) == 0
+    matches = [
+        route for route in iter_registered_routes(app.routes)
+        if getattr(route, "path", getattr(route, "path_format", None))
+        == "/api/mobile/v1/patients/{patient_id}/media"
+        and "GET" in (getattr(route, "methods", None) or set())
+    ]
+    assert len(matches) == 1
+    assert matches[0].endpoint.__name__ == "patient_media"
