@@ -8,6 +8,14 @@ Starting branch HEAD: `c603d71482e698a92c5e9e94310f24f34da7fb45`.
 - Security run `45005452043`: workflow conclusion was failure, despite all six native security jobs succeeding. The only failed job was the combined `security` job, specifically step `Validate web form and live voice browser regressions`.
 - The failed browser step runs `tests/analysis_new_upload_form.cjs`. Its final markup-contract assertions used over-escaped regular expressions (`\\\\b` and `\\\\.` in regex literals), matching literal backslashes rather than a word boundary/property separator. Corrected the expressions to `/\\b/` and `/\\./` forms. This is a test-harness defect, not a product typecheck failure.
 
+
+## CI follow-up started from PR HEAD `e762e09381715abb2bfd77841519dd7a121de096`
+
+- Android CI run `45059637083` completed successfully: TypeScript typecheck, session/auth, realtime/pagination, all mobile beta regressions, Android/iOS export, and the ARM64 internal APK all passed.
+- Security Recovery run `45059636977`: all six native security jobs passed. The combined Python/security job had 650 passing tests and one failure: `tests/test_mobile_patient_parity.py` expected four patient-identity checks, while the already-implemented explicit tooth-chart conflict refresh correctly contained five. The test count was corrected to five; no production guard was removed.
+- The follow-up then inspected the canonical web Program form/handlers before changing native code. The newly found lost-update gap is the absence of an expected revision on edits opened in parallel sessions.
+- Current follow-up head after the web/native concurrency implementation and regression additions: `a995e3dcb7503b791d136864fdcebbbcb189681f`. New Android and Security Recovery runs are pending; their results are not yet claimed as passing.
+
 ## Web-first flow inspected
 
 Canonical web path:
