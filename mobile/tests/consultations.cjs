@@ -299,3 +299,9 @@ test('native attachment acknowledgements append the persisted message without a 
  assert.ok(composer.includes('await onSent(result.message)'));
  assert.ok(composer.includes('await onSent(receipt.message||undefined)'));
 });
+
+test('native attachment viewer uses the exact participant-scoped route and bearer header',()=>{
+ const source=api.chatImageSource('synthetic-token',42,93);
+ assert.equal(source.uri,'https://dentalai.tr/api/mobile/v1/consultations/42/attachments/93');
+ assert.deepEqual(source.headers,{Authorization:'Bearer synthetic-token'});
+});
