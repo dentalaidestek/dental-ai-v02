@@ -1086,14 +1086,16 @@ def test_native_tooth_chart_blocks_all_clinical_writes_until_treatment_intent_re
     assert "editable={!clinicalMutationBlocked} value={note}" in component
     assert "disabled={treatmentBusy||clinicalMutationBlocked}" in component
     assert component.count("if(result.patient.id!==patientId)") == 2
-    assert component.count("if(updated.patient.id!==patientId)") == 4
+    # Includes the explicit 409 conflict-snapshot read in addition to the four mutation responses.
+    assert component.count("if(updated.patient.id!==patientId)") == 5
     assert "disabled={busy||surfaceBusy||treatmentBusy||clinicalMutationBlocked}" in component
     assert "Güvenli tedavi kaydı kontrol ediliyor." in component
     assert "Bekleyen tedavi taslağı okunamadı." in component
     assert "gate.treatmentIntentReady !== true" in presentation
     assert "gate.hasPendingTreatment === true" in presentation
     assert component.count("if(result.patient.id!==patientId)") == 2
-    assert component.count("if(updated.patient.id!==patientId)") == 4
+    # Includes the explicit 409 conflict-snapshot read in addition to the four mutation responses.
+    assert component.count("if(updated.patient.id!==patientId)") == 5
 
 
 def test_mobile_patient_detail_exposes_surface_updated_at_for_history_parity(chat):
