@@ -66,7 +66,7 @@ function mountMedia(getMedia, options={}){
   if(name==='./NativeAnalysisUpload')return {default:props=>React.createElement('NativeAnalysisUpload',props)};
   if(name==='expo-file-system/legacy')return {getInfoAsync:async uri=>({uri,exists:true,size:1064,isDirectory:()=>false})};
   if(name==='./sessionExpiry')return {revalidateSession:async()=>{}};
-  if(name==='./appResumeRefresh'||name==='./uploadLimits'||name==='./clinicalMediaPicker'||name==='./clinicalMediaBatch'||name==='./clinicalMediaRecovery'||name==='./analysisApi'||name==='./analysisComposerPresentation')return loadSrcModule(name.slice(2),requireChain);
+  if(name==='./appResumeRefresh'||name==='./uploadLimits'||name==='./clinicalMediaPicker'||name==='./clinicalMediaBatch'||name==='./clinicalMediaRecovery'||name==='./analysisApi'||name==='./analysisComposerPresentation'||name==='./apiCompatibility'||name==='./patientMediaSelection')return loadSrcModule(name.slice(2),requireChain);
   throw Error('Unexpected import '+name);
  };
  vm.runInNewContext(code,{exports,Error,Date,Set,JSON,Number,Array,Promise,require:requireChain});
@@ -169,7 +169,7 @@ test('clinical gallery offers recovery for failed reads and distinguishes empty 
 test('uncertain media mutations freeze selection and pagination until reconciliation',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  assert.match(source,/disabled=\{readOnly\|\|busy\|\|uncertain\} onPress=\{\(\)=>toggle\(item\.id\)\}/);
- assert.match(source,/setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,ANALYSIS_MAX_IMAGES\)\.map\(x=>x\.id\)\)\},readOnly\|\|busy\|\|uncertain\|\|loadedOwner!==owner/);
+ assert.match(source,/setSelected\(patientMediaSelectAllIds\(selected,visibleItems\.map\(x=>x\.id\),ANALYSIS_MAX_IMAGES\)\)\},readOnly\|\|busy\|\|uncertain\|\|loadedOwner!==owner\|\|visibleItems\.length===0/);
  assert.match(source,/onEndReached=\{\(\)=>\{if\(loadedOwner===owner&&cursor&&!loading&&!error&&!uncertain&&!mutation\.current\)/);
 });
 
@@ -299,10 +299,11 @@ test('failed older gallery page retains verified images and cursor for an explic
  assert.deepEqual(Array.from(tree.root.findByType('FlatList').props.data,x=>x.id),[9,4]);assert.equal(cursors.at(-1),5);await renderer.act(async()=>tree.unmount());
 });
 
-test('bulk analysis selection is limited to four and rejects stale patient actions',()=>{
+test('bulk analysis selection matches web select-all semantics and rejects stale patient actions',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
- assert.match(source,/İlk \$\{ANALYSIS_MAX_IMAGES\} Görseli Seç/);
- assert.match(source,/if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|readOnly\|\|loadedOwner!==owner\)return;setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,ANALYSIS_MAX_IMAGES\)\.map\(x=>x\.id\)\)/);
+ assert.match(source,/patientMediaSelectAllLabel\(selected,visibleItems\.map\(x=>x\.id\),ANALYSIS_MAX_IMAGES\)/);
+ assert.match(source,/setSelected\(patientMediaSelectAllIds\(selected,visibleItems\.map\(x=>x\.id\),ANALYSIS_MAX_IMAGES\)\)/);
+ assert.match(source,/if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|readOnly\|\|loadedOwner!==owner\)return/);
 });
 
 
