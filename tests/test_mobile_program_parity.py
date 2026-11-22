@@ -681,3 +681,19 @@ def test_repeated_program_completion_does_not_advance_revision_or_duplicate_remi
         assert second_revision == first_revision
         assert second_updated_at == first_updated_at
         assert len(jobs) == 1
+
+def test_mobile_program_router_has_one_handler_per_method_and_path():
+    from app import mobile_program_api
+
+    seen = set()
+    for route in mobile_program_api.router.routes:
+        if not route.path.startswith("/program"):
+            continue
+        for method in route.methods or ():
+            key = (method, route.path)
+            assert key not in seen, f"duplicate Program route registration: {method} {route.path}"
+            seen.add(key)
+    assert ("POST", "/program/events") in seen
+    assert ("PUT", "/program/events/{event_id}") in seen
+    assert ("POST", "/program/events/{event_id}/complete") in seen
+    assert ("DELETE", "/program/events/{event_id}") in seen
