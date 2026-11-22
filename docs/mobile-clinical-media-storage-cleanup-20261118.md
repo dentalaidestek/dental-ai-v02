@@ -9,7 +9,7 @@ The database row was deleted before remote object deletion. If R2 deletion faile
 ## Changes
 
 - Reuse the existing `WorkGarbage` table and `work_worker` maintenance path; no schema migration or new service.
-- Add a strict allow-list for the two server-generated patient-media object-key layouts and their deterministic `.thumb` derivatives: legacy web `uploads/patient_<id>_<uuid>[.thumb].<image>` and native `uploads/patient-media/patient_<id>_<uuid>[.thumb].<image>`.
+- Add a strict allow-list for the two server-generated patient-media object-key layouts and their deterministic JPEG derivatives: legacy web `uploads/patient_<id>_<uuid>.thumb.jpg` and native `uploads/patient-media/patient_<id>_<uuid>.thumb.jpg` (alongside the original supported image extensions).
 - Enqueue the opaque storage key in the same database transaction that deletes its `PatientMedia` row. A rollback therefore leaves both the row and the absence of a cleanup receipt consistent.
 - Extend the existing garbage collector to delete only a patient-media object that matches the allow-list and is no longer referenced by any live `PatientMedia.file_path`.
 - Failed R2 deletes retain the durable queue row and retry after five minutes. A repeated delete of an already absent row remains an idempotent success.
