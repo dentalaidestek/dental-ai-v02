@@ -7,6 +7,10 @@ const directoryPresentation={};
 const directorySource=fs.readFileSync(require.resolve('../src/patientDirectoryPresentation.ts'),'utf8');
 const directoryCode=ts.transpileModule(directorySource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
 vm.runInNewContext(directoryCode,{exports:directoryPresentation});
+const compatibility={};
+const compatibilitySource=fs.readFileSync(require.resolve('../src/apiCompatibility.ts'),'utf8');
+const compatibilityCode=ts.transpileModule(compatibilitySource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+vm.runInNewContext(compatibilityCode,{exports:compatibility,Error,String,Object});
 const dashboardPresentation={};
 const dashboardSource=fs.readFileSync(require.resolve('../src/dashboardPresentation.ts'),'utf8');
 const dashboardCode=ts.transpileModule(dashboardSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
@@ -22,6 +26,7 @@ function loadApi(fetchImpl){
    if(name==='./sessionExpiry')return{reportSessionExpiry(){},revalidateSession:async()=>{}};
    if(name==='./patientDirectoryPresentation')return directoryPresentation;
    if(name==='./dashboardPresentation')return dashboardPresentation;
+   if(name==='./apiCompatibility')return compatibility;
    throw Error('unexpected import '+name);
   },
   fetch:fetchImpl,
