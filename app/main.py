@@ -9078,6 +9078,13 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
         case = _locked_consultation_case(s, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at:
             return upload_error("Bu vakaya dosya gönderilemez.", 404)
+        latest_inbox_state = s.exec(
+            select(ConsultationInboxState)
+            .where(ConsultationInboxState.case_id == case.id, ConsultationInboxState.user_id == user.id)
+            .order_by(ConsultationInboxState.id.desc())
+        ).first()
+        if latest_inbox_state and latest_inbox_state.deleted_at:
+            return upload_error("Önce görüşmeyi geri yükleyin.", 404)
         other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
         if _users_blocked(s, user.id, other_id):
             return upload_error("Bu kullanıcıyla mesajlaşma engellenmiş.", 403)
@@ -9152,6 +9159,15 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
                 s.rollback(); s.close()
                 storage_delete(path)
                 return upload_error("Bu vakaya dosya gönderilemez.", 404)
+            latest_inbox_state = s.exec(
+                select(ConsultationInboxState)
+                .where(ConsultationInboxState.case_id == case.id, ConsultationInboxState.user_id == user.id)
+                .order_by(ConsultationInboxState.id.desc())
+            ).first()
+            if latest_inbox_state and latest_inbox_state.deleted_at:
+                s.rollback(); s.close()
+                storage_delete(path)
+                return upload_error("Önce görüşmeyi geri yükleyin.", 404)
             other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
             if _users_blocked(s, user.id, other_id):
                 s.rollback(); s.close()
