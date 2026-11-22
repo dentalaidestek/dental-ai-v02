@@ -133,6 +133,26 @@ test('switching accounts starts a new gallery request while the old request is p
 });
 
 
+test('refreshing a session for the same patient fences the previous token response',async()=>{
+ let resolveOld;
+ const calls=[];
+ const Media=mountMedia(async(token,id)=>{
+  calls.push([token,id]);
+  if(token==='expired-token')return new Promise(resolve=>{resolveOld=resolve});
+  return {items:[{id:22,url:'https://dentalai.tr/api/mobile/v1/patients/5/media/22/file',media_type:'RADIOGRAPH'}],next_before:null};
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'expired-token',userId:1,patientId:5,onAnalysis:()=>{}}))});
+ await renderer.act(async()=>{tree.update(React.createElement(Media,{token:'refreshed-token',userId:1,patientId:5,onAnalysis:()=>{}}))});
+ assert.deepEqual(calls,[['expired-token',5],['refreshed-token',5]]);
+ await renderer.act(async()=>{resolveOld({items:[{id:11,url:'https://dentalai.tr/api/mobile/v1/patients/5/media/11/file',media_type:'PHOTO'}],next_before:null})});
+ const images=tree.root.findAllByType('Image');
+ assert.ok(images.some(image=>String(image.props.source?.uri).includes('/media/22/file')));
+ assert.ok(!images.some(image=>String(image.props.source?.uri).includes('/media/11/file')),
+  'a late response from the expired token must not overwrite the refreshed session');
+ await renderer.act(async()=>tree.unmount());
+});
+
 test('uncertain media deletion exposes a safe replay action for the same request',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  assert.match(source,/async function remove\(id\?:number,reconcile=false\)\{/);
