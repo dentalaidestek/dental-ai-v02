@@ -82,7 +82,7 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
    if(cleanupVerified)uri.current=null;
    if(mounted.current){setStopPending(false);setCleanupPending(!cleanupVerified);}
    const audioModeRestored=await resetAudioMode();
-   notifyBusy(false);
+   notifyBusy(!audioModeRestored);
    if(run!==epoch.current||!mounted.current)return;
    const outcome=evaluateVoiceDeviceCheck({permissionGranted:true,durationMs,fileBytes,peakMeteringDb:peakDb.current,cleanupVerified,audioModeRestored});
    setPhase('complete');setResult(resultText[outcome]);
@@ -106,7 +106,7 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
   const cleanupVerified=await removeTemporaryFile(uri.current);
   if(cleanupVerified)uri.current=null;
   const audioModeRestored=await resetAudioMode();
-  notifyBusy(false);
+  notifyBusy(!audioModeRestored);
   if(mounted.current){
    setPhase('complete');setLevel(0);setStopPending(false);setCleanupPending(!cleanupVerified);
    setResult(!cleanupVerified?resultText.cleanup_failed:!audioModeRestored?resultText.audio_mode_restore_failed:message);
@@ -129,7 +129,7 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
   if(!cleaned)setResult(resultText.cleanup_failed);
   else if(!audioModeRestored)setResult(resultText.audio_mode_restore_failed);
   else setResult('Geçici ses dosyası silindi ve cihazın ses yönlendirmesi geri yüklendi. Mikrofon testi yeniden başlatılabilir.');
-  notifyBusy(false);
+  notifyBusy(!audioModeRestored);
  }
  async function start(){
   if(disabled||stopPending||cleanupPending||audioModeBlocked||uri.current!==null||running.current||phase==='requesting'||phase==='testing'||phase==='finishing')return;
@@ -144,6 +144,7 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
    await setAudioModeAsync({allowsRecording:true,playsInSilentMode:true,shouldPlayInBackground:false});
    if(run!==epoch.current){
     const restored=await resetAudioMode();
+    notifyBusy(!restored);
     if(!restored&&mounted.current){setPhase('complete');setResult(resultText.audio_mode_restore_failed);}
     return;
    }
@@ -172,7 +173,7 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
    }
    const cleanupVerified=await removeTemporaryFile(path);
    if(cleanupVerified)uri.current=null;
-   const audioModeRestored=await resetAudioMode();notifyBusy(false);
+   const audioModeRestored=await resetAudioMode();notifyBusy(!audioModeRestored);
    if(mounted.current){setPhase('complete');setStopPending(false);setCleanupPending(!cleanupVerified);setResult(!cleanupVerified?resultText.cleanup_failed:!audioModeRestored?resultText.audio_mode_restore_failed:(error instanceof Error?error.message:'Mikrofon testi başlatılamadı.'));}
   }
  }
