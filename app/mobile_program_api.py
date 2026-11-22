@@ -309,7 +309,7 @@ class ProgramValues(BaseModel):
     recurrence_rule:str='NONE'
     recurrence_until:str=''
     request_key:Optional[str]=Field(default=None,max_length=96)
-    expected_revision:Optional[str]=Field(default=None,pattern=r'^[0-9a-f]{64}
+    expected_revision:Optional[str]=Field(default=None,min_length=64,max_length=64)
 
 @router.post('/program/conflicts')
 def program_conflicts(response:Response,payload:ProgramValues,exclude_id:Optional[int]=Query(None,ge=1),user=Depends(_mobile_user)):
