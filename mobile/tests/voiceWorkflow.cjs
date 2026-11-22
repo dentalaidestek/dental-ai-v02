@@ -493,7 +493,9 @@ test('native voice history is loaded privately, requires patient confirmation, a
  let consentCheck=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='checkbox'&&text(node).includes('Hastayı bilgilendirdim.'));
  assert.ok(consentCheck);
  const recorder=tree.root.findByType('NativeVoiceRecorder');
- await renderer.act(async()=>recorder.props.onBusyChanged(true));
+ await renderer.act(async()=>consentCheck.props.onPress());
+ assert.equal(tree.root.findByType('NativeVoiceRecorder').props.consent,true,'recording starts only after explicit consent');
+ await renderer.act(async()=>tree.root.findByType('NativeVoiceRecorder').props.onBusyChanged(true));
  consentCheck=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='checkbox'&&text(node).includes('Hastayı bilgilendirdim.'));
  assert.equal(consentCheck.props.disabled,false,'consent remains withdrawable while native recording/ASR is busy');
  assert.equal(consentCheck.props.accessibilityState.disabled,false,'screen readers must expose the active consent control as enabled');
