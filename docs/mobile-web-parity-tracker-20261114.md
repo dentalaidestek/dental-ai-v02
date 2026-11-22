@@ -1,3 +1,17 @@
+## Latest CI and upload-recovery follow-up — 2026-11-22
+
+Starting head `ec31691f093918f72936264a31a7f1ca4ed681e3` was checked against live GitHub Actions before further edits.
+
+- Mobile Android run [#44978631156](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44978631156) completed successfully. Its typecheck, session/auth, realtime/pagination, beta regression, Android+iOS Expo export and internal APK jobs all completed successfully; the APK artifact was uploaded. This is a CI internal test APK, not a store-signed or device-accepted release.
+- Security recovery [#44978631170](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44978631170) ran the Python suite: 613 passed, one failed. The only failure was `test_registered_clinical_media_routes_use_the_expected_private_handlers`: it compared Python callable object identity across FastAPI router inclusion and found zero matches for the canonical `app.mobile_api.mobile_patient_media` symbol. Native security jobs all passed. PostgreSQL and duplicate-submission steps were skipped because the Python step failed.
+- The route regression now compares the unwrapped fully-qualified endpoint symbol (module + qualname), while still requiring exactly one mounted route with the expected HTTP method and path. It continues to assert the actual private handler implementation and ownership boundary.
+- The security workflow now explicitly executes `tests/test_web_analysis_upload_recovery.py`; that file existed but was omitted from the Python CI command. A workflow-contract test prevents this coverage from silently disappearing again.
+- The partial-upload test now advances the 30-second grace receipt and exercises the existing garbage collector, verifying that both orphaned files are deleted and both durable cleanup rows are consumed. The committed-asset test still verifies that a live reference prevents deletion.
+
+These changes are committed on `feature/mobile-web-parity-20261110`. Final-head CI is still required to validate the route-symbol correction and newly wired web cleanup tests. No local pytest execution is claimed in this connector-only session. No main merge, live deploy, production database mutation or patient-file operation was performed.
+
+---
+
 # Dental AI mobile completion tracker
 
 ## Working contract
