@@ -1,4 +1,5 @@
 import io
+import pytest
 import json
 import hashlib
 from PIL import Image
@@ -454,3 +455,42 @@ def test_mixed_analysis_byte_budget_error_uses_canonical_48_mib_limit(chat,monke
     with Session(engine) as s:
         assert not s.exec(select(main.Analysis)).all()
         assert not s.exec(select(main.ImageAsset)).all()
+
+
+
+def test_partial_analysis_image_storage_failure_queues_cleanup_and_rolls_back_metadata(chat,monkeypatch,tmp_path):
+    from pathlib import Path
+
+    c,engine,raw=setup(chat,monkeypatch,tmp_path)
+    persisted=[]
+    def fail_second_write(path):
+        persisted.append(str(path))
+        if len(persisted)==2:
+            raise RuntimeError("synthetic R2 write failure")
+
+    monkeypatch.setattr(mobile_analysis_api,"storage_persist_file",fail_second_write)
+    data={
+        "patient_id":"8",
+        "request_key":"synthetic-partial-r2-upload-001",
+        "tooth_number":"36",
+        "clinical_notes":"Synthetic two-image clinical context",
+    }
+    files=[
+        ("images",("first.png",raw,"image/png")),
+        ("images",("second.png",raw,"image/png")),
+    ]
+
+    with pytest.raises(RuntimeError,match="synthetic R2 write failure"):
+        c.post("/api/mobile/v1/analyses",data=data,files=files)
+
+    assert len(persisted)==2
+    with Session(engine) as session:
+        assert session.exec(select(main.Analysis)).all()==[]
+        assert session.exec(select(main.ImageAsset)).all()==[]
+        assert session.exec(select(work_jobs.WorkJob).where(
+            work_jobs.WorkJob.kind=="UPLOAD_RECEIPT"
+        )).all()==[]
+        queued=set(session.exec(select(work_jobs.WorkGarbage.reference)).all())
+        assert queued==set(persisted)
+        assert all(work_jobs.is_analysis_asset_reference(reference) for reference in queued)
+    assert all(Path(reference).is_file() for reference in persisted)
