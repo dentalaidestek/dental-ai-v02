@@ -336,7 +336,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    setStorageBlocked(true);
    throw Error('Mikrofon kayıt dosyası uygulamanın özel önbelleğinde doğrulanamadı. Yeni kayıt engellendi; taslağı temizleyerek güvenli dosya temizliğini yeniden deneyin.');
   }
-  const id=Crypto.randomUUID();active.current=id;stopped.current=true;chunkStartedAt.current=null;
+  const id=Crypto.randomUUID();active.current=id;chunkStartedAt.current=null;
   try{await persist({...draft.current,ended:false,audioStarted:true,segments:[...draft.current.segments,{id,uri,ready:false}]});}
   catch(error){
    active.current=null;
