@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.mobile_route_registry import remove_shadowed_routes
+from app.mobile_route_registry import include_missing_routes, remove_shadowed_routes
 
 
 def route(path, methods=None):
@@ -231,3 +231,51 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
 
     assert metadata.endpoint.__module__ == "app.mobile_modern_api_v3"
     assert "response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in inspect.getsource(metadata.endpoint)
+
+
+def test_include_missing_routes_reconciles_a_router_that_grows_after_initial_mount():
+    from fastapi import APIRouter, FastAPI
+
+    app = FastAPI()
+    source = APIRouter(prefix="/api/mobile/v1")
+
+    @source.get("/initial")
+    def initial_route():
+        return {"source": "initial"}
+
+    app.include_router(source)
+
+    @source.get("/late")
+    def late_route():
+        return {"source": "late"}
+
+    assert include_missing_routes(app, source) == 1
+    assert include_missing_routes(app, source) == 0
+    mounted = [
+        (route.path, method)
+        for route in app.routes
+        for method in (getattr(route, "methods", None) or ())
+    ]
+    assert mounted.count(("/api/mobile/v1/initial", "GET")) == 1
+    assert mounted.count(("/api/mobile/v1/late", "GET")) == 1
+
+
+def test_include_missing_routes_rejects_a_different_existing_endpoint_owner():
+    from fastapi import APIRouter, FastAPI
+    import pytest
+
+    app = FastAPI()
+
+    def existing():
+        return {"source": "existing"}
+
+    def conflicting():
+        return {"source": "conflicting"}
+
+    app.add_api_route("/api/mobile/v1/conflict", existing, methods=["GET"])
+    source = APIRouter(prefix="/api/mobile/v1")
+    source.add_api_route("/conflict", conflicting, methods=["GET"])
+
+    with pytest.raises(RuntimeError, match="mobile route ownership conflict"):
+        include_missing_routes(app, source)
+
