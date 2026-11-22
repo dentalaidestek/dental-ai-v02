@@ -434,3 +434,45 @@ def test_native_media_and_chat_recovery_routes_are_mounted_once_with_owner_check
         elif endpoint_name == "mobile_chat_attachment":
             assert "user.id not in {case.requester_user_id, case.expert_user_id}" in source_text
             assert "message.case_id != case_id" in source_text
+
+
+def test_analysis_upload_receipt_route_is_mounted_once_and_patient_scoped():
+    import inspect
+
+    from app import main
+    from app.mobile_analysis_api import router as analysis_router
+    from app.mobile_route_registry import iter_registered_routes
+
+    suffix = "/analyses/uploads/receipt"
+
+    def matches(routes):
+        return [
+            route for route in iter_registered_routes(routes)
+            if getattr(route, "path", getattr(route, "path_format", ""))
+            .rstrip("/")
+            .endswith(suffix)
+            and "GET" in (getattr(route, "methods", None) or set())
+        ]
+
+    source = matches(analysis_router.routes)
+    assert len(source) == 1
+    endpoint = source[0].endpoint
+    assert endpoint.__module__ == "app.mobile_analysis_api"
+    assert endpoint.__name__ == "upload_receipt"
+
+    def endpoint_symbol(value):
+        value = inspect.unwrap(value)
+        return (
+            getattr(value, "__module__", None),
+            getattr(value, "__qualname__", getattr(value, "__name__", None)),
+        )
+
+    mounted = [
+        route for route in matches(main.app.routes)
+        if endpoint_symbol(route.endpoint) == endpoint_symbol(endpoint)
+    ]
+    assert len(mounted) == 1
+    source_text = inspect.getsource(endpoint)
+    assert "patient.owner_user_id!=user.id" in source_text
+    assert "WorkJob.owner_user_id==user.id" in source_text
+    assert "'Cache-Control':'private, no-store'" in source_text
