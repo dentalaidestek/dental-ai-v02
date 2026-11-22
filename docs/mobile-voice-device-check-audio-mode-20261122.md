@@ -99,3 +99,33 @@ Final HEAD: `0b74ab96044f77d06555f6c29570116a0b311fd8`.
 - The preceding Android run on `32a272c` proves the unchanged typecheck/beta/APK pipeline was healthy before this patch; it does not validate the new final-head code.
 
 No physical Android/iOS Bluetooth, call/notification interruption or background-resume test was possible in this GitHub-only pass. No patient/audio payload, production API, R2 object, database migration, main merge, live deploy or store release was touched.
+
+
+## 2026-11-22 follow-up — recorder stop must be verified before cleanup
+
+### Web-first comparison
+
+Re-traced the web live microphone lifecycle in `voice_exam_panel.html` and `voice-exam-live.js`: the browser stops the active MediaStream tracks and closes its AudioContext before the live session is treated as stopped. Re-read the native Expo preflight in `NativeVoiceDeviceCheck.tsx`, its file-safety helpers, and the main `NativeVoiceRecorder.tsx` interruption handling.
+
+### Newly found defect
+
+The preflight called `recorder.stop()` inside a catch that swallowed failures, then unconditionally cleared its `prepared` flag. The finish, cancel, and recorder-start-error paths could therefore delete the temporary file and restore app-wide playback mode without proving that Expo had stopped the recorder. This is distinct from file deletion verification and audio-mode restoration: all three conditions must be satisfied in order.
+
+### Fix
+
+- Added `stopVoiceDeviceRecorderVerified`: the stop promise must resolve and Expo's synchronous `getStatus().isRecording` must explicitly be `false`; rejected stop, missing status and a still-recording status are inconclusive/failure.
+- Centralized the preflight's prepared-recorder transition so its prepared flag is cleared only after that verified stop.
+- Finish, cancellation, and start-failure recovery now retain the recorder reference and temporary URI, avoid file deletion and avoid changing audio mode when stop cannot be verified.
+- The preflight enters an explicit stop-pending state, keeps conflicting voice actions blocked, and exposes a retry control that remains usable even while the parent screen is locked.
+- The retry must verify stop first, then verify private-cache cleanup, then restore playback audio mode. A failed stage leaves only the remaining recovery work pending.
+- No audio, transcript, patient ID, token or clinical data is sent or persisted by this local device check.
+
+### Regression coverage
+
+- `mobile/tests/voiceDeviceCheck.cjs`: resolved stop + inactive status, rejected stop, still-recording status, missing status and status-read exception.
+- `mobile/tests/voiceDeviceCheckUI.cjs`: stop-before-delete ordering in finish/cancel/retry, no unconditional prepared-state reset, retry remains accessible while conflicting actions are locked.
+- Both files are already included in `npm run test:beta` through the existing Mobile Android CI typecheck job.
+
+### Validation boundary
+
+The code and regression tests are committed on `feature/mobile-web-parity-20261110`. The new branch-head Android and Security Recovery runs must complete before these new tests are reported as passing. Physical Android/iOS validation is still required for actual microphone release, Bluetooth route recovery, call/notification interruptions and playback after the preflight. No main merge, production deploy, database migration, patient data or real audio payload was used.
