@@ -230,14 +230,19 @@ test('failed private image can be retried without repeating the vision request',
  let calls=0;const Component=ui(async()=>{calls++;return{pending:false,findings:[]}});let t;
  await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:31,assetId:7,onClose(){}})));
  await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
- const first=t.root.findByType('Image'),firstKey=first.props.testID;
- await renderer.act(async()=>first.props.onError());
+ const first=t.root.findByType('Image'),firstKey=first.props.testID,staleError=first.props.onError;
+ await renderer.act(async()=>staleError());
  assert.ok(text(t.toJSON()).includes('Görüntü yüklenemedi'));
  const retry=findPressable(t.root,'Görüntüyü Yeniden Yükle');assert.ok(retry);
  await renderer.act(async()=>retry.props.onPress());
- assert.notEqual(t.root.findByType('Image').props.testID,firstKey);
+ const retried=t.root.findByType('Image');
+ assert.notEqual(retried.props.testID,firstKey);
  assert.equal(calls,1,'image retry must not call getVision or create another AI job');
  assert.ok(!text(t.toJSON()).includes('Görüntü yüklenemedi'));
+ await renderer.act(async()=>staleError());
+ assert.ok(!text(t.toJSON()).includes('Görüntü yüklenemedi'),'a late error from the previous image revision must not poison the retry');
+ await renderer.act(async()=>retried.props.onError());
+ assert.ok(text(t.toJSON()).includes('Görüntü yüklenemedi'),'the current image revision must still expose its own load failure');
  await renderer.act(async()=>t.unmount());
 });
 
