@@ -634,3 +634,70 @@ Klinik yolculuk (kayıt→anamnez→muayene→analiz→tedavi→randevu→takip)
 Değerlendirme: klinik omurga (işlem anahtarlı mutasyonlar, şifreli cihaz taslakları, "nihai karar hekime aittir" çerçevesi) üretim kalitesinde; eksikler sandalye ergonomisi ve karar-anı arayüzleriydi, tamamı mevcut payload'larla istemci tarafında kapatıldı.
 
 Test durumu (bu iki dalga sonrası): `tsc --noEmit` temiz; 108 mobil test dosyasının tamamı yeşil (dosya-dosya `node --test` koşumu; kirilen 4 dosyanın 10 testi yeni kontratlara güncellendi: realtime WS URL türetme stub'ı, akademik Türkçe durum etiketleri, rapor 1000, kurtarma bağlantısı gevşek origin + SecureStore getItemAsync stub'ı); backend `py_compile` temiz; yeni kontrat dosyaları: mobileBackendParityContracts.cjs, flowAuditParity.cjs, dentistWorkflowParity.cjs.
+
+## 35. Foto Fikir — klinik içerik stüdyosu modülü (yeni)
+
+Pazar araştırması (SocialDenta) sonrası platforma eklendi; tüm metin/stil adları/CSS özgün, lacivert palet mevcut uygulama temasından alındı — rakip içerik/CDN hiç kopyalanmadı.
+
+**Yeni dosyalar:** app/foto_fikir_api.py (961 satır; router + 2 yeni tablo: FotoFikirJob, FotoFikirBrandKit — create_all ile otomatik oluşur, mevcut tablolara dokunulmadı), app/templates/foto_fikir.html (535 satır; 3 adımlı stüdyo, 15 görsel dili, mevzuat rozetleri, Marka Kiti, IG Profili, Reels Çekim Planı; duyarlı tasarım), mobile/tests/fotoFikirContracts.cjs (11 kontrat testi), scripts/smoke_foto_fikir.py (TestClient 10 smoke testi).
+
+**Uçlar (/api/foto-fikir):** bootstrap, ideas, slides, mevzuat-check, generate-image, brand-kit (+generate), ig-profile, reels, history; /uploads/foto_fikir/... sahiplik kontrollü dosya servisi; web sayfası /foto-fikir (oturum yoksa login'e yönlendirir), base.html menüsüne "Foto Fikir" bağlantısı eklendi.
+
+**Sağlayıcılar:** Metin/fikir/mevzuat/IG/Reels = mevcut Claude istemcisi (AnthropicStudyProvider desenleri); görsel = mevcut Gemini istemcisi (gemini-2.5-flash-image → gemini-2.0-flash-preview-image-generation yedek listesi); anahtarlar mevcut modüllerden okunur, yeni anahtar okuma/log yok. Marka Kiti referans fotoğrafları inlineData ile geçilir; sağlayıcı reddederse referanssız sahne ile düşer.
+
+**Kurallar:** kota ayda 30 görsel (IMAGE+BRAND işleri, 429 Türkçe mesaj); mevzuat önce yerel kural tablosu (ücret/indirim, üstünlük vaadi, kıyas, hasta teşhiri, korku dili; öncesi-sonrası → KALDIR) sonra Claude gözden geçirme — en katı kazanır, çıktıya "nihai sorumluluk hekimde" yasal uyarısı; hekim adı Pillow (DejaVu, Türkçe glif doğrulandı) ile görselin sağ altına basılır; sağlayıcı anahtarı yoksa 503 Türkçe mesaj; FOTO_FIKIR_MOCK=1 çevrimdışı geliştirme modu ("örnek çıktı (mock)").
+
+**Doğrulama:** py_compile temiz; node 17/17 (11 yeni + 6 parite); smoke 10/10 (401 kapısı, kota matematiği, kural seviyeleri, mock üretim gerçek PNG kaydedip sahiplikli servisle döner, 429, 503). Mobil uygulama bu dalgada değişmedi — mobil parite (aynı uçlar RN tarafına) backlog: §35b.
+
+### 35 Foto Fikir — içerik stüdyosu: bu bölümde modül sıfırdan kuruldu (10 uç, 15 özgün stil, görsel-başı kota 30/ay, mevzuat yerel kuralları, mock motoru, web stüdyosu + araçlar akordeonu, ana sayfa kartı, mobil parite; ayrıntılar alt bölümlerde).
+
+### 35.1 Foto Fikir — tam yolculuk testi (bu hafta)
+
+Yeni betik: scripts/test_foto_fikir_e2e.py — tek oturumda gerçek kullanıcı yolculuğu: bootstrap (15 stil, kota 0/30) → fikir (5) → slayt (4) → mevzuat (KALDIR/DİKKAT/OK ayrımı + yasal uyarı) → 3'lü karusel görsel (PNG dosya kaydı + sahiplikli servis + kota 3/30) → marka kiti (yükleme + sahne, kota 4/30) → IG profili (bio≤150, 5 öne çıkan, 9 ızgara) → Reels (3 kanca + 8 CapCut adımı) → geçmiş tutarlılığı (7 iş, tüm türler) → gerçek ana uygulama import'u (/foto-fikir anon 303→login, router kaydı, menü bağlantısı, şablon kaynak kontrolü).
+
+E2E'nin yakaladığı ve düzeltilen hata: kota iş-başı 1 sayılıyordu; "ayda 30 görsel" vaadiyle çelişiyordu. Artık görsel-başı: karusel N görsel = N hak (sayım payload image_paths uzunluğundan, yanıt used+len(paths)); marka kiti sahnesi 1 hak. Smoke ve kontrat testleri etkilenmedi.
+
+Sonuçlar: E2E 9/9 · smoke 10/10 · kontrat 11/11 · py_compile temiz. Sınır (dürüst not): sandbox'ta Claude/Gemini anahtarları tanımlı olmadığından gerçek sağlayıcı çağrısı koşulamadı; mock modu pipeline'ın tamamını (dosya, overlay, kota, geçmiş, 429/503) doğrular. İstemciler akademik modülle aynı desen olduğu için üretimde anahtarlar aktifken aynı akış gerçek motorla çalışır — ilk canlı üretim testi deploy sonrası yapılmalı.
+
+Rakip durum notu (aynı hafta kontrolü): SocialDenta sitesi hiç değişmemiş (4 araç, 15 stil, aynı fiyatlar, kampanya sayacı aktif); teknik detayları hâlâ üye girişi arkasında. Bizim kapsam onların kamuya açık tüm işlev setini karşılıyor; farklar: onlarda insan editörlü video kurgu hizmeti ve ilk-düzeltme-ücretsiz kuyruğu var, bizde yeniden üretim kota yakıyor; onların günlük 08:30 e-posta mektubu bizde yok (backlog). Mobil parite §35b bekliyor.
+
+### 35.2 Foto Fikir — ana sayfa kartı, sadeleştirme ve hız izleme (bu hafta)
+
+**Ana sayfa kartı:** dashboard_v2.html "Ana işlemler" ızgarasına 5. kart eklendi — "Foto Fikir: Konuyu yaz, metni onayla — adınızı taşıyan içerik görselleri üretin", /foto-fikir linki. Görsel: app/static/dashboard/dental_ai_foto_fikir_card.webp (642x179, diğer kartlarla aynı boyut; scripts/make_foto_fikir_card.py ile Pillow'da üretilen özgün lacivert grafik — karusel slaytları + diş motifi + imza şeridi; non-white %87, 3,4 KB, metin yok). dashboard-v2.css: desktop .visual-fotofikir img kuralı + mobil .dashboard-home varyantında açık lacivert ton kartı (diğer kartların pale-tint desenine uygun).
+
+**Stüdyo sadeleştirme:** /foto-fikir sayfasında ana akış 3 adım (Konu → Metin onayı → Görsel) tek görünümde; ikincil araçlar (Marka Kiti, Instagram Profili, Reels Çekim Planı, Son İşlemler) "Araçlar" başlığı altında native <details> akordeonuna alındı — JS çerçevesiz, tüm element ID'leri ve uçlar değişmedi, erişilebilirlik (native summary) korundu. Mobilde grid tek kolona düşer, taşma yok.
+
+**Hız/yük izleme:** generate-image ve brand-kit/generate iş kayıtlarına uretim_ms eklendi — sağlayıcı süresi iş bazında izlenebilir; kota sayımı görsel-başı (35.1'de düzeltilmişti), yükte ek maliyet yok (tek SELECT, ayda en çok 30 satır).
+
+**Maliyet notu (varsayım):** Gemini görsel ~0,03-0,04 $/görsel; Claude metin ~0,005 $/istek. Aylık 30 görsel + ~60 LLM çağrısı ≈ 1,5-2 $/kullanıcı/ay; piyasa fiyatı 990 TL (~25-30 $) — marj %90+. Gerçek rakamlar deploy sonrası uretim_ms + fatura ile doğrulanmalı.
+
+**Doğrulama:** E2E 9/9 (ana sayfa kartı varlığı + webp dosyası da test ediliyor), smoke 10/10, kontrat 11/11, py_compile temiz. Bekleyen: mobil parite (§35b), canlı anahtarla ilk gerçek üretim ölçümü.
+
+### 35.3 Foto Fikir — mobil parite (§35b tamamlandı, bu hafta)
+
+**Auth köprüsü:** _ff_auth (app/foto_fikir_api.py) çerez yolunu birebir koruyup, çerez yokken Authorization: Bearer'ı mobil token mekanizmasıyla çözüyor — _mobile_user (app/mobile_api.py:168, tüm /api/mobile/v1 router'larının kullandığı bağımlılık), döngüsel import'suz lazy çağrı; geçersiz/expired Bearer aynı 401 "Oturum gerekli." çereze öncelik verilir (web akışı değişmedi). GET /uploads/foto_fikir rotası da köprüden geçtiği için mobil görseller Bearer başlıklı Image kaynağıyla açılıyor (modernApi'deki {uri, headers} deseni) — gerçek oturum yığınıyla doğrulandı: Bearer bootstrap 200, çerez 200, çerez-önceliği, geçersiz Bearer 401, sahiplik 403.
+
+**Yeni mobil dosyalar:** mobile/src/fotoFikirApi.ts (158 satır; 10 uç çağrıcısı + ffImageSource Bearer-header görsel kaynağı; socialApi.ts deseninde ffRequest, ApiError + revalidateSession ile 401'de mevcut oturum-süresi akışı; görsel üretiminde 600 sn uzun deadline analysisUpload gibi); mobile/src/NativeFotoFikir.tsx (312 satır; Türkçe, emojisiz, ModernScreens paleti; 3 adım akış — fikir çipleri, düzenlenebilir slaytlar + OK/DİKKAT/KALDIR rozetleri, 15 stil çipi, "adım yazılsın" varsayılan açık; Araçlar: Marka Kiti expo-image-picker ile 1-3 foto (zaten package.json'da, yeni bağımlılık yok), IG Profili, Reels planı, Son İşlemler "Görseli aç" modal; loading'de buton kilidi + Türkçe satır içi hatalar).
+
+**Kablolama:** mobile/App.tsx — FotoFikir ekranı native-stack'e SessionScope ile kayıtlı; ana sayfaya "Foto Fikir — İçerik stüdyosu" VisualFeature girişi (Dental AI girişinden sonra); VisualFeature tam-URL asset desteği (1 satır, geriye dönük uyumlu).
+
+**Doğrulama (bağımsız tekrar):** py_compile temiz; node 27/27 (10 yeni mobil parite + 12 FF kontrat + 5 backend parite); tsc --noEmit exit 0 (npm run typecheck); smoke 10/10; E2E 9/9; 16 App.tsx-okuyan mobil test dosyası regresyonu 210/210. Web şablonları/statik/doklar değişmedi (git diff ile doğrulandı).
+
+**Kapsam notu:** Mobil artık web stüdyosuyla işlevsel parite — aynı uçlar, aynı kota, aynı mevzuat kuralları. Kalan: canlı anahtarla ilk gerçek üretim ölçümü (deploy sonrası, uretim_ms alanından izlenir).
+
+### 36 Yaratıcı Yönetmen ajanı + sandbox geri dönüşümü sonrası yeniden inşa (bu hafta)
+
+**Olay kaydı (dürüst not):** Bu bölüm çalışırken sandbox eski bir anlık görüntüye döndü; bd0af842..655dd57f arasındaki 4 yerel commit ve Foto Fikir modül dosyaları diskten silindi (git --all'da da yok). Modül üç şema dosyasından (scripts/ff_blueprint_backend.md, ff_blueprint_web.md, ff_blueprint_tests.md) birebir yeniden inşa edildi; §35 metinleri download kopyasından restore edildi ve tüm test paketleri yeniden koşulup yeşile alındı. Push sandbox dışından hemen yapılmalı — kaybın tekrarını önlemek için. (Not: .env de kayboldu; DATABASE_URL deploy ortamında yeniden ayarlanmalı.)
+
+**Yeniden inşa:** app/foto_fikir_api.py (1395 satır; 10 uç + sahiplikli uploads, görsel-başı kota, uretim_ms, çerez+Bearer auth), app/templates/foto_fikir.html (659; sade 3 adım + <details> araçlar akordeonu), ana sayfa 5. kart + webp (scripts/make_foto_fikir_card.py), smoke 10/10, E2E 9/9, fotoFikirContracts.cjs 11/11.
+
+**Yaratıcı Yönetmen ajan motoru (yeni):** app/foto_fikir_creative.py (473 satır, yalnız stdlib, deterministik):
+- Tasarım sistemi: 15 stil için palet (zemin/vurgu/metin hex), tipografi, kompozisyon kuralı, ışık, doku, kullanım alanı.
+- Yönetmen görsel prompt'u: kompozisyon + ışık + palet + anatomi doğruluk koruması + "görselde yazı olmasın" + negatif liste; gerçek daldaki eski prompt fallback olarak kaldı.
+- Reel yönetmenlik: 0-3 sn kanca (yakın yüz + direkt bakış), 3-15 sn değer (makro/loupe), 15+ sn CTA; satır başına plan/kamera/hareket/ışık/overlay (≤40 karakter)/ses-ritim.
+- Rubrikler: kanca (sayı + soru + fayda + merak boşluğu + uzunluk; 0-100), karusel (kanca + CTA + başlık çeşitliliği + yoğunluk), audit_creative_output (IMAGE/REELS/IDEA), mevzuat-uyumlu yaratıcı alternatif ("en iyi" → "özenli/bilgi veren"), CREATIVE_DIRECTOR_BRIEF (metin üretimine eklenen yönetmen kişiliği).
+- Bağlantı noktaları (additive, mevcut alanlar değişmedi): generate-image (prompt + IMAGE audit), reels (shot satırları + REELS audit), ideas (IDEA audit), mevzuat DIKKAT/KALDIR satırlarına creative_alternative.
+
+**Denetim (sistemin denetlenmesi):** scripts/test_foto_fikir_creative.py 8/8; SKOR KARTI: iyi karusel 87/100 (iyi), zayıf karusel 7/100 (geliştir), örnek reels 75/100 (iyi; kanca ort. 70, pacing +25, plan +15). Rubrik estetik yargının vekilidir; gerçek kalite deploy sonrası uretim_ms alanı + kullanıcı A/B testleriyle ölçülür. Ajan tanım belgesi: download/dental_creative_director_agent.md.
+
+**Mobil parite (yeniden):** _ff_auth çerez→Bearer köprüsü (_mobile_user, app/mobile_api.py:168; gerçek oturum yığını doğrulaması 6/6 + 7/7: Bearer 200, çerez önceliği, geçersiz 401, sahiplik 403), mobile/src/fotoFikirApi.ts (152), mobile/src/NativeFotoFikir.tsx (221; creative_audit/shot/creative_alternative görüntülemeli), mobile/App.tsx (FotoFikir stack kaydı + ana sayfa girişi + VisualFeature tam-URL desteği), mobile/tests/fotoFikirMobileParity.cjs (11 test). node 28/28; tsc --noEmit exit 0; tam mobil regresyon 1143/1143.
