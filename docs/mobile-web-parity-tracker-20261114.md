@@ -1449,3 +1449,23 @@ The `analysisRefresh.cjs` suite is also added to the Security Recovery native-cl
 
 ### Validation boundary
 These changes require fresh PR-head Android and Security Recovery runs. The starting-head TypeScript check and Expo exports were green, but the realtime/beta suites were not. Security Recovery run #2617 was pending with no job records when this entry was written. No production handler, patient record, database, R2 object, main branch or live deployment was changed. The 60,000-user target remains unverified.
+
+
+## 2026-11-22 — native single-tooth analysis parity
+
+### Web-first flow and gap
+Re-read `app/templates/analysis_viewer.html` and the embedded viewer message handler before changing native code. When the web viewer emits `dental-ai:analyze-tooth`, the page POSTs to `/analysis/{analysis_id}/tooth/{tooth_fdi}/analyze`. The web handler validates the FDI value, checks the signed-in user's patient ownership, writes the selected tooth to the analysis and enqueues one durable `PRELIMINARY` work item. The existing native viewer already supported multi-tooth treatment evaluation through `/selected-teeth`, but it did not expose the web viewer's separate single-tooth action or corresponding mobile endpoint.
+
+### Change
+- Added `POST /api/mobile/v1/analyses/{analysis_id}/tooth/{tooth_fdi}/analyze` to the mobile clinical router.
+- The route validates the same supported FDI set used by native clinical notes, locks the analysis and patient rows, and rechecks patient ownership before changing the analysis tooth.
+- It reuses the canonical `_enqueue_work(..., 'PRELIMINARY', 'ANALYSIS', ...)` queue. The queue's source-identity dedupe includes the selected tooth and inference revision, so a retry after a lost response returns the same job receipt; selecting a different tooth creates a distinct source revision. No provider call or inference is run in the request handler.
+- Added a strict native `analyzeTooth` API helper and a chart-tab action in `NativeVisionViewer`. The parent clinical workspace reloads the durable job receipt after the action. Existing multi-tooth treatment analysis, clinical-note approval, and no-auto-write-to-patient-chart behavior remain unchanged.
+
+### Regression coverage
+- Python: same-tooth retry returns the same job ID; different-account access is 404; invalid FDI is 422; rejected requests create no job and do not change the analysis.
+- Native API: validates FDI before network access and rejects malformed job receipts.
+- Native UI: selects FDI 36, invokes the parent action and displays the accepted job message; parent callback wiring is asserted.
+
+### Baseline and validation boundary
+The preceding CI head `ef3eded1d97868231dfd1ec01853dbbd016fc64a` passed Android typecheck, session/auth, realtime/pagination, beta regressions, Android/iOS bundle export and ARM64 APK build. Its Security Recovery run passed the Python/PostgreSQL/browser step and all six native security jobs. The single-tooth feature commits below require fresh final-head CI; their tests are not claimed as passed until those runs finish. No production data, database migration, R2 object, main branch or live deployment was changed. The 60,000-user target remains unverified.
