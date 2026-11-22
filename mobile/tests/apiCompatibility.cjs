@@ -148,3 +148,25 @@ test('modern chat receipt client preserves a case-specific 404',async()=>{
   error=>error.status===404&&error.message==='Görüşme bulunamadı.'
  );
 });
+
+
+test('tooth-chart focus maps a bare missing route to the shared server compatibility hint',async()=>{
+ const api=loadApi(404,{detail:'Not Found'});
+ await assert.rejects(
+  ()=>api.getToothChartFocus('synthetic-token',8),
+  error=>error.status===404&&error.message===compatibility.MISSING_API_ROUTE_MESSAGE
+ );
+});
+
+test('modern clinical media maps a bare missing route but preserves a patient-scoped 404',async()=>{
+ const missingRoute=loadModernApi(404,{detail:'Not Found'});
+ await assert.rejects(
+  ()=>missingRoute.getMedia('synthetic-token',8),
+  error=>error.status===404&&error.message===compatibility.MISSING_API_ROUTE_MESSAGE
+ );
+ const missingPatient=loadModernApi(404,{detail:'Hasta bulunamadı.'});
+ await assert.rejects(
+  ()=>missingPatient.getMedia('synthetic-token',8),
+  error=>error.status===404&&error.message==='Hasta bulunamadı.'
+ );
+});
