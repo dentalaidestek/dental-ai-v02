@@ -15425,12 +15425,15 @@ from app.profile_hub import register as register_profile_hub, document_page as p
 register_profile_hub(app)
 
 # Native Android JSON API
+from app.mobile_route_registry import (
+    include_missing_routes as _include_missing_mobile_routes,
+    remove_shadowed_routes as _remove_shadowed_mobile_routes,
+)
 from app.mobile_api import router as mobile_router
-app.include_router(mobile_router)
+_include_missing_mobile_routes(app, mobile_router)
 from app.mobile_analysis_api import router as mobile_analysis_router
 app.include_router(mobile_analysis_router)
 from app.mobile_modern_api_v3 import router as mobile_modern_router
-from app.mobile_route_registry import remove_shadowed_routes as _remove_shadowed_mobile_routes
 _remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)
 app.include_router(mobile_modern_router)
 
