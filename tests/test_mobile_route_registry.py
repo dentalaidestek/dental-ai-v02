@@ -372,3 +372,58 @@ def test_include_missing_routes_fails_closed_on_duplicate_same_owner_registratio
 
     with pytest.raises(RuntimeError, match="duplicate mobile route registration"):
         include_missing_routes(app, source)
+
+
+def test_native_media_and_chat_recovery_routes_are_mounted_once_with_owner_checks():
+    import inspect
+
+    from app import main
+    from app.mobile_api import router as primary_mobile_router
+    from app.mobile_route_registry import iter_registered_routes
+
+    expected = [
+        ("/patients/{patient_id}/media/uploads/{request_key}", "GET", "mobile_patient_media_upload_status"),
+        ("/consultations/{case_id}/message-receipt", "GET", "mobile_consultation_message_receipt"),
+        ("/consultations/{case_id}/attachments", "POST", "mobile_chat_upload"),
+        ("/consultations/{case_id}/attachments/{message_id}", "GET", "mobile_chat_attachment"),
+    ]
+
+    def matching(routes, suffix, method):
+        return [
+            route for route in iter_registered_routes(routes)
+            if getattr(route, "path", getattr(route, "path_format", ""))
+            .rstrip("/")
+            .endswith(suffix)
+            and method in (getattr(route, "methods", None) or set())
+        ]
+
+    for suffix, method, endpoint_name in expected:
+        source = matching(primary_mobile_router.routes, suffix, method)
+        assert len(source) == 1, (
+            f"expected one canonical {method} {suffix} source route, found {len(source)}"
+        )
+        endpoint = source[0].endpoint
+        assert endpoint.__module__ == "app.mobile_api"
+        assert endpoint.__name__ == endpoint_name
+
+        mounted = [
+            route for route in matching(main.app.routes, suffix, method)
+            if inspect.unwrap(route.endpoint) is inspect.unwrap(endpoint)
+        ]
+        assert len(mounted) == 1, (
+            f"{method} {suffix} must be mounted exactly once on the live FastAPI app"
+        )
+
+        source_text = inspect.getsource(endpoint)
+        if endpoint_name == "mobile_patient_media_upload_status":
+            assert "Patient.owner_user_id == user.id" in source_text
+            assert "_find_patient_media_receipt" in source_text
+        elif endpoint_name == "mobile_consultation_message_receipt":
+            assert "user.id not in {case.requester_user_id, case.expert_user_id}" in source_text
+            assert "client_message_id" in source_text
+        elif endpoint_name == "mobile_chat_upload":
+            assert "user.id not in {case.requester_user_id, case.expert_user_id}" in source_text
+            assert "web._users_blocked" in source_text
+        elif endpoint_name == "mobile_chat_attachment":
+            assert "user.id not in {case.requester_user_id, case.expert_user_id}" in source_text
+            assert "message.case_id != case_id" in source_text
