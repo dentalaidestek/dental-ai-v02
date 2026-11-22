@@ -17,6 +17,7 @@ import { shouldRefreshOnAppResume } from './appResumeRefresh';
 import {CLINICAL_MEDIA_PICKER_MAX_FILES,normalizeClinicalMediaAssets} from './clinicalMediaPicker';
 import {CLINICAL_MEDIA_BATCH_ID_PATTERN,ensureClinicalMediaBatchId} from './clinicalMediaBatch';
 import {classifyClinicalMediaUploadFailure} from './clinicalMediaRecovery';
+import {isMissingApiRoute404} from './apiCompatibility';
 import {clearClinicalMediaDraft} from './clinicalMediaDraft';
 import {ANALYSIS_MAX_IMAGES} from './analysisApi';
 import {patientMediaSelectAllIds,patientMediaSelectAllLabel} from './patientMediaSelection';
@@ -184,12 +185,12 @@ async function upload(reconcile=false){
    if(current()){
     const code=(e as {code?:string})?.code;
     const status=(e as {status?:number})?.status;
-    const failure=classifyClinicalMediaUploadFailure(status,code);
+    const failure=classifyClinicalMediaUploadFailure(status,code,isMissingApiRoute404(e));
     setUncertain(failure==='UNCERTAIN');
     const recovery=failure==='LOCAL'
      ?' Sunucuya yeni dosya gönderilmedi; bekleyen taslağı ve sunucu fişini kontrol edip eksik görüntüyü yeniden seçebilirsiniz.'
      :failure==='CONFIGURATION'
-     ?' Sunucu klinik görüntü kurtarma anahtarını yapılandırmamış; bu istek dosyayı kabul etmeden reddedildi. Şifreli taslak cihazda korunuyor. Sunucu ayarı düzelene kadar taslağı silmeyin veya yeni grup oluşturmayın.'
+     ?' Sunucu klinik görüntü yükleme makbuzu/kurtarma API rotasını veya anahtarını desteklemiyor. Dosya yüklenmeden önce istek durduruldu; şifreli taslak cihazda korunuyor. Sunucu güncellenene kadar taslağı silmeyin veya yeni grup oluşturmayın.'
      :failure==='REJECTED'
      ?' Sunucu yeni kaydı kabul etmedi. Yükleme grubunu temizleyip daha küçük bir grup seçebilirsiniz.'
      :' Aynı işlem anahtarları güvenli taslakta korundu; devam ettiğinizde sunucu fişleri kontrol edilerek eksik dosyalar yüklenir.';
