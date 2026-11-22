@@ -8695,15 +8695,19 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
     user = get_current_user(request)
     if not user:
         return JSONResponse({"ok": False, "error": "Oturum gerekli."}, status_code=401) if wants_json else RedirectResponse("/login", status_code=303)
+    status_events: list[RealtimeEvent] = []
+    notification_events: list[RealtimeEvent] = []
+    try:
+        client_key = _normalize_consultation_client_message_id(client_message_id)
+    except HTTPException as exc:
+        return upload_error(str(exc.detail), exc.status_code)
     with Session(engine, expire_on_commit=False) as s:
         case = _locked_consultation_case(s, case_id)
-        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
-            return upload_error("Bu vakaya dosya gönderilemez.")
-        now = _utcnow_naive()
-        notification_events: list[RealtimeEvent] = []
-        status_events: list[RealtimeEvent] = []
-        if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
-            return upload_error("Uzmanın belirttiği başlangıç süresi henüz dolmadı.")
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at:
+            return upload_error("Bu vakaya dosya gönderilemez.", 404)
+        other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+        if _users_blocked(s, user.id, other_id):
+            return upload_error("Bu kullanıcıyla mesajlaşma engellenmiş.", 403)
         # Uploads can take seconds on R2. Do not reserve a PostgreSQL pool slot
         # while reading or publishing the payload; revalidate under a row lock
         # immediately before recording the message.
@@ -8715,6 +8719,41 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
         allowed = {".jpg", ".jpeg", ".png", ".webp", ".pdf", ".m4a", ".mp3", ".wav", ".ogg"}
         if suffix not in allowed:
             return upload_error("Desteklenmeyen dosya türü.")
+        safe_filename = Path(file.filename or "").name[:180] or ("attachment" + suffix)
+        kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
+        # Check a completed upload before writing another object. The second
+        # check below closes the race with another request using the same key.
+        case_query = select(ConsultationCase).where(ConsultationCase.id == case_id)
+        if engine.dialect.name == "postgresql":
+            case_query = case_query.with_for_update()
+        case = s.exec(case_query).first()
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at:
+            return upload_error("Bu vakaya dosya gönderilemez.", 404)
+        other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+        if _users_blocked(s, user.id, other_id):
+            return upload_error("Bu kullanıcıyla mesajlaşma engellenmiş.", 403)
+        if reply_to_message_id:
+            replied = s.get(ConsultationMessage, reply_to_message_id)
+            if not replied or replied.case_id != case.id:
+                reply_to_message_id = None
+        payload_hash = _consultation_message_payload_hash(
+            case.id, user.id, kind, safe_filename, reply_to_message_id, raw,
+        )
+        if client_key:
+            replay, replay_error = _consultation_message_receipt_replay(
+                s, case, user.id, client_key, payload_hash,
+            )
+            if replay_error:
+                message, status_code = replay_error
+                return upload_error(message, status_code)
+            if replay:
+                return JSONResponse({"ok": True, "message": replay, "replayed": True}) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+            return upload_error("Bu vakaya dosya gönderilemez.", 409)
+        now = _utcnow_naive()
+        if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
+            return upload_error("Uzmanın belirttiği başlangıç süresi henüz dolmadı.", 423)
+        s.close()
         case_dir = UPLOAD_DIR / "consultations" / str(case.id)
         case_dir.mkdir(parents=True, exist_ok=True)
         stored = f"{secrets.token_hex(16)}{suffix}"
@@ -8730,24 +8769,48 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
                 case_query = case_query.with_for_update()
             case = s.exec(case_query).first()
             now = _utcnow_naive()
-            if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+            if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at:
                 s.rollback(); s.close()
                 storage_delete(path)
-                return upload_error("Bu vakaya dosya gönderilemez.")
-            if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
+                return upload_error("Bu vakaya dosya gönderilemez.", 404)
+            other_id = case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id
+            if _users_blocked(s, user.id, other_id):
                 s.rollback(); s.close()
                 storage_delete(path)
-                return upload_error("Uzmanın belirttiği başlangıç süresi henüz dolmadı.")
-            if case.status == "WAITING_START" and user.id == case.requester_user_id:
-                case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id); s.add(case)
-                notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
-                status_events.extend(_record_case_status_realtime_events(s, case))
-            kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
+                return upload_error("Bu kullanıcıyla mesajlaşma engellenmiş.", 403)
             if reply_to_message_id:
                 replied = s.get(ConsultationMessage, reply_to_message_id)
                 if not replied or replied.case_id != case.id:
                     reply_to_message_id = None
-            message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=file.filename, media_path=str(path), reply_to_message_id=reply_to_message_id)
+            payload_hash = _consultation_message_payload_hash(
+                case.id, user.id, kind, safe_filename, reply_to_message_id, raw,
+            )
+            if client_key:
+                replay, replay_error = _consultation_message_receipt_replay(
+                    s, case, user.id, client_key, payload_hash,
+                )
+                if replay_error:
+                    message, status_code = replay_error
+                    s.rollback(); s.close()
+                    storage_delete(path)
+                    return upload_error(message, status_code)
+                if replay:
+                    s.rollback(); s.close()
+                    storage_delete(path)
+                    return JSONResponse({"ok": True, "message": replay, "replayed": True}) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+            if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+                s.rollback(); s.close()
+                storage_delete(path)
+                return upload_error("Bu vakaya dosya gönderilemez.", 409)
+            if case.status == "WAITING_START" and user.id == case.requester_user_id and case.consultation_start_deadline and now < case.consultation_start_deadline:
+                s.rollback(); s.close()
+                storage_delete(path)
+                return upload_error("Uzmanın belirttiği başlangıç süresi henüz dolmadı.", 423)
+            if case.status == "WAITING_START" and user.id == case.requester_user_id:
+                case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id); s.add(case)
+                notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
+                status_events.extend(_record_case_status_realtime_events(s, case))
+            message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=safe_filename, media_path=str(path), reply_to_message_id=reply_to_message_id)
             s.add(message)
             if user.id == case.expert_user_id and case.expert_started_at is None:
                 case.expert_started_at = now
@@ -8757,12 +8820,16 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
                     status_events.extend(_record_case_status_realtime_events(s, case))
                 _consultation_event(s, case.id, "EXPERT_FIRST_RESPONSE", user.id); s.add(case)
             _consultation_event(s, case.id, "MEDIA_SENT", user.id, {"type": kind})
-            s.commit(); s.refresh(message)
+            s.flush()
+            if client_key:
+                s.add(ConsultationMessageReceipt(
+                    case_id=case.id, sender_user_id=user.id, client_message_id=client_key,
+                    payload_hash=payload_hash, message_id=message.id,
+                ))
             sender=s.get(User,user.id)
             realtime_events=_record_message_realtime_events(s,case,message,sender)
-            s.commit()
-            safe_client_message_id = client_message_id.strip()[:96] or None
-            payload={"type":"message","message":{"id":message.id,"sender_user_id":message.sender_user_id,"message_type":message.message_type,"content":message.content,"media_url":f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,"reply_to_message_id":message.reply_to_message_id,"created_at":message.created_at.isoformat(),"client_message_id":safe_client_message_id}}
+            s.commit(); s.refresh(message)
+            payload={"type":"message","message":_consultation_message_payload(case,message,client_key)}
         except Exception:
             s.rollback(); s.close()
             storage_delete(path)
@@ -8907,6 +8974,14 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
     if len(text_value) > 4000:
         if wants_json: return JSONResponse({"ok": False, "error": "Mesaj 4000 karakteri aşamaz."}, status_code=400)
         return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Mesaj 4000 karakteri aşamaz.')}", status_code=303)
+    try:
+        client_key = _normalize_consultation_client_message_id(client_message_id)
+    except HTTPException as exc:
+        if wants_json: return JSONResponse({"ok": False, "error": str(exc.detail)}, status_code=exc.status_code)
+        return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus(str(exc.detail))}", status_code=303)
+    payload_hash = _consultation_message_payload_hash(
+        case_id, user.id, "TEXT", text_value, reply_to_message_id,
+    )
     now = _utcnow_naive()
     with Session(engine, expire_on_commit=False) as s:
         case = _locked_consultation_case(s, case_id)
@@ -8914,7 +8989,20 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
         status_events: list[RealtimeEvent] = []
         if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
             return HTMLResponse("Yetkisiz işlem.", status_code=403)
-        if case.messages_deleted_at or case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+        if case.messages_deleted_at:
+            if wants_json: return JSONResponse({"ok": False, "error": "Bu görüşmenin mesajları artık saklanmıyor."}, status_code=410)
+            return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu görüşmenin mesajları artık saklanmıyor.')}", status_code=303)
+        if client_key:
+            replay, replay_error = _consultation_message_receipt_replay(
+                s, case, user.id, client_key, payload_hash,
+            )
+            if replay_error:
+                message, status_code = replay_error
+                if wants_json: return JSONResponse({"ok": False, "error": message}, status_code=status_code)
+                return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus(message)}", status_code=303)
+            if replay:
+                return JSONResponse({"ok": True, "message": replay, "replayed": True}) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
+        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
             if wants_json: return JSONResponse({"ok": False, "error": "Bu danışmanlık şu anda mesajlaşmaya açık değil."}, status_code=409)
             return RedirectResponse(f"/expert-support/cases/{case_id}?send_error={quote_plus('Bu vaka mesajlaşmaya açık değil.')}", status_code=303)
         # Bekleme süresinde uzman görüşmeyi erken başlatabilir; gönderen hekim süre dolmadan yazamaz.
@@ -8943,6 +9031,12 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
                 reply_to_message_id = None
         message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, content=text_value, reply_to_message_id=reply_to_message_id)
         s.add(message)
+        s.flush()
+        if client_key:
+            s.add(ConsultationMessageReceipt(
+                case_id=case.id, sender_user_id=user.id, client_message_id=client_key,
+                payload_hash=payload_hash, message_id=message.id,
+            ))
         if user.id == case.expert_user_id and case.expert_started_at is None:
             case.expert_started_at = now
             if case.status == "WAITING_START":
@@ -8952,13 +9046,11 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
             _consultation_event(s, case.id, "EXPERT_FIRST_RESPONSE", user.id)
             s.add(case)
         _consultation_event(s, case.id, "MESSAGE_SENT", user.id)
-        s.commit()
-        s.refresh(message)
         sender=s.get(User,user.id)
         realtime_events=_record_message_realtime_events(s,case,message,sender)
         s.commit()
-        safe_client_message_id = client_message_id.strip()[:96] or None
-        payload = {"ok": True, "message": {"id": message.id, "sender_user_id": message.sender_user_id, "message_type": message.message_type, "content": message.content, "reply_to_message_id": message.reply_to_message_id, "created_at": message.created_at.isoformat(), "client_message_id": safe_client_message_id}}
+        s.refresh(message)
+        payload = {"ok": True, "message": _consultation_message_payload(case, message, client_key), "replayed": False}
     on_loop(consultation_socket_hub.broadcast, case_id, {'type': 'message', 'message': payload['message']})
     for realtime_event in status_events + realtime_events:
         on_loop(_publish_realtime_event, realtime_event)
@@ -8966,7 +9058,6 @@ def expert_support_message(request: Request, case_id: int, content: str = Form(.
         on_loop(_publish_realtime_event, notification_event)
     if wants_json: return JSONResponse(payload)
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
-
 
 
 @app.get("/expert-support/cases/{case_id}/messages-live")
