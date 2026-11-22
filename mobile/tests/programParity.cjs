@@ -554,3 +554,27 @@ test('Program cards mirror web event type, recurrence, completion and today labe
  assert.ok(text(tree.toJSON()).includes('Bugün'));
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('Program session render identity never exposes bearer credentials in renderer keys',()=>{
+ const {resolveSessionRenderIdentity}=require('../src/sessionRenderKey.ts');
+ const secret='Bearer_opaque_program_session_token_1234567890';
+ const first=resolveSessionRenderIdentity(null,secret+':7:week:2030-01-07');
+ assert.ok(first.key.startsWith('dai-session-'));
+ assert.equal(first.key.includes(secret),false);
+ const same=resolveSessionRenderIdentity(first,secret+':7:week:2030-01-07');
+ assert.equal(same.key,first.key);
+ const changedAccount=resolveSessionRenderIdentity(same,'rotated-session-token:7:week:2030-01-07');
+ assert.notEqual(changedAccount.key,first.key);
+ assert.equal(changedAccount.key.includes('rotated-session-token'),false);
+});
+
+test('Program calendar and editor keep async response ownership on opaque session keys',()=>{
+ const calendar=fs.readFileSync(require.resolve('../src/NativeProgram.tsx'),'utf8');
+ const editor=fs.readFileSync(require.resolve('../src/NativeProgramEditor.tsx'),'utf8');
+ assert.match(calendar,/const scope=useSessionRenderKey\(\x60\$\{token\}:\$\{userId\}:\$\{view\}:\$\{day\}\x60\)/);
+ assert.match(editor,/const scopeKey=useSessionRenderKey\(\x60\$\{token\}:\$\{userId\}:\$\{eventId\|\|0\}:\$\{initialPatientId\|\|0\}\x60\)/);
+ assert.match(editor,/scope\.current=scopeKey/);
+ assert.doesNotMatch(calendar,/data\?\.scope===\x60\$\{token\}/);
+ assert.doesNotMatch(editor,/scope=useRef\(\x60\$\{token\}/);
+});
