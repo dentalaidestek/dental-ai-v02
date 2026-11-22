@@ -1474,3 +1474,23 @@ The preceding CI head `ef3eded1d97868231dfd1ec01853dbbd016fc64a` passed Android 
 ### Follow-up — native single-tooth test harness correction
 
 The first CI run for the single-tooth feature exposed one test-only failure in both Android beta and native-clinical Security Recovery: 287/288 native-clinical tests passed, and the only failing assertion compared a request-options object created inside the TypeScript VM with a host-realm literal using `deepStrictEqual`. Both objects contained `method: 'POST'`; the failure was their cross-realm prototype identity, not the API method or route. The assertion now checks the `method` field directly. TypeScript typecheck passed on that run; the beta suite and native-clinical suite must be rerun on the corrected head. The Python/PostgreSQL security step was still running when inspected, so its result remains unreported.
+
+## 2026-11-22 — Program route recovery, ownership and retry parity
+
+### Web-first inspection
+Re-read `app/templates/program.html`, `app/templates/program_form.html`, the Program page's fragment-navigation/copy/realtime script, and the web handlers in `app/main.py` for create, edit, copy, complete and delete. Compared the form fields (event type, title, local start/end, patient, reminder, recurrence, location and notes) with `NativeProgramEditor`, then traced the native calendar's pending-action receipt and revision-recovery flow.
+
+### CI root cause and correction
+The PR-head Security Recovery job exposed a real Python import failure: `app/mobile_program_api.py:372` contained an unmatched closing parenthesis. The same module also contained a second, stale copy of the Program conflicts/create/edit/copy/complete/delete routes after the first complete route set. Removed the malformed terminator and the duplicate legacy block, leaving one route registration per method/path. The repeated SQLModel `user` table collection errors in the same job were cascading collection failures after this import error, not a separate schema change.
+
+### Changes
+- Added explicit owner/active-event preflight to native complete and delete before dispatching to the canonical web handler. A non-owner or already-deleted event is rejected without invoking the web mutation handler.
+- Made web Program completion idempotent: repeating completion for an already-completed non-recurring event returns the normal success redirect without advancing the revision, cancelling reminders again, or emitting duplicate realtime events.
+- Added regressions for cross-account complete/delete, unchanged owner state and revision, repeat-completion revision/reminder stability, and duplicate router registration.
+- Kept the existing web validation, patient ownership, row lock, revision/CAS, request-receipt and reminder-worker behavior intact.
+
+### Commits in this follow-up
+`0e61a24`, `ba2644b`, `7b70549`, `757556e`, `3926710`, `bb0f599`, `62a2a20`.
+
+### Validation boundary
+At the starting head `99422209`, Android typecheck completed successfully; the beta suite was still running when inspected. Security Recovery failed during Python test collection because of the unmatched parenthesis. The latest-head Android and Security Recovery runs must complete after these commits before this work can be called green. No migration, main merge, production deployment, or clinical-data mutation was performed. The 60,000-user capacity target remains unverified.
