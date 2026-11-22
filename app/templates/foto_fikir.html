@@ -45,6 +45,13 @@
 #fotoFikir .ff-badge.ff-badge-ok{background:#e5f3ec;color:var(--ff-ok)}
 #fotoFikir .ff-badge.ff-badge-warn{background:#fbf1dc;color:var(--ff-warn)}
 #fotoFikir .ff-badge.ff-badge-bad{background:#fbe3e0;color:var(--ff-bad)}
+#fotoFikir .ff-badge.ff-badge-role{background:#e8eef9;color:#2b5cad}
+#fotoFikir .ff-audit{border:1px solid var(--ff-line);border-radius:13px;background:#f7fafd;padding:12px 14px;margin:14px 0 0}
+#fotoFikir .ff-audit[hidden]{display:none}
+#fotoFikir .ff-audit b{display:block;font-size:14px;color:#0b2341;margin-bottom:4px}
+#fotoFikir .ff-audit .ff-audit-score{font-size:13px;color:#27425f;margin:0 0 6px}
+#fotoFikir .ff-suggest{margin:10px 0 4px}
+#fotoFikir .ff-suggest .ff-chip{border-color:#2b5cad;background:#eef3fb;color:#1f3f76}
 #fotoFikir .ff-flag-reason{font-size:12px;color:#8f3b2c;margin:6px 0 0}
 #fotoFikir .ff-style-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:0 0 14px;padding:0;list-style:none}
 #fotoFikir .ff-style{border:1px solid var(--ff-line);border-radius:12px;background:#fbfdfe;padding:11px 12px;cursor:pointer;text-align:left}
@@ -149,9 +156,11 @@
     Görselin sağ alt köşesine adım yazılsın
   </label>
   <div class="ff-style-grid" id="ffStyles"></div>
+  <div class="ff-suggest" id="ffStyleSuggest"></div>
   <div class="ff-row">
     <button type="button" class="ff-btn ff-btn-navy ff-btn-lg" id="ffGenerateBtn">Görselleri üret</button>
   </div>
+  <div class="ff-audit" id="ffAuditPanel" hidden></div>
   <div class="ff-gallery" id="ffGallery"></div>
 </section>
 
@@ -305,6 +314,7 @@
       var item = el("li", "ff-slide");
       var head = el("div", "ff-slide-head");
       head.appendChild(el("b", null, "Slayt " + number));
+      if (slide.role) head.appendChild(el("span", "ff-badge ff-badge-role", "Görev: " + slide.role));
       var badge = el("span", "ff-badge ff-badge-ok", "OK");
       badge.id = "ffFlag" + number;
       head.appendChild(badge);
@@ -380,6 +390,48 @@
         card.classList.add("active");
       }
     });
+  }
+
+  function selectStyle(styleId) {
+    state.styleId = styleId;
+    Array.prototype.forEach.call(document.querySelectorAll("#ffStyles .ff-style"), function (card, index) {
+      card.classList.toggle("active", (state.styles[index] || {}).id === styleId);
+    });
+  }
+
+  function renderStyleSuggest(recommendation) {
+    var box = document.getElementById("ffStyleSuggest");
+    box.replaceChildren();
+    if (!recommendation || !recommendation.style_id || !recommendation.reason) return;
+    var style = state.styles.filter(function (item) { return item.id === recommendation.style_id; })[0];
+    var label = style ? style.name : recommendation.style_id;
+    var chip = el("button", "ff-chip", "Önerilen stil: " + label + " — " + recommendation.reason);
+    chip.type = "button";
+    chip.addEventListener("click", function () { selectStyle(recommendation.style_id); });
+    box.appendChild(chip);
+  }
+
+  function renderAudit(audit, tips, uretimMs) {
+    var box = document.getElementById("ffAuditPanel");
+    box.replaceChildren();
+    if (!audit || typeof audit.score !== "number") {
+      box.hidden = true;
+      return;
+    }
+    var title = el("b", null, "Yapı Puanı: " + audit.score + "/100" + (audit.level ? " — " + audit.level : ""));
+    box.appendChild(title);
+    var meta = [];
+    if (typeof uretimMs === "number") meta.push("Üretim süresi: " + uretimMs + " ms");
+    if (meta.length) box.appendChild(el("p", "ff-audit-score", meta.join(" · ")));
+    if (tips && tips.length) {
+      box.appendChild(el("b", null, "Geliştirme önerileri"));
+      var list = el("ul", "ff-list");
+      tips.forEach(function (tip) { list.appendChild(el("li", null, tip)); });
+      box.appendChild(list);
+    } else {
+      box.appendChild(el("p", "ff-audit-score", "Rubrik notlarında uygulanabilir öneri yok; yapı hazır."));
+    }
+    box.hidden = false;
   }
 
   function renderScenes(scenes) {
@@ -517,7 +569,9 @@
         gallery.appendChild(galleryFigure(url, "Slayt " + (index + 1) + " — " + data.style));
       });
       paintQuota(data.quota);
-      alert("Görseller hazır; galeriye eklendiler." + mockNote(data), "info");
+      renderAudit(data.creative_audit, data.tips, data.uretim_ms);
+      renderStyleSuggest(data.suggestion || data.style_recommendation);
+      alert("Görseller hazır; galeriye eklendiler." + mockNote(data) + (data.skipped ? " " + data.uyari : ""), "info");
       loadHistory();
     }).catch(function () {}).finally(function () {
       button.disabled = false;
