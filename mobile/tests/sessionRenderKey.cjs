@@ -154,7 +154,9 @@ test('clinical media analysis-upload child uses the opaque account image scope a
  visit(parsed);
  assert.equal(uploads.length,1,'the clinical archive owns one analysis composer');
  assert.equal(uploads[0],'imageScope','the upload composer key must not be the bearer-token owner tuple');
- assert.ok(source.includes("const imageScope=useMemo(()=>'clinical-media-scope-'+(++nextClinicalMediaImageScope),[token,userId,patientId]);"),'the opaque scope must rotate on account, session or patient changes');
+ assert.ok(source.includes("import useSessionRenderKey from './useSessionRenderKey';"),'clinical media must use the shared production session-key hook');
+    assert.ok(source.includes("const owner=useSessionRenderKey(`${userId}:${token}:${patientId}`);"),'account, credential and patient changes must rotate the opaque owner identity');
+    assert.ok(source.includes('const imageScope=owner;'),'the analysis-upload child must share the opaque gallery session identity');
 });
 
 test('React session-key hook rotates on account, patient and credential scope changes',()=>{
