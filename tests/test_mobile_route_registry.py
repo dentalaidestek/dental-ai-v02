@@ -40,7 +40,7 @@ def test_same_path_with_a_different_method_is_not_a_collision():
     remove_shadowed_routes((primary,), candidate)
 
     assert route_signature(candidate) == [
-        ("/api/mobile/v1/patients/{patient_id}/media", frozenset({"POST"}))
+        ("/patients/{patient_id}/media", frozenset({"POST"}))
     ]
 
 
@@ -331,7 +331,7 @@ def test_remove_shadowed_routes_normalizes_nested_primary_prefixes():
     remove_shadowed_routes((primary,), candidate)
 
     assert route_signature(candidate) == [
-        ("/patients/{patient_id}/media", frozenset({"POST"}))
+        ("/api/mobile/v1/patients/{patient_id}/media", frozenset({"POST"}))
     ]
 
 
