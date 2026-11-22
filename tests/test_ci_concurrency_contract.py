@@ -25,3 +25,8 @@ def test_security_recovery_does_not_cancel_an_in_flight_security_suite():
     block = _concurrency_block("security-recovery.yml")
     assert re.search(r"(?m)^[ \t]+cancel-in-progress:[ \t]*false[ \t]*(?:#.*)?$", block)
     assert not re.search(r"(?m)^[ \t]+cancel-in-progress:[ \t]*true[ \t]*(?:#.*)?$", block)
+
+def test_security_recovery_executes_web_analysis_upload_recovery_regressions():
+    source = (ROOT / ".github" / "workflows" / "security-recovery.yml").read_text(encoding="utf-8")
+    assert "tests/test_web_analysis_upload_recovery.py" in source
+
