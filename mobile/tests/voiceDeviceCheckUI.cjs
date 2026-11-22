@@ -32,14 +32,14 @@ test('microphone test verifies cache-file deletion and keeps a retry path on fai
  assert.match(component,/setCleanupPending\(!cleanupVerified\)/);
  assert.match(component,/async function retryCleanup\(\)/);
  assert.match(component,/Geçici ses dosyasını silmeyi yeniden dene/);
- assert.match(component,/cleanupVerified\}\)/);
+ assert.match(component,/cleanupVerified,audioModeRestored\}\)/);
 });
 test('device preflight fails closed when app-wide playback audio mode cannot be restored',()=>{
  assert.match(component,/restoreVoiceAudioMode/);
  assert.match(component,/async function resetAudioMode\(\):Promise<boolean>/);
  assert.match(component,/if\(mounted\.current\)setAudioModeBlocked\(!restored\)/);
  assert.match(component,/audioModeRestored=await resetAudioMode\(\)/);
- assert.match(component,/audioMode_restore_failed/);
+ assert.match(component,/audio_mode_restore_failed/);
  assert.match(component,/audioModeBlocked\|\|uri\.current!==null/);
  assert.match(component,/\(cleanupPending\|\|audioModeBlocked\)&&<Pressable/);
  assert.match(component,/Cihaz ses yönlendirmesini yeniden dene/);
