@@ -96,6 +96,22 @@ async function press(tree,label){
  await renderer.act(async()=>{node.props.onPress?.();await new Promise(resolve=>setImmediate(resolve))});
 }
 
+test('clinical media React state stores an opaque session key, never the bearer token',async()=>{
+ const stateValues=[];
+ const token='synthetic-bearer-token-must-not-enter-state';
+ const Media=mountMedia(async()=>({items:[],next_before:null}),{stateValues});
+ let tree;
+ await renderer.act(async()=>{
+  tree=renderer.create(React.createElement(Media,{token,userId:1,patientId:5,onAnalysis:()=>{}}));
+  await new Promise(resolve=>setImmediate(resolve));
+ });
+ assert.ok(stateValues.some(value=>typeof value==='string'&&/^dai-session-[a-z0-9]+$/.test(value)),
+  'the loaded gallery owner must be represented by an opaque session key');
+ assert.equal(stateValues.some(value=>typeof value==='string'&&value.includes(token)),false,
+  'bearer credentials must not be retained in React state');
+ await renderer.act(async()=>tree.unmount());
+});
+
 test('switching accounts starts a new gallery request while the old request is pending',async()=>{
  let resolveOld;
  const calls=[];
