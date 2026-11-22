@@ -517,6 +517,8 @@ def test_mobile_patient_media_upload_receipt_replays_once_and_is_owner_scoped(ch
         "media_type": "PHOTO", "request_key": key, "batch_id": batch_id,
     }, files={"file": ("synthetic.png", payload, "image/png")})
     assert first.status_code == 200, first.text
+    assert first.headers.get("cache-control") == "private, no-store"
+    assert "authorization" in first.headers.get("vary", "").lower()
     assert first.json()["replayed"] is False
     first_media = first.json()["media"]
     assert isinstance(first_media["uploaded_at"], str)
@@ -536,6 +538,7 @@ def test_mobile_patient_media_upload_receipt_replays_once_and_is_owner_scoped(ch
     status = client.get(f"/api/mobile/v1/patients/84/media/uploads/{key}")
     assert status.status_code == 200, status.text
     assert status.headers.get("cache-control") == "private, no-store"
+    assert "authorization" in status.headers.get("vary", "").lower()
     assert status.json()["found"] is True
     assert status.json()["media"]["id"] == first.json()["media"]["id"]
 
