@@ -5,6 +5,7 @@ const vm=require('node:vm');
 const ts=require('typescript');
 const React=require('react');
 const renderer=require('react-test-renderer');
+const useSessionRenderKeyExports=require('./helpers/useSessionRenderKeyModule.cjs');
 
 global.IS_REACT_ACT_ENVIRONMENT=true;
 const root=require('node:path').resolve(__dirname,'..');
@@ -42,6 +43,7 @@ function loadHistory(getPatientAnalysisHistoryPage){
    if(name==='./patientHistoryPresentation')return historyPresentation;
    if(name==='./appResumeRefresh')return appResumeRefresh;
    if(name==='./patientAnalysisHistoryImages')return historyImages;
+   if(name==='./useSessionRenderKey')return useSessionRenderKeyExports;
    throw new Error('Unexpected import '+name);
   },
   Date,Math,Number,String,Error,Promise,Array,Object,Set
