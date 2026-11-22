@@ -153,3 +153,8 @@ Starting branch HEAD: \`642d587437128bf3b7c3edd9406246176cf4618c\`.
 The UI test now checks all four terminal audio-mode restoration paths and the stale-start path for parent-lock propagation. The complete Android and Security Recovery runs on the new HEAD are required before claiming these changes passed CI. Physical Android/iOS microphone, Bluetooth, call/notification interruption and background/foreground acceptance is still required.
 
 No patient/audio payload, database migration, main merge or live deploy was used.
+
+
+### Follow-up regression-run finding
+
+Security Recovery run [#45031337939](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/45031337939), on intermediate HEAD \`34c3186\`, confirmed the new native-clinical profile suite passed. The native voice suite found one test-only false negative: the parent-lock assertion inspected only 150 characters after the retry path's audio-mode result, while the corresponding \`notifyBusy(!audioModeRestored)\` call occurs after the cleanup/result branches. The production code already propagated the failed restore correctly. The assertion now checks that the matching notification occurs before the next audio-mode recovery block, rather than relying on a fragile fixed character window. The new HEAD must rerun both Android and Security Recovery before the fix is accepted.
