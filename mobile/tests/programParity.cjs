@@ -314,7 +314,7 @@ test('uncertain program edit does not claim success when the server still has ol
  assert.equal(tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.value,'Updated visit');
  assert.ok(tree.root.findAllByType('Text').some(node=>text(node).includes('eşleşmiyor')));
  assert.equal(button(tree,'Değişiklikleri Kaydet').props.disabled,true);
-  assert.ok(button(tree,'Güncel sürümü karşılaştır'));
+  assert.ok(button(tree,'Yerel taslağı son sürüme uygula'));
  await renderer.act(async()=>tree.unmount());
 });
 
