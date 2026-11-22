@@ -2791,6 +2791,8 @@ def mobile_consultation_message_receipt(
         if not message or message.case_id != case.id or message.sender_user_id != user.id:
             return {"message": None, "deleted": True}
         return {"message": {
+            "case_id": case.id,
+            "client_message_id": key,
             "id": message.id,
             "sender_user_id": message.sender_user_id,
             "message_type": message.message_type,
