@@ -239,6 +239,8 @@ test('account, professional, patient history and tooth chart keep bearer scopes 
  const professional=fs.readFileSync(require.resolve('../src/NativeProfessional.tsx'),'utf8');
  const history=fs.readFileSync(require.resolve('../src/NativePatientHistory.tsx'),'utf8');
  const chart=fs.readFileSync(require.resolve('../src/NativeToothChart.tsx'),'utf8');
+ const historyHarness=fs.readFileSync(require.resolve('./patientAnalysisHistory.cjs'),'utf8');
+ const chartHarness=fs.readFileSync(require.resolve('./toothChartLifecycle.cjs'),'utf8');
  assert.ok(account.includes('scope=useRef(accountRenderKey);scope.current=accountRenderKey;'));
  assert.ok(!account.includes('scope=useRef(token)'));
  assert.ok(!account.includes('scope.current=token'));
@@ -257,4 +259,6 @@ test('account, professional, patient history and tooth chart keep bearer scopes 
  assert.ok(chart.includes('const treatmentHistoryScope=historyScopeKey;'));
  assert.ok(!chart.includes('patientScope=useRef(`${userId}:${token}:${patientId}`)'));
  assert.ok(!chart.includes('historyRenderIdentity'));
+ assert.ok(historyHarness.includes("if(name==='./useSessionRenderKey')return sessionRenderKeyExports;"));
+ assert.ok(chartHarness.includes("if(name==='./useSessionRenderKey')return require('./helpers/useSessionRenderKeyModule.cjs');"));
 });
