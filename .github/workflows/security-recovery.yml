@@ -170,5 +170,5 @@ jobs:
         env:
           DENTAL_TEST_DATABASE_URL: postgresql://dental_test:local-ci-only@localhost:5432/dental_test
         run: python -m pytest tests/test_postgres_optimization.py -q
-      - name: Validate web form duplicate submission guards
-        run: node --test tests/auth_form_submit.cjs tests/account_history.cjs tests/profile_flow_ui.cjs
+      - name: Validate web form and live voice browser regressions
+        run: node --test tests/auth_form_submit.cjs tests/account_history.cjs tests/profile_flow_ui.cjs tests/voice_live_browser.cjs
