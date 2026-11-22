@@ -47,5 +47,6 @@ test('expert performance-info text endpoint mirrors the expert-rules reading pat
  assert.ok(src.pro.includes("@router.get('/experts/performance-info')"));
  assert.ok(src.pro.includes("get_source(web.templates.env,'expert_performance_info.html')"));
  assert.ok(src.pro.includes("re.findall(r'<section class=\"expert-rule-card\">(.*?)</section>',source,re.S)"));
- assert.ok(src.pro.includes("{'ok':True,'content':plain.text()}"));
+ // Native ExpertPerformanceInfo reads title/body/sections; content stays for older clients.
+ assert.ok(src.pro.includes("'title':title_parser.text(),'body':plain.text(),'sections':sections,'content':plain.text()"));
 });

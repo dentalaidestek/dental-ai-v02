@@ -106,15 +106,29 @@ async def accept_rules(payload:RulesAcceptance,token:str=Depends(_mobile_access_
 
 @router.get('/experts/performance-info')
 def performance_info(token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
-    """Web /expert-support/performance-info metninin mobil karşılığı; uzman kurallarıyla aynı okuma/temizleme deseni."""
+    """Web /expert-support/performance-info metninin mobil karşılığı; uzman kurallarıyla aynı okuma/temizleme deseni.
+
+    Native client (professionalApi.ts ExpertPerformanceInfo) reads title/body/sections;
+    content stays for clients released before the parity fix.
+    """
     import re
     from app import main as web
     from app.mobile_account_api import PlainLegal
     source=web.templates.env.loader.get_source(web.templates.env,'expert_performance_info.html')[0]
+    heading=re.search(r'<h1>(.*?)</h1>',source,re.S)
     parts=re.findall(r'<section class="expert-rule-card">(.*?)</section>',source,re.S)
-    if not parts:raise HTTPException(status_code=503,detail='Performans açıklaması alınamadı.')
+    if not heading or not parts:raise HTTPException(status_code=503,detail='Performans açıklaması alınamadı.')
+    title_parser=PlainLegal();title_parser.feed(heading.group(1))
     plain=PlainLegal();plain.feed('\n'.join(parts))
-    return {'ok':True,'content':plain.text()}
+    sections=[]
+    for part in parts:
+        section_title=re.search(r'<h2>(.*?)</h2>',part,re.S)
+        section_body=re.sub(r'<h2>.*?</h2>','',part,flags=re.S)
+        title_text=PlainLegal();body_text=PlainLegal()
+        if section_title:title_text.feed(section_title.group(1))
+        body_text.feed(section_body)
+        sections.append({'title':title_text.text(),'body':body_text.text()})
+    return {'ok':True,'title':title_parser.text(),'body':plain.text(),'sections':sections,'content':plain.text()}
 
 
 class Availability(BaseModel):
