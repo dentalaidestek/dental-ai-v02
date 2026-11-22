@@ -728,6 +728,76 @@ class ConsultationMessage(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow_naive, index=True)
 
 
+class ConsultationMessageReceipt(SQLModel, table=True):
+    """Compact per-sender idempotency receipt; stores only a digest and message ID."""
+    case_id: int = Field(primary_key=True)
+    sender_user_id: int = Field(primary_key=True)
+    client_message_id: str = Field(primary_key=True, max_length=96)
+    payload_hash: str = Field(max_length=64)
+    message_id: int
+    created_at: datetime = Field(default_factory=_utcnow_naive)
+
+
+def _normalize_consultation_client_message_id(value: Optional[str]) -> Optional[str]:
+    key = str(value or "").strip()
+    if not key:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9_-]{16,96}", key):
+        raise HTTPException(status_code=422, detail="Geçersiz mesaj istek anahtarı.")
+    return key
+
+
+def _consultation_message_payload_hash(
+    case_id: int, sender_user_id: int, message_type: str, content: Optional[str],
+    reply_to_message_id: Optional[int], raw_bytes: Optional[bytes] = None,
+) -> str:
+    payload = {
+        "case_id": case_id,
+        "sender_user_id": sender_user_id,
+        "message_type": message_type,
+        "content": "" if raw_bytes is not None else (content or ""),
+        "reply_to_message_id": reply_to_message_id,
+        "media_sha256": hashlib.sha256(raw_bytes).hexdigest() if raw_bytes is not None else None,
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _consultation_message_payload(case: ConsultationCase, message: ConsultationMessage, client_message_id: Optional[str]):
+    return {
+        "id": message.id,
+        "sender_user_id": message.sender_user_id,
+        "message_type": message.message_type,
+        "content": message.content,
+        "media_url": f"/expert-support/cases/{case.id}/message-media/{message.id}" if message.media_path else None,
+        "reply_to_message_id": message.reply_to_message_id,
+        "created_at": message.created_at.isoformat(),
+        "client_message_id": client_message_id,
+        "has_media": bool(message.media_path),
+    }
+
+
+def _consultation_message_receipt_replay(
+    session: Session, case: ConsultationCase, sender_user_id: int,
+    client_message_id: Optional[str], payload_hash: str,
+):
+    if not client_message_id:
+        return None, None
+    receipt = session.exec(select(ConsultationMessageReceipt).where(
+        ConsultationMessageReceipt.case_id == case.id,
+        ConsultationMessageReceipt.sender_user_id == sender_user_id,
+        ConsultationMessageReceipt.client_message_id == client_message_id,
+    )).first()
+    if not receipt:
+        return None, None
+    if not hmac.compare_digest(receipt.payload_hash, payload_hash):
+        return None, ("Bu mesaj anahtarı farklı içerik için kullanılmış.", 409)
+    message = session.get(ConsultationMessage, receipt.message_id)
+    if not message or message.case_id != case.id or message.sender_user_id != sender_user_id:
+        return None, ("Bu mesajın saklama süresi sona ermiş.", 410)
+    return _consultation_message_payload(case, message, client_message_id), None
+
+
 class ConsultationMediaDeletion(SQLModel, table=True):
     """Committed outbox: retry attachment removal after message deletion commits."""
     id: Optional[int] = Field(default=None, primary_key=True)
