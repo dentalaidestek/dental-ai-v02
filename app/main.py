@@ -6271,6 +6271,23 @@ def _touch_schedule_event(event: ScheduleEvent) -> None:
     event.updated_at = now
 
 
+def _lock_schedule_event_for_edit(session, owner_user_id: int, event_id: int, expected_revision: str):
+    """Lock an owned, active event and compare its submitted optimistic revision."""
+    event = session.exec(
+        select(ScheduleEvent)
+        .where(ScheduleEvent.id == event_id)
+        .with_for_update()
+    ).first()
+    if not event or event.owner_user_id != owner_user_id or event.status == "DELETED":
+        return None, 404
+    if (
+        not re.fullmatch(r"[0-9a-f]{64}", expected_revision or "")
+        or not hmac.compare_digest(expected_revision, _schedule_event_revision(event))
+    ):
+        return event, 409
+    return event, None
+
+
 @app.get("/program/{event_id}/edit", response_class=HTMLResponse)
 def program_edit_page(request: Request, event_id: int):
     user = get_current_user(request)
@@ -6343,12 +6360,10 @@ def program_edit(
         return RedirectResponse("/login", status_code=303)
 
     with Session(engine, expire_on_commit=False) as s:
-        event = s.exec(
-            select(ScheduleEvent)
-            .where(ScheduleEvent.id == event_id)
-            .with_for_update()
-        ).first()
-        if not event or event.owner_user_id != user.id or event.status == "DELETED":
+        event, revision_status = _lock_schedule_event_for_edit(
+            s, user.id, event_id, expected_revision
+        )
+        if event is None:
             return HTMLResponse("Program kaydı bulunamadı.", status_code=404)
 
         def render_form(error: str, status_code: int, revision_conflict: bool = False):
@@ -6384,11 +6399,7 @@ def program_edit(
                 status_code=status_code,
             )
 
-        current_revision = _schedule_event_revision(event)
-        if (
-            not re.fullmatch(r"[0-9a-f]{64}", expected_revision or "")
-            or not hmac.compare_digest(expected_revision, current_revision)
-        ):
+        if revision_status == 409:
             return render_form(
                 "Bu program kaydı başka bir oturumda değiştirildi. Yerel taslağınız korundu; kaydetmeden önce güncel kaydı yeniden yükleyin.",
                 409,
