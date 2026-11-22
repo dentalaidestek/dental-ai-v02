@@ -12,6 +12,7 @@ saglayicilar kullanilir; anahtar yoksa tum ucmlar 503 doner.
 from __future__ import annotations
 
 import base64
+import concurrent.futures
 import json
 import logging
 import os
@@ -1173,6 +1174,7 @@ def foto_fikir_generate_image(request: Request, body: FFGenerateImageRequest):
         mock = _ff_mock()
         display_name = _ff_safe_attr(user, "display_name") or ""
         paths: List[str] = []
+        skipped = 0
         if mock:
             for slide in slides:
                 png = _ff_mock_image(topic, slide["headline"] or topic, style["name"])
@@ -1183,15 +1185,26 @@ def foto_fikir_generate_image(request: Request, body: FFGenerateImageRequest):
             if not _ff_has_gemini():
                 raise FFUnavailable("GEMINI_API_KEY tanımlı değil.")
             drafts = _ff_visual_prompt_drafts(topic, style, slides)
-            for slide in slides:
+            prompts: List[str] = []
+            for index, slide in enumerate(slides):
                 try:
-                    prompt = creative_prompt_for_slide(topic, style["id"], slide)
+                    prompts.append(creative_prompt_for_slide(topic, style["id"], slide))
                 except Exception:  # noqa: BLE001 - yönetmen prompt'u kurulamazsa varsayılan yönergeler
-                    prompt = _ff_default_visual_prompt(topic, style, slide, drafts.get(len(paths)))
-                png = _ff_gemini_image(prompt)
-                if body.include_name and display_name:
-                    png = foto_fikir_overlay_name(png, display_name)
-                paths.append(_ff_save_image(main_module, user.id, png))
+                    prompts.append(_ff_default_visual_prompt(topic, style, slide, drafts.get(index)))
+            # Slayt görselleri paralel üretilir (ThreadPoolExecutor, stdlib);
+            # sonuç sırası slayt sırasını korur, tek slayt hatası işi düşürmez.
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(len(prompts), 4))) as pool:
+                futures = [pool.submit(_ff_gemini_image, prompt) for prompt in prompts]
+                for future in futures:
+                    try:
+                        png = future.result()
+                    except Exception as exc:  # noqa: BLE001 - tek slayt hatası diğer görselleri korur
+                        skipped += 1
+                        logger.warning("Foto Fikir slayt görseli üretilemedi, atlandı: %r", exc)
+                        continue
+                    if body.include_name and display_name:
+                        png = foto_fikir_overlay_name(png, display_name)
+                    paths.append(_ff_save_image(main_module, user.id, png))
         uretim_ms = int((time.perf_counter() - _ff_t0) * 1000)
         payload = {
             "slides": slides,
@@ -1199,6 +1212,7 @@ def foto_fikir_generate_image(request: Request, body: FFGenerateImageRequest):
             "include_name": body.include_name,
             "image_paths": paths,
             "uretim_ms": uretim_ms,
+            "skipped": skipped,
             "creative_audit": audit_creative_output("IMAGE", {"topic": topic, "slides": slides, "style": style["id"]}),
         }
         job_id = _ff_record_job(
@@ -1209,15 +1223,24 @@ def foto_fikir_generate_image(request: Request, body: FFGenerateImageRequest):
             model="mock" if mock else f"{FOTO_FIKIR_CLAUDE_MODEL}+{FF_GEMINI_IMAGE_MODELS[0] if FF_GEMINI_IMAGE_MODELS else 'gemini'}",
         )
         urls = [_ff_image_url(path) for path in paths]
-        return _ff_json({
+        response_data = {
             "job_id": job_id,
             "image_url": urls[0] if urls else None,
             "images": urls,
             "style": style["name"],
             "quota": {"used": used + max(1, len(paths)), "limit": FOTO_FIKIR_QUOTA_LIMIT, "period": "ay"},
             "creative_audit": payload["creative_audit"],
+            "uretim_ms": uretim_ms,
+            "skipped": skipped,
             **_ff_mock_flag(mock),
-        })
+        }
+        if skipped:
+            response_data["uyari"] = (
+                "Görsel sağlayıcısı tüm slaytlar için yanıt vermedi; iş kaydedildi, tekrar deneyin."
+                if skipped >= len(slides)
+                else f"{skipped} slayt görseli üretilemedi; diğer slaytlar üretildi."
+            )
+        return _ff_json(response_data)
 
 
 @foto_fikir_router.post("/api/foto-fikir/brand-kit")
@@ -1307,6 +1330,7 @@ def foto_fikir_brand_generate(request: Request, body: FFBrandGenerateRequest):
             "image_url": _ff_image_url(image_path),
             "scene": scene,
             "reason": reason,
+            "uretim_ms": uretim_ms,
             "quota": {"used": used + 1, "limit": FOTO_FIKIR_QUOTA_LIMIT, "period": "ay"},
             **_ff_mock_flag(mock),
         })
