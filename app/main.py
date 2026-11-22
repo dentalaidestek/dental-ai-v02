@@ -11613,26 +11613,88 @@ def upload_patient_media(
 
 @app.get("/patients/{patient_id}/media/{media_id}/file")
 def patient_media_file(request: Request, patient_id: int, media_id: int):
+    # Clinical originals are private patient data. Keep every response out of
+    # shared caches, including errors and the post-storage authorization check.
+    private_headers = {
+        "Cache-Control": "private, no-store",
+        "Pragma": "no-cache",
+        "Vary": "Cookie",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+    }
+
+    def private_error(detail: str, status_code: int, extra_headers: Optional[dict] = None):
+        headers = dict(private_headers)
+        if extra_headers:
+            headers.update(extra_headers)
+        return HTMLResponse(detail, status_code=status_code, headers=headers)
+
     user = get_current_user(request)
     if not user:
-        return HTMLResponse("Yetkisiz erişim.", status_code=401)
+        return private_error("Yetkisiz erişim.", 401)
 
     with Session(engine, expire_on_commit=False) as s:
         patient = s.get(Patient, patient_id)
         media = s.get(PatientMedia, media_id)
-        if not patient or not media or media.patient_id != patient_id:
-            return HTMLResponse("Klinik görüntü bulunamadı.", status_code=404)
+        if not patient or not media or media.patient_id != patient_id or not media.file_path:
+            return private_error("Klinik görüntü bulunamadı.", 404)
         if user.role != "ADMIN" and patient.owner_user_id != user.id:
-            return HTMLResponse("Bu hastaya erişim yetkiniz yok.", status_code=403)
+            return private_error("Bu hastaya erişim yetkiniz yok.", 403)
         if user.role != "ADMIN" and media.owner_user_id != user.id:
-            return HTMLResponse("Bu klinik görüntüye erişim yetkiniz yok.", status_code=403)
+            return private_error("Bu klinik görüntüye erişim yetkiniz yok.", 403)
         reference = media.file_path
+        original_filename = media.original_filename
 
     try:
+        # R2 hydration is deliberately outside the DB pool. The authorization
+        # and immutable source identity are rechecked after this network wait.
         path = storage_ensure_local(reference)
     except FileNotFoundError:
-        return HTMLResponse("Klinik görüntü dosyası bulunamadı.", status_code=404)
-    return FileResponse(path, headers={"Cache-Control":"private, no-store"})
+        return private_error("Klinik görüntü dosyası bulunamadı.", 404)
+    except Exception:
+        logger.exception("Clinical media original hydration failed for media_id=%s", media_id)
+        return private_error(
+            "Klinik görüntü deposuna şu anda erişilemiyor.",
+            503,
+            {"Retry-After": "2"},
+        )
+
+    try:
+        with Session(engine, expire_on_commit=False) as verify:
+            current_patient = verify.get(Patient, patient_id)
+            current_media = verify.get(PatientMedia, media_id)
+            still_owned = bool(
+                current_patient
+                and current_media
+                and current_media.patient_id == patient_id
+                and current_media.file_path == reference
+                and current_media.original_filename == original_filename
+                and (
+                    user.role == "ADMIN"
+                    or (
+                        current_patient.owner_user_id == user.id
+                        and current_media.owner_user_id == user.id
+                    )
+                )
+            )
+    except Exception:
+        logger.exception("Clinical media original ownership recheck failed for media_id=%s", media_id)
+        return private_error(
+            "Klinik görüntü güvenli biçimde doğrulanamadı; lütfen yeniden deneyin.",
+            503,
+            {"Retry-After": "2"},
+        )
+
+    if not still_owned:
+        return private_error("Klinik görüntü bulunamadı.", 404)
+
+    media_type = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(Path(path).suffix.lower(), "application/octet-stream")
+    return FileResponse(path, media_type=media_type, headers=private_headers)
 
 
 @app.get("/patients/{patient_id}/media/page")
