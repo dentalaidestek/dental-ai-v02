@@ -210,3 +210,47 @@ def test_web_original_media_rejects_cross_account_before_storage_access(
     assert response.status_code == 403
     assert response.headers["cache-control"] == "private, no-store"
     assert calls == []
+
+
+def test_web_original_media_is_not_served_if_the_patient_is_deleted_during_hydration(
+    media_delivery, monkeypatch
+):
+    engine, image = media_delivery
+
+    def delete_patient_during_hydration(_reference):
+        with Session(engine) as session:
+            patient = session.get(main.Patient, 7)
+            session.delete(patient)
+            session.commit()
+        return image
+
+    monkeypatch.setattr(main, "storage_ensure_local", delete_patient_during_hydration)
+
+    response = main.patient_media_file(_request(), 7, 42)
+
+    assert response.status_code == 404
+    assert response.headers["cache-control"] == "private, no-store"
+
+
+def test_web_original_media_fails_closed_when_the_post_hydration_database_check_fails(
+    media_delivery, monkeypatch
+):
+    _engine, image = media_delivery
+    original_session = main.Session
+    session_calls = 0
+
+    def fail_second_session(*args, **kwargs):
+        nonlocal session_calls
+        session_calls += 1
+        if session_calls == 2:
+            raise RuntimeError("synthetic database recheck outage")
+        return original_session(*args, **kwargs)
+
+    monkeypatch.setattr(main, "Session", fail_second_session)
+    monkeypatch.setattr(main, "storage_ensure_local", lambda _reference: image)
+
+    response = main.patient_media_file(_request(), 7, 42)
+
+    assert response.status_code == 503
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["retry-after"] == "2"
