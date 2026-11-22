@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const ts=require('typescript');
 require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,filename);
-const {evaluateVoiceDeviceCheck,isPrivateVoiceDeviceCheckUri,removePrivateVoiceDeviceCheckFile,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS,VOICE_DEVICE_CHECK_MIN_DURATION_MS,VOICE_DEVICE_CHECK_MIN_SIGNAL_DB}=require('../src/voiceDeviceCheck.ts');
+const {evaluateVoiceDeviceCheck,isPrivateVoiceDeviceCheckUri,removePrivateVoiceDeviceCheckFile,isPrivateVoiceDeviceCheckCacheChildUri,removePrivateVoiceDeviceCheckCacheChildFile,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS,VOICE_DEVICE_CHECK_MIN_DURATION_MS,VOICE_DEVICE_CHECK_MIN_SIGNAL_DB}=require('../src/voiceDeviceCheck.ts');
 
 test('native microphone check uses the same six-second preparation window as web',()=>{
  assert.equal(VOICE_DEVICE_CHECK_DURATION_MS,6000);
@@ -40,6 +40,19 @@ test('invalid paths are never sent to the filesystem delete operation',async()=>
  assert.equal(await removePrivateVoiceDeviceCheckFile(cache+'../files/Audio.m4a',cache,{getInfoAsync:async()=>({exists:true}),deleteAsync:async()=>{deletes++;}}),false);
  assert.equal(deletes,0);
 });
+test('unexpected recorder artifacts are cleaned only as direct private-cache children',async()=>{
+ const cache='file:///data/user/0/example/cache/',safe=cache+'unexpected.tmp',outside='file:///data/user/0/example/files/record.m4a';
+ let safeExists=true,outsideExists=true,deletes=0;
+ const fileSystem={getInfoAsync:async uri=>({exists:uri===safe?safeExists:outsideExists}),deleteAsync:async uri=>{deletes++;if(uri===safe)safeExists=false;else outsideExists=false;}};
+ assert.equal(isPrivateVoiceDeviceCheckCacheChildUri(safe,cache),true);
+ assert.equal(isPrivateVoiceDeviceCheckCacheChildUri(cache+'../files/record.m4a',cache),false);
+ assert.equal(await removePrivateVoiceDeviceCheckCacheChildFile(safe,cache,fileSystem),true);
+ assert.equal(safeExists,false);
+ assert.equal(await removePrivateVoiceDeviceCheckCacheChildFile(outside,cache,fileSystem),false);
+ assert.equal(outsideExists,true);
+ assert.equal(deletes,1);
+});
+
 test('unverified temporary-file cleanup never reports a passed microphone check',()=>{
  assert.equal(evaluateVoiceDeviceCheck({permissionGranted:true,durationMs:6000,fileBytes:1024,peakMeteringDb:-5,cleanupVerified:false}),'cleanup_failed');
  assert.equal(evaluateVoiceDeviceCheck({permissionGranted:true,durationMs:6000,fileBytes:1024,peakMeteringDb:-5,cleanupVerified:true}),'passed');
