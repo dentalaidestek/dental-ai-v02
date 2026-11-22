@@ -72,6 +72,29 @@ def test_web_partial_r2_failure_queues_every_asset_and_removes_stuck_analysis(
         assert {row.reference for row in receipts} == set(persisted)
         assert all(row.available_at > work_jobs.now() for row in receipts)
 
+    # Once the in-flight storage-write grace period expires, the existing
+    # durable collector must delete both orphan objects and consume both rows.
+    deleted = []
+
+    def delete_orphan(reference):
+        deleted.append(reference)
+        Path(reference).unlink(missing_ok=True)
+
+    monkeypatch.setattr(object_storage, "delete", delete_orphan)
+    with Session(engine) as session:
+        for receipt in session.exec(select(work_jobs.WorkGarbage)).all():
+            receipt.available_at = work_jobs.now() - timedelta(seconds=1)
+            session.add(receipt)
+        session.commit()
+
+    for _ in persisted:
+        work_jobs.collect_garbage(engine)
+
+    assert set(deleted) == set(persisted)
+    assert all(not Path(path).exists() for path in persisted)
+    with Session(engine) as session:
+        assert session.exec(select(work_jobs.WorkGarbage)).all() == []
+
 
 def test_web_recovery_preserves_assets_when_final_commit_may_have_succeeded(
     chat, monkeypatch, tmp_path
