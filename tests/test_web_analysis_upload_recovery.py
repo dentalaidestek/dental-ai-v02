@@ -103,7 +103,6 @@ def test_web_recovery_preserves_assets_when_final_commit_may_have_succeeded(
     monkeypatch.chdir(tmp_path)
     _patient(engine)
 
-    reference = "uploads/analysis_42_" + ("c" * 32) + ".png"
     with Session(engine) as session:
         analysis = main.Analysis(
             patient_id=8,
@@ -114,6 +113,7 @@ def test_web_recovery_preserves_assets_when_final_commit_may_have_succeeded(
         session.add(analysis)
         session.flush()
         analysis_id = analysis.id
+        reference = f"uploads/analysis_{analysis_id}_" + ("c" * 32) + ".png"
         session.add(main.ImageAsset(
             analysis_id=analysis_id,
             original_filename="synthetic.png",
