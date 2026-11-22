@@ -42,3 +42,25 @@ These values were not being sent to a new service, but duplicated credentials in
 The changes are committed on `feature/mobile-web-parity-20261110`. The baseline runs above validate only `aa0b264), not these new commits. The final-head Android typecheck/beta suite and Security Recovery must complete before the new scope regressions are reported as passing. No local full-repository test or physical-device test is claimed.
 
 No merge to `main`, live deployment, migration, account mutation or patient-data operation was performed. The 60,000-user load test remains a separate acceptance gate.
+
+
+## Second pass: AI analysis and viewer lifecycle
+
+A second web-first trace covered:
+
+- `analysis_new.html`: existing clinical-media selection, the four-image cap and byte-budgeted upload form.
+- `analysis_viewer.html`: modality-specific viewer selection, same-origin iframe messaging, asset/vision URLs, manual finding and clinical-note saves, and retryable job recovery.
+- `result.html`: final clinical result sections, findings, treatment options and cautions.
+- `app/mobile_analysis_api.py`: patient-scoped upload receipts, private analysis access and bounded mobile result/workspace responses.
+
+The corresponding native flow is `NativeDentalAI` → `NativeClinicalReview` → `NativeVisionViewer`.
+
+This pass found three additional credential-retention surfaces:
+
+- `NativeDentalAI` kept the token in its custom render-session ref, request-scope ref and previous-search scope ref.
+- `NativeClinicalReview` kept the token beside the viewer remount key.
+- `NativeVisionViewer` kept the token in both the private image-scope ref and the latest-request ref.
+
+These did not replace server authorization, but unnecessarily duplicated a bearer credential in long-lived UI refs. They now use the shared opaque session key. Vision requests still send the current render's token to the authenticated API call; stale responses compare only opaque session identity plus analysis/asset/modality. No polling interval, AI request count, image retry cost or server workload was increased.
+
+The VM harnesses for AI recovery, clinical review and vision viewer now load the production hook (or a hook adapter backed by the same production identity resolver for the custom fake-React harness). Additional static regressions cover all three screens and their harness mappings.
