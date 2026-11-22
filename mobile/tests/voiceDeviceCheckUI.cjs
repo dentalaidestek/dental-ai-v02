@@ -34,6 +34,16 @@ test('microphone test verifies cache-file deletion and keeps a retry path on fai
  assert.match(component,/Geçici ses dosyasını silmeyi yeniden dene/);
  assert.match(component,/cleanupVerified,audioModeRestored\}\)/);
 });
+test('unexpected recorder URIs are retained for safe cleanup before the next microphone test',()=>{
+ const capture=component.indexOf('const path=recorder.uri;');
+ const retained=component.indexOf("if(typeof path==='string'&&path)uri.current=path;",capture);
+ const validated=component.indexOf('if(!path||!cache||!isPrivateVoiceDeviceCheckUri(path,cache))',capture);
+ assert.ok(capture>=0&&retained>capture&&validated>retained,'the returned URI is retained before strict validation can throw');
+ assert.match(component,/removePrivateVoiceDeviceCheckCacheChildFile/);
+ assert.match(component,/setCleanupPending\(!cleanupVerified\)/);
+ assert.match(component,/cleanupPending\|\|audioModeBlocked/);
+});
+
 test('device preflight fails closed when app-wide playback audio mode cannot be restored',()=>{
  assert.match(component,/restoreVoiceAudioMode/);
  assert.match(component,/async function resetAudioMode\(\):Promise<boolean>/);
