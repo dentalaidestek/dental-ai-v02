@@ -173,6 +173,7 @@ def test_message_receipt_is_private_and_sender_scoped(chat):
     own = c.get(f"/api/mobile/v1/consultations/1/message-receipt?client_message_id={key}")
     assert own.status_code == 200
     assert own.headers["cache-control"] == "private, no-store"
+    assert "authorization" in own.headers.get("vary", "").lower()
     assert own.json()["message"]["id"] == first.json()["message"]["id"]
     c.headers["Authorization"] = "Bearer "+_SESSION_TOKEN[2]
     peer = c.get(f"/api/mobile/v1/consultations/1/message-receipt?client_message_id={key}")
