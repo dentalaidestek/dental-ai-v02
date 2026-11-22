@@ -16,6 +16,7 @@ const {toothChartSurfaceForTooth,toothChartSurfaceSelection}=require('../src/too
 const {toothVisualModel}=require('../src/toothVisual.ts');
 const native=fs.readFileSync(require.resolve('../src/NativeToothChart.tsx'),'utf8');
 const web=fs.readFileSync(require.resolve('../../app/templates/tooth_chart.html'),'utf8');
+const browserHelper=fs.readFileSync(require.resolve('../../static/tooth-chart/surface-options.js'),'utf8');
 const codes=number=>toothSurfaceOptionsForTooth(number).map(([code])=>code);
 const allFdiToothNumbers=[..."1234"].flatMap(quadrant=>[..."12345678"].map(unit=>quadrant+unit)).concat([..."5678"].flatMap(quadrant=>[..."12345"].map(unit=>quadrant+unit)));
 
@@ -90,7 +91,12 @@ test('web selected-tooth preview keeps the same upper/lower FDI orientation as n
  for(const invalid of ['', '19', '49', '56', '89', 'abc']){
   assert.equal(webOptions.isLowerJawTooth(invalid),false,invalid);
  }
- assert.match(web,/toothChartIsLowerJawTooth=getOptions\.isLowerJawTooth/);
+ assert.match(web,/<script src="\\/static\\/tooth-chart\\/surface-options\\.js"><\\/script>/);
+ assert.match(browserHelper,/root\\.toothChartIsLowerJawTooth=getOptions\\.isLowerJawTooth/);
+ const browserWindow={};
+ vm.runInNewContext(browserHelper,{window:browserWindow});
+ assert.equal(typeof browserWindow.toothChartIsLowerJawTooth,'function');
+ for(const number of allFdiToothNumbers)assert.equal(browserWindow.toothChartIsLowerJawTooth(number),toothVisualModel(number).lower,number);
  assert.match(web,/preview\.className=.*toothChartIsLowerJawTooth\(number\).*lower-tooth/);
  assert.match(web,/\.preview-tooth\.lower-tooth \.tooth-visual::before\{transform:rotate\(180deg\)\}/);
  assert.match(web,/\.preview-tooth\.lower-tooth \.tooth-svg\{transform:rotate\(180deg\)!important\}/);
