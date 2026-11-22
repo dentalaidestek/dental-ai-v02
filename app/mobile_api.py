@@ -765,8 +765,13 @@ def mobile_create_schedule(payload: MobileScheduleCreate, user: User = Depends(_
 
 @router.post("/schedule/{event_id}/complete")
 def mobile_complete_schedule(event_id: int, user: User = Depends(_mobile_user)):
+    from app import main as web
     with Session(engine, expire_on_commit=False) as session:
-        event = session.get(ScheduleEvent, event_id)
+        event = session.exec(
+            select(ScheduleEvent)
+            .where(ScheduleEvent.id == event_id)
+            .with_for_update()
+        ).first()
         if not event or event.owner_user_id != user.id or event.status == "DELETED":
             raise HTTPException(status_code=404, detail="Program kaydı bulunamadı.")
         if event.recurrence_rule != "NONE":
@@ -774,7 +779,7 @@ def mobile_complete_schedule(event_id: int, user: User = Depends(_mobile_user)):
         if event.status == "COMPLETED":
             return {"ok": True, "status": "COMPLETED"}
         event.status = "COMPLETED"
-        event.updated_at = _utcnow_naive()
+        web._touch_schedule_event(event)
         session.add(event)
         _cancel_pending_program_reminders(session, event.id)
         realtime_events = _resolve_notifications(session, user_id=user.id, notice_type="PROGRAM_REMINDER", related_type="schedule_event", related_id=event.id)
@@ -787,12 +792,17 @@ def mobile_complete_schedule(event_id: int, user: User = Depends(_mobile_user)):
 
 @router.delete("/schedule/{event_id}")
 def mobile_delete_schedule(event_id: int, user: User = Depends(_mobile_user)):
+    from app import main as web
     with Session(engine, expire_on_commit=False) as session:
-        event = session.get(ScheduleEvent, event_id)
+        event = session.exec(
+            select(ScheduleEvent)
+            .where(ScheduleEvent.id == event_id)
+            .with_for_update()
+        ).first()
         if not event or event.owner_user_id != user.id or event.status == "DELETED":
             raise HTTPException(status_code=404, detail="Program kaydı bulunamadı.")
         event.status = "DELETED"
-        event.updated_at = datetime.utcnow()
+        web._touch_schedule_event(event)
         session.add(event)
         _cancel_pending_program_reminders(session, event.id)
         realtime_events = _resolve_notifications(session, user_id=user.id, notice_type="PROGRAM_REMINDER", related_type="schedule_event", related_id=event.id)
@@ -801,7 +811,6 @@ def mobile_delete_schedule(event_id: int, user: User = Depends(_mobile_user)):
     for realtime_event in realtime_events:
         on_loop(_publish_realtime_event, realtime_event)
     return {"ok": True}
-
 
 
 @router.put("/patients/{patient_id}/teeth/{tooth_number}/surfaces/{surface_name}")
