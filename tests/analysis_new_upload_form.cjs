@@ -152,9 +152,9 @@ test("web analysis rejects an aggregate batch above the byte cap", () => {
 });
 
 test("web markup and validator use the same aggregate-byte dataset contract", () => {
-  const formTag = template.match(/<form\\b[^>]*class="[^"]*analysis-compact-form[^"]*"[^>]*>/);
+  const formTag = template.match(/<form\b[^>]*class="[^"]*analysis-compact-form[^"]*"[^>]*>/);
   assert.ok(formTag, "analysis composer form must expose its upload contract");
   assert.match(formTag[0], /data-analysis-max-batch-bytes=/);
-  assert.match(script, /form\\.dataset\\.analysisMaxBatchBytes/);
-  assert.doesNotMatch(script, /form\\.dataset\\.analysisBatchMaxBytes/);
+  assert.match(script, /form\.dataset\.analysisMaxBatchBytes/);
+  assert.doesNotMatch(script, /form\.dataset\.analysisBatchMaxBytes/);
 });
