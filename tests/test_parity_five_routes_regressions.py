@@ -302,3 +302,50 @@ def test_notification_unread_count_is_self_scoped_active_only(parity):
     wrong=c.post(f"/api/mobile/v1/notifications/{other_notice_id}/read")
     assert wrong.status_code==404 and wrong.json()["detail"]=="Bildirim bulunamadı."
     assert c.get("/api/mobile/v1/notifications/unread-count").json()=={"unread_count":0}
+
+
+# ---------------------------------------------------------------------------
+# Route 5: GET /api/mobile/v1/experts/performance-info
+# ---------------------------------------------------------------------------
+
+_SECTION_HEADINGS=("Kullanıcıların gördüğü bilgiler","Kaydedilen performans olayları",
+    "Neler performansınızı düşürmez?","10 dakikalık talep kuralı")
+
+
+def test_performance_info_requires_session_but_mirrors_web_login_only_role(parity):
+    c,engine=parity
+    # (b) yetki: web redirects anonymous visitors to /login; the native contract
+    # is 401 for revalidateSession.
+    saved=c.headers.pop("Authorization")
+    assert c.get("/api/mobile/v1/experts/performance-info").status_code==401
+    c.headers["Authorization"]=saved
+    # Role parity: the web page has no expert gate — any signed-in account may
+    # read it, so a plain USER account without an ExpertProfile also gets 200.
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[4]
+    response=c.get("/api/mobile/v1/experts/performance-info")
+    assert response.status_code==200,response.text
+
+
+def test_performance_info_returns_the_canonical_web_copy_without_user_data(parity):
+    c,engine=parity
+    # (a) kendi sayacı / (e) yanlış hesap: the payload is the shared web text,
+    # never any account-specific field (no ids, no owner scoping to leak).
+    first=c.get("/api/mobile/v1/experts/performance-info").json()
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[4]
+    second=c.get("/api/mobile/v1/experts/performance-info").json()
+    c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[1]
+    assert first==second
+    assert first["ok"] is True
+    for key in ("title","body","content"):
+        assert isinstance(first[key],str) and first[key]
+    assert first["title"]=="Performansınız nasıl değerlendirilir?"
+    # The sections are the same expert-rule cards the web template renders.
+    sections=first["sections"]
+    assert [section["title"] for section in sections]==list(_SECTION_HEADINGS)
+    assert all(section["body"] for section in sections)
+    for sentence in ("Mesaj sayısı veya mesaj uzunluğu kalite ölçütü değildir.",
+                     "yeni vaka kabulünüz 24 saat durdurulur"):
+        assert sentence in first["body"]
+    assert "user_id" not in first and "owner_id" not in first
+    for section in sections:
+        assert set(section)=={"title","body"}
