@@ -45,6 +45,14 @@ test('unverified temporary-file cleanup never reports a passed microphone check'
  assert.equal(evaluateVoiceDeviceCheck({permissionGranted:true,durationMs:6000,fileBytes:1024,peakMeteringDb:-5,cleanupVerified:true}),'passed');
 });
 
+test('audio-mode restoration failure is distinct from capture success and cleanup failure',()=>{
+ const captured={permissionGranted:true,durationMs:6000,fileBytes:1024,peakMeteringDb:-5};
+ assert.equal(evaluateVoiceDeviceCheck({...captured,audioModeRestored:false}),'audio_mode_restore_failed');
+ assert.equal(evaluateVoiceDeviceCheck({...captured,audioModeRestored:true}),'passed');
+ assert.equal(evaluateVoiceDeviceCheck(captured),'passed','older callers without an audio-mode result retain the established contract');
+ assert.equal(evaluateVoiceDeviceCheck({...captured,cleanupVerified:false,audioModeRestored:false}),'cleanup_failed','unverified private-file cleanup keeps the higher-priority privacy warning');
+});
+
 test('permission denial never reports a successful microphone check',()=>{
  assert.equal(evaluateVoiceDeviceCheck({permissionGranted:false,durationMs:6000,fileBytes:1024,peakMeteringDb:-5}),'permission_denied');
 });
