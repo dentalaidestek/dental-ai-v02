@@ -17,6 +17,8 @@ def media_engine():
     work_jobs.WorkGarbage.__table__.create(engine)
     main.Patient.__table__.create(engine)
     main.PatientMedia.__table__.create(engine)
+    main.Analysis.__table__.create(engine)
+    main.ImageAsset.__table__.create(engine)
     yield engine
     engine.dispose()
 
@@ -24,6 +26,10 @@ def media_engine():
 def media_path(folder=""):
     prefix = f"uploads/{folder}" if folder else "uploads/"
     return prefix + "patient_42_" + ("a" * 32) + ".jpg"
+
+
+def analysis_asset_path():
+    return "uploads/analysis_42_" + ("b" * 32) + ".png"
 
 
 def test_cleanup_admission_accepts_only_server_generated_media_object_keys(media_engine):
@@ -35,6 +41,7 @@ def test_cleanup_admission_accepts_only_server_generated_media_object_keys(media
     assert work_jobs.is_patient_media_reference(native_path)
     assert work_jobs.is_patient_media_reference(web_thumbnail)
     assert work_jobs.is_patient_media_reference(native_thumbnail)
+    assert work_jobs.is_analysis_asset_reference(analysis_asset_path())
     for unsafe in (
         "../uploads/patient_42_" + ("a" * 32) + ".jpg",
         "/uploads/patient_42_" + ("a" * 32) + ".jpg",
@@ -45,6 +52,9 @@ def test_cleanup_admission_accepts_only_server_generated_media_object_keys(media
         "uploads/patient-media/patient_42_" + ("a" * 32) + ".thumb.exe",
         "uploads/patient-media/patient_42_" + ("a" * 32) + ".thumb.png",
         "uploads/patient-media/patient_42_" + ("a" * 32) + ".thumb.jpg/extra",
+        "uploads/analysis_0_" + ("b" * 32) + ".png",
+        "uploads/analysis_42_" + ("B" * 32) + ".png",
+        "uploads/analysis_42_" + ("b" * 32) + ".thumb.jpg",
     ):
         assert not work_jobs.is_patient_media_reference(unsafe)
 
@@ -144,6 +154,49 @@ def test_worker_deletes_unreferenced_thumbnail_and_removes_its_receipt(media_eng
         assert session.exec(select(work_jobs.WorkGarbage)).all() == []
 
 
+def test_worker_deletes_unreferenced_analysis_asset_and_removes_its_receipt(media_engine, monkeypatch):
+    reference = analysis_asset_path()
+    with Session(media_engine) as session:
+        session.add(work_jobs.WorkGarbage(
+            reference=reference,
+            available_at=work_jobs.now() - timedelta(seconds=1),
+        ))
+        session.commit()
+
+    deleted = []
+    monkeypatch.setattr(object_storage, "delete", lambda value: deleted.append(value))
+    work_jobs.collect_garbage(media_engine)
+
+    assert deleted == [reference]
+    with Session(media_engine) as session:
+        assert session.exec(select(work_jobs.WorkGarbage)).all() == []
+
+
+def test_worker_preserves_live_analysis_asset_reference(media_engine, monkeypatch):
+    reference = analysis_asset_path()
+    with Session(media_engine) as session:
+        session.add(main.ImageAsset(
+            analysis_id=42,
+            original_filename="synthetic.png",
+            stored_filename=reference.rsplit("/", 1)[-1],
+            file_path=reference,
+        ))
+        session.add(work_jobs.WorkGarbage(
+            reference=reference,
+            available_at=work_jobs.now() - timedelta(seconds=1),
+        ))
+        session.commit()
+
+    deleted = []
+    monkeypatch.setattr(object_storage, "delete", lambda value: deleted.append(value))
+    work_jobs.collect_garbage(media_engine)
+
+    assert deleted == []
+    with Session(media_engine) as session:
+        assert session.exec(select(work_jobs.WorkGarbage)).all() == []
+        assert session.exec(select(main.ImageAsset)).first() is not None
+
+
 def test_worker_preserves_an_object_still_referenced_by_a_live_media_row(media_engine, monkeypatch):
     reference = media_path("patient-media/")
     with Session(media_engine) as session:
@@ -174,6 +227,7 @@ def test_worker_preserves_an_object_still_referenced_by_a_live_media_row(media_e
 @pytest.mark.parametrize("reference", [
     media_path(),
     thumbnails.thumbnail_reference(media_path("patient-media/")),
+    analysis_asset_path(),
 ])
 def test_remote_delete_failure_keeps_a_delayed_retry(media_engine, monkeypatch, reference):
 
