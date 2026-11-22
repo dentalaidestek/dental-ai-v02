@@ -17,19 +17,28 @@ The live browser controller did not subscribe to consent changes. The native rec
 
 No provider, prompt, clinical taxonomy, database schema, patient record, or production configuration changed.
 
-## Regression coverage added
+## Regression coverage
 
 - Native recording opt-out stops capture and retains the private segment without ASR.
 - Native opt-out during an ASR request aborts the request and retains the same local segment.
 - Native opt-out while the finish gate is cutting the active clip prevents the subsequent ASR drain and clinical handoff.
 - Native opt-out while the OS microphone permission prompt is pending prevents audio-mode activation and recorder startup.
+- Native UI regression keeps the consent checkbox accessible while `audioBusy` is true and proves a stale finish callback cannot start extraction after withdrawal.
 - Browser live opt-out sends pause, retains finalized text, and never marks the examination finished.
+- Browser regression covers withdrawal after a Finish command is sent but before the server's final flush response; the client downgrades the result to paused and does not emit a finished examination.
 - Browser UI keeps consent withdrawable while live capture is active.
 
-The regression tests were added to the existing test files but were not executed in this run. The repository's relevant GitHub workflows remain manual-only because previous hosted jobs failed before step 1 (runner ID 0, empty step arrays, and unavailable job-log blobs). No green CI result is claimed.
+The new regressions are committed to the existing native and browser test files. Final-head execution is pending; no green result is claimed for these newly added assertions until the workflow reruns.
+
+## CI evidence at the start of this follow-up
+
+- Android run [#44985026414](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44985026414) completed successfully: TypeScript typecheck, session/auth, realtime/pagination, beta regressions, Expo Android/iOS export, and internal APK assembly all passed.
+- Security Recovery [#44985026330](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44985026330) executed the Python suite: 617 passed, 2 failed. The failures were a committed-analysis fixture whose object key used hard-coded analysis ID 42 instead of the generated row ID, and the active clinical media route registry assertion. Native clinical, voice, social, support, academic, and program security jobs passed. PostgreSQL and web duplicate-submission checks were skipped after the Python failures.
+- The upload fixture now binds its object key to the actual generated Analysis ID. The route registry assertion now records the full mounted media-route inventory when it cannot find the canonical source symbol; this is diagnostic, not a claimed route fix.
 
 ## Remaining acceptance
 
-- Execute `npm run typecheck`, `npm run test:beta`, and the browser voice regression when hosted runner allocation is healthy.
+- Rerun final-head Security Recovery and resolve the actual mounted media-route mismatch before claiming Python security green.
+- Run the new native and browser consent regressions.
 - Verify Android/iOS behavior on physical devices, including Bluetooth route changes, app backgrounding, and OS microphone interruption.
 - Verify the web file-recorder opt-out path in a real browser; its held blob is intentionally page-memory-only and is not a restart-recovery artifact.
