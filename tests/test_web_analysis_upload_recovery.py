@@ -135,3 +135,33 @@ def test_web_recovery_preserves_assets_when_final_commit_may_have_succeeded(
         assert session.exec(
             select(work_jobs.WorkGarbage).where(work_jobs.WorkGarbage.reference == reference)
         ).first() is None
+
+
+
+def test_web_unsupported_image_extension_is_rejected_before_analysis_allocation(
+    chat, monkeypatch, tmp_path
+):
+    client, engine = chat
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main, "UPLOAD_DIR", Path("uploads"))
+    main.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    client.cookies.set(main.SESSION_COOKIE, _SESSION_TOKEN[1])
+    _patient(engine)
+
+    persisted = []
+    monkeypatch.setattr(main, "storage_persist_file", lambda path: persisted.append(str(path)))
+
+    response = client.post(
+        "/analysis/new/8",
+        data={"tooth_number": "36", "clinical_notes": "Synthetic invalid format"},
+        files=[("images", ("payload.exe", b"not a clinical image", "application/octet-stream"))],
+    )
+
+    assert response.status_code == 422
+    assert "JPEG, PNG veya WebP" in response.text
+    assert persisted == []
+    with Session(engine) as session:
+        assert session.exec(select(main.Analysis)).all() == []
+        assert session.exec(select(main.ImageAsset)).all() == []
+        assert session.exec(select(work_jobs.WorkJob)).all() == []
+        assert session.exec(select(work_jobs.WorkGarbage)).all() == []
