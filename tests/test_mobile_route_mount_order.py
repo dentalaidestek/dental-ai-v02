@@ -91,7 +91,7 @@ def test_clinical_media_gallery_handler_is_effectively_mounted_once():
         route
         for route in iter_registered_routes(mobile_router.routes)
         if getattr(route, "path", getattr(route, "path_format", "")).rstrip("/")
-        == "/api/mobile/v1/patients/{patient_id}/media"
+        .endswith("/patients/{patient_id}/media")
         and "GET" in (getattr(route, "methods", None) or set())
     ]
     assert len(expected) == 1
