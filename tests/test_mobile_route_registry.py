@@ -200,7 +200,17 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
     # primary router owns the receipt-aware POST upload, so only that POST
     # shadows the legacy v3 upload adapter during route deduplication.
     media_list = registered(modern_mobile_router, "/patients/{patient_id}/media", "GET")
+    assert not any(
+        route_path(route).rstrip("/").endswith("/patients/{patient_id}/media")
+        and "GET" in (getattr(route, "methods", None) or set())
+        for route in primary_mobile_router.routes
+    ), "the primary router must not become a second owner of the v3 GET gallery"
     media_upload = registered(primary_mobile_router, "/patients/{patient_id}/media", "POST")
+    assert not any(
+        route_path(route).rstrip("/").endswith("/patients/{patient_id}/media")
+        and "POST" in (getattr(route, "methods", None) or set())
+        for route in modern_mobile_router.routes
+    ), "the receipt-aware primary POST must shadow the legacy v3 upload adapter"
     original_file = registered(primary_mobile_router, "/patients/{patient_id}/media/{media_id}/file", "GET")
     thumbnail = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}/thumbnail", "GET")
     metadata = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}", "GET")
