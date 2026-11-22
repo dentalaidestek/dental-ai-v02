@@ -122,3 +122,28 @@ test("web analysis rejects a single image larger than the per-file cap", () => {
   assert.equal(form.fileInput.files.length, 0);
   assert.match(form.alerts[0], /15 MiB/);
 });
+
+test("web analysis accepts a batch exactly at the aggregate byte cap", () => {
+  const form = createForm({
+    files: Array.from({ length: 4 }, (_, index) => ({
+      name: `synthetic-${index}.png`,
+      size: 12 * 1024 * 1024,
+    })),
+  });
+  form.change();
+  assert.equal(form.fileInput.files.length, 4);
+  assert.deepEqual(form.alerts, []);
+  assert.equal(form.submit(), false);
+});
+
+test("web analysis rejects an aggregate batch above the byte cap", () => {
+  const form = createForm({
+    files: Array.from({ length: 4 }, (_, index) => ({
+      name: `synthetic-${index}.png`,
+      size: 13 * 1024 * 1024,
+    })),
+  });
+  form.change();
+  assert.equal(form.fileInput.files.length, 0);
+  assert.match(form.alerts[0], /toplamı en fazla 48 MiB/);
+});
