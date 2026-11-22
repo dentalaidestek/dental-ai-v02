@@ -153,14 +153,27 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
             f"expected one source {method} route ending in {suffix}, found {len(source_matches)}"
         )
         source = source_matches[0]
+        def endpoint_symbol(endpoint):
+            # FastAPI can clone APIRoute objects while including routers. The
+            # callable object identity is not a stable registration contract;
+            # its fully-qualified source symbol is. Unwrap decorators before
+            # comparing so instrumentation does not hide the canonical owner.
+            endpoint = inspect.unwrap(endpoint)
+            return (
+                getattr(endpoint, "__module__", None),
+                getattr(endpoint, "__qualname__", getattr(endpoint, "__name__", None)),
+            )
+
+        expected_symbol = endpoint_symbol(source.endpoint)
         matches = [
             route for route in main.app.routes
-            if getattr(route, "endpoint", None) is source.endpoint
+            if endpoint_symbol(getattr(route, "endpoint", None)) == expected_symbol
             and method in (getattr(route, "methods", None) or set())
         ]
         assert len(matches) == 1, (
-            f"expected source endpoint {source.endpoint.__module__}.{source.endpoint.__name__} "
-            f"to be mounted once, found {len(matches)}"
+            f"expected source endpoint {expected_symbol[0]}.{expected_symbol[1]} "
+            f"to be mounted once, found {len(matches)}; candidates="
+            f"{[(getattr(r, 'path', None), endpoint_symbol(getattr(r, 'endpoint', None))) for r in main.app.routes if getattr(r, 'path', '').endswith(suffix) and method in (getattr(r, 'methods', None) or set())]}"
         )
         assert matches[0].path.endswith(suffix)
         return matches[0]
