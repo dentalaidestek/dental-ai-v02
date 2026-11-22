@@ -152,7 +152,7 @@ export const replySupportTicket=async(t:string,id:number,message:string,key=supp
 export type Notice={id:number;title:string;message:string;notice_type:string;target_url?:string|null;read_at?:string|null;is_read?:boolean;created_at:string};
 export type Expert={user_id:number;display_name:string;specialty:string;academic_title?:string|null;institution?:string|null;bio?:string|null;availability:string;consultation_price:number;rating_avg?:number|null;review_count:number};
 export type Consultation={id:number;other_user_id:number;other_display_name:string;specialty:string;tooth_region?:string|null;status:string;status_key?:string;status_label?:string;question:string;requested_at:string;last_message?:string|null;last_message_at?:string|null;last_message_id?:number;messages_deleted_at?:string|null;unread_count:number};
-export type ChatMessage={id:number;sender_user_id:number;message_type:string;content:string;reply_to_message_id?:number|null;created_at:string;has_media?:boolean};
+export type ChatMessage={id:number;sender_user_id:number;message_type:string;content:string;reply_to_message_id?:number|null;created_at:string;has_media?:boolean;client_message_id?:string};
 export type AnalysisHistory={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;status:string;clinical_notes?:string|null;created_at:string;is_voice_review?:boolean};
 export type Course={id:number;title:string;description?:string|null;updated_at:string;material_count:number};
 export const registerPushDevice=(t:string,deviceId:string,expoPushToken:string,platform:"android"|"ios",installationProof:string)=>{
@@ -440,12 +440,24 @@ export const sendConsultationMessage=(t:string,id:number,content:string,clientMe
 export const getConsultationMessageReceipt=async(t:string,id:number,clientMessageId:string)=>{
  if(!Number.isSafeInteger(id)||id<=0||!/^[A-Za-z0-9_-]{16,96}$/.test(clientMessageId||""))
   throw Error("Geçersiz görüşme veya mesaj istek anahtarı.");
- const result=await req<{message:ChatMessage|null;deleted?:boolean}>(`/consultations/${id}/message-receipt?client_message_id=${encodeURIComponent(clientMessageId)}`,t);
- if(result.message!==null&&(!result.message||!Number.isSafeInteger(result.message.id)||result.message.id<=0||
-    !Number.isSafeInteger(result.message.sender_user_id)||result.message.sender_user_id<=0||
-    typeof result.message.message_type!=="string"||typeof result.message.created_at!=="string"))
+ const result=await req<{message:({case_id:number;client_message_id:string;id:number;sender_user_id:number;message_type:string;content:string|null;reply_to_message_id:number|null;created_at:string;has_media:boolean})|null;deleted:boolean}>(`/consultations/${id}/message-receipt?client_message_id=${encodeURIComponent(clientMessageId)}`,t);
+ if(!result||typeof result.deleted!=="boolean"||(result.deleted&&result.message!==null))
   throw Error("Mesaj gönderim makbuzu doğrulanamadı.");
- return {message:result.message,deleted:result.deleted===true};
+ if(result.message!==null){
+  const message:any=result.message;
+  const allowed=new Set(["case_id","client_message_id","id","sender_user_id","message_type","content","reply_to_message_id","created_at","has_media"]);
+  if(!message||typeof message!=="object"||Array.isArray(message)||Object.keys(message).some(key=>!allowed.has(key))||
+     message.case_id!==id||message.client_message_id!==clientMessageId||
+     !Number.isSafeInteger(message.id)||message.id<=0||
+     !Number.isSafeInteger(message.sender_user_id)||message.sender_user_id<=0||
+     typeof message.message_type!=="string"||!message.message_type||message.message_type.length>24||
+     !(message.content===null||typeof message.content==="string"&&message.content.length<=4000)||
+     !(message.reply_to_message_id===null||Number.isSafeInteger(message.reply_to_message_id)&&message.reply_to_message_id>0)||
+     typeof message.created_at!=="string"||!Number.isFinite(Date.parse(message.created_at))||
+     typeof message.has_media!=="boolean")
+   throw Error("Mesaj gönderim makbuzu doğrulanamadı.");
+ }
+ return {message:result.message,deleted:result.deleted};
 };
 function validateAcademicPage<T extends {id:number}>(response:{items:T[];next_before?:number|null},before?:number,dateOrdered=false):{items:T[];next_before:number|null}{
  const cursor=response?.next_before??null;
@@ -528,7 +540,14 @@ export async function sendChatFile(token:string,caseId:number,file:ChatFile,repl
  body.append("client_message_id",key);
  if(replyTo)body.append("reply_to_message_id",String(replyTo));
  const result=await req<{ok:boolean;message:ChatMessage;replayed?:boolean}>(`/consultations/${caseId}/attachments`,token,{method:"POST",body});
- if(result.ok!==true||!Number.isSafeInteger(result.message?.id)||result.message.id<=0)throw Error("Ek kaydı doğrulanamadı. Tekrar göndermeden önce görüşmeyi kontrol edin.");
+ const message:any=result?.message;
+ if(result?.ok!==true||!Number.isSafeInteger(message?.id)||message.id<=0||
+    message.client_message_id!==key||message.has_media!==true||
+    !["IMAGE","FILE","VOICE"].includes(message.message_type)||
+    typeof message.content!=="string"||message.content.length>180||
+    typeof message.created_at!=="string"||!Number.isFinite(Date.parse(message.created_at))||
+    (result.replayed!==undefined&&typeof result.replayed!=="boolean"))
+  throw Error("Ek kaydı doğrulanamadı. Tekrar göndermeden önce görüşmeyi kontrol edin.");
  return result;
 }
 export async function getDeletedChats(token:string){
