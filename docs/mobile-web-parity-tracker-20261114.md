@@ -1309,3 +1309,32 @@ Commits in this follow-up:
 - `a4fe29a` — verify the canonical warning is rendered exactly once
 
 The next PR-triggered CI run is expected to execute on this updated head because the changed paths are included in the Android and Security Recovery workflows. Until that run completes, the updated Python regression and native warning test are committed but not claimed as passed. PostgreSQL staging migration/count/provenance/idempotency/rollback acceptance and 60,000-user load testing remain open. No staging or production database was changed; no main merge or live deployment occurred.
+
+
+## 2026-11-22 — FastAPI lazy mobile route ownership and idempotent reconciliation
+
+### Starting-head CI evidence
+- Android run #44989322878 on 32a272c: TypeScript typecheck, session/auth, realtime/pagination, 991 beta regressions, Android/iOS Expo export and internal Android APK build/artifact upload succeeded.
+- Security Recovery #44989322945: all six native security jobs succeeded; the Python suite reported 618 passed / 1 failed. The only failure was tests/test_mobile_route_registry.py::test_registered_clinical_media_routes_use_the_expected_private_handlers. The failure was in test route discovery: it inspected main.app.routes as a flat APIRoute list and therefore did not see endpoints nested under FastAPI 0.141.1 lazy included-router objects. The failure did not show a failed patient-owner check or a failed media handler.
+- The browser form/live-voice regression step still passed 13/13. PostgreSQL migration/concurrency was skipped because the Python step failed.
+
+### Corrections
+- Added iter_registered_routes() to recursively inspect FastAPI's effective route contexts by capability detection, without importing the private included-router class.
+- include_missing_routes() now sees routes already exposed by lazy includes, so repeat reconciliation does not create a second router mount. It still detects late routes on older eager/snapshot route implementations.
+- Route ownership tests now inspect effective application routes rather than only the top-level list.
+- Added nested-prefix collision handling to remove_shadowed_routes().
+- Reconciliation now fails closed for conflicting existing endpoint owners and duplicate registrations within the mobile API prefix.
+- Updated the lazy-router test contract: on FastAPI 0.141.1, a route appended after include is already visible through the lazy original router, so reconciliation must return 0 and prove each effective path/method exists exactly once.
+
+### Commits
+- abf6870 — flatten FastAPI lazy route contexts during mobile reconciliation
+- 9120b1d — inspect effective routes in the clinical media ownership regression
+- 9afe397 — cover lazy and nested mobile router reconciliation
+- 2575b2a — reject ambiguous duplicate mobile route registrations
+- d2dcae3 — normalize router prefixes during method-aware collision checks
+- 9749812 — test nested route collisions and duplicate ownership rejection
+
+### Validation boundary
+Current PR head: 97498128fe775ad1bf2a45494f147d10fc4ffd71. Android run #44994351696 and Security Recovery #44994351674 were created for this head but still show pending with no job records at the time of this update. The new Python route-registry tests and final-head Android checks have not yet executed; no new green result is claimed. The previous Android pass is baseline evidence only, not proof for this updated HEAD.
+
+No main merge, live deploy, staging/production migration, patient record mutation, or R2 object operation was performed. The 60,000-user target remains unverified and still requires dedicated multi-instance load and queue/backpressure testing.
