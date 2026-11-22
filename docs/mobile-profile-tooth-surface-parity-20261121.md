@@ -49,3 +49,25 @@ The browser and native selectors already exposed the correct five surfaces per t
 `tests/test_tooth_surface_status.py` now exhaustively checks all 52 valid permanent/primary FDI identifiers, invalid identifiers, anterior/posterior applicability, web rejection, native single-surface rejection, native multi-surface rejection, and valid INCISAL/OCCLUSAL writes. It verifies that only the two anatomically valid synthetic observations reach the database.
 
 The new tests are included in the existing Security Recovery pytest command through `tests/test_tooth_surface_status.py`. They are committed but await the current-head GitHub Actions result. No real patient records were used.
+## 2026-11-22 follow-up — web/native tooth preview orientation and surface accessibility
+
+### Web-first trace
+Re-read the web patient-detail quick action and the full tooth_chart.html selection path (renderSurfaceOptions, selectTooth, setSurface). Compared the web preview with NativeToothVisual and toothVisualModel for permanent and primary FDI teeth.
+
+### Findings and changes
+1. The native preview rotates lower-jaw teeth using the FDI quadrant. The web chart rotated the lower-jaw tooth inside the chart rows, but selectTooth() copied only the tooth markup into the separate preview panel. The preview lost its lower-jaw context and therefore displayed quadrants 3/4/7/8 in the upper-jaw orientation. The shared browser FDI helper now exposes a validated lower-jaw classifier; the selected web preview preserves the 180-degree enamel-atlas and SVG orientation, matching native.
+2. The web preview's M/D/L/B pins were labelled only by single letters for assistive technology, while native buttons announce the complete surface. All five web pins now have descriptive accessible labels; the top pin updates between occlusal and incisal with the selected tooth.
+3. Web surface chips and pins exposed visual selected/active classes but not aria-pressed. They now publish explicit single-selection state; clearing the surface resets every pin/chip to false.
+
+### Regression coverage
+- All 52 valid permanent/primary FDI teeth compare the web lower-jaw classifier against native toothVisualModel().lower; invalid FDI values remain false.
+- The web selected-preview class and CSS rotation are asserted alongside native wrapper rotation.
+- All five surface pins must carry descriptive labels; the dynamic incisal/occlusal label is checked.
+- Surface chips and pins must expose matching aria-pressed state.
+- The test remains in the existing npm run test:beta list (webToothSurfaceParity.cjs); no runner contract was removed.
+
+### CI root cause at starting head
+At starting HEAD 1449bb4509e970b6a07c6c456e73d5649c3c876b, Android run #4692 completed successfully (TypeScript, session/auth, realtime/pagination, 985 beta regressions, Hermes exports and internal APK build). Security run #2391 executed 604 Python tests with one failure. The failure was an internally inconsistent test regex in test_startup_rejects_wrong_approved_anamnesis_index_columns: it expected the word exact before the stable phrase approved anamnesis query index, while the actual startup message deliberately preserves that phrase and appends the exact column contract. The assertion now matches the stable phrase and separately asserts exact owner/patient/field/source columns; the stored-row preservation assertion remains.
+
+### Validation boundary
+The above code and regressions are committed on the feature branch. Their new-head CI has not yet been observed, so no pass is claimed for the updated lower-preview/accessibility tests or the corrected Python assertion. No patient data, schema, migration, clinical API, production database, main branch or deployment was changed.
