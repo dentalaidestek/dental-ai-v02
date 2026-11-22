@@ -304,7 +304,10 @@ def test_e2ee_device_keys_are_client_public_keys_and_migration_is_versioned():
     assert "public_key: str" in source
     assert "revoked_at" in source
     migration = (ROOT / "app/migrate.py").read_text(encoding="utf-8")
-    assert "REVISION = 12" in migration
+    # Revision ladder follows the receipt step (2026-11-22 port from the
+    # mobile-parity branch; the full-parity merge keeps 12/13 -> 14).
+    assert "CONSULTATION_RECEIPT_REVISION = 13" in migration
+    assert "REVISION = CONSULTATION_RECEIPT_REVISION" in migration
     assert "e2eedevicekey" in migration
     assert "consultationmessage ADD COLUMN IF NOT EXISTS e2ee_ciphertext" in migration
     assert "supportticketmessage ADD COLUMN IF NOT EXISTS e2ee_ciphertext" in migration

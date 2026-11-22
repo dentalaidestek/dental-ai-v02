@@ -73,10 +73,16 @@ kapsam dışı içerik taşımaz:
 5. Regresyon paketi: parite matrisinin bu tabana uyarlanmış hali (12 test).
 6. `37597412` mini CI: vision48 bootstrap deseni, python-only.
 7. Bu belge bölümü.
+8. `451e54ff` web sözleşme pinleri: `test_security_hardening` revizyon
+   pinleri yeni merdivene alındı (CONSULTATION_RECEIPT_REVISION = 13);
+   arındırılmış görüşmede mesaj 410 (parite web handler sözleşmesi) ve
+   salt kapalı vakada 409 kilidi. Not: 410 sözleşmesi parite dalının
+   ucunda da kırıktır (146f7fce'de aynı test başarısız); bu dalda sözleşme
+   güncellemesiyle yeşile alındı.
 
-Dalların toplam farkı: 7 dosya, +971/-32 (test dosyası dahil). Üretim kodu
-+510 satır civarındadır; port edilen her handler PR kaynağıyla satır satır
-karşılaştırıldı.
+Dalların toplam farkı: 10 dosya, +1.123/-34 (test dosyası ve sözleşme
+pinleri dahil). Üretim kodu +510 satır civarındadır; port edilen her
+handler PR kaynağıyla satır satır karşılaştırıldı.
 
 ### 38.4 Ertelenmeler (satır bantlarıyla)
 
@@ -123,10 +129,18 @@ karşılaştırıldı.
   sahiplik / yetki / idempotency / aynı-istek-anahtarı kurtarma / yanlış
   hesap boyutları; 3 arka arkaya koşuda 12/12 sabit.
 - main tabanına uygun komşu paketler: `test_chat_read_http.py` +
-  `test_chat_read_cursor_isolated.py` 8/8 (main'de oldugu gibi).
+  `test_chat_read_cursor_isolated.py` 8/8 (main'de olduğu gibi).
 - openapi.json doğrulaması: 6/6 rota kayıtlı; anonim istek 6/6 401
-  (revalidation sozlesmesi).
-- Mini CI: `.github/workflows/five-routes-mini-ci.yml` — yalniz bu dala
+  (revalidation sözleşmesi).
+- Taban karşılaştırması: 16 komşu paket (sohbet okuma, danışmanlık akışı,
+  destek, güvenlik sertleştirme, gerçek zamanlı mesajlaşma, sorgu verimliliği
+  ve bu daldaki regresyon dosyası) bu dalda 187 test; başarısız küme main
+  tabanındaki 7550add6 klonuyla satır satır diff'lendi. main'de önceden
+  kırık tek test (test_support_ticket_flow tam yaşam döngüsü) bu daldan da
+  aynı biçimde kırıktır; salt bu dalda yeni kırılan iki sözleşme pini
+  (revizyon 12 pini, arındırma 409 pini) `451e54ff` ile güncellendi — net
+  yeni başarısızlık sıfır.
+- Mini CI: `.github/workflows/five-routes-mini-ci.yml` — yalnız bu dala
   push + workflow_dispatch; py_compile (5 dosya), 12 testlik paket, komşu
   paketler ve revizyon-13 geçiş şeması.
 
