@@ -1469,3 +1469,8 @@ Re-read `app/templates/analysis_viewer.html` and the embedded viewer message han
 
 ### Baseline and validation boundary
 The preceding CI head `ef3eded1d97868231dfd1ec01853dbbd016fc64a` passed Android typecheck, session/auth, realtime/pagination, beta regressions, Android/iOS bundle export and ARM64 APK build. Its Security Recovery run passed the Python/PostgreSQL/browser step and all six native security jobs. The single-tooth feature commits below require fresh final-head CI; their tests are not claimed as passed until those runs finish. No production data, database migration, R2 object, main branch or live deployment was changed. The 60,000-user target remains unverified.
+
+
+### Follow-up — native single-tooth test harness correction
+
+The first CI run for the single-tooth feature exposed one test-only failure in both Android beta and native-clinical Security Recovery: 287/288 native-clinical tests passed, and the only failing assertion compared a request-options object created inside the TypeScript VM with a host-realm literal using `deepStrictEqual`. Both objects contained `method: 'POST'`; the failure was their cross-realm prototype identity, not the API method or route. The assertion now checks the `method` field directly. TypeScript typecheck passed on that run; the beta suite and native-clinical suite must be rerun on the corrected head. The Python/PostgreSQL security step was still running when inspected, so its result remains unreported.
