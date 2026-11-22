@@ -274,8 +274,8 @@ class WorkGarbage(SQLModel, table=True):
 
 
 _PATIENT_MEDIA_OBJECT = re.compile(
-    r"uploads/(?:patient_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)|"
-    r"patient-media/patient_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp))"
+    r"uploads/(?:patient_[1-9][0-9]*_[0-9a-f]{32}(?:\.thumb)?\.(?:jpg|jpeg|png|webp)|"
+    r"patient-media/patient_[1-9][0-9]*_[0-9a-f]{32}(?:\.thumb)?\.(?:jpg|jpeg|png|webp))"
 )
 _GUEST_ANALYSIS_OBJECT = re.compile(
     r"uploads/guest_analysis_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)"
