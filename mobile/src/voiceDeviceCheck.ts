@@ -40,6 +40,7 @@ export type VoiceDeviceCheckOutcome=
  | 'metering_unavailable'
  | 'low_signal'
  | 'cleanup_failed'
+ | 'audio_mode_restore_failed'
  | 'passed';
 
 export type VoiceDeviceCheckInput={
@@ -48,11 +49,13 @@ export type VoiceDeviceCheckInput={
  fileBytes:number;
  peakMeteringDb:number|null;
  cleanupVerified?:boolean;
+ audioModeRestored?:boolean;
 };
 
 /** Classifies only local capture metadata. It never accepts or returns audio or transcript data. */
 export function evaluateVoiceDeviceCheck(input:VoiceDeviceCheckInput):VoiceDeviceCheckOutcome{
  if(input.cleanupVerified===false)return 'cleanup_failed';
+ if(input.audioModeRestored===false)return 'audio_mode_restore_failed';
  if(!input.permissionGranted)return 'permission_denied';
  if(!Number.isFinite(input.durationMs)||input.durationMs<VOICE_DEVICE_CHECK_MIN_DURATION_MS)return 'capture_incomplete';
  if(!Number.isFinite(input.fileBytes)||input.fileBytes<=0)return 'no_audio_file';
