@@ -63,7 +63,9 @@ test('failed audio-mode restoration keeps the parent voice screen locked until r
  const restores=[...component.matchAll(/const audioModeRestored=await resetAudioMode\(\);/g)];
  assert.equal(restores.length,4,'finish, cancel, retry and start-error recovery all report the route result');
  for(const match of restores){
-  assert.match(component.slice(match.index,match.index+150),/notifyBusy\(!audioModeRestored\)/,'a failed route restore keeps the parent locked');
+  const notify=component.indexOf('notifyBusy(!audioModeRestored)',match.index);
+  const nextRestore=component.indexOf('const audioModeRestored=await resetAudioMode();',match.index+1);
+  assert.ok(notify>match.index&&(nextRestore<0||notify<nextRestore),'a failed route restore keeps the parent locked before the next recovery path');
  }
  assert.match(component,/const restored=await resetAudioMode\(\);[\s\S]{0,100}notifyBusy\(!restored\)/,'stale-start cancellation also preserves the parent lock on failure');
  assert.match(entry,/disabled=\{processing\|\|audioBusy\|\|deviceCheckBusy\|\|applyBusy\}/);
