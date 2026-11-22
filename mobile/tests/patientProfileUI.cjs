@@ -146,6 +146,20 @@ test('profile follows web section order, expands patient info, and preserves com
  assert.ok(tree.root.findAllByType('TextInput').some(n=>n.props.accessibilityLabel==='Adres'));
  await renderer.act(async()=>tree.unmount());
 });
+test('same patient id cannot accept a late profile response from the previous account',async()=>{
+ let resolveOld;
+ const Profile=component({getPatient:async(token,id)=>token==='old-token'?new Promise(resolve=>{resolveOld=resolve}):{...patient(id),patient:{...patient(id).patient,first_name:'New account'}}});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'old-token',userId:1,patientId:8,actions}));await Promise.resolve()});
+ assert.equal(typeof resolveOld,'function','the previous account request must be pending');
+ await renderer.act(async()=>{tree.update(React.createElement(Profile,{token:'new-token',userId:2,patientId:8,actions}));await Promise.resolve()});
+ assert.ok(text(tree.toJSON()).includes('New account'),'the current account profile must load for the same patient id');
+ const stale=patient(8);stale.patient.first_name='Old account';
+ await renderer.act(async()=>{resolveOld(stale);await new Promise(resolve=>setImmediate(resolve))});
+ assert.ok(text(tree.toJSON()).includes('New account'));
+ assert.ok(!text(tree.toJSON()).includes('Old account'),'late previous-account data must not overwrite the current profile');
+ await renderer.act(async()=>tree.unmount());
+});
 test('account switch invalidates the previous patient edit snapshot before a new profile resolves',async()=>{
  let resolve;const Profile=component({getPatient:async(token,id)=>id===8?patient(8):new Promise(r=>{resolve=r})});let tree;
  const press=async(label)=>{const item=tree.root.findAllByType('Pressable').find(n=>n.findAllByType('Text').some(t=>text(t.children).includes(label)));assert.ok(item,'missing '+label);await renderer.act(async()=>item.props.onPress())};
