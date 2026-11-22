@@ -51,6 +51,16 @@ test('token replacement and unmount do not expose unverified analysis results',a
 });
 
 
+test('analysis workspace rotates an opaque session identity on account credential change and keeps it stable within a session',()=>{
+ const h=harness(async()=>result());h.render();
+ const first=h.getSessionKey();assert.match(first,/^dai-session-[0-9a-z]+$/);
+ h.setToken('replacement-token');const second=h.getSessionKey();
+ assert.notEqual(second,first,'credential rotation must remount the account-scoped analysis workspace');
+ assert.match(second,/^dai-session-[0-9a-z]+$/);
+ assert.ok(!first.includes('synthetic-token')&&!second.includes('replacement-token'));
+ h.setToken('replacement-token');assert.equal(h.getSessionKey(),second,'same session scope must keep a stable renderer identity');
+});
+
 test('new analysis callback validates patient and account before remembering a job',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativeDentalAI.tsx'),'utf8');
  const start=source.indexOf('async function openUploaded(');
