@@ -9,7 +9,8 @@ import {restoreVoiceAudioMode} from './voiceRecorderLifecycle';
 
 type Phase='idle'|'requesting'|'testing'|'finishing'|'complete';
 const navy='#071B35',muted='#63748A',line='#E1E7EF',blue='#1769AA';
-const resultText:Record<VoiceDeviceCheckOutcome,string>={
+type VoiceDeviceCheckUiOutcome=VoiceDeviceCheckOutcome|'recorder_stop_failed';
+const resultText:Record<VoiceDeviceCheckUiOutcome,string>={
  permission_denied:'Mikrofon izni verilmedi. Android uygulama izinlerinden veya iOS Ayarlar bölümünden mikrofon erişimini açıp tekrar deneyin.',
  capture_incomplete:'Altı saniyelik test tamamlanamadı. Uygulamayı ön planda tutup yeniden deneyin.',
  no_audio_file:'Cihaz ses dosyası oluşturamadı. Mikrofonu kullanan diğer uygulamaları kapatıp tekrar deneyin.',
