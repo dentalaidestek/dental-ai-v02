@@ -1364,3 +1364,37 @@ Starting PR HEAD: `23e504adef451eb83a3a3fc2ba5685c1fcff4614`.
 - `4e4b6358` — make clinical media route import regression formatting-independent (regex escaping corrected in `f761c0f2`)
 
 Code changes through `f761c0f2` are the final code head for this follow-up; the subsequent tracker-only commit does not alter application or test code. Final-head Android, Python/PostgreSQL, native security and browser regressions must run after these code commits. No local pytest or typecheck execution is claimed in this connector-only session. No patient data, storage object, staging/production database, main branch or live deployment was changed.
+
+## 2026-11-22 — duplicate canonical mobile router mount
+
+Starting PR head: `a50597052209cbf053edd5c7e1e30f10cc276235`.
+
+### Security CI diagnosis
+
+Android run [#44996660901](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44996660901) completed successfully: TypeScript typecheck, session/auth, realtime/pagination, mobile beta regressions, Android/iOS bundle export, and internal Android APK artifact build all passed.
+
+Security Recovery [#44996660876](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44996660876) ran its jobs. Six native security jobs passed; browser auth/account/live-voice regressions passed 13/13. Python security reported **624 passed / 1 failed**. PostgreSQL follow-up was skipped because the Python step failed.
+
+The only Python failure was `test_registered_clinical_media_routes_use_the_expected_private_handlers`: the canonical `app.mobile_api.mobile_patient_media` GET handler was effectively mounted twice. The duplicate OpenAPI operation-ID warnings were consistent with the duplicate effective route contexts.
+
+### Confirmed import-order root cause
+
+`app/main.py` imports `app.mobile_api.router` and only calls `app.include_router(mobile_router)` after that import returns. At the bottom of `app/mobile_api.py`, however, a module-level circular import of `app.main` called `include_missing_routes(_mobile_main.app, router)` before the suspended `from app.mobile_api import router` statement in `main.py` could finish. The reconciler therefore mounted the router once while `main.py` was still importing it; when control returned, `main.py` mounted the same router a second time.
+
+This was a real duplicate registration, not a test-only FastAPI lazy-route enumeration issue.
+
+### Fix and regression coverage
+
+- Removed the module-level `app.main` import and premature `include_missing_routes` call from `app/mobile_api.py`. All nested account, program, voice, academic and clinical routers are attached before the import returns; `app/main.py` now remains the single canonical mount point.
+- Added `tests/test_mobile_route_mount_order.py` to guard against reintroducing module-import-time mounting/reconciliation, verify exactly one canonical mount in `main.py`, and assert the clinical-media gallery handler is effectively mounted once.
+- Added the new test file to the Security Recovery pytest command.
+- Kept the existing route-ownership assertions intact; no security assertion was weakened.
+
+Commits:
+- `44b1ff3` — remove premature module-level mobile router reconciliation
+- `43f0476` — add import/mount-order regression tests
+- `c2ec906` — match the unprefixed source router path correctly
+- `fb36adc` — fix Python line continuation in the route assertion
+- `3fdb65e` — execute the new mount-order regression in Security Recovery
+
+Final validation for these commits is pending. No local checkout was available in this connector-only run, so no local pytest execution is claimed. No main merge, production deployment, database migration or patient-data mutation.
