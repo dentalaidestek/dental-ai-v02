@@ -113,9 +113,10 @@ test('patient profile child sections use an opaque key across token and patient 
  assert.equal(keys.length,3,'media, analysis history and approved voice history keep explicit remount boundaries');
  assert.ok(keys.every(value=>value==='profileRenderKey'),'profile children must not use the raw token-bearing scope as a React key');
  assert.ok(!keys.some(value=>value.includes('token')||value.includes('scope')||value.includes('userId')),'React keys must not contain bearer credentials or identity tuples');
- assert.ok(source.includes("import {nextSessionRenderKey} from './sessionRenderKey';"));
- assert.ok(source.includes('const profileRenderIdentity=useRef<{scope:string;key:string}|null>(null);'));
- assert.ok(source.includes('profileRenderIdentity.current.scope!==scope'),'the opaque key must rotate when the account, token or patient scope changes');
+ assert.ok(source.includes("import useSessionRenderKey from './useSessionRenderKey';"));
+ assert.ok(source.includes('const scope=useSessionRenderKey(`${userId}:${token}:${patientId}`);'),'the opaque identity rotates when account, token or patient scope changes');
+ assert.ok(source.includes('const profileRenderKey=scope;'));
+ assert.ok(!source.includes('profileRenderIdentity'),'the component must not duplicate the credential-bearing scope in a second ref');
 });
 
 
