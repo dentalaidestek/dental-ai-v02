@@ -1419,3 +1419,12 @@ The native profile built \`scope = userId:token:patientId\` and reused it as the
 - Added a regression for the same patient ID switching between two accounts while the old account's profile request is still pending; the old response must not overwrite the new account's profile.
 
 The Android and Security Recovery runs on the new HEAD are required before these regressions can be reported as passing. No patient data or production API was used, and no merge or deployment occurred.
+
+
+## 2026-11-22 — patient-profile and voice regression CI follow-up
+
+The first intermediate Android run after the profile scope change, [#45031297510](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/45031297510) on \`debd5d6\`, passed TypeScript typecheck, session/auth, realtime/pagination and Android/iOS bundle export. Its beta suite exposed one stale assertion in \`sessionRenderKey.cjs\`: it still required the removed \`nextSessionRenderKey\` import and the old local \`profileRenderIdentity\` ref. The test now checks the production \`useSessionRenderKey\` hook and opaque \`profileRenderKey\` contract instead.
+
+The same run's voice UI test also exposed a test-only false negative: a fixed 150-character substring did not reach the parent busy notification in the retry branch. That assertion now checks ordering relative to the next audio-mode recovery block. The corresponding native voice Security Recovery failure on [#45031337939](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/45031337939) was the same stale assertion; its native-clinical job, including the new same-patient/different-account late-response regression, passed.
+
+The current branch head must still complete both Android and Security Recovery. Intermediate typecheck/profile results do not substitute for final-head CI, and no APK from a failed beta suite is considered accepted.
