@@ -6,9 +6,11 @@ test('modernApi maps bare 404 Not Found to Turkish like api.ts',()=>{
  // Live probe 2026-11-21: POST /consultations/{id}/attachments -> 404 on dentalai.tr
  // (deployed mobile router predates the media route); the composer error showed raw
  // English "Not Found" because modernApi lacked api.ts's Turkish mapping.
+ // The merged line shares one constant (apiCompatibility.ts) between api.ts and
+ // modernApi.ts so both clients can never drift apart again.
  assert.ok(modern.includes('rawDetail==="Not Found"'),'modernApi must detect the bare FastAPI 404 detail');
- assert.ok(modern.includes('Sunucuda istenen kayıt bulunamadı (404)'),'the mapped message must match api.ts');
- assert.ok(modern.includes('Uygulama ile sunucu sürümü uyumsuz olabilir'),'the mapping must explain the version mismatch');
+ assert.ok(modern.includes('MISSING_API_ROUTE_MESSAGE'),'the mapped message must be the shared apiCompatibility constant, like api.ts');
+ assert.ok(src('apiCompatibility.ts').includes('Uygulama güncel olsa bile'),'the shared mapping must explain the version mismatch and protect drafts');
 });
 test('messages tab badge mirrors the web paintMessageBadge contract',()=>{
  const source=app(),modern=src('modernApi.ts');

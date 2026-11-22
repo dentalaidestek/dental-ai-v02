@@ -32,8 +32,8 @@ test('attachment upload: client POST path, form key and 120s deadline match the 
   'web receipt replay returns the original message with replayed:true');
  assert.ok(src.mobile.includes('@router.post("/consultations/{case_id}/attachments")'),
   'server route keeps its exact path');
- assert.ok(src.mobile.includes('detail="Desteklenmeyen ek türü."')&&src.mobile.includes('detail="Ek boş veya 25 MB sınırını aşıyor."'),
-  'Turkish upload error copy stays unchanged');
+ assert.ok(src.mobile.includes('detail="Ek gönderimi için işlem anahtarı zorunludur."')&&src.mobile.includes('detail="Ek dosyası boyut sınırını aşıyor."')&&src.web.includes('detail="Desteklenmeyen ek türü."'),
+  'Turkish upload error copy stays unchanged (mobile route + delegated web type gate)');
  assert.ok(src.modern.includes('Ek kaydı doğrulanamadı. Tekrar göndermeden önce görüşmeyi kontrol edin.'),
   'client validation copy for a malformed upload result stays unchanged');
 });

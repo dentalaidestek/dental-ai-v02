@@ -49,9 +49,9 @@ test('multipart bodies never carry the JSON Content-Type header',async()=>{
  const original=global.fetch;const seen=[];
  try{
   global.fetch=async(url,init)=>{seen.push(init);return new Response(JSON.stringify(seen.length===1
-   ?{ok:true,message:{id:4,sender_user_id:2,message_type:'FILE',content:'r',created_at:'2026-11-01T00:00:00'}}
+   ?{ok:true,message:{id:4,sender_user_id:2,message_type:'FILE',content:'r',created_at:'2026-11-01T00:00:00',client_message_id:'transport-media-key-001',has_media:true}}
    :{media:{id:7,original_filename:'k.jpeg',media_type:'PHOTO'},replayed:false}),{status:200})};
-  await modern.sendChatFile('tok',3,{uri:'file:///f.png',name:'f.png',type:'image/png'});
+  await modern.sendChatFile('tok',3,{uri:'file:///f.png',name:'f.png',type:'image/png'},undefined,'transport-media-key-001');
   assert.equal(seen[0].headers['Content-Type'],undefined);
   assert.equal(seen[0].headers.Authorization,'Bearer tok');
   await api.uploadPatientMedia('tok',9,{uri:'file:///k.jpeg',name:'k.jpeg',type:'image/jpeg'},undefined,'PHOTO','key-request-key-16');
