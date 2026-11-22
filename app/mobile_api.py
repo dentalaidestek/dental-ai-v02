@@ -3866,11 +3866,16 @@ def mobile_case_shared_media(case_id: int, link_id: int, user: User = Depends(_m
     return _ChatFileResponse(path, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
 
 @router.post("/consultations/{case_id}/attachments")
-async def mobile_chat_upload(case_id: int, file: UploadFile = File(...),
+async def mobile_chat_upload(case_id: int, response: Response, file: UploadFile = File(...),
                              reply_to_message_id: Optional[int] = Form(None),
                              client_message_id: str = Form(""),
                              token: str = Depends(_mobile_access_token),
                              user: User = Depends(_mobile_user)):
+    # A successful attachment response contains clinical message metadata and a
+    # case-scoped media reference. Keep it out of shared/proxy/client caches just
+    # like the corresponding private attachment GET and message-receipt routes.
+    _mobile_private_no_store(response)
+    response.headers["X-Content-Type-Options"] = "nosniff"
     from app import main as web
     # Authorize before touching the payload, then let the existing web handler
     # recheck state/participant permissions under its normal case lock.
