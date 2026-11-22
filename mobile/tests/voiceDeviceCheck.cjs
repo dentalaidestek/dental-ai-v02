@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const ts=require('typescript');
 require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,filename);
-const {evaluateVoiceDeviceCheck,isPrivateVoiceDeviceCheckUri,removePrivateVoiceDeviceCheckFile,isPrivateVoiceDeviceCheckCacheChildUri,removePrivateVoiceDeviceCheckCacheChildFile,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS,VOICE_DEVICE_CHECK_MIN_DURATION_MS,VOICE_DEVICE_CHECK_MIN_SIGNAL_DB}=require('../src/voiceDeviceCheck.ts');
+const {evaluateVoiceDeviceCheck,isPrivateVoiceDeviceCheckUri,removePrivateVoiceDeviceCheckFile,isPrivateVoiceDeviceCheckCacheChildUri,removePrivateVoiceDeviceCheckCacheChildFile,voiceDeviceSignalLevel,stopVoiceDeviceRecorderVerified,VOICE_DEVICE_CHECK_DURATION_MS,VOICE_DEVICE_CHECK_MIN_DURATION_MS,VOICE_DEVICE_CHECK_MIN_SIGNAL_DB}=require('../src/voiceDeviceCheck.ts');
 
 test('native microphone check uses the same six-second preparation window as web',()=>{
  assert.equal(VOICE_DEVICE_CHECK_DURATION_MS,6000);
@@ -95,4 +95,31 @@ test('meter display is bounded for silence, normal speech and clipped input',()=
  assert.equal(voiceDeviceSignalLevel(-160),0);
  assert.ok(voiceDeviceSignalLevel(-30)>0&&voiceDeviceSignalLevel(-30)<1);
  assert.equal(voiceDeviceSignalLevel(5),1);
+});
+
+
+test('device preflight treats recorder stop as successful only after Expo reports inactive',async()=>{
+ const calls=[];
+ const stopped=await stopVoiceDeviceRecorderVerified({
+  stop:async()=>{calls.push('stop')},
+  getStatus:()=>({isRecording:false})
+ });
+ assert.equal(stopped,true);
+ assert.deepEqual(calls,['stop']);
+ assert.equal(await stopVoiceDeviceRecorderVerified({
+  stop:async()=>{throw Error('native stop rejected')},
+  getStatus:()=>({isRecording:false})
+ }),false,'a rejected stop is not accepted merely because a later snapshot looks inactive');
+ assert.equal(await stopVoiceDeviceRecorderVerified({
+  stop:async()=>{},
+  getStatus:()=>({isRecording:true})
+ }),false,'a resolved stop with a still-recording snapshot remains unsafe');
+ assert.equal(await stopVoiceDeviceRecorderVerified({
+  stop:async()=>{},
+  getStatus:()=>({})
+ }),false,'missing status is inconclusive');
+ assert.equal(await stopVoiceDeviceRecorderVerified({
+  stop:async()=>{},
+  getStatus:()=>{throw Error('status unavailable')}
+ }),false,'status read failure is inconclusive');
 });
