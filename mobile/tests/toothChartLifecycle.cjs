@@ -661,3 +661,41 @@ test('a stale surface save refreshes the correct FDI surface while retaining its
  assert.equal(writes[1].expected_revision,'d'.repeat(64),'surface retry must use the refreshed surface revision');
  await renderer.act(async()=>tree.unmount());
 });
+
+
+test('a late conflict refresh cannot reopen a tooth panel after the clinician closes it',async()=>{
+ focused=false;lastEvent=null;appListeners=[];
+ const initial=patient(8,'Ada','HEALTHY',35);
+ initial.teeth[0].revision='a'.repeat(64);
+ const pendingRefresh=deferred();let reads=0;
+ const Chart=chartComponent({
+  getPatient:async()=>++reads===1?initial:pendingRefresh.promise,
+  updateTooth:async()=>{throw Object.assign(new Error('stale tooth revision'),{status:409});}
+ });
+ let tree;
+ const press=async(label)=>{
+  const item=tree.root.findAllByType('Pressable').find(node=>
+   node.props.accessibilityLabel===label||
+   node.findAllByType('Text').some(child=>flat(child.children)===label)
+  );
+  assert.ok(item,'missing control '+label);
+  await renderer.act(async()=>item.props.onPress());
+ };
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Chart,{token:'account-a',patientId:8}));await flush();await flush()});
+ await press('Diş 11, Sağlıklı');
+ await press('Diş durumu: Çürük');
+ await press('Durumu Kaydet');
+ await renderer.act(async()=>{await flush();await flush()});
+ const refresh=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Güncel diş kaydını yükle');
+ assert.ok(refresh);
+ await renderer.act(async()=>{refresh.props.onPress();});
+ await renderer.act(async()=>{await flush()});
+ const close=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Diş panelini kapat');
+ assert.ok(close);
+ await renderer.act(async()=>close.props.onPress());
+ pendingRefresh.resolve(patient(8,'Ada','FILLING',35));
+ await renderer.act(async()=>{await flush();await flush()});
+ assert.equal(tree.root.findAllByType('Pressable').some(node=>node.props.accessibilityLabel==='Güncel diş kaydını yükle'),false);
+ assert.doesNotMatch(flat(tree.toJSON()),/Sunucudaki son durum/);
+ await renderer.act(async()=>tree.unmount());
+});
