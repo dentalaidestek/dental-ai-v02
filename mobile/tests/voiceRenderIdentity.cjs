@@ -65,3 +65,15 @@ test('a patient-specific native voice route opens the examination without a redu
  assert.ok(source.includes('const enterExam=startAfterSelection.current||routePatientSelected'));
  assert.ok(source.includes('setStage(enterExam?"exam":"select")'));
 });
+
+
+test('approved anamnesis history keeps bearer credentials out of React cache state',()=>{
+ const history=fs.readFileSync(require.resolve('../src/NativePatientVoiceHistory.tsx'),'utf8');
+ assert.ok(history.includes("import useSessionRenderKey from './useSessionRenderKey';"));
+ assert.ok(history.includes('const scopeKey=useSessionRenderKey(scope);'));
+ assert.ok(history.includes('const active=useRef(scopeKey),generation=useRef(0);'));
+ assert.ok(history.includes('useState<{scopeKey:string;history:VoiceHistory}|null>'));
+ assert.ok(history.includes('data?.scopeKey===scopeKey'));
+ assert.ok(!history.includes('useState<{scope:string;history:VoiceHistory}|null>'));
+ assert.ok(!history.includes('const active=useRef(scope),'));
+});
