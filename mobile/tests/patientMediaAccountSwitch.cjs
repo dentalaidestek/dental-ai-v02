@@ -20,6 +20,19 @@ function loadSrcModule(base,requireChain){
  return moduleExports;
 }
 function mountMedia(getMedia, options={}){
+ const componentReact={...React};
+ if(options.stateValues){
+  componentReact.useState=initial=>{
+   const [value,setValue]=React.useState(initial);
+   options.stateValues.push(value);
+   return [value,next=>setValue(previous=>{
+    const resolved=typeof next==='function'?next(previous):next;
+    options.stateValues.push(resolved);
+    return resolved;
+   })];
+  };
+ }
+ componentReact.default=componentReact;
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const native=Object.fromEntries(['ActivityIndicator','FlatList','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]));
@@ -36,7 +49,7 @@ function mountMedia(getMedia, options={}){
  let keySequence=0;
  const exports={};
  const requireChain=name=>{
-  if(name==='react')return {...React,default:React};
+  if(name==='react')return componentReact;
   if(name==='react-native')return native;
   if(name==='@react-navigation/native')return {useIsFocused:()=>options.focused===undefined?true:options.focused};
   if(name==='expo-image-picker')return options.picker||{};
@@ -54,6 +67,7 @@ function mountMedia(getMedia, options={}){
    isClinicalMediaVaultUri:(uri,userId,patientId)=>typeof uri==='string'&&uri.startsWith('file:///documents/dai-clinical-vault/'+userId+'/'+patientId+'/')&&uri.endsWith('.dai'),
    validateClinicalMediaVaultFile:async()=>{}
   };
+  if(name==='./useSessionRenderKey')return require('./helpers/useSessionRenderKeyModule.cjs');
   if(name==='./clinicalMediaPresentation')return loadSrcModule('clinicalMediaPresentation',requireChain);
   if(name==='./api')return {
    API_BASE:'https://dentalai.tr/api/mobile/v1',
