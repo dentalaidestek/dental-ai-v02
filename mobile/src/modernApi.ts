@@ -1,6 +1,7 @@
 import {ChatFile,validateChatFile} from "./chatFiles";
 import {ApiError,API_BASE} from './api';
 import {revalidateSession} from './sessionExpiry';
+import {MISSING_API_ROUTE_MESSAGE} from './apiCompatibility';
 import {normalizeNotificationReadAt} from "./notificationState";
 async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
  const headers:any={Authorization:"Bearer "+token,...(!(init.body instanceof FormData)?{"Content-Type":"application/json"}:{}),...(init.headers||{})};
@@ -26,7 +27,7 @@ async function req<T>(path:string,token:string,init:RequestInit={}):Promise<T>{
    if(r.status===401)await revalidateSession(token);
    const rawDetail=typeof b?.detail==="string"?b.detail:(typeof b?.detail?.message==="string"?b.detail.message:"");
    // Mirror api.ts: a bare 404 "Not Found" means the deployed server predates this route.
-   const detail=(r.status===404&&(!rawDetail||rawDetail==="Not Found"))?"Sunucuda istenen kayıt bulunamadı (404). Uygulama ile sunucu sürümü uyumsuz olabilir; güncellemeyi kontrol edip tekrar deneyin.":(rawDetail||"İstek başarısız.");
+   const detail=(r.status===404&&(!rawDetail||rawDetail==="Not Found"))?MISSING_API_ROUTE_MESSAGE:(rawDetail||"İstek başarısız.");
    throw new ApiError(r.status,detail);
   }
   return b as T;
