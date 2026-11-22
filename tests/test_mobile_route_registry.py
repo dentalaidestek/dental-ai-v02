@@ -131,90 +131,74 @@ def test_real_fastapi_multi_method_route_keeps_the_nonconflicting_openapi_operat
 
 
 def test_registered_clinical_media_routes_use_the_expected_private_handlers():
-    import inspect
+    # Other security tests temporarily replace app.main for isolated handler
+    # tests. Verify production router mounting in a clean interpreter so this
+    # integration contract is independent of pytest collection/order state.
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
 
-    from app import main
-    from app.mobile_api import router as primary_mobile_router
-    from app.mobile_modern_api_v3 import router as modern_mobile_router
+    script = r"""
+import inspect
+from app import main
+from app.mobile_api import router as primary_mobile_router
+from app.mobile_modern_api_v3 import router as modern_mobile_router
 
-    def registered(source_router, suffix, method):
-        # APIRouter prefixes are represented differently across FastAPI
-        # versions: some route objects expose the prefixed path before mount,
-        # while others apply it during include_router(). Resolve the canonical
-        # source endpoint first, then assert that this exact callable is mounted
-        # once on the application. This tests route ownership without guessing
-        # how the framework materializes the prefix.
-        def route_path(route):
-            path = getattr(route, "path", None)
-            if not isinstance(path, str):
-                path = getattr(route, "path_format", None)
-            return path if isinstance(path, str) else ""
+def symbol(endpoint):
+    endpoint = inspect.unwrap(endpoint)
+    return (getattr(endpoint, "__module__", None),
+            getattr(endpoint, "__qualname__", getattr(endpoint, "__name__", None)))
 
-        normalized_suffix = suffix.rstrip("/")
-        source_matches = [
-            route for route in source_router.routes
-            if route_path(route).rstrip("/").endswith(normalized_suffix)
-            and method in (getattr(route, "methods", None) or set())
-        ]
-        assert len(source_matches) == 1, (
-            f"expected one source {method} route ending in {suffix}, found {len(source_matches)}"
-        )
-        source = source_matches[0]
-        def endpoint_symbol(endpoint):
-            # FastAPI can clone APIRoute objects while including routers. The
-            # callable object identity is not a stable registration contract;
-            # its fully-qualified source symbol is. Unwrap decorators before
-            # comparing so instrumentation does not hide the canonical owner.
-            endpoint = inspect.unwrap(endpoint)
-            return (
-                getattr(endpoint, "__module__", None),
-                getattr(endpoint, "__qualname__", getattr(endpoint, "__name__", None)),
-            )
+def registered(source_router, suffix, method):
+    source = [
+        route for route in source_router.routes
+        if getattr(route, "path", "").rstrip("/").endswith(suffix.rstrip("/"))
+        and method in (getattr(route, "methods", None) or set())
+    ]
+    assert len(source) == 1, (method, suffix, "source", len(source))
+    expected = symbol(source[0].endpoint)
+    matches = [
+        route for route in main.app.routes
+        if symbol(getattr(route, "endpoint", None)) == expected
+        and method in (getattr(route, "methods", None) or set())
+    ]
+    media_routes = [
+        (getattr(route, "path", None), sorted(getattr(route, "methods", None) or ()),
+         symbol(getattr(route, "endpoint", None)))
+        for route in main.app.routes
+        if "media" in getattr(route, "path", "").lower()
+    ]
+    assert len(matches) == 1, (expected, method, suffix, media_routes)
+    assert matches[0].path.rstrip("/").endswith(suffix.rstrip("/"))
+    return matches[0]
 
-        expected_symbol = endpoint_symbol(source.endpoint)
-        matches = [
-            route for route in main.app.routes
-            if endpoint_symbol(getattr(route, "endpoint", None)) == expected_symbol
-            and method in (getattr(route, "methods", None) or set())
-        ]
-        app_media_routes = [
-            (
-                route_path(route),
-                sorted(getattr(route, "methods", None) or ()),
-                endpoint_symbol(getattr(route, "endpoint", None)),
-            )
-            for route in main.app.routes
-            if "media" in route_path(route).lower()
-            and method in (getattr(route, "methods", None) or set())
-        ]
-        assert len(matches) == 1, (
-            f"expected source endpoint {expected_symbol[0]}.{expected_symbol[1]} "
-            f"to be mounted once, found {len(matches)}; app_media_routes={app_media_routes}"
-        )
-        assert route_path(matches[0]).rstrip("/").endswith(normalized_suffix), (
-            f"mounted endpoint path {route_path(matches[0])!r} does not end with {normalized_suffix!r}"
-        )
-        return matches[0]
+media_list = registered(primary_mobile_router, "/patients/{patient_id}/media", "GET")
+media_upload = registered(primary_mobile_router, "/patients/{patient_id}/media", "POST")
+original_file = registered(primary_mobile_router, "/patients/{patient_id}/media/{media_id}/file", "GET")
+thumbnail = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}/thumbnail", "GET")
+metadata = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}", "GET")
 
-    media_list = registered(primary_mobile_router, "/patients/{patient_id}/media", "GET")
-    media_upload = registered(primary_mobile_router, "/patients/{patient_id}/media", "POST")
-    original_file = registered(primary_mobile_router, "/patients/{patient_id}/media/{media_id}/file", "GET")
-    thumbnail = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}/thumbnail", "GET")
-    metadata = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}", "GET")
+assert media_list.endpoint.__module__ == "app.mobile_api"
+assert media_list.endpoint.__name__ == "mobile_patient_media"
+assert "_mobile_private_no_store(response)" in inspect.getsource(media_list.endpoint)
+assert media_upload.endpoint.__module__ == "app.mobile_api"
+assert media_upload.endpoint.__name__ == "mobile_patient_media_upload"
+assert original_file.endpoint.__module__ == "app.mobile_api"
+assert "current_media.file_path == file_path" in inspect.getsource(original_file.endpoint)
+assert thumbnail.endpoint.__module__ == "app.mobile_modern_api_v3"
+assert "current_media.file_path == file_path" in inspect.getsource(thumbnail.endpoint)
+assert "headers = dict(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in inspect.getsource(thumbnail.endpoint)
+assert metadata.endpoint.__module__ == "app.mobile_modern_api_v3"
+assert "response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in inspect.getsource(metadata.endpoint)
+"""
 
-    assert media_list.endpoint.__module__ == "app.mobile_api"
-    assert media_list.endpoint.__name__ == "mobile_patient_media"
-    assert "_mobile_private_no_store(response)" in inspect.getsource(media_list.endpoint)
-
-    assert media_upload.endpoint.__module__ == "app.mobile_api"
-    assert media_upload.endpoint.__name__ == "mobile_patient_media_upload"
-
-    assert original_file.endpoint.__module__ == "app.mobile_api"
-    assert "current_media.file_path == file_path" in inspect.getsource(original_file.endpoint)
-
-    assert thumbnail.endpoint.__module__ == "app.mobile_modern_api_v3"
-    assert "current_media.file_path == file_path" in inspect.getsource(thumbnail.endpoint)
-    assert "headers = dict(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in inspect.getsource(thumbnail.endpoint)
-
-    assert metadata.endpoint.__module__ == "app.mobile_modern_api_v3"
-    assert "response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in inspect.getsource(metadata.endpoint)
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
