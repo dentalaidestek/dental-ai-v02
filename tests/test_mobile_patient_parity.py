@@ -1009,17 +1009,24 @@ def test_mobile_patient_delete_is_owner_scoped_and_refuses_clinical_dependents(c
             main.Patient(id=9, anonymous_id="SYNTHETIC-DELETE-9", owner_user_id=2),
             main.Patient(id=10, anonymous_id="SYNTHETIC-DELETE-10", owner_user_id=1),
             main.Patient(id=11, anonymous_id="SYNTHETIC-DELETE-11", owner_user_id=1),
+            main.Patient(id=12, anonymous_id="SYNTHETIC-DELETE-12", owner_user_id=1),
             main.Analysis(id=108, patient_id=8, tooth_number="36", status="DRAFT"),
+            main.Analysis(id=120, patient_id=12, tooth_number="11", status="DRAFT"),
             main.ApprovedAnamnesis(
                 owner_user_id=1, patient_id=11, field_key="allergies",
                 value="Orphaned approval must block deletion", analysis_id=1111,
+            ),
+            main.ApprovedAnamnesis(
+                owner_user_id=1, patient_id=8, field_key="surgical_history",
+                value="An approved anamnesis blocks deletion", analysis_id=108,
             ),
             main.PatientProfile(patient_id=10, address="Synthetic address"),
         ])
         session.commit()
 
-    # The native adapter deliberately refuses to erase a patient while clinical
-    # history exists; the UI must not bypass this audited-erasure boundary.
+    # The native adapter mirrors the web POST /patients/{id}/delete boundary:
+    # an approved anamnesis record refuses deletion; the UI must not bypass
+    # this audited-erasure boundary.
     blocked = client.delete("/api/mobile/v1/patients/8")
     assert blocked.status_code == 409, blocked.text
     assert "Güvenli silme" in blocked.json()["detail"]
@@ -1040,10 +1047,16 @@ def test_mobile_patient_delete_is_owner_scoped_and_refuses_clinical_dependents(c
     # An owned patient without dependent clinical rows can be deleted normally.
     removed = client.delete("/api/mobile/v1/patients/10")
     assert removed.status_code == 200, removed.text
+
+    # Web-parity contract (merge decision): non-anamnesis clinical dependents
+    # do not block a native deletion — the same rows the web surface removes.
+    dependents_ok = client.delete("/api/mobile/v1/patients/12")
+    assert dependents_ok.status_code == 200, dependents_ok.text
     with Session(engine) as session:
         assert session.get(main.Patient, 8) is not None
         assert session.get(main.Patient, 9) is not None
         assert session.get(main.Patient, 10) is None
+        assert session.get(main.Patient, 12) is None
         assert session.exec(
             select(main.PatientProfile).where(main.PatientProfile.patient_id == 10)
         ).first() is None
@@ -1241,6 +1254,10 @@ def test_mobile_patient_delete_receipt_is_not_created_when_clinical_history_bloc
     with Session(engine) as session:
         session.add(main.Patient(id=113, anonymous_id="SYNTHETIC-DELETE-BLOCKED", owner_user_id=1))
         session.add(main.Analysis(id=1131, patient_id=113, tooth_number="36", status="DRAFT"))
+        session.add(main.ApprovedAnamnesis(
+            owner_user_id=1, patient_id=113, field_key="allergies",
+            value="Approved anamnesis blocks deletion without a receipt", analysis_id=1131,
+        ))
         session.commit()
 
     request_key = "synthetic-patient-delete-request-0002"
@@ -1253,10 +1270,14 @@ def test_mobile_patient_delete_receipt_is_not_created_when_clinical_history_bloc
             WorkJob.resource_id == 113,
         )).first() is None
 
-    # The same key remains usable after the blocking clinical dependency is
+    # The same key remains usable after the blocking approved-anamnesis record is
     # removed through the test fixture; no failed deletion receipt was committed.
+    # The plain Analysis row deliberately stays: non-anamnesis clinical dependents
+    # do not block a native deletion (web POST /patients/{id}/delete parity).
     with Session(engine) as session:
-        session.delete(session.get(main.Analysis, 1131))
+        session.delete(session.exec(select(main.ApprovedAnamnesis).where(
+            main.ApprovedAnamnesis.patient_id == 113,
+        )).first())
         session.commit()
     removed = client.delete(f"/api/mobile/v1/patients/113?request_key={request_key}")
     assert removed.status_code == 200, removed.text
