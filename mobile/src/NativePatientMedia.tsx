@@ -22,8 +22,7 @@ import {clearClinicalMediaDraft} from './clinicalMediaDraft';
 import {ANALYSIS_MAX_IMAGES} from './analysisApi';
 import {patientMediaSelectAllIds,patientMediaSelectAllLabel} from './patientMediaSelection';
 import {CLINICAL_MEDIA_MAX_BATCH_BYTES,CLINICAL_MEDIA_MAX_FILE_BYTES} from './uploadLimits';
-
-let nextClinicalMediaImageScope=0;
+import useSessionRenderKey from './useSessionRenderKey';
 
 type Picked={uri:string;encryptedUri?:string;previewUri?:string;name:string;type:string;requestKey:string};
 type PendingUpload={version:1|2|3;batchId?:string;userId:number;patientId:number;mediaType:'PHOTO'|'RADIOGRAPH';toothNumber?:string;note?:string;files:Picked[];updatedAt:number};
@@ -41,10 +40,11 @@ function parsePendingUpload(raw:string|null,userId:number,patientId:number):Pend
 export default function NativePatientMedia({token,userId,patientId,patient,onAnalysis,readOnly=false}:{token:string;userId:number;patientId:number;patient?:Pick<Patient,'anonymous_id'|'age'|'chief_complaint'>|null;onAnalysis:(id:number)=>void;readOnly?:boolean}){
  const uploadStore=useMemo(()=>chunkedDraftStore(SecureStore,Crypto.randomUUID,300),[]);
  const uploadKey=uploadKeyFor(userId,patientId),focused=useIsFocused();
- const imageScope=useMemo(()=>'clinical-media-scope-'+(++nextClinicalMediaImageScope),[token,userId,patientId]);
+ const owner=useSessionRenderKey(`${userId}:${token}:${patientId}`);
+ const imageScope=owner;
  const {lastEvent}=useRealtime(),[items,setItems]=useState<any[]>([]),[cursor,setCursor]=useState<number|null>(null),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[open,setOpen]=useState(false),[preview,setPreview]=useState<any>(null),[selected,setSelected]=useState<number[]>([]),[pending,setPending]=useState<Picked[]>([]),[pendingBatchId,setPendingBatchId]=useState(''),[mediaType,setMediaType]=useState<'PHOTO'|'RADIOGRAPH'>('PHOTO'),[progress,setProgress]=useState(''),[uncertain,setUncertain]=useState(false),[uncertainDelete,setUncertainDelete]=useState<number|null|undefined>(undefined),[zoom,setZoom]=useState(1),[uploadReady,setUploadReady]=useState(false),[uploadBlocked,setUploadBlocked]=useState(false),[byteProgress,setByteProgress]=useState({loaded:0,total:0,lengthComputable:false});
  const [loadedOwner,setLoadedOwner]=useState('');const [pendingOwner,setPendingOwner]=useState(''),[toothNumber,setToothNumber]=useState(''),[clinicalNotes,setClinicalNotes]=useState(''),[mediaToothNumber,setMediaToothNumber]=useState(''),[mediaNote,setMediaNote]=useState(''),[composeOpen,setComposeOpen]=useState(false),[composeIds,setComposeIds]=useState<number[]>([]),[composeTooth,setComposeTooth]=useState(''),[composeNotes,setComposeNotes]=useState('');
- const mounted=useRef(true),request=useRef(0),pickerGeneration=useRef(0),loadLock=useRef(false),refreshPending=useRef(false),mutation=useRef(false),scope=useRef(`${userId}:${token}:${patientId}`);const owner=`${userId}:${token}:${patientId}`;scope.current=owner;
+ const mounted=useRef(true),request=useRef(0),pickerGeneration=useRef(0),loadLock=useRef(false),refreshPending=useRef(false),mutation=useRef(false),scope=useRef(owner);scope.current=owner;
  const current=()=>mounted.current&&scope.current===owner;
  const load=useCallback(async(more=false)=>{
   if(loadLock.current){if(!more&&current())refreshPending.current=true;return;}
