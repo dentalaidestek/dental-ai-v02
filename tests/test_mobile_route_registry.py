@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.mobile_route_registry import include_missing_routes, remove_shadowed_routes
+from app.mobile_route_registry import include_missing_routes, iter_registered_routes, remove_shadowed_routes
 
 
 def route(path, methods=None):
@@ -152,7 +152,7 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
 
         normalized_suffix = suffix.rstrip("/")
         source_matches = [
-            route for route in source_router.routes
+            route for route in iter_registered_routes(source_router.routes)
             if route_path(route).rstrip("/").endswith(normalized_suffix)
             and method in (getattr(route, "methods", None) or set())
         ]
@@ -173,7 +173,7 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
 
         expected_symbol = endpoint_symbol(source.endpoint)
         matches = [
-            route for route in main.app.routes
+            route for route in iter_registered_routes(main.app.routes)
             if endpoint_symbol(getattr(route, "endpoint", None)) == expected_symbol
             and method in (getattr(route, "methods", None) or set())
         ]
@@ -183,7 +183,7 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
                 sorted(getattr(route, "methods", None) or ()),
                 endpoint_symbol(getattr(route, "endpoint", None)),
             )
-            for route in main.app.routes
+            for route in iter_registered_routes(main.app.routes)
             if "media" in route_path(route).lower()
             and method in (getattr(route, "methods", None) or set())
         ]
@@ -203,13 +203,13 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
     assert not any(
         route_path(route).rstrip("/").endswith("/patients/{patient_id}/media")
         and "GET" in (getattr(route, "methods", None) or set())
-        for route in modern_mobile_router.routes
+        for route in iter_registered_routes(modern_mobile_router.routes)
     ), "the primary GET gallery must shadow the legacy v3 GET adapter"
     media_upload = registered(primary_mobile_router, "/patients/{patient_id}/media", "POST")
     assert not any(
         route_path(route).rstrip("/").endswith("/patients/{patient_id}/media")
         and "POST" in (getattr(route, "methods", None) or set())
-        for route in modern_mobile_router.routes
+        for route in iter_registered_routes(modern_mobile_router.routes)
     ), "the receipt-aware primary POST must shadow the legacy v3 upload adapter"
     original_file = registered(primary_mobile_router, "/patients/{patient_id}/media/{media_id}/file", "GET")
     thumbnail = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}/thumbnail", "GET")
