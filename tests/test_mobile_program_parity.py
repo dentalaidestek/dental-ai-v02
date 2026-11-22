@@ -597,3 +597,40 @@ def test_legacy_mobile_schedule_actions_advance_the_shared_program_revision(prog
     assert client.delete(f'/api/mobile/v1/schedule/{deleted_id}').status_code==200
     deleted=client.get(f'/api/mobile/v1/program/events/{deleted_id}').json()['event']
     assert deleted['status']=='DELETED' and deleted['revision']!=before_delete
+
+def test_program_complete_and_delete_reject_other_account_before_web_dispatch(program, monkeypatch):
+    client, engine = program
+    from app import mobile_program_api
+
+    values = {
+        "event_type": "APPOINTMENT",
+        "title": "Synthetic owner-isolation visit",
+        "start_at": "2030-01-07T10:00",
+        "end_at": "2030-01-07T10:30",
+        "patient_id": 8,
+        "reminder_minutes": "NONE",
+        "recurrence_rule": "NONE",
+        "request_key": "program-owner-action-000001",
+    }
+    created = client.post("/api/mobile/v1/program/events", json=values)
+    assert created.status_code == 200, created.text
+    event_id = created.json()["event"]["id"]
+    original_revision = created.json()["event"]["revision"]
+
+    async def unexpected_web_dispatch(*args, **kwargs):
+        raise AssertionError("non-owner request reached the web mutation handler")
+
+    monkeypatch.setattr(mobile_program_api, "_invoke", unexpected_web_dispatch)
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
+
+    complete = client.post(f"/api/mobile/v1/program/events/{event_id}/complete")
+    delete = client.delete(f"/api/mobile/v1/program/events/{event_id}")
+    assert complete.status_code == 404
+    assert delete.status_code == 404
+
+    with Session(engine) as session:
+        stored = session.get(main.ScheduleEvent, event_id)
+        assert stored is not None
+        assert stored.owner_user_id == 1
+        assert stored.status == "ACTIVE"
+        assert main._schedule_event_revision(stored) == original_revision
