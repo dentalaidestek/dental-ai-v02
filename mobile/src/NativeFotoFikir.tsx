@@ -7,7 +7,7 @@ import{
  ffImageSource,getFFBootstrap,suggestFFIdeas,prepareFFSlides,checkFFMevzuat,
  generateFFImages,uploadFFBrandKit,generateFFBrandScene,getFFIgProfile,
  getFFReelsPlan,getFFHistory,
- type FFBootstrap,FFIdea,FFSlide,FFMevzuatResult,FFIgProfile,FFReelsPlan,FFJob,
+ type FFBootstrap,FFIdea,FFSlide,FFMevzuatResult,FFIgProfile,FFReelsPlan,FFJob,FFStyleRecommendation,
 }from"./fotoFikirApi";
 
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",green:"#16803C",red:"#B42318"};
@@ -26,13 +26,14 @@ export default function NativeFotoFikir({token}:{token:string}){
  const activeToken=useRef(token);if(activeToken.current!==token)activeToken.current=token;
  const[boot,setBoot]=useState<FFBootstrap|null>(null),[bootErr,setBootErr]=useState("");
  const[step,setStep]=useState(1);
- const[topic,setTopic]=useState(""),[ideas,setIdeas]=useState<FFIdea[]>([]);
+ const[topic,setTopic]=useState(""),[ideas,setIdeas]=useState<FFIdea[]>([]),[ideaTips,setIdeaTips]=useState<string[]>([]);
  const[ideaBusy,setIdeaBusy]=useState(false),[slideBusy,setSlideBusy]=useState(false);
  const[slides,setSlides]=useState<FFSlide[]>([]);
  const[mevzuat,setMevzuat]=useState<Record<number,FFMevzuatResult>>({}),[disclaimer,setDisclaimer]=useState("");
  const[mevBusy,setMevBusy]=useState(false),[flowErr,setFlowErr]=useState("");
  const[styleId,setStyleId]=useState(""),[includeName,setIncludeName]=useState(true);
  const[genBusy,setGenBusy]=useState(false),[gallery,setGallery]=useState<string[]>([]);
+ const[genNote,setGenNote]=useState(""),[genTips,setGenTips]=useState<string[]>([]),[recommendation,setRecommendation]=useState<FFStyleRecommendation|null>(null);
  const[brandOpen,setBrandOpen]=useState(false),[brandBusy,setBrandBusy]=useState(false),[brandErr,setBrandErr]=useState(""),[brandScene,setBrandScene]=useState(""),[brandSceneErr,setBrandSceneErr]=useState(""),[brandSceneBusy,setBrandSceneBusy]=useState(false);
  const[igOpen,setIgOpen]=useState(false),[igBusy,setIgBusy]=useState(false),[ig,setIg]=useState<FFIgProfile|null>(null),[igErr,setIgErr]=useState("");
  const[reelsOpen,setReelsOpen]=useState(false),[reelsTopic,setReelsTopic]=useState(""),[reelsBusy,setReelsBusy]=useState(false),[reels,setReels]=useState<FFReelsPlan|null>(null),[reelsErr,setReelsErr]=useState("");
@@ -40,7 +41,7 @@ export default function NativeFotoFikir({token}:{token:string}){
  const[preview,setPreview]=useState<string|null>(null);
  useEffect(()=>{
   let alive=true;
-  setBoot(null);setBootErr("");setIdeas([]);setSlides([]);setMevzuat({});setGallery([]);setIg(null);setReels(null);setJobs([]);setStep(1);setStyleId("");setTopic("");
+  setBoot(null);setBootErr("");setIdeas([]);setIdeaTips([]);setSlides([]);setMevzuat({});setGallery([]);setIg(null);setReels(null);setJobs([]);setStep(1);setStyleId("");setTopic("");setGenNote("");setGenTips([]);setRecommendation(null);
   void(async()=>{try{
    const data=await getFFBootstrap(token);
    if(!alive||activeToken.current!==token)return;
@@ -56,7 +57,7 @@ export default function NativeFotoFikir({token}:{token:string}){
   finally{if(activeToken.current===token)setHistBusy(false)}
  },[token]);
  async function suggestIdeas(){if(ideaBusy)return;setIdeaBusy(true);setFlowErr("");
-  try{const r=await suggestFFIdeas(token,topic);if(activeToken.current===token)setIdeas(r.ideas||[])}
+  try{const r=await suggestFFIdeas(token,topic);if(activeToken.current===token){setIdeas(r.ideas||[]);setIdeaTips(r.tips||[])}}
   catch(e){if(activeToken.current===token)setFlowErr(e instanceof Error?e.message:"Fikir önerileri alınamadı.")}
   finally{if(activeToken.current===token)setIdeaBusy(false)}}
  async function makeSlides(){if(slideBusy)return;setSlideBusy(true);setFlowErr("");
@@ -76,6 +77,9 @@ export default function NativeFotoFikir({token}:{token:string}){
    if(activeToken.current!==token)return;
    setGallery(previous=>[...previous,...r.images.filter((p:string)=>typeof p==="string")]);
    setBoot(previous=>previous?{...previous,quota:r.quota}:previous);refreshHistory();
+   setRecommendation(r.style_recommendation||r.suggestion||null);
+   setGenTips(r.tips||[]);
+   setGenNote("Görseller hazır"+(typeof r.uretim_ms==="number"?" ("+(r.uretim_ms/1000).toFixed(1)+" sn)":"")+(r.skipped?" — "+(r.uyari||r.skipped+" slayt atlandı"):""));
   }catch(e){if(activeToken.current===token)setFlowErr(e instanceof Error?e.message:"Görseller üretilemedi.")}
   finally{if(activeToken.current===token)setGenBusy(false)}}
  async function pickBrand(){if(brandBusy)return;
@@ -122,13 +126,14 @@ export default function NativeFotoFikir({token}:{token:string}){
    <TextInput accessibilityLabel="Foto Fikir konusu" style={s.input} value={topic} onChangeText={setTopic} placeholder="Konu yazın (ör. diş fırçalama alışkanlıkları)" placeholderTextColor={C.muted} maxLength={200}/>
    <View style={{flexDirection:"row",flexWrap:"wrap",marginTop:10}}>{ideas.map((idea,index)=><Chip key={index} label={idea.title} active={topic===idea.title} onPress={()=>setTopic(idea.title)}/>)}</View>
    {ideas.map((idea,index)=><Text key={"a"+index} style={s.meta}>{idea.angle}{idea.hook?" · Kanca: "+idea.hook:""}</Text>)}
+   {!!ideaTips.length&&<View style={{marginTop:6}}>{ideaTips.map((tip,index)=><Text key={"t"+index} style={s.meta}>{"· "+tip}</Text>)}</View>}
    <Btn title={ideaBusy?"Öneriler hazırlanıyor…":"Fikir öner"} disabled={ideaBusy} onPress={()=>void suggestIdeas()}/>
    <Btn title={slideBusy?"Slaytlar hazırlanıyor…":"Slayt metinlerini hazırla"} disabled={slideBusy||!topic.trim()} onPress={()=>void makeSlides()}/>
   </View>}
   {step===2&&<View style={card}>
    <Text style={s.title}>2. Metin onayı</Text>
    {slides.map((slide,index)=><View key={index} style={{marginTop:10,borderTopWidth:index?1:0,borderTopColor:C.line,paddingTop:index?10:0}}>
-    <View style={s.row}><Text style={s.meta}>{index+1}. kart</Text>{mevzuat[index]&&<LevelBadge level={mevzuat[index].level}/>}</View>
+    <View style={s.row}><Text style={s.meta}>{index+1}. kart</Text>{!!slide.role&&<Text style={{fontSize:10,fontWeight:"800",color:"#2B5CAD",backgroundColor:"#E8EEF9",paddingHorizontal:8,paddingVertical:4,borderRadius:10}}>Görev: {slide.role}</Text>}{mevzuat[index]&&<LevelBadge level={mevzuat[index].level}/>}</View>
     <TextInput accessibilityLabel={"Kart "+(index+1)+" başlığı"} style={s.input} value={slide.headline} onChangeText={v=>setSlides(old=>old.map((item,i)=>i===index?{...item,headline:v}:item))} maxLength={120} placeholder="Başlık" placeholderTextColor={C.muted}/>
     <TextInput accessibilityLabel={"Kart "+(index+1)+" metni"} style={[s.input,{height:90,textAlignVertical:"top"}]} multiline value={slide.body} onChangeText={v=>setSlides(old=>old.map((item,i)=>i===index?{...item,body:v}:item))} maxLength={220} placeholder="Gövde metni" placeholderTextColor={C.muted}/>
     {mevzuat[index]&&<View style={{marginTop:6}}>
@@ -145,10 +150,15 @@ export default function NativeFotoFikir({token}:{token:string}){
   {step===3&&<View style={card}>
    <Text style={s.title}>3. Görsel</Text>
    <View style={{flexDirection:"row",flexWrap:"wrap",marginTop:10}}>{(boot?.styles||[]).map(style=><Chip key={style.id} label={style.name} active={styleId===style.id} onPress={()=>setStyleId(style.id)}/>)}</View>
+   {!!recommendation&&<Pressable accessibilityRole="button" onPress={()=>setStyleId(recommendation.style_id)} style={{marginTop:8}}>
+    <Text style={{color:C.navy,fontSize:12,fontWeight:"700"}}>Önerilen stil: {(boot?.styles||[]).find(st=>st.id===recommendation.style_id)?.name||recommendation.style_id} — {recommendation.reason}</Text>
+   </Pressable>}
    <Pressable accessibilityRole="checkbox" accessibilityState={{checked:includeName}} onPress={()=>setIncludeName(v=>!v)} style={s.row}>
     <Text style={[s.meta,{fontWeight:"800",color:includeName?C.navy:C.muted}]}>Görselin sağ alt köşesine adım yazılsın</Text>
    </Pressable>
    <Btn title={genBusy?"Görseller üretiliyor…":"Görselleri üret"} disabled={genBusy||!styleId} onPress={()=>void generate()}/>
+   {!!genNote&&<Text style={{color:C.green,fontSize:13,fontWeight:"700",marginTop:8}}>{genNote}</Text>}
+   {!!genTips.length&&<View style={{marginTop:6}}>{genTips.map((tip,index)=><Text key={index} style={s.meta}>{"· "+tip}</Text>)}</View>}
    {!!gallery.length&&<View style={{marginTop:12}}>
     <Text style={s.title}>Üretilen görseller</Text>
     <View style={{flexDirection:"row",flexWrap:"wrap",gap:8,marginTop:8}}>{gallery.map((path,index)=><Pressable key={index} accessibilityRole="button" accessibilityLabel={"Görseli aç"} onPress={()=>setPreview(path)} style={{width:104,height:104,borderRadius:10,overflow:"hidden",borderWidth:1,borderColor:C.line,marginBottom:8}}>
@@ -191,6 +201,7 @@ export default function NativeFotoFikir({token}:{token:string}){
     </View>)}
     <Text style={[s.meta,{marginTop:8}]}>Kurgu adımları (CapCut)</Text>
     {(reels.capcut_adimlari||[]).map((item,index)=><Text key={index} style={s.body}>{(index+1)+". "+item}</Text>)}
+    {!!(reels.tips||[]).length&&<View style={{marginTop:6}}>{(reels.tips||[]).map((tip,index)=><Text key={"tip"+index} style={s.meta}>{"· "+tip}</Text>)}</View>}
    </View>}
    {!!reelsErr&&<Text style={{color:C.red,marginTop:6}}>{reelsErr}</Text>}
   </Section>

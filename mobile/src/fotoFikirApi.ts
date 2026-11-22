@@ -8,7 +8,8 @@ const FF_BASE = FF_SITE + "/api/foto-fikir";
 
 export type FFStyle = { id: string; name: string; hint: string };
 export type FFIdea = { title: string; angle: string; hook: string };
-export type FFSlide = { headline: string; body: string; note?: string | null };
+export type FFSlide = { headline: string; body: string; note?: string | null; role?: string | null };
+export type FFStyleRecommendation = { style_id: string; reason: string };
 export type FFMevzuatResult = { index: number; text: string; level: string; reason: string; suggestion: string; creative_alternative?: string };
 export type FFJob = { id: number; kind: string; label: string; topic: string; created_at: string; image_url?: string | null; status: string };
 export type FFQuota = { used: number; limit: number; period: string };
@@ -21,14 +22,14 @@ export type FFBootstrap = {
   mock?: boolean;
   uyari?: string;
 };
-export type FFIdeasResult = { ideas: FFIdea[]; creative_audit?: unknown; mock?: boolean; uyari?: string };
+export type FFIdeasResult = { ideas: FFIdea[]; creative_audit?: unknown; tips?: string[]; mock?: boolean; uyari?: string };
 export type FFSlidesResult = { slides: FFSlide[]; mock?: boolean; uyari?: string };
 export type FFMevzuatCheckResult = { results: FFMevzuatResult[]; disclaimer: string };
-export type FFGenerateResult = { job_id: string; image_url?: string | null; images: string[]; style: string; quota: FFQuota; mock?: boolean; uyari?: string };
+export type FFGenerateResult = { job_id: string; image_url?: string | null; images: string[]; style: string; quota: FFQuota; style_recommendation?: FFStyleRecommendation; suggestion?: FFStyleRecommendation; tips?: string[]; uretim_ms?: number; skipped?: number; uyari?: string; mock?: boolean };
 export type FFBrandKitResult = { exists: boolean; photos_count: number; photos: string[]; saved: number; mock?: boolean; uyari?: string };
-export type FFBrandGenerateResult = { job_id: string; image_url: string; scene: string; reason: string; quota: FFQuota; mock?: boolean; uyari?: string };
+export type FFBrandGenerateResult = { job_id: string; image_url: string; scene: string; reason: string; uretim_ms?: number; quota: FFQuota; mock?: boolean; uyari?: string };
 export type FFIgProfile = { bio: string; highlights: string[]; grid_plan: Array<{ idea: string; format: string }>; mock?: boolean; uyari?: string };
-export type FFReelsPlan = { hooks: string[]; senaryo: Array<{ aralik: string; metin: string; shot?: string }>; capcut_adimlari: string[]; mock?: boolean; uyari?: string };
+export type FFReelsPlan = { hooks: string[]; senaryo: Array<{ aralik: string; metin: string; shot?: string }>; capcut_adimlari: string[]; tips?: string[]; mock?: boolean; uyari?: string };
 export type FFHistory = { jobs: FFJob[] };
 
 const ffCount = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0;
