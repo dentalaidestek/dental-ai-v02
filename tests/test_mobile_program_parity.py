@@ -573,3 +573,24 @@ def test_web_program_edit_form_posts_revision_and_disables_stale_drafts():
     assert 'value="{{ expected_revision or \'\' }}"' in template
     assert '{% if revision_conflict %}disabled aria-disabled="true"{% endif %}' in template
     assert 'Güncel kaydı yeniden yükleyin' in template
+
+
+def test_legacy_mobile_schedule_actions_advance_the_shared_program_revision(program):
+    client,_=program
+    values={'event_type':'TASK','title':'Synthetic legacy completion','start_at':'2030-01-07T10:00','reminder_minutes':'NONE','recurrence_rule':'NONE','request_key':'program-legacy-complete-001'}
+    created=client.post('/api/mobile/v1/program/events',json=values)
+    assert created.status_code==200,created.text
+    ident=created.json()['event']['id']
+    original=created.json()['event']['revision']
+    assert client.post(f'/api/mobile/v1/schedule/{ident}/complete').status_code==200
+    completed=client.get(f'/api/mobile/v1/program/events/{ident}').json()['event']
+    assert completed['status']=='COMPLETED' and completed['revision']!=original
+
+    deleted_values={**values,'title':'Synthetic legacy deletion','request_key':'program-legacy-delete-001'}
+    deleted_create=client.post('/api/mobile/v1/program/events',json=deleted_values)
+    assert deleted_create.status_code==200,deleted_create.text
+    deleted_id=deleted_create.json()['event']['id']
+    before_delete=deleted_create.json()['event']['revision']
+    assert client.delete(f'/api/mobile/v1/schedule/{deleted_id}').status_code==200
+    deleted=client.get(f'/api/mobile/v1/program/events/{deleted_id}').json()['event']
+    assert deleted['status']=='DELETED' and deleted['revision']!=before_delete
