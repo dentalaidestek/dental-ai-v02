@@ -146,3 +146,67 @@ def test_web_original_media_rejects_a_replaced_storage_reference_after_hydration
 
     assert response.status_code == 404
     assert response.headers["cache-control"] == "private, no-store"
+
+
+def test_admin_access_remains_compatible_when_the_patient_owner_changes_during_hydration(
+    media_delivery, monkeypatch
+):
+    engine, image = media_delivery
+    monkeypatch.setattr(
+        main,
+        "get_current_user",
+        lambda _request: SimpleNamespace(id=1, role="ADMIN"),
+    )
+
+    def transfer_during_hydration(_reference):
+        with Session(engine) as session:
+            patient = session.get(main.Patient, 7)
+            media = session.get(main.PatientMedia, 42)
+            patient.owner_user_id = 10
+            media.owner_user_id = 10
+            session.add(patient)
+            session.add(media)
+            session.commit()
+        return image
+
+    monkeypatch.setattr(main, "storage_ensure_local", transfer_during_hydration)
+
+    response = main.patient_media_file(_request(), 7, 42)
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+
+
+def test_web_original_media_storage_outage_is_private_and_retryable(
+    media_delivery, monkeypatch
+):
+    def fail_storage(_reference):
+        raise RuntimeError("synthetic R2 outage")
+
+    monkeypatch.setattr(main, "storage_ensure_local", fail_storage)
+
+    response = main.patient_media_file(_request(), 7, 42)
+
+    assert response.status_code == 503
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["vary"] == "Cookie"
+    assert response.headers["retry-after"] == "2"
+
+
+def test_web_original_media_rejects_cross_account_before_storage_access(
+    media_delivery, monkeypatch
+):
+    _engine, _image = media_delivery
+    calls = []
+    monkeypatch.setattr(
+        main,
+        "get_current_user",
+        lambda _request: SimpleNamespace(id=10, role="DOCTOR"),
+    )
+    monkeypatch.setattr(main, "storage_ensure_local", lambda ref: calls.append(ref))
+
+    response = main.patient_media_file(_request(), 7, 42)
+
+    assert response.status_code == 403
+    assert response.headers["cache-control"] == "private, no-store"
+    assert calls == []
