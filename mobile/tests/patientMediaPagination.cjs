@@ -47,6 +47,29 @@ test('native clinical media accepts the web-compatible descending cursor page an
  assert.equal(calls[0].init.headers.Authorization,'Bearer synthetic-token');
 });
 
+test('native clinical media allowlists response fields and rebuilds same-origin original and thumbnail URLs',async()=>{
+ const hostile={
+  ...row(42),
+  patient_id:999,
+  owner_user_id:999,
+  file_path:'r2://private/patient-999/original.jpg',
+  storage_key:'private-storage-key',
+  url:'https://attacker.invalid/original',
+  thumbnail_url:'https://attacker.invalid/thumbnail'
+ };
+ const {api}=loadApi({items:[hostile],next_before:null});
+ const item=(await api.getMedia('synthetic-token',7)).items[0];
+ assert.equal(item.url,'https://dentalai.tr/api/mobile/v1/patients/7/media/42/file');
+ assert.equal(item.thumbnail_url,'https://dentalai.tr/api/mobile/v1/patients/7/media/42/thumbnail');
+ assert.deepEqual(Object.keys(item).sort(),[
+  'id','filename','media_type','tooth_number','note','uploaded_at','url','thumbnail_url'
+ ].sort());
+ assert.equal(item.patient_id,undefined);
+ assert.equal(item.owner_user_id,undefined);
+ assert.equal(item.file_path,undefined);
+ assert.equal(item.storage_key,undefined);
+});
+
 test('native clinical media accepts an explicit terminal cursor and empty terminal page',async()=>{
  const first=loadApi({items:[row(9)],next_before:null});
  const page=await first.api.getMedia('token',4);
