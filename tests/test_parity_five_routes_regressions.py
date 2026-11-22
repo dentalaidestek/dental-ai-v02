@@ -70,10 +70,10 @@ def test_attachment_upload_requires_session_and_participant_ownership(parity):
     # (a) vaka sahipliği: an outsider's upload is indistinguishable from a
     # missing case, exactly like the web "Bu vakaya dosya gönderilemez." gate.
     c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[4]
-    outsider=c.post("/api/mobile/v1/consultations/1/attachments",files={"file":("photo.png",png,"image/png")})
+    outsider=c.post("/api/mobile/v1/consultations/1/attachments",files={"file":("photo.png",png,"image/png")},data={"client_message_id":"parity-outsider-key-0001"})
     assert outsider.status_code==404
     assert outsider.json()["detail"]=="Görüşme bulunamadı."
-    assert c.post("/api/mobile/v1/consultations/999/attachments",files={"file":("photo.png",png,"image/png")}).status_code==404
+    assert c.post("/api/mobile/v1/consultations/999/attachments",files={"file":("photo.png",png,"image/png")},data={"client_message_id":"parity-missing-case-0001"}).status_code==404
     # (e) yanlış hesap: no message row was created by any denied attempt.
     with Session(engine) as session:
         assert session.exec(select(main.ConsultationMessage)).all()==[]
@@ -170,11 +170,11 @@ def test_attachment_download_is_case_and_message_bound(parity):
     c,engine=parity
     pdf=io.BytesIO();writer=PdfWriter()
     writer.add_blank_page(width=72,height=72);writer.write(pdf);pdf_bytes=pdf.getvalue()
-    sent=c.post("/api/mobile/v1/consultations/1/attachments",files={"file":("case.pdf",pdf_bytes,"application/pdf")})
+    sent=c.post("/api/mobile/v1/consultations/1/attachments",files={"file":("case.pdf",pdf_bytes,"application/pdf")},data={"client_message_id":"parity-pdf-case1-00001"})
     assert sent.status_code==200,sent.text
     message_id=sent.json()["message"]["id"]
     c.headers["Authorization"]="Bearer "+_SESSION_TOKEN[2]
-    other=c.post("/api/mobile/v1/consultations/2/attachments",files={"file":("case2.png",_png(),"image/png")})
+    other=c.post("/api/mobile/v1/consultations/2/attachments",files={"file":("case2.png",_png(),"image/png")},data={"client_message_id":"parity-pdf-case2-00001"})
     assert other.status_code==200,other.text
     other_message_id=other.json()["message"]["id"]
     # (a) ownership: a real message id from another case is not servable under
@@ -196,12 +196,15 @@ def test_attachment_download_is_case_and_message_bound(parity):
         assert again.headers["cache-control"]=="private, no-store"
     with Session(engine) as session:
         assert len(session.exec(select(main.ConsultationMessage)).all())==2
-        assert session.exec(select(main.ConsultationMessageReceipt)).all()==[]
+        # The merged idempotency contract persists one sender-scoped receipt per
+        # successful upload (the dedup key); the repeated GETs above must not
+        # create any additional receipt or message rows.
+        assert len(session.exec(select(main.ConsultationMessageReceipt)).all())==2
 
 
 def test_attachment_download_requires_session(parity):
     c,engine=parity
-    sent=c.post("/api/mobile/v1/consultations/1/attachments",files={"file":("photo.png",_png(),"image/png")})
+    sent=c.post("/api/mobile/v1/consultations/1/attachments",files={"file":("photo.png",_png(),"image/png")},data={"client_message_id":"parity-download-401-0001"})
     assert sent.status_code==200,sent.text
     message_id=sent.json()["message"]["id"]
     saved=c.headers.pop("Authorization")
