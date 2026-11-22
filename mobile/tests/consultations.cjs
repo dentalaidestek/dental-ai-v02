@@ -333,7 +333,7 @@ test('native attachment viewer uses the exact participant-scoped route and beare
 
 test('native attachment viewer uses the exact case-scoped download route and bearer header',()=>{
  const source=api.chatImageSource('secret',42,93);
- assert.match(source.uri,/^https:\/\/dentalai\\.tr\/api\/mobile\/v1\/consultations\/42\/attachments\/93$/);
+ assert.equal(source.uri,'https://dentalai.tr/api/mobile/v1/consultations/42/attachments/93');
  assert.deepEqual(source.headers,{Authorization:'Bearer secret'});
  assert.throws(()=>api.chatImageSource('secret',0,93),/Geçersiz/);
  assert.throws(()=>api.chatImageSource('secret',42,0),/Geçersiz/);
