@@ -200,3 +200,40 @@ def test_web_patient_gallery_uses_private_thumbnail_route_and_bounded_cursor_pag
     assert 'src="/patients/{{ patient.id }}/media/{{ media.id }}/thumbnail"' in template
     assert 'data-url="/patients/{{ patient.id }}/media/page"' in template
     assert 'patient_media_total - 3' in template
+
+def test_native_media_list_and_metadata_responses_are_private_after_route_deduplication():
+    from pathlib import Path
+
+    api = Path("app/mobile_modern_api_v3.py").read_text(encoding="utf-8")
+    main = Path("app/main.py").read_text(encoding="utf-8")
+
+    list_start = api.index('@router.get("/patients/{patient_id}/media")')
+    list_end = api.index('@router.post("/patients/{patient_id}/media")', list_start)
+    list_route = api[list_start:list_end]
+
+    meta_start = api.index('@router.get("/patients/{patient_id}/media/{media_id}")')
+    meta_end = api.index('@router.get("/notifications")', meta_start)
+    meta_route = api[meta_start:meta_end]
+
+    assert "response:Response" in list_route
+    assert "response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in list_route
+    assert "_user_owned_patient(s,user,patient_id)" in list_route
+    assert "PatientMedia.owner_user_id==user.id" in list_route
+    assert "response:Response" in meta_route
+    assert "response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in meta_route
+    assert "_user_owned_patient(s,user,patient_id)" in meta_route
+    assert "row.owner_user_id!=user.id" in meta_route
+
+    # app/main.py removes duplicate mobile method/path pairs from the earlier
+    # router before mounting v3, so the tested canonical handler is the active one.
+    assert "_remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)" in main
+    assert "app.include_router(mobile_modern_router)" in main
+
+    for header in (
+        '"Cache-Control": "private, no-store"',
+        '"Pragma": "no-cache"',
+        '"Vary": "Authorization"',
+        '"X-Content-Type-Options": "nosniff"',
+    ):
+        assert header in api
+
