@@ -48,3 +48,97 @@ def remove_shadowed_routes(primary_routers, candidate_router):
 
     routes[:] = kept
     return candidate_router
+
+
+
+def include_missing_routes(app, source_router):
+    """Mount routes added to a router after an earlier circular import include.
+
+    main and the native adapters import each other for shared models and auth
+    helpers. If an adapter is first imported while main is still initializing,
+    FastAPI may include only the routes present at that moment. Reconcile by
+    prefixed path, HTTP method and endpoint source symbol, adding only missing
+    operations and refusing conflicting owners.
+    """
+    from copy import copy
+    from fastapi import APIRouter
+    import inspect
+
+    prefix = getattr(source_router, "prefix", "") or ""
+
+    def endpoint_symbol(endpoint):
+        endpoint = inspect.unwrap(endpoint)
+        return (
+            getattr(endpoint, "__module__", None),
+            getattr(endpoint, "__qualname__", getattr(endpoint, "__name__", None)),
+        )
+
+    def full_path(route):
+        path = getattr(route, "path", None)
+        if not isinstance(path, str):
+            path = getattr(route, "path_format", None)
+        if not isinstance(path, str):
+            return None
+        if prefix and not path.startswith(prefix.rstrip("/") + "/"):
+            return prefix.rstrip("/") + (path if path.startswith("/") else "/" + path)
+        return path
+
+    existing = {}
+    for route in getattr(app, "routes", ()):
+        path = getattr(route, "path", None)
+        if not isinstance(path, str):
+            continue
+        methods = getattr(route, "methods", None) or ()
+        symbol = endpoint_symbol(getattr(route, "endpoint", None))
+        if methods:
+            for method in methods:
+                existing[(path, str(method).upper())] = symbol
+        else:
+            existing[(path, None)] = symbol
+
+    missing = []
+    for route in getattr(source_router, "routes", ()):
+        path = full_path(route)
+        if path is None:
+            continue
+        methods = getattr(route, "methods", None) or ()
+        symbol = endpoint_symbol(getattr(route, "endpoint", None))
+        if methods:
+            remaining = set()
+            for method in methods:
+                key = (path, str(method).upper())
+                owner = existing.get(key)
+                if owner is None:
+                    remaining.add(method)
+                elif owner != symbol:
+                    raise RuntimeError(
+                        f"mobile route ownership conflict for {str(method).upper()} {path}: "
+                        f"{owner[0]}.{owner[1]} vs {symbol[0]}.{symbol[1]}"
+                    )
+            if not remaining:
+                continue
+            cloned = copy(route)
+            cloned.methods = remaining
+            missing.append(cloned)
+            for method in remaining:
+                existing[(path, str(method).upper())] = symbol
+        else:
+            key = (path, None)
+            owner = existing.get(key)
+            if owner is not None:
+                if owner != symbol:
+                    raise RuntimeError(
+                        f"mobile route ownership conflict for {path}: "
+                        f"{owner[0]}.{owner[1]} vs {symbol[0]}.{symbol[1]}"
+                    )
+                continue
+            missing.append(copy(route))
+            existing[key] = symbol
+
+    if not missing:
+        return 0
+
+    target = APIRouter(prefix=prefix)
+    target.routes.extend(missing)
+    app.include_router(target)
+    return len(missing)
