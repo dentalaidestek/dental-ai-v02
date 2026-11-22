@@ -129,3 +129,27 @@ The preflight called `recorder.stop()` inside a catch that swallowed failures, t
 ### Validation boundary
 
 The code and regression tests are committed on `feature/mobile-web-parity-20261110`. The new branch-head Android and Security Recovery runs must complete before these new tests are reported as passing. Physical Android/iOS validation is still required for actual microphone release, Bluetooth route recovery, call/notification interruptions and playback after the preflight. No main merge, production deploy, database migration, patient data or real audio payload was used.
+
+
+## 2026-11-22 — final-head CI failure diagnosis and recovery
+
+### Exact starting-head evidence
+
+Starting branch HEAD: \`642d587437128bf3b7c3edd9406246176cf4618c\`.
+
+- Android run [#45025585789](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/45025585789): the runner executed the workflow. TypeScript failed in \`NativeVoiceDeviceCheck.tsx\` because the UI's \`recorder_stop_failed\` message key was not part of the pure classifier's \`VoiceDeviceCheckOutcome\` union. The beta suite ran and reported 1,022/1,024 passing; two failures were stale UI-source assertions.
+- Security Recovery [#45025585772](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/45025585772): Python security, PostgreSQL migration/concurrency, browser checks, Academic, Support, Program, Clinical and Social native jobs passed. The native voice job repeated the same two UI assertion failures (88/90 passed).
+- The APK assembly job succeeded, but the overall Android run is not green because typecheck and beta tests failed. Its artifact must not be treated as a fully accepted build.
+
+### Root causes and changes
+
+1. \`recorder_stop_failed\` is a lifecycle/UI recovery state, not an output of \`evaluateVoiceDeviceCheck\`. The component now uses a separate \`VoiceDeviceCheckUiOutcome\` union so the pure classifier remains limited to actual capture outcomes.
+2. The old UI regression expected \`recorder.stop()\` directly in the React component. Stop ownership was intentionally moved to \`stopVoiceDeviceRecorderVerified\`; the regression now asserts the helper owns stop + explicit inactive Expo status, and that the component calls the helper instead of bypassing it.
+3. The retry-button assertion omitted the newer \`stopPending\` state. It now requires the recovery action to be visible for stop, cleanup and audio-mode recovery failures.
+4. A further safety issue was found while tracing \`VoiceExamEntry\`: \`onBusyChange\` controls the parent screen's clinical recorder and navigation locks. The device-check component previously called \`notifyBusy(false)\` even when \`allowsRecording=false\` restoration failed. It now keeps the parent lock active on every failed restore path, including finish, cancel, retry, start-error and stale-start cancellation; a successful retry releases the lock.
+
+### New regression
+
+The UI test now checks all four terminal audio-mode restoration paths and the stale-start path for parent-lock propagation. The complete Android and Security Recovery runs on the new HEAD are required before claiming these changes passed CI. Physical Android/iOS microphone, Bluetooth, call/notification interruption and background/foreground acceptance is still required.
+
+No patient/audio payload, database migration, main merge or live deploy was used.
