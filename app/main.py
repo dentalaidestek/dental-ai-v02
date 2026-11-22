@@ -15432,9 +15432,9 @@ from app.mobile_route_registry import remove_shadowed_routes as _remove_shadowed
 from app.mobile_api import router as mobile_router
 from app.mobile_analysis_api import router as mobile_analysis_router
 from app.mobile_modern_api_v3 import router as mobile_modern_router
-_remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)
 app.include_router(mobile_router)
 app.include_router(mobile_analysis_router)
+_remove_shadowed_mobile_routes((mobile_router, mobile_analysis_router), mobile_modern_router)
 app.include_router(mobile_modern_router)
 
 
