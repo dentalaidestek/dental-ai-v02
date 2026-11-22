@@ -144,24 +144,25 @@ export default function NativeToothChart({token,userId,patientId}:{token:string;
  }
  async function refreshConflictSnapshot(){
   if(!conflict||conflictBusy)return;
-  const pending=conflict,scope=patientScopeKey,request=requestGeneration.current;
+  const pending=conflict,scope=patientScopeKey,request=requestGeneration.current,refresh=++refreshGeneration.current;
   setConflictBusy(true);setErr("");
   try{
    const updated=await getPatient(token,patientId,true);
-   if(scope!==patientScope.current||request!==requestGeneration.current)return;
+   if(scope!==patientScope.current||request!==requestGeneration.current||refresh!==refreshGeneration.current)return;
    if(updated.patient.id!==patientId)throw Error("Sunucu farklı bir hasta kaydı döndürdü.");
    const tooth=updated.teeth.find(item=>item.tooth_number===pending.toothNumber);
    const surface=pending.kind==="surface"
     ?updated.surfaces.find(item=>item.tooth_number===pending.toothNumber&&item.surface===pending.surface)
     :undefined;
-   const latest=surface||tooth;
+   const latestStatus=pending.kind==="surface"?surface?.status??null:tooth?.status??null;
+   const latestNote=pending.kind==="surface"?surface?.note??null:tooth?.note??null;
    setD(updated);
-   setConflict({...pending,refreshed:true,latestStatus:latest?.status??null,latestNote:latest?.note??null});
+   setConflict({...pending,refreshed:true,latestStatus,latestNote});
    setErr("Güncel kayıt yüklendi. Yerel taslağınız korundu; karşılaştırdıktan sonra yeniden kaydedebilirsiniz.");
   }catch(e:any){
-   if(scope===patientScope.current&&request===requestGeneration.current)setErr(e?.message||"Güncel diş kaydı yüklenemedi. Taslağınız korunuyor.");
+   if(scope===patientScope.current&&request===requestGeneration.current&&refresh===refreshGeneration.current)setErr(e?.message||"Güncel diş kaydı yüklenemedi. Taslağınız korunuyor.");
   }finally{
-   if(scope===patientScope.current&&request===requestGeneration.current)setConflictBusy(false);
+   if(scope===patientScope.current&&request===requestGeneration.current&&refresh===refreshGeneration.current)setConflictBusy(false);
   }
  }
  async function saveTreatment(){
