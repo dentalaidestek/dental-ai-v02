@@ -332,7 +332,7 @@ def create_program_event(response:Response,payload:ProgramValues,user=Depends(_m
         raise HTTPException(status_code=422,detail='Program isteği anahtarı zorunludur.')
     try:reminder=None if payload.reminder_minutes=='NONE' else int(payload.reminder_minutes)
     except ValueError:raise HTTPException(status_code=422,detail='Hatırlatma seçimini kontrol edin.')
-    result=mobile_create_schedule(MobileScheduleCreate(**{**payload.model_dump(),'reminder_minutes':reminder,'notification_enabled':reminder is not None}),user)
+    result=mobile_create_schedule(MobileScheduleCreate(**{**payload.model_dump(exclude={'expected_revision'}),'reminder_minutes':reminder,'notification_enabled':reminder is not None}),user)
     return program_event(response,result['event']['id'],user)
 
 @router.put('/program/events/{event_id}')
