@@ -16,6 +16,7 @@ const script = scriptMatch[1];
 function createForm({ existingCount = 0, files = [] } = {}) {
   let selectedFiles = [...files];
   let inputValue = selectedFiles.length ? "selected" : "";
+  const handlers = {};
   const fileInput = {
     get files() {
       return selectedFiles;
@@ -27,8 +28,10 @@ function createForm({ existingCount = 0, files = [] } = {}) {
       inputValue = value;
       if (value === "") selectedFiles = [];
     },
+    addEventListener(name, callback) {
+      handlers[`file:${name}`] = callback;
+    },
   };
-  const handlers = {};
   const form = {
     dataset: {
       analysisImageLimit: "4",
@@ -69,7 +72,7 @@ function createForm({ existingCount = 0, files = [] } = {}) {
       return prevented;
     },
     change() {
-      handlers.change();
+      handlers["file:change"]();
     },
   };
 }
