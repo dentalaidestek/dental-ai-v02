@@ -58,12 +58,22 @@ def test_program_edit_copy_complete_delete_reuse_web_lifecycle(program):
     created=client.post('/api/mobile/v1/program/events',json=values)
     assert created.status_code==200,created.text
     ident=created.json()['event']['id']
-    invalid=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'patient_id':9})
+    original_revision=created.json()['event']['revision']
+    assert len(original_revision)==64
+    invalid=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'patient_id':9,'expected_revision':original_revision})
     assert invalid.status_code==400
-    edited=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'start_at':'2030-01-07T11:00','end_at':'2030-01-07T11:30','reminder_minutes':'NONE'})
+    edited=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'start_at':'2030-01-07T11:00','end_at':'2030-01-07T11:30','reminder_minutes':'NONE','expected_revision':original_revision})
     assert edited.status_code==200,edited.text
     assert edited.json()['event']['start_local']=='2030-01-07T11:00'
     assert edited.json()['event']['reminder_minutes']=='NONE'
+    latest_revision=edited.json()['event']['revision']
+    assert latest_revision!=original_revision
+    stale=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'title':'Stale overwrite','expected_revision':original_revision})
+    assert stale.status_code==409
+    current=client.get(f'/api/mobile/v1/program/events/{ident}').json()['event']
+    assert current['title']=='Synthetic visit' and current['revision']==latest_revision
+    missing=client.put(f'/api/mobile/v1/program/events/{ident}',json=values)
+    assert missing.status_code==422
     copied=client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08','2030-01-09']})
     assert copied.status_code==200,copied.text
     assert client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08','2030-01-09']}).status_code==200
@@ -496,3 +506,60 @@ def test_program_copy_receipt_rejects_changed_source_payload(program):
         copies=[row for row in rows if row.id!=ident]
         assert len(copies)==1 and copies[0].title=='Synthetic copy receipt'
 
+
+
+def test_web_program_edit_rejects_stale_revision_and_preserves_the_local_draft(program):
+    client,engine=program
+    values={'event_type':'APPOINTMENT','title':'Synthetic web visit','start_at':'2030-01-07T10:00','end_at':'2030-01-07T10:30','patient_id':8,'reminder_minutes':'30','recurrence_rule':'NONE','request_key':'program-web-revision-request-001'}
+    created=client.post('/api/mobile/v1/program/events',json=values)
+    assert created.status_code==200,created.text
+    ident=created.json()['event']['id']
+    original_revision=created.json()['event']['revision']
+
+    edit_page=client.get(f'/program/{ident}/edit')
+    assert edit_page.status_code==200
+    assert edit_page.context['expected_revision']==original_revision
+    assert edit_page.context['revision_conflict'] is False
+
+    with Session(engine) as session:
+        event=session.get(main.ScheduleEvent,ident)
+        event.title='Changed on another device'
+        main._touch_schedule_event(event)
+        session.add(event)
+        session.commit()
+        latest_revision=main._schedule_event_revision(event)
+
+    draft={'event_type':'APPOINTMENT','title':'My unsaved local draft','start_at':'2030-01-07T10:00','end_at':'2030-01-07T10:30','patient_id':'8','location':'','notes':'Local-only note','reminder_minutes':'30','recurrence_rule':'NONE','recurrence_until':'','expected_revision':original_revision}
+    stale=client.post(f'/program/{ident}/edit',data=draft)
+    assert stale.status_code==409
+    assert stale.context['revision_conflict'] is True
+    assert stale.context['expected_revision']==original_revision
+    assert stale.context['initial_title']=='My unsaved local draft'
+    assert stale.context['initial_notes']=='Local-only note'
+
+    with Session(engine) as session:
+        event=session.get(main.ScheduleEvent,ident)
+        assert event.title=='Changed on another device'
+        assert main._schedule_event_revision(event)==latest_revision
+
+    current=client.post(f'/program/{ident}/edit',data={**draft,'expected_revision':latest_revision})
+    assert current.status_code==303
+    with Session(engine) as session:
+        event=session.get(main.ScheduleEvent,ident)
+        assert event.title=='My unsaved local draft'
+        assert event.notes=='Local-only note'
+
+
+def test_program_revision_advances_after_complete_and_delete(program):
+    client,engine=program
+    values={'event_type':'TASK','title':'Synthetic revision task','start_at':'2030-01-07T10:00','reminder_minutes':'NONE','recurrence_rule':'NONE','request_key':'program-revision-actions-001'}
+    created=client.post('/api/mobile/v1/program/events',json=values)
+    assert created.status_code==200,created.text
+    ident=created.json()['event']['id']
+    first=created.json()['event']['revision']
+    assert client.post(f'/api/mobile/v1/program/events/{ident}/complete').status_code==200
+    completed=client.get(f'/api/mobile/v1/program/events/{ident}').json()['event']['revision']
+    assert completed!=first
+    assert client.delete(f'/api/mobile/v1/program/events/{ident}').status_code==200
+    deleted=client.get(f'/api/mobile/v1/program/events/{ident}').json()['event']['revision']
+    assert deleted!=completed
