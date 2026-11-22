@@ -406,9 +406,16 @@ def test_native_media_and_chat_recovery_routes_are_mounted_once_with_owner_check
         assert endpoint.__module__ == "app.mobile_api"
         assert endpoint.__name__ == endpoint_name
 
+        def endpoint_symbol(value):
+            value = inspect.unwrap(value)
+            return (
+                getattr(value, "__module__", None),
+                getattr(value, "__qualname__", getattr(value, "__name__", None)),
+            )
+
         mounted = [
             route for route in matching(main.app.routes, suffix, method)
-            if inspect.unwrap(route.endpoint) is inspect.unwrap(endpoint)
+            if endpoint_symbol(route.endpoint) == endpoint_symbol(endpoint)
         ]
         assert len(mounted) == 1, (
             f"{method} {suffix} must be mounted exactly once on the live FastAPI app"
