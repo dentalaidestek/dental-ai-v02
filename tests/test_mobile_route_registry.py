@@ -144,9 +144,16 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
         # source endpoint first, then assert that this exact callable is mounted
         # once on the application. This tests route ownership without guessing
         # how the framework materializes the prefix.
+        def route_path(route):
+            path = getattr(route, "path", None)
+            if not isinstance(path, str):
+                path = getattr(route, "path_format", None)
+            return path if isinstance(path, str) else ""
+
+        normalized_suffix = suffix.rstrip("/")
         source_matches = [
             route for route in source_router.routes
-            if getattr(route, "path", "").endswith(suffix)
+            if route_path(route).rstrip("/").endswith(normalized_suffix)
             and method in (getattr(route, "methods", None) or set())
         ]
         assert len(source_matches) == 1, (
@@ -170,12 +177,23 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
             if endpoint_symbol(getattr(route, "endpoint", None)) == expected_symbol
             and method in (getattr(route, "methods", None) or set())
         ]
+        app_media_routes = [
+            (
+                route_path(route),
+                sorted(getattr(route, "methods", None) or ()),
+                endpoint_symbol(getattr(route, "endpoint", None)),
+            )
+            for route in main.app.routes
+            if "media" in route_path(route).lower()
+            and method in (getattr(route, "methods", None) or set())
+        ]
         assert len(matches) == 1, (
             f"expected source endpoint {expected_symbol[0]}.{expected_symbol[1]} "
-            f"to be mounted once, found {len(matches)}; candidates="
-            f"{[(getattr(r, 'path', None), endpoint_symbol(getattr(r, 'endpoint', None))) for r in main.app.routes if getattr(r, 'path', '').endswith(suffix) and method in (getattr(r, 'methods', None) or set())]}"
+            f"to be mounted once, found {len(matches)}; app_media_routes={app_media_routes}"
         )
-        assert matches[0].path.endswith(suffix)
+        assert route_path(matches[0]).rstrip("/").endswith(normalized_suffix), (
+            f"mounted endpoint path {route_path(matches[0])!r} does not end with {normalized_suffix!r}"
+        )
         return matches[0]
 
     media_list = registered(primary_mobile_router, "/patients/{patient_id}/media", "GET")
