@@ -248,6 +248,22 @@ test('failed private image can be retried without repeating the vision request',
 
 
 
+test('late image load from a previous retry revision cannot restore stale overlay dimensions',async()=>{
+ const Component=ui(async()=>({pending:false,findings:model.visionFindings({findings:[finding]},'PANORAMIC')}));let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:31,assetId:7,onClose(){}})));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ const first=t.root.findByType('Image'),staleLoad=first.props.onLoad;
+ await renderer.act(async()=>first.props.onError());
+ await renderer.act(async()=>findPressable(t.root,'Görüntüyü Yeniden Yükle').props.onPress());
+ assert.equal(t.root.findAllByType('Svg').length,0);
+ await renderer.act(async()=>staleLoad({nativeEvent:{source:{width:1200,height:600}}}));
+ assert.equal(t.root.findAllByType('Svg').length,0,'a previous image revision must not provide dimensions for the retried source');
+ const current=t.root.findByType('Image');
+ await renderer.act(async()=>current.props.onLoad({nativeEvent:{source:{width:800,height:400}}}));
+ assert.equal(t.root.findByType('Svg').props.viewBox,'0 0 800 400','the current image revision supplies its own overlay geometry');
+ await renderer.act(async()=>t.unmount());
+});
+
 test('viewer image identity changes on account switch without exposing the bearer token',async()=>{
  const visionCalls=[],imageCalls=[];
  const Component=ui(async(...args)=>{visionCalls.push(args);return{pending:false,findings:[]}},()=>{},(token,analysisId,assetId)=>{
