@@ -15412,3 +15412,16 @@ register_expert_social(app, _study_trace_sys.modules[__name__])
 # Cookie-session patient history pages share the same server-rendered cards as the first page.
 from app.patient_history_web import router as patient_history_web_router
 app.include_router(patient_history_web_router)
+
+# Foto Fikir: onaylı metinlerden hekime özel içerik görselleri (mock/gerçek mod).
+# Modül import'u FotoFikirJob tablosunu SQLModel.metadata'ya ekler; init_db create_all kapsar.
+from app.foto_fikir_api import foto_fikir_router
+app.include_router(foto_fikir_router)
+
+
+@app.get("/foto-fikir", response_class=HTMLResponse)
+def foto_fikir_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+    return templates.TemplateResponse(request=request, name="foto_fikir.html", context={"user": user})
