@@ -46,3 +46,21 @@ The message receipt now echoes its exact case ID and client intent key. Native c
 Added regressions cover web signature spoofing, metadata stripping, same-key replay/conflict, latest inbox state, cross-case message IDs, native receipt binding and PostgreSQL concurrent same-key attachment retries. The PostgreSQL concurrency test runs when `TEST_POSTGRES_URL` is configured by Security Recovery.
 
 No production data or media were used. Changes remain on the feature branch; no main merge or live deployment was performed. Branch-head CI must complete before test success is claimed.
+
+## Follow-up — attachment mutation and inbox-recovery gaps
+
+A deeper pass across the native adapters and canonical web handlers found two gaps not covered by the original route table:
+
+1. The web attachment handler accepts an empty `client_message_id` for browser compatibility. The mobile adapter also defaulted to an empty value, which meant a malformed/older native caller could create a non-idempotent attachment. The mobile route now requires a 16–96 character intent key and runs the web normalizer before reading multipart bytes. The native client already persists and sends this key; the browser handler remains backward-compatible.
+2. The message-receipt endpoint checked case-wide retention but did not check the participant's latest `ConsultationInboxState`. The attachment download and web download both hide media while that participant has locally deleted the conversation. Receipt recovery now applies the same latest-state rule and returns 404 until that participant restores the conversation; it does not erase the pending local intent.
+
+The mobile attachment adapter also performs a cheap preflight for closed case states and the WAITING_START deadline before reading the upload. The canonical web handler still repeats participant, block, case-state, retention, idempotency and persistence checks under the case lock; the preflight is not the authorization source of truth.
+
+New/updated regression coverage:
+- `tests/test_mobile_chat_actions.py`: mandatory/malformed key rejection, valid-key media upload coverage, replay/conflict and existing download privacy.
+- `tests/test_mobile_chat_route_security.py`: latest-inbox-state receipt hiding and restoration, outsider/blocked upload denial, sender-scoped reuse of the same key, and post-commit response-loss recovery without a duplicate message.
+- `.github/workflows/security-recovery.yml`: the new route-security module is part of the Python security job.
+
+The analysis and patient-media receipt tests remain in the same security job and continue to cover patient ownership, exact payload replay/conflict, lost response recovery, and deleted-resource non-resurrection. The PostgreSQL parallel attachment retry remains covered by the existing concurrency test when `TEST_POSTGRES_URL` is configured.
+
+Validation is pending for the branch head after these changes. Do not interpret source review or test additions as a test pass. No main merge, production deploy, schema migration, or patient-data mutation was performed.
