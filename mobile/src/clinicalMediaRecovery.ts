@@ -9,11 +9,13 @@ const LOCAL_CODES = new Set([
 export function classifyClinicalMediaUploadFailure(
   status?: number,
   code?: string,
+  missingRoute = false,
 ): ClinicalMediaUploadFailure {
   if (typeof code === "string" && LOCAL_CODES.has(code)) return "LOCAL";
-  // The mobile upload route returns 503 for a missing receipt key before it
-  // reads/persists the uploaded file. This is a known non-commit, not ambiguity.
-  if (status === 503) return "CONFIGURATION";
+  // The receipt-key 503 and a bare 404 for the receipt route both stop the
+  // upload before a file POST can be accepted. A patient-specific 404 remains
+  // a normal ownership/resource rejection.
+  if (status === 503 || (status === 404 && missingRoute)) return "CONFIGURATION";
   if (typeof status === "number" && [400, 403, 404, 413, 422].includes(status)) {
     return "REJECTED";
   }
