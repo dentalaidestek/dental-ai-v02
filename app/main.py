@@ -6610,6 +6610,10 @@ def program_complete(request: Request, event_id: int):
                 "Tekrarlanan programın tamamını tamamlandı olarak işaretlemek yerine düzenleyebilirsiniz.",
                 status_code=400,
             )
+        # A repeated completion must not advance the revision or emit duplicate
+        # reminders/realtime events after a client retries an uncertain response.
+        if event.status == "COMPLETED":
+            return RedirectResponse("/program?completed=1", status_code=303)
         event.status = "COMPLETED"
         _touch_schedule_event(event)
         s.add(event)
