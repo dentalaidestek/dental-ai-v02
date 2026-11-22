@@ -16,7 +16,7 @@ import {isPatientProfileEditRevision,patientProfileAgeLabel,patientProfileCanDel
 import {patientTreatmentCanEdit,patientTreatmentDateLabel,patientTreatmentMaterialLabel,patientTreatmentToothLabel} from './patientTreatmentPresentation';
 import {patientTreatmentHistoryExpansionAfterRefresh} from './patientTreatmentHistoryExpansion';
 import { shouldRefreshOnAppResume } from './appResumeRefresh';
-import {nextSessionRenderKey} from './sessionRenderKey';
+import useSessionRenderKey from './useSessionRenderKey';
 
 const blankTreatment={treatment_name:'',tooth_number:'',treatment_date:'',material:'',doctor_note:'',result:''};
 const treatmentStore=chunkedDraftStore(SecureStore,Crypto.randomUUID);
@@ -28,10 +28,8 @@ const actionColors:Record<string,string>={chart:'#1769F5',analysis:'#8B39E8',app
 type Actions={chart:()=>void;analysis:()=>void;appointment:()=>void;expert:()=>void;analysisResult:(id:number)=>void;deleted:()=>void};
 export default function NativePatientProfile({token,userId,patientId,actions}:{token:string;userId:number;patientId:number;actions:Actions}){
  const focused=useIsFocused(),{lastEvent}=useRealtime(),[detail,setDetail]=useState<PatientDetail|null>(null),[loadedScope,setLoadedScope]=useState(''),[error,setError]=useState(''),[refreshing,setRefreshing]=useState(false),[infoOpen,setInfoOpen]=useState(false),[treatmentOpen,setTreatmentOpen]=useState(false),[allTreatments,setAllTreatments]=useState(false),[treatmentCursor,setTreatmentCursor]=useState<string|null>(null),[treatmentPageLoading,setTreatmentPageLoading]=useState(false),[treatmentPageError,setTreatmentPageError]=useState(''),[patientForm,setPatientForm]=useState(blankPatient),[patientFormBase,setPatientFormBase]=useState(blankPatient),[profileConflicts,setProfileConflicts]=useState<readonly PatientProfileEditConflict[]>([]),[treatment,setTreatment]=useState(blankTreatment),[editingTreatment,setEditingTreatment]=useState<number|null>(null),[editingTreatmentRevision,setEditingTreatmentRevision]=useState<string|null>(null),[pendingTreatment,setPendingTreatment]=useState<TreatmentMutationIntent|null>(null),[treatmentIntentReady,setTreatmentIntentReady]=useState(false),[treatmentIntentBlocked,setTreatmentIntentBlocked]=useState(false),[busy,setBusy]=useState(false),[mutationError,setMutationError]=useState(''),[profileUncertain,setProfileUncertain]=useState(false),[treatmentUncertain,setTreatmentUncertain]=useState(false),[deleteIntentReady,setDeleteIntentReady]=useState(false),[deleteIntentBlocked,setDeleteIntentBlocked]=useState(false),[pendingDelete,setPendingDelete]=useState<PatientDeleteIntent|null>(null),[revisionConflict,setRevisionConflict]=useState(false);
- const scope=`${userId}:${token}:${patientId}`;
- const profileRenderIdentity=useRef<{scope:string;key:string}|null>(null);
- if(!profileRenderIdentity.current||profileRenderIdentity.current.scope!==scope)profileRenderIdentity.current={scope,key:nextSessionRenderKey()};
- const profileRenderKey=profileRenderIdentity.current.key;
+ const scope=useSessionRenderKey(`${userId}:${token}:${patientId}`);
+ const profileRenderKey=scope;
  const mounted=useRef(true),request=useRef(0),treatmentHistoryScope=useRef(scope),treatmentPageRequest=useRef(0),treatmentPageLock=useRef(false),treatmentPageIds=useRef(new Set<number>()),treatmentPageCursors=useRef(new Set<string>()),lock=useRef(false),owner=useRef(scope);const scopeChanged=owner.current!==scope;if(owner.current!==scope){owner.current=scope;request.current++;}if(scopeChanged){treatmentPageRequest.current++;treatmentPageLock.current=false;}
  const editDraftDirty=!patientProfileEditMatches(patientForm,patientFormBase);const profileRevisionError=patientProfileEditRevisionError(detail?.edit_revision);const editSnapshot=useRef<{scope:string;active:boolean;revision?:string;patient:PatientDetail['patient']|null}>({scope,active:false,revision:undefined,patient:null});editSnapshot.current=editSnapshot.current.scope===scope?{scope,active:infoOpen||editDraftDirty||profileConflicts.length>0||revisionConflict,revision:detail?.edit_revision,patient:detail?.patient??null}:{scope,active:false,revision:undefined,patient:null};
  const current=()=>mounted.current&&owner.current===scope;
