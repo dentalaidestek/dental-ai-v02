@@ -1080,3 +1080,49 @@ def test_treatment_history_index_migration_upgrades_revision18_online(pg):
             if item.get('name') == 'ix_treatment_patient_created_id'
         )
         assert index['column_names'] == ['patient_id', 'created_at', 'id']
+
+
+def test_program_revision_row_lock_allows_only_one_concurrent_postgres_edit(pg):
+    from threading import Barrier
+
+    engine, _, resources = pg
+    owner_id = resources[0].owner_user_id
+    with Session(engine, expire_on_commit=False) as session:
+        event = main.ScheduleEvent(
+            owner_user_id=owner_id,
+            event_type="APPOINTMENT",
+            title="Synthetic concurrent Program edit",
+            start_at=datetime(2030, 1, 7, 7, 0),
+            end_at=datetime(2030, 1, 7, 7, 30),
+            created_at=datetime(2026, 1, 1),
+            updated_at=datetime(2026, 1, 1),
+        )
+        session.add(event)
+        session.commit()
+        event_id = event.id
+        expected_revision = main._schedule_event_revision(event)
+
+    barrier = Barrier(2)
+
+    def edit(title):
+        with Session(engine, expire_on_commit=False) as session:
+            barrier.wait(timeout=5)
+            locked, status = main._lock_schedule_event_for_edit(
+                session, owner_id, event_id, expected_revision
+            )
+            if status is not None:
+                return status
+            locked.title = title
+            main._touch_schedule_event(locked)
+            session.add(locked)
+            session.commit()
+            return 303
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(edit, ["Synthetic writer A", "Synthetic writer B"]))
+
+    assert sorted(results) == [303, 409]
+    with Session(engine) as session:
+        final = session.get(main.ScheduleEvent, event_id)
+        assert final.title in {"Synthetic writer A", "Synthetic writer B"}
+        assert main._schedule_event_revision(final) != expected_revision
