@@ -74,3 +74,26 @@ test('voice examination exposes the check before consent and blocks conflicting 
  assert.match(entry,/usePreventRemove\(processing\|\|audioBusy\|\|deviceCheckBusy\|\|applyBusy/);
  assert.match(entry,/disabled=\{processing\|\|applyBusy\|\|deviceCheckBusy\} onBusyChanged=\{setAudioBusy\}/);
 });
+
+
+test('an unverified microphone stop keeps the recorder and private file intact until retry',()=>{
+ const finish=component.indexOf('async function finish(run:number)');
+ const finishStop=component.indexOf('const stopped=await stopPreparedRecorder()',finish);
+ const finishCleanup=component.indexOf('removeTemporaryFile(path)',finish);
+ assert.ok(finish>=0&&finishStop>finish&&finishCleanup>finishStop,'finish verifies stop before attempting file cleanup');
+ assert.match(component.slice(finishStop,finishCleanup),/if\(!stopped\)[\s\S]*setStopPending\(true\)[\s\S]*notifyBusy\(true\)[\s\S]*return/);
+ const cancel=component.indexOf('async function cancel(');
+ const cancelStop=component.indexOf('await stopPreparedRecorder()',cancel);
+ const cancelCleanup=component.indexOf('removeTemporaryFile(uri.current)',cancel);
+ assert.ok(cancelStop>cancel&&cancelCleanup>cancelStop,'cancel verifies stop before deleting the temporary file');
+ const retry=component.indexOf('async function retryCleanup()');
+ const retryStop=component.indexOf('await stopPreparedRecorder()',retry);
+ const retryCleanup=component.indexOf('removeTemporaryFile(path)',retry);
+ assert.ok(retryStop>retry&&retryCleanup>retryStop,'retry also stops and verifies before cleanup');
+ assert.match(component,/if\(disabled\|\|stopPending\|\|cleanupPending\|\|audioModeBlocked/);
+ assert.match(component,/\(stopPending\|\|cleanupPending\|\|audioModeBlocked\)&&<Pressable/);
+ assert.match(component,/disabled=\{busyPhase\} onPress=\{\(\)=>void retryCleanup\(\)\}/,'the recovery control stays usable while the parent blocks conflicting voice actions');
+ const preparedClears=[...component.matchAll(/prepared\.current=false/g)];
+ assert.equal(preparedClears.length,1,'prepared state is cleared only by the verified-stop helper');
+ assert.match(component,/if\(stopped\)prepared\.current=false/);
+});
