@@ -165,17 +165,17 @@ test('orphaned recorder artifacts are removed only from a direct app-private cac
 });
 
 function recorderUI({saved=null,loadDraft=null,transcribe=async()=>({transcript:'Synthetic dictated speech',revision:'r'}),stopFailures=0,stopFailureStopsRecorder=false,stopGate=null,permissionGate=null,prepareFailureAt=0,audioModeFailureAt=0,unsafeUriAt=0,persistGate=null,restoredFileInfo={exists:true,size:1024}}={}){
- const exports={},store=new Map(),calls=[],modeCalls=[],timers=[],files=new Map(),state={isRecording:false,durationMillis:0,mediaServicesDidReset:false};
+ const exports={},store=new Map(),calls=[],modeCalls=[],timers=[],files=new Map(),alerts=[],state={isRecording:false,durationMillis:0,mediaServicesDidReset:false};
  
  if(saved){try{for(const segment of JSON.parse(saved).segments||[])files.set(segment.uri,{...restoredFileInfo})}catch{}}
  let audioUri='file:///cache/record-0.m4a',stopFailuresRemaining=stopFailures;
  const audio={get uri(){return audioUri},getStatus:()=>({...state}),prepareToRecordAsync:async options=>{if(!options?.extension)throw Error('iOS segment preparation must receive fresh recording options');const index=calls.filter(value=>value==='prepare').length+1;if(index===prepareFailureAt)throw Error('Synthetic prepare failure');audioUri=unsafeUriAt===index?'file:///outside/record-'+index+'.m4a':'file:///cache/record-'+index+'.m4a';files.set(audioUri,{exists:true,size:1024});calls.push('prepare')},record(){state.isRecording=true;calls.push('record')},stop:async()=>{calls.push('stop');if(stopGate)await stopGate();if(stopFailuresRemaining>0){stopFailuresRemaining--;if(stopFailureStopsRecorder)state.isRecording=false;throw Error('Synthetic stop failure')}state.isRecording=false}};
  let focusValue=true,focusSubs=new Set(),clockNow=Date.now(),nextInterval=0,appStateListener=null;const intervals=new Map(),appState={currentState:'active',addEventListener:(event,listener)=>{appStateListener=listener;return{remove(){if(appStateListener===listener)appStateListener=null}}}};
  const secure={getItemAsync:async key=>store.get(key)||null,setItemAsync:async(k,v)=>store.set(k,v),deleteItemAsync:async k=>store.delete(k)};
- const native={StyleSheet:{create:x=>x},Alert:{alert(){}},AppState:appState,...Object.fromEntries(['ActivityIndicator','Pressable','Text','TextInput','View'].map(x=>[x,x]))};
+ const native={StyleSheet:{create:x=>x},Alert:{alert:(...args)=>alerts.push(args)},AppState:appState,...Object.fromEntries(['ActivityIndicator','Pressable','Text','TextInput','View'].map(x=>[x,x]))};
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeVoiceRecorder.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  vm.runInNewContext(code,{exports,Date:{now:()=>clockNow},setInterval:fn=>{const id=++nextInterval;intervals.set(id,fn);return id},clearInterval:id=>intervals.delete(id),setTimeout:(fn,ms)=>ms===15000?(timers.push(fn),timers.length):setTimeout(fn,ms),clearTimeout:id=>{if(typeof id!=='number')clearTimeout(id)},AbortController,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='expo-audio'?{useAudioRecorder:()=>audio,useAudioRecorderState:()=>state,RecordingPresets:{HIGH_QUALITY:{extension:'.m4a',android:{outputFormat:'mpeg4',audioEncoder:'aac'},ios:{}}},requestRecordingPermissionsAsync:async()=>{if(permissionGate)await permissionGate();return{granted:true}},setAudioModeAsync:async mode=>{modeCalls.push(mode?.allowsRecording===true);if(modeCalls.length===audioModeFailureAt)throw Error('Synthetic audio mode restore failure')}}:n==='expo-file-system/legacy'?{cacheDirectory:'file:///cache/',deleteAsync:async uri=>files.set(uri,{exists:false,size:0}),getInfoAsync:async uri=>files.get(uri)||{exists:false,size:0}}:n==='expo-document-picker'?{getDocumentAsync:async()=>({canceled:true,assets:[]})}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=>crypto.randomUUID()} :n==='@react-navigation/native'?{useIsFocused:()=>{const [current,setCurrent]=React.useState(focusValue);React.useEffect(()=>{focusSubs.add(setCurrent);return()=>{focusSubs.delete(setCurrent)}},[]);return current},usePreventRemove(){}}:n==='./socialDraft'?{chunkedDraftStore:()=>({getItemAsync:async key=>loadDraft?loadDraft(key):saved,setItemAsync:async(k,v)=>{if(persistGate?.current)await persistGate.current;store.set('draft',v);store.set(k,v)},deleteItemAsync:async k=>store.delete(k)})}:n==='./voiceDraftScope'?require('../src/voiceDraftScope.ts'):n==='./voiceSession'?require('../src/voiceSession.ts'):n==='./nativeVoiceAudio'?nativeVoiceAudioModule(files,transcribe):n==='./voiceAudioImport'?require('../src/voiceAudioImport.ts'):n==='./voiceDeviceCheck'?require('../src/voiceDeviceCheck.ts'):n==='./voiceRecorderLifecycle'?require('../src/voiceRecorderLifecycle.ts'):(()=>{throw Error('Unexpected NativeVoiceRecorder dependency: '+n)})()});
- return{Component:exports.default,calls,modeCalls,store,timers,files,focus:value=>{focusValue=value;for(const notify of[...focusSubs])notify(value)},background:()=>{appState.currentState='background';appStateListener?.('background')},foreground:()=>{appState.currentState='active';appStateListener?.('active')},advance:ms=>{clockNow+=ms;for(const fn of intervals.values())fn()}};
+ return{Component:exports.default,calls,modeCalls,store,timers,files,alerts,focus:value=>{focusValue=value;for(const notify of[...focusSubs])notify(value)},background:()=>{appState.currentState='background';appStateListener?.('background')},foreground:()=>{appState.currentState='active';appStateListener?.('active')},advance:ms=>{clockNow+=ms;for(const fn of intervals.values())fn()}};
 }
 test('native recorder disables new microphone and file input at the web transcript budget',async()=>{
  const h=recorderUI();let tree;
@@ -233,7 +233,13 @@ test('an unsafe recorder URI stops capture, stays local, and blocks another reco
  const start=button(tree,'Mikrofonu başlat');
  assert.equal(start.props.disabled,true,'unsafe cleanup state blocks a new microphone session');
  const before=h.calls.filter(value=>value==='prepare').length;
- await renderer.act(async()=>{button(tree,'Taslağı ve yerel sesleri sil').props.onPress();await new Promise(resolve=>setImmediate(resolve));});
+ await renderer.act(async()=>{button(tree,'Taslağı ve yerel sesleri sil').props.onPress();});
+ const confirmation=h.alerts.at(-1);
+ assert.ok(confirmation,'draft clearing must ask for explicit destructive confirmation');
+ assert.equal(confirmation[0],'Muayene taslağı silinsin mi?');
+ const destructive=confirmation[2]?.find(option=>option.text==='Sil');
+ assert.ok(destructive,'the destructive confirmation action is present');
+ await renderer.act(async()=>{destructive.onPress();await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve));});
  assert.equal(h.files.get('file:///outside/record-1.m4a').exists,true,'clear does not cross the private-cache boundary');
  assert.ok(text(tree.toJSON()).includes('Güvenlik nedeniyle yeni kayıt engellendi'));
  assert.equal(h.calls.filter(value=>value==='prepare').length,before);
