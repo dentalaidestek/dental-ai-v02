@@ -81,3 +81,8 @@ The template now reads `form.dataset.analysisMaxBatchBytes`. Added `tests/analys
 The browser regression is registered in the Security Recovery web-form step. These are synthetic file metadata fixtures; no clinical image or patient record is used. The branch's existing server-side owner checks, image sanitization, four-image combined admission limit and 15 MiB / 48 MiB byte limits remain authoritative.
 
 Validation boundary: the source/test/workflow commits are on the PR branch. The final-head GitHub Actions run must execute the new test before it is called CI-passing; no local full checkout was available for running the Node test here. No schema/provider change, main merge or production deploy.
+
+
+## Isolated runtime check — 2026-11-22
+
+Ran the committed seven-case Node test against the current inline validator body with a synthetic DOM dataset fixture on Node v22.16.0: **7 passed, 0 failed**. The first harness attempt exposed a missing HTMLInputElement.addEventListener mock; the fixture was corrected to register and invoke the file-input change handler before accepting this result. This isolated check is not a full repository checkout or a substitute for the pending GitHub Android/Security Recovery workflows.
