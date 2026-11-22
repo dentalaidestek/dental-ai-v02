@@ -35,10 +35,14 @@ from sqlmodel import Field, Session, SQLModel, select
 
 from app.http_transport import urlopen
 from app.foto_fikir_creative import (
+    CREATIVE_DIRECTOR_BRIEF,
+    actionable_tips,
     audit_creative_output,
     creative_prompt_for_slide,
+    recommend_style,
     reel_shot_plan,
     safe_rewrite_suggestion,
+    story_arc_roles,
 )
 
 try:
@@ -573,7 +577,7 @@ def _ff_json_object(raw: str) -> Optional[dict]:
     return data if isinstance(data, dict) else None
 
 
-def _ff_claude_text(prompt: str, *, max_tokens: int = 1600) -> str:
+def _ff_claude_text(prompt: str, *, max_tokens: int = 1600, system: Optional[str] = None) -> str:
     """Metin üretimi Claude messages API üzerinden; repo study_anthropic deseni."""
     api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
     if not api_key:
@@ -583,6 +587,8 @@ def _ff_claude_text(prompt: str, *, max_tokens: int = 1600) -> str:
         "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
     }
+    if system:
+        payload["system"] = system
     request = urllib.request.Request(
         "https://api.anthropic.com/v1/messages",
         method="POST",
@@ -1074,7 +1080,7 @@ def foto_fikir_ideas(request: Request, body: FFIdeasRequest):
                 "mevzuata uygun (garanti, üstünlük ve kampanya iddiası yok) olsun.\n"
                 'Yalnızca şu JSON biçimini döndür: {"ideas": [{"title": "...", "angle": "...", "hook": "..."}]}'
             )
-            data = _ff_json_object(_ff_claude_text(prompt)) or {}
+            data = _ff_json_object(_ff_claude_text(prompt, system=CREATIVE_DIRECTOR_BRIEF)) or {}
             ideas = data.get("ideas") or []
             if len(ideas) < 3:
                 raise FFUnavailable("Fikir sağlayıcısının yanıtı okunamadı.")
@@ -1082,7 +1088,12 @@ def foto_fikir_ideas(request: Request, body: FFIdeasRequest):
             provider, model = "claude+local", FOTO_FIKIR_CLAUDE_MODEL
         creative_audit = audit_creative_output("IDEA", ideas)
         _ff_record_job(main_module, user.id, "IDEA", topic, {"ideas": ideas, "creative_audit": creative_audit}, provider=provider, model=model)
-        return _ff_json({"ideas": ideas, "creative_audit": creative_audit, **_ff_mock_flag(mock)})
+        return _ff_json({
+            "ideas": ideas,
+            "creative_audit": creative_audit,
+            "tips": actionable_tips(creative_audit),
+            **_ff_mock_flag(mock),
+        })
 
 
 @foto_fikir_router.post("/api/foto-fikir/slides")
@@ -1109,7 +1120,7 @@ def foto_fikir_slides(request: Request, body: FFSlidesRequest):
                 "mevzuata uygun yaz (garanti, üstünlük, kampanya iddiası yok; öncesi/sonrası karşılaştırması yok).\n"
                 'Yalnızca şu JSON biçimini döndür: {"slides": [{"headline": "...", "body": "...", "note": "..."}]}'
             )
-            data = _ff_json_object(_ff_claude_text(prompt)) or {}
+            data = _ff_json_object(_ff_claude_text(prompt, system=CREATIVE_DIRECTOR_BRIEF)) or {}
             slides = data.get("slides") or []
             if len(slides) < 3:
                 raise FFUnavailable("Slayt sağlayıcısının yanıtı okunamadı.")
@@ -1122,6 +1133,9 @@ def foto_fikir_slides(request: Request, body: FFSlidesRequest):
                 for slide in slides[:slide_count]
             ]
             provider, model = "claude+local", FOTO_FIKIR_CLAUDE_MODEL
+        roles = story_arc_roles(len(slides))
+        for slide, role in zip(slides, roles):
+            slide["role"] = role
         _ff_record_job(main_module, user.id, "SLIDES", topic, {"slides": slides}, provider=provider, model=model)
         return _ff_json({"slides": slides, **_ff_mock_flag(mock)})
 
@@ -1206,6 +1220,9 @@ def foto_fikir_generate_image(request: Request, body: FFGenerateImageRequest):
                         png = foto_fikir_overlay_name(png, display_name)
                     paths.append(_ff_save_image(main_module, user.id, png))
         uretim_ms = int((time.perf_counter() - _ff_t0) * 1000)
+        creative_audit = audit_creative_output("IMAGE", {"topic": topic, "slides": slides, "style": style["id"]})
+        recommendation = recommend_style(topic)
+        tips = actionable_tips(creative_audit)
         payload = {
             "slides": slides,
             "style": style["name"],
@@ -1213,7 +1230,9 @@ def foto_fikir_generate_image(request: Request, body: FFGenerateImageRequest):
             "image_paths": paths,
             "uretim_ms": uretim_ms,
             "skipped": skipped,
-            "creative_audit": audit_creative_output("IMAGE", {"topic": topic, "slides": slides, "style": style["id"]}),
+            "style_recommendation": recommendation,
+            "tips": tips,
+            "creative_audit": creative_audit,
         }
         job_id = _ff_record_job(
             main_module, user.id, "IMAGE", topic, payload,
@@ -1230,10 +1249,15 @@ def foto_fikir_generate_image(request: Request, body: FFGenerateImageRequest):
             "style": style["name"],
             "quota": {"used": used + max(1, len(paths)), "limit": FOTO_FIKIR_QUOTA_LIMIT, "period": "ay"},
             "creative_audit": payload["creative_audit"],
+            "style_recommendation": recommendation,
+            "tips": tips,
             "uretim_ms": uretim_ms,
             "skipped": skipped,
             **_ff_mock_flag(mock),
         }
+        if _ff_clean(body.style_id, 60):
+            # Hekimin stili korundu; yönetmen önerisi ayrıca "suggestion" olarak iletilir.
+            response_data["suggestion"] = recommendation
         if skipped:
             response_data["uyari"] = (
                 "Görsel sağlayıcısı tüm slaytlar için yanıt vermedi; iş kaydedildi, tekrar deneyin."
@@ -1385,7 +1409,7 @@ def foto_fikir_reels(request: Request, body: FFReelsRequest):
                 'Yalnızca şu JSON biçimini döndür: {"hooks": ["..."], "senaryo": [{"aralik": "0-3 sn", "metin": "..."}], '
                 '"capcut_adimlari": ["..."]}'
             )
-            plan = _ff_json_object(_ff_claude_text(prompt)) or {}
+            plan = _ff_json_object(_ff_claude_text(prompt, system=CREATIVE_DIRECTOR_BRIEF)) or {}
             if len(plan.get("hooks") or []) < 2 or not plan.get("senaryo") or len(plan.get("capcut_adimlari") or []) < 4:
                 raise FFUnavailable("Reels planı sağlayıcısının yanıtı okunamadı.")
             provider, model = "claude+local", FOTO_FIKIR_CLAUDE_MODEL
@@ -1395,6 +1419,7 @@ def foto_fikir_reels(request: Request, body: FFReelsRequest):
         plan["creative_audit"] = audit_creative_output(
             "REELS", {"topic": topic, "hooks": plan.get("hooks") or [], "senaryo": plan.get("senaryo") or []}
         )
+        plan["tips"] = actionable_tips(plan["creative_audit"])
         _ff_record_job(main_module, user.id, "REELS", topic, {"plan": plan}, provider=provider, model=model)
         return _ff_json({**plan, **_ff_mock_flag(mock)})
 

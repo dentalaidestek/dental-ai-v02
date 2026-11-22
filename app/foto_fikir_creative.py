@@ -471,3 +471,96 @@ Ekranda yazı: görsellerde yazı olmasın; yazıyı ayrı katmanda, stil tipogr
 Mevzuat: garanti, üstünlük iddiası, kampanya dili ve öncesi-sonrası karşılaştırması kullanma; özenli, bilgi veren, deneyimli gibi ölçülebilir nitelemeler seç.
 Tıbbi doğruluk: anatomi doğru, deform yok; korku dili yerine gözlem dili kullan.
 Denetim sırası: önce kanca, sonra kompozisyon, sonra mevzuat; rubrik puanı 45'in altındaysa çıktıyı yeniden kur."""
+
+
+# ---------------------------------------------------------------------------
+# Anlatı yayı: slayt başına görev (rol)
+# ---------------------------------------------------------------------------
+
+_FF_ARC_MIDDLE = ("Değer", "Kanıt", "Sahne")
+
+
+def story_arc_roles(count) -> List[str]:
+    """Slayt sayısına göre belirlenimci anlatı yayı döndürür (1..8).
+
+    Kanca -> Değer -> Kanıt -> Sahne -> Kapanış/CTA örüntüsü slayt sayısına
+    uyarlanır; 6-8 slaytta orta roller tekrar eder ve sıra numarası alır
+    ("Değer 2" gibi). Son görev her zaman kapanış çağrısıdır.
+    """
+    try:
+        n = int(count)
+    except (TypeError, ValueError):
+        n = 1
+    n = max(1, min(8, n))
+    if n == 1:
+        return ["Kanca + Kapanış/CTA"]
+    roles = ["Kanca"]
+    repeat: dict = {}
+    for index in range(n - 2):
+        role = _FF_ARC_MIDDLE[index % len(_FF_ARC_MIDDLE)]
+        repeat[role] = repeat.get(role, 0) + 1
+        roles.append(role if repeat[role] == 1 else f"{role} {repeat[role]}")
+    roles.append("Kapanış/CTA")
+    return roles
+
+
+# ---------------------------------------------------------------------------
+# Konu -> stil önerisi (deterministik)
+# ---------------------------------------------------------------------------
+
+_FF_STYLE_RULES = (
+    (("implant", "protez", "köprü", "kurumsal", "klinik tanıtım"), "derin-lacivert"),
+    (("beyazlatma", "whitening", "estetik", "gülüş", "gülümseme", "lamine"), "yumusak-gul"),
+    (("çocuk", "süt dişi", "bebek", "okul", "aile"), "nane-esintisi"),
+    (("fırçalama", "diş ipi", "ağız bakımı", "hijyen", "rutin"), "su-cizgisi"),
+    (("kanal", "ağrı", "hassasiyet", "acil", "uyarı", "karşılaştırma"), "iki-renk"),
+    (("portföy", "lansman", "premium", "zirkonyum", "hizmet kartları"), "mermer-doku"),
+    (("gece", "etkinlik", "duyuru", "genç"), "gece-neon"),
+    (("checklist", "hatırlatma", "not", "soru-cevap"), "defter-cizgi"),
+    (("doğal", "yaşam", "mevsim", "beslenme"), "toprak-ton"),
+    (("eğitim", "bilgilendirme", "adım adım"), "sade-klinik"),
+)
+
+
+def recommend_style(topic) -> dict:
+    """Konuya göre belirlenimci stil önerisi; {style_id, reason} döndürür.
+
+    Eşleşme Türkçe duyarsız katlama ile tasarım sisteminin 'kullanim' alanları
+    üzerinden kurulur; eşleşme yoksa sade klinik stili önerilir. Aynı konu
+    her zaman aynı sonucu verir.
+    """
+    folded = _fold(str(topic or ""))
+    for keywords, style_id in _FF_STYLE_RULES:
+        for keyword in keywords:
+            if _fold(keyword) and _fold(keyword) in folded:
+                spec = FF_DESIGN_SYSTEM[style_id]
+                return {
+                    "style_id": style_id,
+                    "reason": f"'{keyword}' sinyali bu stili öneriyor; kullanım alanı: {spec['kullanim']}.",
+                }
+    spec = FF_DESIGN_SYSTEM["sade-klinik"]
+    return {
+        "style_id": "sade-klinik",
+        "reason": f"Konuya özgü eşleşme bulunamadı; kullanım alanı: {spec['kullanim']}.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Denetim notlarından uygulanabilir öneriler
+# ---------------------------------------------------------------------------
+
+def actionable_tips(audit, limit: int = 2) -> List[str]:
+    """Denetim notlarından en fazla `limit` uygulanabilir Türkçe öneri seçer.
+
+    Sadece "(+0)" veya "(-" puan etiketi taşıyan notlar uygulanabilir sayılır;
+    bilgi amaçlı notlar öneri listesine girmez. Puan iyiyse ve uygulanabilir
+    not yoksa boş liste döner.
+    """
+    if not isinstance(audit, dict) or not isinstance(audit.get("notes"), list):
+        return []
+    tips = [
+        str(note).strip()
+        for note in audit["notes"]
+        if str(note or "").strip() and ("(+0)" in str(note) or "(-" in str(note))
+    ]
+    return tips[:max(0, limit)]
