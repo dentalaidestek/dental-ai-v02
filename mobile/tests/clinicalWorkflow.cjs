@@ -14,6 +14,18 @@ function harness(overrides={},saved,initialFocused=true){const exports={},storag
  const finding={};vm.runInNewContext(compile('../src/findings.ts'),{exports:finding});const presentation={};vm.runInNewContext(compile('../src/clinicalResultPresentation.ts'),{exports:presentation});
  vm.runInNewContext(compile('../src/NativeClinicalReview.tsx'),{exports,setTimeout,clearTimeout,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='@react-navigation/native'?{useIsFocused:()=>focus.current}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=> 'synthetic-key'}:n==='./socialDraft'?{chunkedDraftStore:()=>secure}:n==='./clinicalApi'?endpoint:n==='./findings'?finding:n==='./clinicalResultPresentation'?presentation:n==='./useSessionRenderKey'?useSessionRenderKeyExports:{default:props=>React.createElement('Text',null,props.value)}});return{Component:exports.default,calls,storage,endpoint,focus};}
 async function open(h,props={}){let t;await renderer.act(async()=>t=renderer.create(React.createElement(h.Component,{token:'A',userId:1,analysisId:1,...props})));return t}
+test('single-tooth analysis uses the owner-scoped mobile route and validates its durable job receipt',async()=>{
+ const calls=[];
+ const {analyzeTooth}=api(async(...args)=>{calls.push(args);return{ok:true,analysis_id:17,patient_id:8,tooth_fdi:'36',job:{id:7,kind:'PRELIMINARY',status:'QUEUED',retryable:false}}});
+ const receipt=await analyzeTooth('synthetic-token',17,'36');
+ assert.equal(receipt.job.id,7);assert.equal(calls.length,1);
+ assert.equal(calls[0][0],'/analyses/17/tooth/36/analyze');assert.equal(calls[0][1],'synthetic-token');assert.deepEqual(calls[0][2],{method:'POST'});
+ await assert.rejects(()=>analyzeTooth('synthetic-token',17,'59'),/Geçersiz FDI/);
+ assert.equal(calls.length,1,'invalid FDI must be rejected before the network call');
+ const malformed=api(async()=>({ok:true,analysis_id:17,patient_id:8,tooth_fdi:'36',job:{id:0,kind:'PRELIMINARY',status:'QUEUED',retryable:false}}));
+ await assert.rejects(()=>malformed.analyzeTooth('synthetic-token',17,'36'),/iş kaydı doğrulanamadı/);
+});
+
 test('clinical image source rejects invalid analysis and asset IDs before building a private URL',()=>{
  const {clinicalImage}=api();
  assert.throws(()=>clinicalImage('synthetic-token',0,44),/Geçersiz analiz kimliği/);
