@@ -68,6 +68,19 @@ test('native viewer switches between authorized assets using web modality labels
 
 
 const findPressable=(root,label)=>root.findAllByType('Pressable').find(node=>text(node)===label);
+test('clinical chart can start a single-FDI analysis through the parent-owned durable job flow',async()=>{
+ const Component=ui(async()=>({pending:false,findings:[]})),calls=[];let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(Component,{token:'A',analysisId:17,assetId:4,onClose(){},onAnalyzeTooth:async tooth=>{calls.push(tooth);return true}})));
+ await renderer.act(async()=>findPressable(tree.root,'Klinik Bilgi').props.onPress());
+ const tooth=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='radio'&&text(node)==='36');assert.ok(tooth);
+ await renderer.act(async()=>tooth.props.onPress());
+ const action=findPressable(tree.root,'Diş 36 için AI Analizi Başlat');assert.ok(action);
+ await renderer.act(async()=>action.props.onPress());
+ assert.deepEqual(calls,['36']);
+ assert.ok(text(tree.toJSON()).includes('Diş 36 için ön klinik analiz başlatıldı.'));
+ await renderer.act(async()=>tree.unmount());
+});
+
 test('native viewer exposes the same three clinical tabs as the web viewer',async()=>{
  const Component=ui(async()=>({pending:false,findings:[]}));let t;
  await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:7,assetId:4,onClose(){}})));
