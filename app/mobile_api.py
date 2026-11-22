@@ -15,7 +15,7 @@ import uuid
 from collections import deque
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlmodel import Session, func, select
@@ -749,6 +749,25 @@ def _response_json(response):
             return {"ok": False, "error": "Sunucu yanıtı okunamadı."}
     return response
 
+_PRIVATE_MOBILE_RESPONSE_HEADERS = {
+    "Cache-Control": "private, no-store",
+    "Pragma": "no-cache",
+    "Vary": "Authorization",
+}
+
+
+def _mobile_private_no_store(response: Response) -> None:
+    """Prevent shared or persistent caching of participant-scoped clinical data."""
+    if response is None or not hasattr(response, "headers"):
+        return  # legacy direct-call harness: header shaping only applies to real HTTP responses
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Pragma"] = "no-cache"
+    vary = [part.strip() for part in response.headers.get("Vary", "").split(",") if part.strip()]
+    if not any(part.lower() == "authorization" for part in vary):
+        vary.append("Authorization")
+    response.headers["Vary"] = ", ".join(vary)
+
+
 @router.get("/notifications")
 def mobile_notifications(user: User = Depends(_mobile_user)):
     with Session(engine, expire_on_commit=False) as session:
@@ -998,4 +1017,35 @@ def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mob
         from fastapi.responses import FileResponse
         mime={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp"}.get(path.suffix.lower().lstrip("."),"application/octet-stream")
         return FileResponse(path,media_type=mime,filename=media.original_filename,headers={"Cache-Control":"private, no-store"})
+
+
+# Chat upload/download adapters delegate to the shared web handlers and unwrap
+# their HTML/JSON responses into the native contract (401 revalidation, typed
+# status codes, replayed receipts). File bodies stream through FileResponse;
+# blocking handler work runs in the threadpool, exactly like the parity branch.
+from fastapi.responses import FileResponse as _ChatFileResponse
+from starlette.concurrency import run_in_threadpool as _chat_offload
+import inspect as _chat_inspect
+
+
+async def _mobile_chat_dispatch(handler, request, *args):
+    response = await handler(request, *args) if _chat_inspect.iscoroutinefunction(handler) else await _chat_offload(handler, request, *args)
+    status = getattr(response, "status_code", 200)
+    location = getattr(response, "headers", {}).get("location", "")
+    if location.startswith("/login"):
+        raise _unauthorized()
+    data = _response_json(response)
+    if status >= 400:
+        message = data.get("error") or data.get("detail") if isinstance(data, dict) else None
+        if not isinstance(message, str):
+            raw = getattr(response, "body", b"").decode("utf-8", errors="replace")
+            message = raw[:300] if "<" not in raw else "Görüşme işlemi tamamlanamadı."
+        raise HTTPException(status_code=status, detail=message)
+    if isinstance(data, dict):
+        if data.get("ok") is False:
+            raise HTTPException(status_code=409, detail=data.get("error") or "İşlem doğrulanamadı.")
+        return data
+    if 300 <= status < 400:
+        return {"ok": True}
+    raise HTTPException(status_code=502, detail="İşlem sonucu doğrulanamadı; görüşmeyi yenileyin.")
 
