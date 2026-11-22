@@ -213,3 +213,17 @@ test('VM bridge exposes a callable production hook without CommonJS wrapper coll
  assert.ok(helper.includes('const hookExports = {};'));
  assert.equal(typeof useSessionRenderKey,'function');
 });
+
+
+test('approved voice-history cache state and generation refs use opaque session identity',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientVoiceHistory.tsx'),'utf8');
+ assert.ok(source.includes("import useSessionRenderKey from './useSessionRenderKey';"));
+ assert.ok(source.includes('const scopeKey=useSessionRenderKey(scope);'));
+ assert.ok(source.includes('const active=useRef(scopeKey),generation=useRef(0);'));
+ assert.ok(source.includes('useState<{scopeKey:string;history:VoiceHistory}|null>'));
+ assert.ok(source.includes('data?.scopeKey===scopeKey'));
+ assert.ok(source.includes('setData({scopeKey:owner,history})'));
+ assert.ok(!source.includes('useState<{scope:string;history:VoiceHistory}|null>'),'credential-bearing scope must not be copied into React state');
+ assert.ok(!source.includes('const active=useRef(scope),'),'request generation refs must store only the opaque identity');
+ assert.ok(!source.includes('data?.scope===scope'),'rendered history must be scoped by the opaque identity');
+});
