@@ -135,24 +135,41 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
 
     from app import main
     from app.mobile_api import router as primary_mobile_router
+    from app.mobile_modern_api_v3 import router as modern_mobile_router
 
-    prefix = primary_mobile_router.prefix
-
-    def registered(path, method):
-        full_path = prefix + path
-        matches = [
-            route for route in main.app.routes
-            if getattr(route, "path", None) == full_path
+    def registered(source_router, suffix, method):
+        # APIRouter prefixes are represented differently across FastAPI
+        # versions: some route objects expose the prefixed path before mount,
+        # while others apply it during include_router(). Resolve the canonical
+        # source endpoint first, then assert that this exact callable is mounted
+        # once on the application. This tests route ownership without guessing
+        # how the framework materializes the prefix.
+        source_matches = [
+            route for route in source_router.routes
+            if getattr(route, "path", "").endswith(suffix)
             and method in (getattr(route, "methods", None) or set())
         ]
-        assert len(matches) == 1, f"expected one active {method} {full_path}, found {len(matches)}"
+        assert len(source_matches) == 1, (
+            f"expected one source {method} route ending in {suffix}, found {len(source_matches)}"
+        )
+        source = source_matches[0]
+        matches = [
+            route for route in main.app.routes
+            if getattr(route, "endpoint", None) is source.endpoint
+            and method in (getattr(route, "methods", None) or set())
+        ]
+        assert len(matches) == 1, (
+            f"expected source endpoint {source.endpoint.__module__}.{source.endpoint.__name__} "
+            f"to be mounted once, found {len(matches)}"
+        )
+        assert matches[0].path.endswith(suffix)
         return matches[0]
 
-    media_list = registered("/patients/{patient_id}/media", "GET")
-    media_upload = registered("/patients/{patient_id}/media", "POST")
-    original_file = registered("/patients/{patient_id}/media/{media_id}/file", "GET")
-    thumbnail = registered("/patients/{patient_id}/media/{media_id}/thumbnail", "GET")
-    metadata = registered("/patients/{patient_id}/media/{media_id}", "GET")
+    media_list = registered(primary_mobile_router, "/patients/{patient_id}/media", "GET")
+    media_upload = registered(primary_mobile_router, "/patients/{patient_id}/media", "POST")
+    original_file = registered(primary_mobile_router, "/patients/{patient_id}/media/{media_id}/file", "GET")
+    thumbnail = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}/thumbnail", "GET")
+    metadata = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}", "GET")
 
     assert media_list.endpoint.__module__ == "app.mobile_api"
     assert media_list.endpoint.__name__ == "mobile_patient_media"
