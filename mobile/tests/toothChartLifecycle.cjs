@@ -29,7 +29,7 @@ function chartComponent(api,storage=new Map()){
   if(name==='./toothSurfaceOptions')return require('../src/toothSurfaceOptions.ts');
   if(name==='./toothChartSurfaceSelection')return require('../src/toothChartSurfaceSelection.ts');
   if(name==='./appResumeRefresh')return require('../src/appResumeRefresh.ts');
-  if(name==='./sessionRenderKey')return require('../src/sessionRenderKey.ts');
+  if(name==='./useSessionRenderKey')return require('./helpers/useSessionRenderKeyModule.cjs');
   if(name==='./NativeToothVisual'||name==='./NativeDateField'||name==='./NativePatientHistory')return{default:'Child'};
   throw Error('unexpected import '+name);
  }});
