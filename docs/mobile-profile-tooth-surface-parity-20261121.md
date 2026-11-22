@@ -71,3 +71,29 @@ At starting HEAD 1449bb4509e970b6a07c6c456e73d5649c3c876b, Android run #4692 com
 
 ### Validation boundary
 The above code and regressions are committed on the feature branch. Their new-head CI has not yet been observed, so no pass is claimed for the updated lower-preview/accessibility tests or the corrected Python assertion. No patient data, schema, migration, clinical API, production database, main branch or deployment was changed.
+
+## 2026-11-22 — explicit recovery after a tooth-chart revision conflict
+
+### Web-first trace
+
+Re-read `app/templates/tooth_chart.html` and the web `update_tooth_status` handler in `app/main.py`, then compared the native `NativeToothChart` whole-tooth and independent-surface save paths with the owner-scoped mobile handlers in `app/mobile_api.py`.
+
+Both web and native writes use optimistic revisions and correctly reject stale snapshots with HTTP 409. The native UI, however, only displayed the error text. It left the stale revision in its in-memory patient snapshot, so pressing Save again repeated the same 409. The chart refreshed on focus/realtime, but there was no direct recovery action for a clinician who remained on the screen.
+
+### Fix
+
+- A 409 now opens an explicit conflict panel for the exact FDI tooth or tooth surface.
+- The stale save button is disabled until the clinician explicitly loads the latest patient snapshot.
+- The refresh updates only the server snapshot/revision; it does not auto-save, discard or overwrite the clinician's local status/note draft.
+- The panel shows the latest server status and note for comparison. The clinician must deliberately press Save again.
+- A second concurrent edit returns the UI to the same fail-closed refresh state.
+- The same behavior applies to whole-tooth and independent-surface writes. Treatment receipt/idempotency and the existing clinical mutation lock are unchanged.
+
+### Regression coverage
+
+Added pure presentation tests and component lifecycle regressions for:
+- Whole-tooth stale revision: no retry before refresh, no auto-save during refresh, local draft preserved, deliberate retry uses the fresh revision.
+- Independent surface stale revision: the exact surface's latest status/note is shown, the surface note draft remains intact, and retry uses that surface's fresh revision.
+- The new tests are part of `npm run test:beta` and the Security Recovery native-clinical job.
+
+No patient record, migration, provider call, main branch or live deployment was changed. Final-head GitHub Actions are required before these new regressions can be called passed; physical Android/iOS interaction and 60,000-user load acceptance remain open.
