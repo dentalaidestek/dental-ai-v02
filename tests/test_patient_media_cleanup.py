@@ -43,6 +43,15 @@ def test_cleanup_admission_accepts_only_server_generated_media_object_keys(media
     assert work_jobs.is_patient_media_reference(native_thumbnail)
     assert work_jobs.is_analysis_asset_reference(analysis_asset_path())
     for unsafe in (
+        "../uploads/analysis_42_" + ("b" * 32) + ".png",
+        "/uploads/analysis_42_" + ("b" * 32) + ".png",
+        "uploads/analysis_0_" + ("b" * 32) + ".png",
+        "uploads/analysis_42_" + ("B" * 32) + ".png",
+        "uploads/analysis_42_" + ("b" * 32) + ".thumb.jpg",
+        "uploads/analysis_42_" + ("b" * 32) + ".png/extra",
+    ):
+        assert not work_jobs.is_analysis_asset_reference(unsafe)
+    for unsafe in (
         "../uploads/patient_42_" + ("a" * 32) + ".jpg",
         "/uploads/patient_42_" + ("a" * 32) + ".jpg",
         "uploads/analysis_42_" + ("a" * 32) + ".jpg",
