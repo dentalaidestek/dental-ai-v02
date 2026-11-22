@@ -3835,8 +3835,11 @@ def mobile_chat_attachment(case_id: int, message_id: int, user: User = Depends(_
         message = session.get(ConsultationMessage, message_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at or not message or message.case_id != case_id or not message.media_path:
             raise HTTPException(status_code=404, detail="Ek bulunamadı.")
-        state = session.exec(select(ConsultationInboxState).where(
-            ConsultationInboxState.case_id == case_id, ConsultationInboxState.user_id == user.id)).first()
+        state = session.exec(
+            select(ConsultationInboxState)
+            .where(ConsultationInboxState.case_id == case_id, ConsultationInboxState.user_id == user.id)
+            .order_by(ConsultationInboxState.id.desc())
+        ).first()
         if state and state.deleted_at:
             raise HTTPException(status_code=404, detail="Önce görüşmeyi geri yükleyin.")
         reference = message.media_path
@@ -3844,7 +3847,10 @@ def mobile_chat_attachment(case_id: int, message_id: int, user: User = Depends(_
         path = storage_ensure_local(reference)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Ek bulunamadı.")
-    return _ChatFileResponse(path, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+    return _ChatFileResponse(path, headers={
+        "Cache-Control": "private, no-store", "Pragma": "no-cache",
+        "Vary": "Authorization", "X-Content-Type-Options": "nosniff",
+    })
 
 @router.get("/consultations/{case_id}/shared-media/{link_id}")
 def mobile_case_shared_media(case_id: int, link_id: int, user: User = Depends(_mobile_user)):
@@ -3871,48 +3877,30 @@ async def mobile_chat_upload(case_id: int, response: Response, file: UploadFile 
                              client_message_id: str = Form(""),
                              token: str = Depends(_mobile_access_token),
                              user: User = Depends(_mobile_user)):
-    # A successful attachment response contains clinical message metadata and a
-    # case-scoped media reference. Keep it out of shared/proxy/client caches just
-    # like the corresponding private attachment GET and message-receipt routes.
     _mobile_private_no_store(response)
     response.headers["X-Content-Type-Options"] = "nosniff"
     from app import main as web
-    # Authorize before touching the payload, then let the existing web handler
-    # recheck state/participant permissions under its normal case lock.
     with Session(engine, expire_on_commit=False) as session:
         case = session.get(ConsultationCase, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at:
             raise HTTPException(status_code=404, detail="Görüşme bulunamadı.")
         if web._users_blocked(session, user.id, case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id):
             raise HTTPException(status_code=403, detail="Engellenen görüşmeye ek gönderilemez.")
-    suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".pdf", ".m4a", ".mp3", ".wav", ".ogg"}:
-        raise HTTPException(status_code=415, detail="Desteklenmeyen ek türü.")
-    import tempfile
     from io import BytesIO
-    if suffix in {".jpg", ".jpeg", ".png", ".webp"}:
-        with tempfile.TemporaryDirectory(prefix="dai-chat-") as directory:
-            destination = Path(directory) / ("image" + suffix)
-            await _chat_offload(_copy_validated_image, file, destination, min(MOBILE_MAX_IMAGE_BYTES, web.CONSULTATION_UPLOAD_MAX_BYTES))
-            raw = await _chat_offload(destination.read_bytes)
-    else:
-        raw = await _chat_offload(file.file.read, web.CONSULTATION_UPLOAD_MAX_BYTES + 1)
-        if not raw or len(raw) > web.CONSULTATION_UPLOAD_MAX_BYTES:
-            raise HTTPException(status_code=413, detail="Ek boş veya 25 MB sınırını aşıyor.")
-        signatures = {
-            ".pdf": raw.startswith(b"%PDF-"),
-            ".wav": raw.startswith(b"RIFF") and raw[8:12] == b"WAVE",
-            ".ogg": raw.startswith(b"OggS"),
-            ".m4a": len(raw) >= 12 and raw[4:8] == b"ftyp",
-            ".mp3": raw.startswith(b"ID3") or (len(raw) >= 2 and raw[0] == 255 and raw[1] & 224 == 224),
-        }
-        if not signatures[suffix]:
-            raise HTTPException(status_code=422, detail="Dosya içeriği seçilen ek türüyle eşleşmiyor.")
-    clean = UploadFile(filename=Path(file.filename or ("attachment" + suffix)).name,
-                       file=BytesIO(raw), headers=file.headers)
+    suffix = Path(file.filename or "").suffix.lower()
+    image_suffixes = {".jpg", ".jpeg", ".png", ".webp"}
+    byte_limit = min(MOBILE_MAX_IMAGE_BYTES, web.CONSULTATION_UPLOAD_MAX_BYTES) if suffix in image_suffixes else web.CONSULTATION_UPLOAD_MAX_BYTES
+    raw = await _chat_offload(file.file.read, byte_limit + 1)
+    if len(raw) > byte_limit:
+        raise HTTPException(status_code=413, detail="Ek dosyası boyut sınırını aşıyor.")
+    clean = UploadFile(filename=Path(file.filename or "attachment").name, file=BytesIO(raw), headers=file.headers)
+    request = _mobile_request(token)
+    request.state._dai_consultation_attachment_max_pixels = MOBILE_MAX_IMAGE_PIXELS
     try:
-        return await _mobile_chat_dispatch(web.expert_support_media_message,
-            _mobile_request(token), case_id, clean, reply_to_message_id, client_message_id)
+        return await _mobile_chat_dispatch(
+            web.expert_support_media_message, request, case_id, clean,
+            reply_to_message_id, client_message_id,
+        )
     finally:
         await clean.close()
 
