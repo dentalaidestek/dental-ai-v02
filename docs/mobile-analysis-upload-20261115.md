@@ -47,7 +47,7 @@ Web-first review rechecked `analysis_new.html` and the web `create_analysis` rou
 
 The shared garbage collector now accepts only the generated analysis asset key shape `uploads/analysis_<positive-id>_<32-lowercase-hex>.<jpg|jpeg|png|webp>`. Before deleting it, the worker checks `ImageAsset.file_path` and the legacy `Analysis.image_path/radiograph_path` references. A live asset therefore cannot be deleted by a stale cleanup receipt.
 
-The native upload route records every destination before move/persist. If publication, receipt/job commit or realtime publication raises, it rolls back the current session, releases that DB connection, and commits cleanup receipts in a separate transaction. If the original commit actually succeeded but only realtime publication failed, the worker's live-reference check removes the cleanup receipt and preserves the committed image.
+The native upload route records every destination before move/persist. If publication, receipt/job commit, realtime publication or request cancellation raises, it rolls back the current session, releases that DB connection, and commits cleanup receipts in a separate transaction. The cleanup receipt has a 30-second grace window so a threadpool-backed storage write that is unwinding after cancellation cannot be deleted before it settles. If the original commit actually succeeded but only realtime publication failed, the worker's live-reference check removes the cleanup receipt and preserves the committed image.
 
 Added regressions in:
 - `tests/test_patient_media_cleanup.py`: strict analysis asset key admission, rejection of malformed paths, deletion of orphan assets, preservation of live ImageAsset references, and delayed retry after object-store failure.
