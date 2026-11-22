@@ -34,3 +34,13 @@ test('academic course create treats 404 as a definitive failure and unlocks the 
  // Uncertainty is still kept for genuinely unknown outcomes.
  assert.ok(academic.includes('setUncertain(pending)}}}'),'unknown failures keep the idempotent uncertain flow');
 });
+
+test('missing attachment and receipt routes block retries while preserving the same pending intent',()=>{
+ const composer=src('ChatAttachmentComposer.tsx');
+ assert.ok(composer.includes('isMissingApiRoute404(receiptError)'),'restore must recognize a missing receipt route');
+ assert.ok(composer.includes('isMissingApiRoute404(e)||isMissingApiRoute404(receiptFailure)'),'send and receipt failures must both recognize a missing route');
+ assert.ok(composer.includes('setRecoveryBlocked(true)'),'missing routes must block a new attachment send');
+ assert.ok(composer.includes('Bekleyen dosya ve aynı istek anahtarı güvenli alanda korunuyor'),'the same pending intent must remain available for post-deploy reconciliation');
+ assert.ok(composer.includes('pendingMeta&&!file&&!recoveryBlocked'),'the ordinary retry notice must not appear when the server route is absent');
+ assert.ok(composer.includes('Sunucu vaka eki gönderim/makbuz API rotasını desteklemiyor (404)'),'the clinician must see a server-side compatibility message');
+});
