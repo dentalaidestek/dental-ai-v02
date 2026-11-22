@@ -249,3 +249,23 @@ test('missing analysis receipt route preserves the encrypted intent and blocks n
  assert.equal(h.calls.length,0);
  await renderer.act(async()=>t.unmount());
 });
+
+
+test('analysis upload receipt uses the patient and stable request key route',async()=>{
+ const model=require('../src/analysisUpload.ts');
+ const original=global.fetch;
+ const uploadIntent={userId:1,patientId:8,requestKey:'synthetic-upload-key-001',toothNumber:'36',clinicalNotes:'Synthetic note',images:[{uri:'file:///cache/dai-analysis-synthetic.png',name:'synthetic.png',type:'image/png'}]};
+ const expected={analysis_id:41,patient_id:8,job_id:5,status:'VISION_PENDING'};
+ try{
+  global.fetch=async(url,init)=>{
+   assert.match(url,/\/analyses\/uploads\/receipt\?patient_id=8&request_key=synthetic-upload-key-001$/);
+   assert.equal(init.headers.Authorization,'Bearer secret');
+   return {ok:true,status:200,text:async()=>JSON.stringify({receipt:expected})};
+  };
+  assert.deepEqual(await model.analysisUploadReceipt('secret',uploadIntent),expected);
+  global.fetch=async()=>{throw Error('network must not be called for an invalid intent')};
+  await assert.rejects(()=>model.analysisUploadReceipt('secret',{...uploadIntent,requestKey:'short'}),/doğrulanamadı|Geçerli/);
+  global.fetch=async()=>({ok:true,status:200,text:async()=>JSON.stringify({receipt:{...expected,patient_id:9}})});
+  await assert.rejects(()=>model.analysisUploadReceipt('secret',uploadIntent),e=>e.status===502);
+ }finally{global.fetch=original}
+});
