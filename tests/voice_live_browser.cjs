@@ -85,6 +85,22 @@ class El{constructor(){this.handlers={};this.hidden=false;this.checked=false;thi
  get('[data-voice-consent]').checked=true;get('[data-voice-consent]').handlers.change();
  assert.equal(get('[data-live-start]').disabled,false,'Restored consent re-enables the microphone');
  events.pagehide();
+
+ // Withdrawal after the client sent "finish" but before the server flush reply
+ // must downgrade the client-side examination completion and suppress extraction.
+ suppressEnd=true;
+ await get('[data-live-start]').handlers.click();await new Promise(setImmediate);await new Promise(setImmediate);
+ lastSocket.message({type:'final',text:'Finish yanıtı beklerken onay geri çekildi.'});
+ await get('[data-live-finish]').handlers.click();await new Promise(setImmediate);
+ assert.equal(root.dataset.liveState,'stopping');
+ assert.ok(lastSocket.sent.some(x=>typeof x==='string'&&JSON.parse(x).type==='finish'));
+ get('[data-voice-consent]').checked=false;get('[data-voice-consent]').handlers.change();
+ assert.equal(root.dataset.liveFinished,'false');
+ lastSocket.message({type:'ended',flushed:true});await new Promise(setImmediate);
+ assert.equal(root.dataset.liveState,'paused');
+ assert.equal(emitted.filter(e=>e.type==='voice-live-ended').at(-1).detail.finished,false,'pending Finish cannot finalize after consent withdrawal');
+ events.pagehide();suppressEnd=false;get('[data-voice-consent]').checked=true;
+
  const previousSocket=lastSocket;
  box.navigator.mediaDevices.getUserMedia=async()=>{const e=new Error('denied');e.name='NotAllowedError';throw e};
  await get('[data-live-start]').handlers.click();
