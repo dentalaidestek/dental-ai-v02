@@ -31,3 +31,29 @@ test('transient session-probe failure preserves login and 403 never requests a s
  await assert.rejects(()=>api.getPatients('expired'));assert.equal(expired,0);
  }finally{stop();global.fetch=original}
 });
+test('a second 401 wave after expiry re-probes but never signs out twice',async()=>{
+ // Screens stay mounted briefly after the expiry notification; their in-flight
+ // calls can still hit 401 once the first probe settled. The new probe must
+ // run, yet the already-notified subscriber must not fire a second logout.
+ const original=global.fetch;let probes=0,expired=0;const stop=session.subscribeSessionExpiry('expired',()=>expired++);
+ try{
+  global.fetch=async url=>{if(url.endsWith('/me')){probes++;return reply(401)}return reply(401)};
+  await session.revalidateSession('expired');
+  await session.revalidateSession('expired');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(probes,2);assert.equal(expired,1);
+ }finally{stop();global.fetch=original}
+});
+test('a 401 during multipart media upload revalidates once and keeps the upload 401',async()=>{
+ const original=global.fetch;let probes=0,mediaCalls=0;
+ const stop=session.subscribeSessionExpiry('expired',()=>{});
+ try{
+  global.fetch=async url=>{
+   if(String(url).includes('/patients/9/media')){mediaCalls++;return reply(401,{detail:'Oturum süresi doldu.'})}
+   probes++;return reply(401);
+  };
+  await assert.rejects(()=>api.uploadPatientMedia('expired',9,{uri:'file:///k.jpeg',name:'k.jpeg',type:'image/jpeg'}),
+   error=>error instanceof api.ApiError&&error.status===401&&/Oturum süresi doldu/.test(error.message));
+  assert.equal(mediaCalls,1);assert.equal(probes,1);
+ }finally{stop();global.fetch=original}
+});
