@@ -13015,8 +13015,13 @@ def _recover_failed_web_analysis_upload(analysis_id: int, references: list[str])
     ImageAsset/WorkJob/legacy-path references keep the Analysis and its objects.
     """
     with Session(engine, expire_on_commit=False) as cleanup:
+        expected_prefix = f"uploads/analysis_{analysis_id}_"
         for reference in dict.fromkeys(references):
-            if not work_jobs.enqueue_analysis_asset_cleanup(cleanup, reference):
+            if (
+                not isinstance(reference, str)
+                or not reference.startswith(expected_prefix)
+                or not work_jobs.enqueue_analysis_asset_cleanup(cleanup, reference)
+            ):
                 raise RuntimeError("Generated analysis asset cleanup key was rejected.")
 
         statement = select(Analysis).where(Analysis.id == analysis_id)
