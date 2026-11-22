@@ -40,7 +40,7 @@ def test_same_path_with_a_different_method_is_not_a_collision():
     remove_shadowed_routes((primary,), candidate)
 
     assert route_signature(candidate) == [
-        ("/patients/{patient_id}/media", frozenset({"POST"}))
+        ("/api/mobile/v1/patients/{patient_id}/media", frozenset({"POST"}))
     ]
 
 
@@ -137,6 +137,12 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
     from app.mobile_api import router as primary_mobile_router
     from app.mobile_modern_api_v3 import router as modern_mobile_router
 
+    def route_path(route):
+        path = getattr(route, "path", None)
+        if not isinstance(path, str):
+            path = getattr(route, "path_format", None)
+        return path if isinstance(path, str) else ""
+
     def registered(source_router, suffix, method):
         # APIRouter prefixes are represented differently across FastAPI
         # versions: some route objects expose the prefixed path before mount,
@@ -144,12 +150,6 @@ def test_registered_clinical_media_routes_use_the_expected_private_handlers():
         # source endpoint first, then assert that this exact callable is mounted
         # once on the application. This tests route ownership without guessing
         # how the framework materializes the prefix.
-        def route_path(route):
-            path = getattr(route, "path", None)
-            if not isinstance(path, str):
-                path = getattr(route, "path_format", None)
-            return path if isinstance(path, str) else ""
-
         normalized_suffix = suffix.rstrip("/")
         source_matches = [
             route for route in iter_registered_routes(source_router.routes)
