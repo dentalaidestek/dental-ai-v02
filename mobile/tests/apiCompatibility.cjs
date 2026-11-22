@@ -102,6 +102,7 @@ function loadModernApi(status,body){
   './api':{ApiError,API_BASE:'https://dentalai.tr/api/mobile/v1'},
   './sessionExpiry':{revalidateSession:async()=>{}},
   './notificationState':{normalizeNotificationReadAt:value=>value},
+  './apiCompatibility':compatibility,
  };
  vm.runInNewContext(compiled,{
   exports,
