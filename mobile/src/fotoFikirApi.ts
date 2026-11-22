@@ -117,6 +117,7 @@ export const generateFFImages = async (t: string, payload: { topic: string; styl
     .map(s => ({ headline: String(s?.headline ?? "").trim().slice(0, 120), body: String(s?.body ?? "").trim().slice(0, 220) }))
     .filter(s => s.headline || s.body);
   if (!topic && !slides.length) throw new ApiError(400, "Konu ve en az bir slayt metni gerekli.");
+  if (slides.length > 8) throw new ApiError(400, "En fazla 8 slayt gönderilebilir.");
   if (String(payload?.styleId ?? "").length > 60) throw new ApiError(400, "Geçerli bir görsel stili seçin.");
   const r = await ffRequest<FFGenerateResult>(t, "/generate-image", {
     method: "POST",

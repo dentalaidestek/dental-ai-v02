@@ -98,3 +98,37 @@ test('user-visible foto fikir text carries no emoji characters',()=>{
  assert.ok(!emoji.test(src.api), 'emoji in foto_fikir_api.py');
  assert.ok(!emoji.test(src.web), 'emoji in foto_fikir.html');
 });
+
+test('speed wave: real-mode slide generation is parallel with uretim_ms and skipped surfaced',()=>{
+ assert.ok(src.api.includes('import concurrent.futures'),'stdlib thread pool');
+ assert.ok(src.api.includes('concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(len(prompts), 4)))'),'bounded parallel pool');
+ assert.ok(src.api.includes('"uretim_ms": uretim_ms'),'uretim_ms in job payload');
+ assert.ok(src.api.includes('"uretim_ms": uretim_ms,\n            "skipped": skipped'),'skipped next to uretim_ms in payload');
+ assert.ok(src.api.includes('"uretim_ms": uretim_ms,\n            "skipped": skipped,'),'skipped in response');
+ assert.ok(src.api.includes('response_data["uyari"] = ('),'Turkish note when a slide is skipped');
+ assert.ok(src.api.includes('slayt görseli üretilemedi'),'per-slide skip note');
+ assert.ok(src.api.includes('"uretim_ms": uretim_ms,\n            "quota"'),'brand-kit/generate response carries uretim_ms');
+});
+
+test('quality wave: story arc roles, style recommendation and actionable tips are additive response fields',()=>{
+ assert.ok(src.api.includes('story_arc_roles(len(slides))'),'slides gain arc roles');
+ assert.ok(src.api.includes('slide["role"] = role'),'role key on each slide');
+ assert.ok(src.api.includes('recommend_style(topic)'),'style recommendation computed from topic');
+ assert.ok(src.api.includes('"style_recommendation": recommendation'),'style_recommendation field');
+ assert.ok(src.api.includes('response_data["suggestion"] = recommendation'),'picked style kept, recommendation as suggestion');
+ assert.ok(src.api.includes('actionable_tips(creative_audit)'),'tips derived from the creative audit');
+ assert.ok(src.api.includes('"tips": tips'),'tips field');
+ assert.ok(src.api.includes('system=CREATIVE_DIRECTOR_BRIEF'),'director persona on real-mode text prompts');
+ assert.ok(src.api.includes('En fazla 8 slayt gönderilebilir.'),'input edge: 9+ slides rejected');
+ assert.ok(fs.statSync(root+'/scripts/test_foto_fikir_hardening.py').size>0,'hardening suite exists');
+});
+
+test('web template shows görev chips, audit panel and the style suggestion chip',()=>{
+ assert.ok(src.web.includes('"Görev: " + slide.role'),'görev chip per slide');
+ assert.ok(src.web.includes('id="ffAuditPanel"')&&src.web.includes('Yapı Puanı: '),'audit panel after generation');
+ assert.ok(src.web.includes('Geliştirme önerileri'),'tips rendered as a list');
+ assert.ok(src.web.includes('id="ffStyleSuggest"')&&src.web.includes('Önerilen stil: '),'style suggestion chip near the grid');
+ assert.ok(src.web.includes('selectStyle(recommendation.style_id)'),'clicking the suggestion selects the style');
+ for (const token of ['#fotoFikir .ff-badge.ff-badge-role', '#fotoFikir .ff-audit', '#fotoFikir .ff-suggest'])
+  assert.ok(src.web.includes(token), 'prefixed CSS for '+token);
+});

@@ -138,3 +138,21 @@ test('the new Foto Fikir TS/TSX files carry no emoji and keep Turkish labels',()
  for(const label of ['Foto Fikir','Marka Kiti','Instagram Profili','Reels Çekim Planı','Son İşlemler','Kancalar','Senaryo','Kurgu adımları (CapCut)','Sahne görseli üret','Fotoğraf seç ve yükle'])
   assert.ok(src.screen.includes(label),label);
 });
+
+test('response types gain role, style_recommendation, tips, uretim_ms and skipped fields',()=>{
+ for(const token of ['role?: string | null','FFStyleRecommendation','style_recommendation?: FFStyleRecommendation','suggestion?: FFStyleRecommendation','tips?: string[]','uretim_ms?: number','skipped?: number'])
+  assert.ok(src.ffApi.includes(token),token);
+ assert.ok(src.ffApi.includes('uretim_ms?: number; quota: FFQuota'),'brand scene result carries uretim_ms');
+ assert.ok(src.ffApi.includes('if (slides.length > 8) throw new ApiError(400, "En fazla 8 slayt gönderilebilir.");'),'client mirrors the 9-slide backend edge');
+});
+
+test('the studio screen shows görev chips, tips, the style suggestion and the ready note with uretim_ms',()=>{
+ assert.ok(src.screen.includes('Görev: {slide.role}'),'görev chip per slide');
+ assert.ok(src.screen.includes('Önerilen stil: '),'style recommendation line');
+ assert.ok(src.screen.includes('setStyleId(recommendation.style_id)'),'tapping the suggestion selects the style');
+ assert.ok(src.screen.includes('Görseller hazır')&&src.screen.includes('r.uretim_ms'),'ready note carries uretim_ms');
+ assert.ok(src.screen.includes('(r.uretim_ms/1000).toFixed(1)+" sn)"'),'seconds format in the ready note');
+ assert.ok(src.screen.includes('setGenTips(r.tips||[])'),'generation tips rendered');
+ assert.ok(src.screen.includes('setIdeaTips(r.tips||[])'),'idea tips rendered');
+ assert.ok(src.screen.includes('reels.tips||[]'),'reels tips rendered');
+});

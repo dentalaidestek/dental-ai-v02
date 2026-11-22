@@ -1172,6 +1172,8 @@ def foto_fikir_generate_image(request: Request, body: FFGenerateImageRequest):
     with _ff_engine_guard():
         topic = _ff_clean(body.topic, 200)
         style = FF_STYLE_MAP.get(_ff_clean(body.style_id, 60)) or FF_STYLES[0]
+        if len(body.slides or []) > FF_SLIDE_MAX_COUNT:
+            raise HTTPException(status_code=400, detail="En fazla 8 slayt gönderilebilir.")
         slides = []
         for item in (body.slides or [])[:FF_SLIDE_MAX_COUNT]:
             slide = {"headline": _ff_clean(item.headline, 120), "body": _ff_clean(item.body, 220)}
