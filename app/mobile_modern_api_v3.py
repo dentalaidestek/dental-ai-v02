@@ -192,6 +192,14 @@ class MobileMessage:
     pass
 
 
+@router.get('/messages/unread-count')
+def mobile_messages_unread_count(user=Depends(_mobile_user)):
+    """Web /messages/unread-count parity: red count badge on the native Mesajlar tab."""
+    from app.main import _consultation_unread_total
+    with Session(engine, expire_on_commit=False) as s:
+        return {'count': _consultation_unread_total(s, user.id)}
+
+
 @router.post("/consultations/{case_id}/messages")
 def mobile_consultation_message(case_id:int,content:str=Form(...),reply_to_message_id:int|None=Form(None),user=Depends(_mobile_user)):
     from app.main import _users_blocked, _contains_profanity, _consultation_event, _record_message_realtime_events, _record_case_status_realtime_events, _resolve_notifications, _utcnow_naive, on_loop, _publish_realtime_event

@@ -14663,6 +14663,12 @@ mobile_modern_router.routes[:] = [route for route in mobile_modern_router.routes
     if not any((method, route.path) in _mobile_mounted_routes for method in getattr(route, "methods", ()))]
 app.include_router(mobile_modern_router)
 
+# Native expert performance-info adapter (five-route parity port). The web
+# template owns the canonical copy; the adapter parses it with the same
+# read/clean pattern and mounts under the shared /api/mobile/v1 contract.
+from app.mobile_performance_info_api import router as mobile_performance_info_router
+app.include_router(mobile_performance_info_router)
+
 
 # Owned interactive quiz choices; deterministic grading without provider calls.
 from app.academic_quiz_interactions import router as academic_quiz_interactions_router
