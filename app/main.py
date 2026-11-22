@@ -9,6 +9,7 @@ import hmac
 import base64
 import binascii
 import io
+import tempfile
 from collections import deque
 import urllib.request
 import urllib.error
@@ -9019,6 +9020,45 @@ def expert_support_proposal_decision(request: Request, case_id: int, decision: s
     return RedirectResponse(f"/expert-support/cases/{case_id}", status_code=303)
 
 
+def _prepare_consultation_attachment(raw: bytes, filename: str, *, max_bytes: int, max_pixels: int):
+    """Shared web/native file signature check and clinical-image metadata sanitizer."""
+    suffix = Path(filename or "").suffix.lower()
+    content_types = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp",
+        ".pdf": "application/pdf", ".m4a": "audio/mp4", ".mp3": "audio/mpeg",
+        ".wav": "audio/wav", ".ogg": "audio/ogg",
+    }
+    content_type = content_types.get(suffix)
+    if content_type is None:
+        raise HTTPException(status_code=415, detail="Desteklenmeyen ek türü.")
+    if not raw:
+        raise HTTPException(status_code=400, detail="Dosya boş.")
+    if len(raw) > max_bytes:
+        raise HTTPException(status_code=413, detail="Dosya boyut sınırını aşıyor.")
+    if suffix in {".jpg", ".jpeg", ".png", ".webp"}:
+        try:
+            with tempfile.TemporaryDirectory(prefix="dai-consultation-") as directory:
+                staged = Path(directory) / ("attachment" + suffix)
+                staged.write_bytes(raw)
+                sanitize_clinical_media_image(staged, suffix, max_pixels)
+                clean = staged.read_bytes()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not clean or len(clean) > max_bytes:
+            raise HTTPException(status_code=413, detail="Temizlenmiş görüntü dosyası boyut sınırını aşıyor.")
+        return clean, suffix, content_type
+    signatures = {
+        ".pdf": raw.startswith(b"%PDF-"),
+        ".wav": len(raw) >= 12 and raw.startswith(b"RIFF") and raw[8:12] == b"WAVE",
+        ".ogg": raw.startswith(b"OggS"),
+        ".m4a": len(raw) >= 12 and raw[4:8] == b"ftyp",
+        ".mp3": raw.startswith(b"ID3") or (len(raw) >= 2 and raw[0] == 0xFF and raw[1] & 0xE0 == 0xE0),
+    }
+    if not signatures.get(suffix, False):
+        raise HTTPException(status_code=422, detail="Dosya içeriği seçilen ek türüyle eşleşmiyor.")
+    return raw, suffix, content_type
+
+
 @app.post("/expert-support/cases/{case_id}/media-message")
 @offload
 def expert_support_media_message(request: Request, case_id: int, file: UploadFile = File(...), reply_to_message_id: Optional[int] = Form(None), client_message_id: str = Form("")):
@@ -9046,12 +9086,18 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
         # immediately before recording the message.
         s.close()
         raw = file.file.read(CONSULTATION_UPLOAD_MAX_BYTES + 1)
-        if not raw or len(raw) > CONSULTATION_UPLOAD_MAX_BYTES:
-            return upload_error("Dosya boş veya 25 MB sınırını aşıyor.")
-        suffix = Path(file.filename or "").suffix.lower()
-        allowed = {".jpg", ".jpeg", ".png", ".webp", ".pdf", ".m4a", ".mp3", ".wav", ".ogg"}
-        if suffix not in allowed:
-            return upload_error("Desteklenmeyen dosya türü.")
+        max_pixels = getattr(
+            getattr(request, "state", None),
+            "_dai_consultation_attachment_max_pixels",
+            MAX_CLINICAL_IMAGE_PIXELS,
+        )
+        try:
+            raw, suffix, content_type = _prepare_consultation_attachment(
+                raw, file.filename or "", max_bytes=CONSULTATION_UPLOAD_MAX_BYTES,
+                max_pixels=max_pixels,
+            )
+        except HTTPException as exc:
+            return upload_error(str(exc.detail), exc.status_code)
         safe_filename = Path(file.filename or "").name[:180] or ("attachment" + suffix)
         kind = "VOICE" if suffix in {".m4a", ".mp3", ".wav", ".ogg"} else ("IMAGE" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "FILE")
         # Check a completed upload before writing another object. The second
@@ -9092,7 +9138,7 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
         stored = f"{secrets.token_hex(16)}{suffix}"
         path = case_dir / stored
         try:
-            storage_write_bytes(path, raw, content_type=file.content_type)
+            storage_write_bytes(path, raw, content_type=content_type)
         except (OSError, ObjectStorageError):
             path.unlink(missing_ok=True)
             return upload_error("Dosya yüklenemedi. Lütfen tekrar deneyin.")
@@ -9183,14 +9229,28 @@ def expert_support_message_media(request: Request, case_id: int, message_id: int
     with Session(engine, expire_on_commit=False) as s:
         case = s.get(ConsultationCase, case_id)
         msg = s.get(ConsultationMessage, message_id)
-        if not case or not msg or msg.case_id != case.id or user.id not in {case.requester_user_id, case.expert_user_id} or not msg.media_path:
+        if (
+            not case or not msg or msg.case_id != case.id
+            or user.id not in {case.requester_user_id, case.expert_user_id}
+            or case.messages_deleted_at or not msg.media_path
+        ):
+            return HTMLResponse("Dosya bulunamadı.", status_code=404)
+        inbox_state = s.exec(
+            select(ConsultationInboxState)
+            .where(ConsultationInboxState.case_id == case.id, ConsultationInboxState.user_id == user.id)
+            .order_by(ConsultationInboxState.id.desc())
+        ).first()
+        if inbox_state and inbox_state.deleted_at:
             return HTMLResponse("Dosya bulunamadı.", status_code=404)
         reference = msg.media_path
     try:
         path = storage_ensure_local(reference)
     except FileNotFoundError:
         return HTMLResponse("Dosya bulunamadı.", status_code=404)
-    return FileResponse(path, headers={"Cache-Control": "private, max-age=31536000, immutable"})
+    return FileResponse(path, headers={
+        "Cache-Control": "private, no-store", "Pragma": "no-cache",
+        "Vary": "Cookie", "X-Content-Type-Options": "nosniff",
+    })
 
 
 @app.post("/expert-support/cases/{case_id}/annotate/{message_id}")
