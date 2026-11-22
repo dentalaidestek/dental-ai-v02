@@ -1398,3 +1398,24 @@ Commits:
 - `3fdb65e` — execute the new mount-order regression in Security Recovery
 
 Final validation for these commits is pending. No local checkout was available in this connector-only run, so no local pytest execution is claimed. No main merge, production deployment, database migration or patient-data mutation.
+
+
+## 2026-11-22 — patient profile account-scope privacy follow-up
+
+### Web-first flow traced
+
+Re-read \`app/templates/patient_detail.html\` before the native change. The web patient detail keeps its patient identity in the route and uses distinct server actions for profile edit/delete, clinical media upload, analysis history paging and treatment history paging. Native \`NativePatientProfile\` reuses the same patient API, edit revision, treatment receipts, media, analysis history and approved voice history components.
+
+### New finding
+
+The native profile built \`scope = userId:token:patientId\` and reused it as the \`loadedScope\` React state value and in owner, edit-snapshot and treatment-history refs. This duplicated the bearer token into ordinary component cache/ownership state even though only an opaque identity is needed for stale-response rejection and child remounting.
+
+### Change
+
+- Replaced the local \`profileRenderIdentity\` credential-bearing object with the existing \`useSessionRenderKey\` hook.
+- All profile state and request-ownership refs now compare the opaque returned scope key; the bearer remains used only for authenticated API calls and as the private scope input used by the hook to rotate identity.
+- Kept profile revision conflict handling, durable treatment mutation receipts, delete-intent scope, pagination cursor guards, realtime refresh and web-aligned action ordering unchanged.
+- Updated the React component harness to load the production hook, not a placeholder.
+- Added a regression for the same patient ID switching between two accounts while the old account's profile request is still pending; the old response must not overwrite the new account's profile.
+
+The Android and Security Recovery runs on the new HEAD are required before these regressions can be reported as passing. No patient data or production API was used, and no merge or deployment occurred.
