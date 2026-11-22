@@ -64,3 +64,11 @@ New/updated regression coverage:
 The analysis and patient-media receipt tests remain in the same security job and continue to cover patient ownership, exact payload replay/conflict, lost response recovery, and deleted-resource non-resurrection. The PostgreSQL parallel attachment retry remains covered by the existing concurrency test when `TEST_POSTGRES_URL` is configured.
 
 Validation is pending for the branch head after these changes. Do not interpret source review or test additions as a test pass. No main merge, production deploy, schema migration, or patient-data mutation was performed.
+
+## Follow-up — close the inbox-delete/upload race
+
+The native adapter's preflight alone could race with a delete from another device while a large attachment was being read or written to object storage. The canonical web handler now checks the participant's latest inbox state both before reading the upload and again under the case lock immediately before message persistence. If the inbox was hidden during storage I/O, the staged object is deleted and no message/receipt is committed. This keeps the browser and native mutation path aligned and makes the web handler the authoritative lifecycle boundary.
+
+Added two route-level regressions to `tests/test_mobile_chat_route_security.py`: direct web upload is rejected for a locally deleted inbox, and a synthetic cross-device delete inserted after storage but before the final locked transaction causes the staged object to be removed with no message row. These tests are included in the Security Recovery job through the previously added workflow entry.
+
+No patient data, real attachments, main merge, production deploy, or schema migration was used.
