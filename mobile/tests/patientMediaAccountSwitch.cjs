@@ -338,7 +338,7 @@ function loadModernApi(fetchImpl){
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
  class ApiError extends Error{constructor(status,message){super(message);this.status=status}}
  const exports={};
- const requireChain=name=>name==='./api'?{ApiError,API_BASE:'https://dentalai.tr/api/mobile/v1'}:name==='./sessionExpiry'?{revalidateSession:async()=>{}}:name==='./chatFiles'?{validateChatFile:()=>{}}:name==='./notificationState'?loadSrcModule('notificationState',requireChain):(()=>{throw Error('Unexpected import '+name)})();
+ const requireChain=name=>name==='./api'?{ApiError,API_BASE:'https://dentalai.tr/api/mobile/v1'}:name==='./sessionExpiry'?{revalidateSession:async()=>{}}:name==='./chatFiles'?{validateChatFile:()=>{}}:name==='./notificationState'?loadSrcModule('notificationState',requireChain):name==='./apiCompatibility'?loadSrcModule('apiCompatibility',requireChain):(()=>{throw Error('Unexpected import '+name)})();
  vm.runInNewContext(code,{
   exports,fetch:fetchImpl,AbortController,FormData,URLSearchParams,Response,
   setTimeout,clearTimeout,require:requireChain
