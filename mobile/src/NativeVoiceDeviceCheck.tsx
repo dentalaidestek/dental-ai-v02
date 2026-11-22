@@ -3,7 +3,7 @@ import {ActivityIndicator,AppState,Pressable,Text,View} from 'react-native';
 import {useIsFocused} from '@react-navigation/native';
 import {RecordingPresets,requestRecordingPermissionsAsync,setAudioModeAsync,useAudioRecorder,useAudioRecorderState} from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
-import {evaluateVoiceDeviceCheck,isPrivateVoiceDeviceCheckUri,removePrivateVoiceDeviceCheckFile,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS} from './voiceDeviceCheck';
+import {evaluateVoiceDeviceCheck,isPrivateVoiceDeviceCheckUri,removePrivateVoiceDeviceCheckFile,removePrivateVoiceDeviceCheckCacheChildFile,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS} from './voiceDeviceCheck';
 import type {VoiceDeviceCheckOutcome} from './voiceDeviceCheck';
 import {restoreVoiceAudioMode} from './voiceRecorderLifecycle';
 
@@ -15,7 +15,7 @@ const resultText:Record<VoiceDeviceCheckOutcome,string>={
  no_audio_file:'Cihaz ses dosyası oluşturamadı. Mikrofonu kullanan diğer uygulamaları kapatıp tekrar deneyin.',
  metering_unavailable:'Ses seviyesi bu cihazdan okunamadı. Bu sonuç mikrofonun çalışmadığını kanıtlamaz; gerçek muayene öncesi cihazda ayrıca kontrol edin.',
  low_signal:'Kayıt alındı ancak yeterli ses seviyesi algılanmadı. Mikrofon girişini, Bluetooth kulaklığı ve cihaz sesini kontrol edip tekrar deneyin.',
- cleanup_failed:'Geçici mikrofon ses dosyasının silindiği doğrulanamadı. Test başarılı sayılmıyor; dosyayı silmeyi yeniden deneyin. Dosya yalnızca uygulamanın özel önbelleğinde aranır.',
+ cleanup_failed:'Geçici mikrofon dosyasının güvenli konumu veya silinmesi doğrulanamadı. Yalnızca uygulamanın özel önbelleğindeki doğrudan dosyalar silinir; bu uyarı kalkmadan test yeniden başlatılamaz.',
  audio_mode_restore_failed:'Geçici dosya temizlendi ancak cihazın ses yönlendirmesi kayıt modundan çıkarılamadı. Mikrofon testine yeniden başlamadan önce aşağıdaki yeniden deneme düğmesini kullanın.',
  passed:'Mikrofon izni, yerel ses yakalama ve ses seviyesi kontrolü başarılı. Bu sonuç konuşma tanıma veya Gemini bağlantısını doğrulamaz.'
 };
@@ -34,7 +34,9 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
  }
  async function removeTemporaryFile(path:string|null):Promise<boolean>{
   if(!path)return true;
-  return removePrivateVoiceDeviceCheckFile(path,FileSystem.cacheDirectory,FileSystem);
+  return isPrivateVoiceDeviceCheckUri(path,FileSystem.cacheDirectory)
+   ?removePrivateVoiceDeviceCheckFile(path,FileSystem.cacheDirectory,FileSystem)
+   :removePrivateVoiceDeviceCheckCacheChildFile(path,FileSystem.cacheDirectory,FileSystem);
  }
  useEffect(()=>{
   if(phase!=='testing'||typeof status.metering!=='number'||!Number.isFinite(status.metering))return;
@@ -124,9 +126,10 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
    prepared.current=true;
    const path=recorder.uri;
    const cache=FileSystem.cacheDirectory;
-   if(!path||!cache||!path.startsWith(cache))throw Error('Geçici test kaydı uygulamanın özel önbelleğine oluşturulamadı.');
-   uri.current=path;
-   if(!isPrivateVoiceDeviceCheckUri(path,cache))throw Error('Geçici test kaydı özel önbellekte beklenen dosya biçiminde değil; güvenli temizleme doğrulanmadan test tamamlanmayacak.');
+   // Retain even an unexpected recorder URI in memory so cleanup fails closed.
+   // The cleanup helper will delete it only if it is a direct child of app cache.
+   if(typeof path==='string'&&path)uri.current=path;
+   if(!path||!cache||!isPrivateVoiceDeviceCheckUri(path,cache))throw Error('Geçici test kaydı uygulamanın özel önbelleğinde doğrulanamadı; güvenli temizleme tamamlanmadan mikrofon testi engellendi.');
    if(run!==epoch.current){await cancelRef.current();return;}
    startedAt.current=Date.now();
    recorder.record();
