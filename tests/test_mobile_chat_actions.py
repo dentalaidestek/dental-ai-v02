@@ -56,7 +56,7 @@ def test_two_participants_share_persisted_text_and_outsider_is_rejected(chat):
 def test_photo_upload_is_sanitized_and_attachment_authorized(chat):
     c,engine=chat
     raw=io.BytesIO();Image.new("RGB",(12,12),"white").save(raw,format="PNG")
-    r=c.post("/api/mobile/v1/consultations/1/attachments",files={"file":("image.png",raw.getvalue(),"image/png")})
+    r=c.post("/api/mobile/v1/consultations/1/attachments",data={"client_message_id":"native-photo-upload-0001"},files={"file":("image.png",raw.getvalue(),"image/png")})
     assert r.status_code==200,r.text
     assert r.headers["cache-control"] == "private, no-store"
     assert "authorization" in r.headers.get("vary", "").lower()
@@ -73,9 +73,35 @@ def test_photo_upload_is_sanitized_and_attachment_authorized(chat):
 
 def test_malformed_or_unsupported_upload_does_not_create_message(chat):
     c,engine=chat
-    assert c.post("/api/mobile/v1/consultations/1/attachments",files={"file":("bad.jpg",b"not an image","image/jpeg")}).status_code==422
-    assert c.post("/api/mobile/v1/consultations/1/attachments",files={"file":("script.exe",b"bad","application/octet-stream")}).status_code==415
+    assert c.post("/api/mobile/v1/consultations/1/attachments",data={"client_message_id":"native-invalid-image-0001"},files={"file":("bad.jpg",b"not an image","image/jpeg")}).status_code==422
+    assert c.post("/api/mobile/v1/consultations/1/attachments",data={"client_message_id":"native-invalid-type-0001"},files={"file":("script.exe",b"bad","application/octet-stream")}).status_code==415
     assert c.get("/api/mobile/v1/consultations/1").json()["messages"]==[]
+
+def test_mobile_attachment_requires_a_valid_recovery_key_before_upload(chat):
+    client, engine = chat
+    raw = io.BytesIO()
+    Image.new("RGB", (8, 8), "white").save(raw, format="PNG")
+    payload = raw.getvalue()
+    missing = client.post(
+        "/api/mobile/v1/consultations/1/attachments",
+        files={"file": ("required-key.png", payload, "image/png")},
+    )
+    short = client.post(
+        "/api/mobile/v1/consultations/1/attachments",
+        data={"client_message_id": "short"},
+        files={"file": ("short-key.png", payload, "image/png")},
+    )
+    malformed = client.post(
+        "/api/mobile/v1/consultations/1/attachments",
+        data={"client_message_id": "invalid key with spaces"},
+        files={"file": ("bad-key.png", payload, "image/png")},
+    )
+    assert missing.status_code == 422
+    assert short.status_code == 422
+    assert malformed.status_code == 422
+    with Session(engine) as session:
+        assert session.exec(select(main.ConsultationMessage)).all() == []
+
 
 def test_completion_reuses_web_roles_and_transitions(chat):
     c,engine=chat
@@ -113,8 +139,8 @@ def test_pdf_and_audio_share_the_existing_web_attachment_workflow(chat):
     audio=io.BytesIO()
     with wave.open(audio,"wb") as output:
         output.setnchannels(1);output.setsampwidth(2);output.setframerate(8000);output.writeframes(b"\x00\x00"*80)
-    for name,raw,mime,kind in [("case.pdf",pdf.getvalue(),"application/pdf","FILE"),("voice.wav",audio.getvalue(),"audio/wav","VOICE")]:
-        r=c.post("/api/mobile/v1/consultations/1/attachments",files={"file":(name,raw,mime)})
+    for index,(name,raw,mime,kind) in enumerate([("case.pdf",pdf.getvalue(),"application/pdf","FILE"),("voice.wav",audio.getvalue(),"audio/wav","VOICE")],start=1):
+        r=c.post("/api/mobile/v1/consultations/1/attachments",data={"client_message_id":f"native-pdf-audio-{index:04d}"},files={"file":(name,raw,mime)})
         assert r.status_code==200,r.text
         assert r.json()["message"]["message_type"]==kind
         ident=r.json()["message"]["id"]
@@ -124,8 +150,8 @@ def test_pdf_and_audio_share_the_existing_web_attachment_workflow(chat):
 
 def test_spoofed_document_and_audio_content_never_reach_web_storage(chat):
     c,engine=chat
-    for name,mime in [("case.pdf","application/pdf"),("voice.mp3","audio/mpeg"),("voice.m4a","audio/mp4"),("voice.wav","audio/wav"),("voice.ogg","audio/ogg")]:
-        assert c.post("/api/mobile/v1/consultations/1/attachments",files={"file":(name,b"not a supported document",mime)}).status_code==422
+    for index,(name,mime) in enumerate([("case.pdf","application/pdf"),("voice.mp3","audio/mpeg"),("voice.m4a","audio/mp4"),("voice.wav","audio/wav"),("voice.ogg","audio/ogg")],start=1):
+        assert c.post("/api/mobile/v1/consultations/1/attachments",data={"client_message_id":f"native-spoofed-attachment-{index:04d}"},files={"file":(name,b"not a supported document",mime)}).status_code==422
     assert c.get("/api/mobile/v1/consultations/1").json()["messages"]==[]
 
 def test_case_shared_media_is_selected_link_scoped_and_private(chat, tmp_path):
