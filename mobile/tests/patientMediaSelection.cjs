@@ -42,3 +42,10 @@ test('selection is capped, deduplicated and rejects an invalid limit',()=>{
  assert.throws(()=>patientMediaSelectAllIds([],visible,0),/seçim sınırı/);
  assert.throws(()=>patientMediaSelectAllLabel([],visible,1.5),/seçim sınırı/);
 });
+
+test('native gallery delegates its select-all label and action to the web-parity helper',()=>{
+ const source=fs.readFileSync(require('node:path').join(__dirname,'../src/NativePatientMedia.tsx'),'utf8');
+ assert.match(source,/patientMediaSelectAllLabel\(selected,visibleItems\.map\(x=>x\.id\),ANALYSIS_MAX_IMAGES\)/);
+ assert.match(source,/setSelected\(patientMediaSelectAllIds\(selected,visibleItems\.map\(x=>x\.id\),ANALYSIS_MAX_IMAGES\)\)/);
+ assert.doesNotMatch(source,/setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,ANALYSIS_MAX_IMAGES\)/);
+});
