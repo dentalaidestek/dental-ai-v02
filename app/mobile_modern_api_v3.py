@@ -79,7 +79,11 @@ def mobile_analysis_history(
 
 
 @router.get("/patients/{patient_id}/media")
-def mobile_patient_media(patient_id:int,user=Depends(_mobile_user),limit:int=60,offset:int=0,before:int|None=None):
+def mobile_patient_media(patient_id:int,response:Response,user=Depends(_mobile_user),limit:int=60,offset:int=0,before:int|None=None):
+    # This response contains patient-linked clinical notes and private media paths.
+    # The older shadowed route had no-store headers; keep the canonical v3 route
+    # equally private after route deduplication.
+    response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)
     limit=max(1,min(limit,100)); offset=max(0,offset)
     if before is not None and before <= 0:
         raise HTTPException(status_code=422,detail="Geçersiz sayfa kimliği.")
@@ -220,7 +224,8 @@ def mobile_media_thumbnail(patient_id: int, media_id: int, user=Depends(_mobile_
 
 
 @router.get("/patients/{patient_id}/media/{media_id}")
-def mobile_media_meta(patient_id:int,media_id:int,user=Depends(_mobile_user)):
+def mobile_media_meta(patient_id:int,media_id:int,response:Response,user=Depends(_mobile_user)):
+    response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)
     with Session(engine,expire_on_commit=False) as s:
         _user_owned_patient(s,user,patient_id)
         row=s.get(PatientMedia,media_id)
