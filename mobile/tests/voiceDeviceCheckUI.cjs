@@ -18,7 +18,10 @@ test('microphone test uses only temporary app cache and deletes the file after s
  assert.match(component,/FileSystem\.cacheDirectory/);
  assert.match(component,/removePrivateVoiceDeviceCheckFile\(path,FileSystem\.cacheDirectory,FileSystem\)/);
  assert.match(helper,/await fileSystem\.deleteAsync\(uri,\{idempotent:true\}\)/);
- assert.match(component,/await recorder\.stop\(\)/);
+ assert.match(component,/stopVoiceDeviceRecorderVerified\(recorder\)/);
+ assert.match(helper,/await recorder\.stop\(\)/,'the recorder stop is owned by the verified lifecycle helper');
+ assert.match(helper,/recorder\.getStatus\(\)\.isRecording===false/,'stop requires an explicit inactive Expo status');
+ assert.doesNotMatch(component,/await recorder\.stop\(\)/,'the UI must not bypass the verified stop helper');
  assert.doesNotMatch(component,/documentDirectory|SecureStore|AsyncStorage/);
 });
 
