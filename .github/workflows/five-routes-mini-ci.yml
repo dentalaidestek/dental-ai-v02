@@ -1,0 +1,51 @@
+name: five-routes-mini-ci
+
+on:
+  push:
+    branches:
+      - "fix/main-five-mobile-routes-20261122"
+  workflow_dispatch:
+
+jobs:
+  five-route-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-web.lock
+      - name: Install application and test dependencies
+        # vision48-ci bootstrap pattern, python-only: no browsers, no npm,
+        # no new dependencies beyond the pinned lock and test runner.
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements-web.lock
+          python -m pip install --disable-pip-version-check pytest==9.1.1 httpx==0.28.1 numpy==2.5.3 opencv-python-headless==5.0.0.93
+      - name: Compile touched application files
+        run: python -m py_compile app/main.py app/migrate.py app/mobile_api.py app/mobile_modern_api_v3.py app/mobile_performance_info_api.py
+      - name: Five-route web-parity regressions
+        run: python -m pytest -q tests/test_parity_five_routes_regressions.py
+      - name: Adjacent consultation chat regressions (main baseline)
+        run: python -m pytest -q tests/test_chat_read_http.py tests/test_chat_read_cursor_isolated.py
+      - name: Migration ladder smoke (revision 13 gate)
+        run: |
+          python - <<'PY'
+          from sqlalchemy import text
+          from sqlmodel import create_engine
+          import app.migrate as mig
+          assert mig.REVISION == mig.CONSULTATION_RECEIPT_REVISION == 13
+          eng = create_engine("sqlite:///:memory:")
+          with eng.begin() as c:
+              c.execute(text("CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER)"))
+              c.execute(text("INSERT INTO dental_schema_revision VALUES (1, 13)"))
+          mig.require_schema(eng)
+          with eng.begin() as c:
+              c.execute(text("UPDATE dental_schema_revision SET version=12 WHERE id=1"))
+          try:
+              mig.require_schema(eng)
+              raise SystemExit("revision-12 database must not boot without migration")
+          except RuntimeError as exc:
+              assert "revision 13" in str(exc), exc
+          print("migration ladder smoke: PASS")
+          PY
