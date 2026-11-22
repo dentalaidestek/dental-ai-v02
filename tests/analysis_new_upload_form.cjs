@@ -89,3 +89,36 @@ test("web analysis accepts a valid image below the byte limits", () => {
   assert.deepEqual(form.alerts, []);
   assert.equal(form.submit(), false);
 });
+
+test("web analysis counts saved patient media together with one new image", () => {
+  const form = createForm({
+    existingCount: 3,
+    files: [{ name: "synthetic-fourth.png", size: 1024 }],
+  });
+  form.change();
+  assert.equal(form.fileInput.files.length, 1);
+  assert.deepEqual(form.alerts, []);
+  assert.equal(form.submit(), false);
+});
+
+test("web analysis rejects a fifth image across saved and new media", () => {
+  const form = createForm({
+    existingCount: 3,
+    files: [
+      { name: "synthetic-fourth.png", size: 1024 },
+      { name: "synthetic-fifth.png", size: 1024 },
+    ],
+  });
+  form.change();
+  assert.equal(form.fileInput.files.length, 0);
+  assert.match(form.alerts[0], /en fazla 4 görüntü/);
+});
+
+test("web analysis rejects a single image larger than the per-file cap", () => {
+  const form = createForm({
+    files: [{ name: "synthetic-large.png", size: 15 * 1024 * 1024 + 1 }],
+  });
+  form.change();
+  assert.equal(form.fileInput.files.length, 0);
+  assert.match(form.alerts[0], /15 MiB/);
+});
