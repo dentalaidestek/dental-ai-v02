@@ -1338,3 +1338,29 @@ The next PR-triggered CI run is expected to execute on this updated head because
 Current PR head: 97498128fe775ad1bf2a45494f147d10fc4ffd71. Android run #44994351696 and Security Recovery #44994351674 were created for this head but still show pending with no job records at the time of this update. The new Python route-registry tests and final-head Android checks have not yet executed; no new green result is claimed. The previous Android pass is baseline evidence only, not proof for this updated HEAD.
 
 No main merge, live deploy, staging/production migration, patient record mutation, or R2 object operation was performed. The 60,000-user target remains unverified and still requires dedicated multi-instance load and queue/backpressure testing.
+
+
+## 2026-11-22 — Restore canonical mobile router mount and repair CI regressions
+
+Starting PR HEAD: `23e504adef451eb83a3a3fc2ba5685c1fcff4614`.
+
+### CI evidence before changes
+- Android run [#44994445273](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44994445273): TypeScript typecheck passed; session/auth and realtime/pagination passed; Expo Android+iOS export passed; internal APK build and artifact upload passed. The beta suite reported 993/996 passed and three failures.
+- The three beta failures were two brittle source-text assertions expecting a one-line route-registry import and one voice cleanup test whose Alert mock discarded the destructive confirmation callback.
+- Security Recovery [#44994445262](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44994445262): Python security suite had 66 failures. Most mobile API tests received 404 because `main.py` used `include_missing_routes(app, mobile_router)` instead of mounting the canonical primary router directly. This also contradicted the existing patient-media route contract. The route-registry tests had two independent defects: a helper scoped inside a nested function but referenced outside it, and an expected path that omitted the FastAPI 0.141.1 effective `/api/mobile/v1` prefix.
+- Native voice and native clinical security each failed only the unsafe-recorder-URI test because the harness did not execute the explicit confirmation callback. Native social failed the same brittle import-format assertion. Native support, academic and program security jobs passed. Browser form/live-voice regressions passed 13/13. PostgreSQL validation was skipped after Python failure.
+
+### Corrections
+- Restored `app.include_router(mobile_router)` as the single canonical mount for the primary mobile API. The modern adapter still passes through method-aware `remove_shadowed_routes` before it is mounted; no ownership checks were relaxed.
+- Moved the route-path helper to the test scope that actually uses it and corrected the nested-prefix assertion to the full effective FastAPI path.
+- Updated the voice test harness to capture Alert confirmation actions and explicitly invoke the user's destructive confirmation before asserting safe cleanup behavior.
+- Made Dental Flow and clinical-media source regressions accept either one-line or parenthesized import formatting while retaining the router ordering checks.
+
+### Commits in this follow-up
+- `pending` — restore canonical mobile API mount
+- `pending` — repair route-registry regression scope and prefix contract
+- `pending` — exercise explicit voice cleanup confirmation
+- `pending` — make Dental Flow route import regression formatting-independent
+- `pending` — make clinical media route import regression formatting-independent
+
+Final-head Android, Python/PostgreSQL, native security and browser regressions must run after these commits. No local pytest or typecheck execution is claimed in this connector-only session. No patient data, storage object, staging/production database, main branch or live deployment was changed.
