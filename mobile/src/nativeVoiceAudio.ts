@@ -26,6 +26,37 @@ export function isPrivateVoiceRecordingUri(
  return isVoiceAudioExtensionForMime(match[1],mime);
 }
 
+const PRIVATE_CACHE_CHILD=/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}$/;
+
+/**
+ * A recorder can create a cache file before its filename/MIME contract is
+ * validated. Cleanup may accept any single direct child of the app-private
+ * cache, but must never follow a nested path or leave that cache directory.
+ */
+export function isPrivateVoiceCacheChildUri(
+ uri:unknown,cacheDirectory:string|null|undefined=FileSystem.cacheDirectory
+):uri is string{
+ if(typeof uri!=='string'||typeof cacheDirectory!=='string'||
+    !cacheDirectory.startsWith('file:///')||!cacheDirectory.endsWith('/')||
+    !uri.startsWith(cacheDirectory))return false;
+ const filename=uri.slice(cacheDirectory.length);
+ return PRIVATE_CACHE_CHILD.test(filename)&&filename!=='.'&&filename!=='..';
+}
+
+/** Remove an untrusted recorder artifact only when it is a direct private-cache child. */
+export async function removePrivateVoiceCacheChildFile(
+ uri:unknown,cacheDirectory:string|null|undefined=FileSystem.cacheDirectory
+):Promise<boolean>{
+ if(!isPrivateVoiceCacheChildUri(uri,cacheDirectory))return false;
+ try{
+  const before=await FileSystem.getInfoAsync(uri);
+  if(!before.exists)return true;
+  await FileSystem.deleteAsync(uri,{idempotent:true});
+  const after=await FileSystem.getInfoAsync(uri);
+  return after.exists!==true;
+ }catch{return false;}
+}
+
 export async function readPrivateVoiceAudioDuration(uri:string,mime:string,timeoutMs=8000):Promise<number>{
  const contentType=normalizeVoiceAudioMime(mime);
  if(!contentType||!isPrivateVoiceRecordingUri(uri,FileSystem.cacheDirectory,contentType))
