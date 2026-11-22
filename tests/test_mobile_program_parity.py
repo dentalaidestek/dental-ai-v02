@@ -634,3 +634,50 @@ def test_program_complete_and_delete_reject_other_account_before_web_dispatch(pr
         assert stored.owner_user_id == 1
         assert stored.status == "ACTIVE"
         assert main._schedule_event_revision(stored) == original_revision
+
+def test_repeated_program_completion_does_not_advance_revision_or_duplicate_reminders(program):
+    client, engine = program
+    values = {
+        "event_type": "APPOINTMENT",
+        "title": "Synthetic idempotent completion",
+        "start_at": "2030-01-07T10:00",
+        "end_at": "2030-01-07T10:30",
+        "patient_id": 8,
+        "reminder_minutes": "30",
+        "recurrence_rule": "NONE",
+        "request_key": "program-complete-idempotent-0001",
+    }
+    created = client.post("/api/mobile/v1/program/events", json=values)
+    assert created.status_code == 200, created.text
+    event_id = created.json()["event"]["id"]
+
+    first = client.post(f"/api/mobile/v1/program/events/{event_id}/complete")
+    assert first.status_code == 200, first.text
+    with Session(engine) as session:
+        completed = session.get(main.ScheduleEvent, event_id)
+        first_revision = main._schedule_event_revision(completed)
+        first_updated_at = completed.updated_at
+        jobs = session.exec(
+            select(main.ProgramReminderJob).where(
+                main.ProgramReminderJob.schedule_event_id == event_id
+            )
+        ).all()
+        assert completed.status == "COMPLETED"
+        assert len(jobs) == 1
+        assert jobs[0].status != "PENDING"
+
+    second = client.post(f"/api/mobile/v1/program/events/{event_id}/complete")
+    assert second.status_code == 200, second.text
+    with Session(engine) as session:
+        completed = session.get(main.ScheduleEvent, event_id)
+        second_revision = main._schedule_event_revision(completed)
+        second_updated_at = completed.updated_at
+        jobs = session.exec(
+            select(main.ProgramReminderJob).where(
+                main.ProgramReminderJob.schedule_event_id == event_id
+            )
+        ).all()
+        assert completed.status == "COMPLETED"
+        assert second_revision == first_revision
+        assert second_updated_at == first_updated_at
+        assert len(jobs) == 1
