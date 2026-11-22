@@ -127,3 +127,46 @@ def test_real_fastapi_multi_method_route_keeps_the_nonconflicting_openapi_operat
         route for route in candidate.routes
         if getattr(route, "path", None) == "/registry-probe/{item_id}"
     ).methods == {"PATCH"}
+
+
+
+def test_registered_clinical_media_routes_use_the_expected_private_handlers():
+    import inspect
+
+    from app import main
+    from app.mobile_api import router as primary_mobile_router
+
+    prefix = primary_mobile_router.prefix
+
+    def registered(path, method):
+        full_path = prefix + path
+        matches = [
+            route for route in main.app.routes
+            if getattr(route, "path", None) == full_path
+            and method in (getattr(route, "methods", None) or set())
+        ]
+        assert len(matches) == 1, f"expected one active {method} {full_path}, found {len(matches)}"
+        return matches[0]
+
+    media_list = registered("/patients/{patient_id}/media", "GET")
+    media_upload = registered("/patients/{patient_id}/media", "POST")
+    original_file = registered("/patients/{patient_id}/media/{media_id}/file", "GET")
+    thumbnail = registered("/patients/{patient_id}/media/{media_id}/thumbnail", "GET")
+    metadata = registered("/patients/{patient_id}/media/{media_id}", "GET")
+
+    assert media_list.endpoint.__module__ == "app.mobile_api"
+    assert media_list.endpoint.__name__ == "mobile_patient_media"
+    assert "_mobile_private_no_store(response)" in inspect.getsource(media_list.endpoint)
+
+    assert media_upload.endpoint.__module__ == "app.mobile_api"
+    assert media_upload.endpoint.__name__ == "mobile_patient_media_upload"
+
+    assert original_file.endpoint.__module__ == "app.mobile_api"
+    assert "current_media.file_path == file_path" in inspect.getsource(original_file.endpoint)
+
+    assert thumbnail.endpoint.__module__ == "app.mobile_modern_api_v3"
+    assert "current_media.file_path == file_path" in inspect.getsource(thumbnail.endpoint)
+    assert "headers = dict(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in inspect.getsource(thumbnail.endpoint)
+
+    assert metadata.endpoint.__module__ == "app.mobile_modern_api_v3"
+    assert "response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in inspect.getsource(metadata.endpoint)
