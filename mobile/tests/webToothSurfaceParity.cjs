@@ -2,6 +2,7 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const ts=require('typescript');
+const vm=require('node:vm');
 
 require.extensions['.ts']=(module,filename)=>module._compile(
  ts.transpileModule(fs.readFileSync(filename,'utf8'),{
@@ -91,8 +92,8 @@ test('web selected-tooth preview keeps the same upper/lower FDI orientation as n
  for(const invalid of ['', '19', '49', '56', '89', 'abc']){
   assert.equal(webOptions.isLowerJawTooth(invalid),false,invalid);
  }
- assert.match(web,/<script src="\\/static\\/tooth-chart\\/surface-options\\.js"><\\/script>/);
- assert.match(browserHelper,/root\\.toothChartIsLowerJawTooth=getOptions\\.isLowerJawTooth/);
+ assert.match(web,/<script src="\/static\/tooth-chart\/surface-options\.js"><\/script>/);
+ assert.match(browserHelper,/root\.toothChartIsLowerJawTooth=getOptions\.isLowerJawTooth/);
  const browserWindow={};
  vm.runInNewContext(browserHelper,{window:browserWindow});
  assert.equal(typeof browserWindow.toothChartIsLowerJawTooth,'function');
@@ -111,8 +112,51 @@ test('all five web surface pins have descriptive accessible labels',()=>{
 });
 
 test('web surface chips and preview pins expose the same single-selection state as native',()=>{
- assert.match(web,/b\.setAttribute\("aria-pressed",String\(selected\)\)/);
- assert.match(web,/pin\.setAttribute\("aria-pressed",String\(selected\)\)/);
- assert.match(web,/const selected=b\.dataset\.surface===v/);
- assert.match(web,/const selected=!!v&&b\.dataset\.pin===v/);
+ const start=web.indexOf('function setSurface(v){');
+ const end=web.indexOf('function setStatus',start);
+ assert.ok(start>=0&&end>start,'web surface selection handler must exist');
+ const source=web.slice(start,end).trim();
+ const control=(key,value)=>{
+  const classes=new Set(),attributes={};
+  return {
+   dataset:{[key]:value},classes,attributes,
+   classList:{toggle(name,enabled){if(enabled)classes.add(name);else classes.delete(name)}},
+   setAttribute(name,value){attributes[name]=value}
+  };
+ };
+ const buttons=['INCISAL','MESIAL','DISTAL','BUCCAL','LINGUAL'].map(value=>control('surface',value));
+ const pins=['INCISAL','MESIAL','DISTAL','BUCCAL','LINGUAL'].map(value=>control('pin',value));
+ const elements={
+  previewTooth:{dataset:{}},
+  surfaceSelect:{value:''},
+  selectedTooth:{textContent:'36'},
+  surfaceExpectedRevision:{value:''}
+ };
+ const document={
+  getElementById:id=>elements[id],
+  querySelectorAll:selector=>selector==='.surface-button'?buttons:selector==='.surface-pin'?pins:[]
+ };
+ const setSurface=vm.runInNewContext(source+'; setSurface',{
+  document,SURFACE_REVISIONS:{'36:MESIAL':'revision-36-mesial'}
+ });
+ setSurface('MESIAL');
+ assert.equal(elements.previewTooth.dataset.surface,'MESIAL');
+ assert.equal(elements.surfaceSelect.value,'MESIAL');
+ assert.equal(elements.surfaceExpectedRevision.value,'revision-36-mesial');
+ for(const button of buttons){
+  const selected=button.dataset.surface==='MESIAL';
+  assert.equal(button.classes.has('selected'),selected);
+  assert.equal(button.attributes['aria-pressed'],String(selected));
+ }
+ for(const pin of pins){
+  const selected=pin.dataset.pin==='MESIAL';
+  assert.equal(pin.classes.has('active'),selected);
+  assert.equal(pin.attributes['aria-pressed'],String(selected));
+ }
+ setSurface('');
+ for(const button of buttons)assert.equal(button.attributes['aria-pressed'],'false');
+ for(const pin of pins){
+  assert.equal(pin.classes.has('active'),false);
+  assert.equal(pin.attributes['aria-pressed'],'false');
+ }
 });
