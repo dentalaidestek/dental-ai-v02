@@ -380,6 +380,7 @@ def test_mobile_program_routes_prevent_caching_of_account_scoped_calendar_data(p
     assert created.status_code == 200, created.text
     _assert_program_private_no_store(created)
     event_id = created.json()["event"]["id"]
+    revision = created.json()["event"]["revision"]
 
     detail = client.get(f"/api/mobile/v1/program/events/{event_id}")
     assert detail.status_code == 200, detail.text
@@ -392,7 +393,8 @@ def test_mobile_program_routes_prevent_caching_of_account_scoped_calendar_data(p
     edited = client.put(
         f"/api/mobile/v1/program/events/{event_id}",
         json={**values, "title": "Synthetic private calendar entry edited",
-              "start_at": "2030-01-07T11:00", "end_at": "2030-01-07T11:30"},
+              "start_at": "2030-01-07T11:00", "end_at": "2030-01-07T11:30",
+              "expected_revision": revision},
     )
     assert edited.status_code == 200, edited.text
     _assert_program_private_no_store(edited)
@@ -494,9 +496,10 @@ def test_program_copy_receipt_rejects_changed_source_payload(program):
     created=client.post('/api/mobile/v1/program/events',json=values)
     assert created.status_code==200,created.text
     ident=created.json()['event']['id']
+    revision=created.json()['event']['revision']
     copied=client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08']})
     assert copied.status_code==200,copied.text
-    changed=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'title':'Changed source title'})
+    changed=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'title':'Changed source title','expected_revision':revision})
     assert changed.status_code==200,changed.text
     replay=client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08']})
     assert replay.status_code==409,replay.text
