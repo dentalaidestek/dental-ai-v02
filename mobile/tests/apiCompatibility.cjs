@@ -88,3 +88,62 @@ test('api client imports the shared route compatibility contract',()=>{
  assert.match(apiSource,/MISSING_API_ROUTE_MESSAGE/);
  assert.match(apiSource,/rawDetail===\"Not Found\"/);
 });
+
+function loadModernApi(status,body){
+ const source=fs.readFileSync(path.join(__dirname,'../src/modernApi.ts'),'utf8');
+ const compiled=ts.transpileModule(source,{
+  fileName:'modernApi.ts',
+  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}
+ }).outputText;
+ const exports={};
+ class ApiError extends Error{constructor(code,message){super(message);this.status=code}}
+ const dependencies={
+  './chatFiles':{validateChatFile:value=>value},
+  './api':{ApiError,API_BASE:'https://dentalai.tr/api/mobile/v1'},
+  './sessionExpiry':{revalidateSession:async()=>{}},
+  './notificationState':{normalizeNotificationReadAt:value=>value},
+ };
+ vm.runInNewContext(compiled,{
+  exports,
+  require:name=>{
+   if(!(name in dependencies))throw new Error('Unexpected modern API test dependency: '+name);
+   return dependencies[name];
+  },
+  fetch:async()=>({ok:status>=200&&status<300,status,text:async()=>JSON.stringify(body)}),
+  AbortController,
+  setTimeout,
+  clearTimeout,
+  FormData:class FormData{},
+  URLSearchParams,
+  encodeURIComponent,
+  Number,
+  Math,
+  JSON,
+  Array,
+  Set,
+  Map,
+  Promise,
+  Error,
+  Date,
+  RegExp,
+  String,
+  Object,
+ });
+ return exports;
+}
+
+test('modern chat receipt client maps a bare 404 to the same server route compatibility hint',async()=>{
+ const api=loadModernApi(404,{detail:'Not Found'});
+ await assert.rejects(
+  ()=>api.getConsultationMessageReceipt('synthetic-token',22,'abcdefghijklmnop'),
+  error=>error.status===404&&error.message===compatibility.MISSING_API_ROUTE_MESSAGE
+ );
+});
+
+test('modern chat receipt client preserves a case-specific 404',async()=>{
+ const api=loadModernApi(404,{detail:'Görüşme bulunamadı.'});
+ await assert.rejects(
+  ()=>api.getConsultationMessageReceipt('synthetic-token',22,'abcdefghijklmnop'),
+  error=>error.status===404&&error.message==='Görüşme bulunamadı.'
+ );
+});
