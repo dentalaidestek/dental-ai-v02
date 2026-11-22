@@ -5,6 +5,14 @@ const path=require('node:path');
 const vm=require('node:vm');
 const ts=require('typescript');
 
+function loadCompatibility(){
+ const source=fs.readFileSync(path.join(__dirname,'../src/apiCompatibility.ts'),'utf8');
+ const compiled=ts.transpileModule(source,{fileName:'apiCompatibility.ts',compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+ const exports={};
+ vm.runInNewContext(compiled,{exports,Error,String,Object});
+ return exports;
+}
+
 function loadApi(payload,status=200){
  const calls=[];
  const source=fs.readFileSync(path.join(__dirname,'../src/modernApi.ts'),'utf8');
@@ -22,6 +30,7 @@ function loadApi(payload,status=200){
    if(name==='./api')return{ApiError,API_BASE:'https://dentalai.tr/api/mobile/v1'};
    if(name==='./sessionExpiry')return{revalidateSession:async()=>{}};
    if(name==='./notificationState')return{normalizeNotificationReadAt:value=>value};
+   if(name==='./apiCompatibility')return loadCompatibility();
    throw Error('Unexpected module '+name);
   }
  });
