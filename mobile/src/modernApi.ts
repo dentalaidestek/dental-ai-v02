@@ -440,7 +440,7 @@ export const sendConsultationMessage=(t:string,id:number,content:string,clientMe
 export const getConsultationMessageReceipt=async(t:string,id:number,clientMessageId:string)=>{
  if(!Number.isSafeInteger(id)||id<=0||!/^[A-Za-z0-9_-]{16,96}$/.test(clientMessageId||""))
   throw Error("Geçersiz görüşme veya mesaj istek anahtarı.");
- const result=await req<{message:({case_id:number;client_message_id:string;id:number;sender_user_id:number;message_type:string;content:string|null;reply_to_message_id:number|null;created_at:string;has_media:boolean})|null;deleted:boolean}>(`/consultations/${id}/message-receipt?client_message_id=${encodeURIComponent(clientMessageId)}`,t);
+ const result=await req<{message:({case_id:number;client_message_id:string;id:number;sender_user_id:number;message_type:string;content:string;reply_to_message_id:number|null;created_at:string;has_media:boolean})|null;deleted:boolean}>(`/consultations/${id}/message-receipt?client_message_id=${encodeURIComponent(clientMessageId)}`,t);
  if(!result||typeof result.deleted!=="boolean"||(result.deleted&&result.message!==null))
   throw Error("Mesaj gönderim makbuzu doğrulanamadı.");
  if(result.message!==null){
@@ -451,7 +451,7 @@ export const getConsultationMessageReceipt=async(t:string,id:number,clientMessag
      !Number.isSafeInteger(message.id)||message.id<=0||
      !Number.isSafeInteger(message.sender_user_id)||message.sender_user_id<=0||
      typeof message.message_type!=="string"||!message.message_type||message.message_type.length>24||
-     !(message.content===null||typeof message.content==="string"&&message.content.length<=4000)||
+     (typeof message.content!=="string"||message.content.length>4000)||
      !(message.reply_to_message_id===null||Number.isSafeInteger(message.reply_to_message_id)&&message.reply_to_message_id>0)||
      typeof message.created_at!=="string"||!Number.isFinite(Date.parse(message.created_at))||
      typeof message.has_media!=="boolean")
