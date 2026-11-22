@@ -50,3 +50,21 @@ test('server event_id is applied once and cursor writes are serialized',async()=
  ws.onmessage({data:JSON.stringify({type:'resume_complete',has_more:true,last_event_id:975})});await tick();
  assert.equal(ws.sent.at(-1).after_id,975);h.cleanups[0]();
 });
+test('a reconnect storm keeps one socket per cycle and a stale timer cannot reconnect',async()=>{
+ const h=harness({getItemAsync:async()=>'900',setItemAsync:async()=>{}});
+ h.render('token',3);await tick();
+ for(let cycle=0;cycle<3;cycle++){
+  const before=h.sockets.length;const ws=h.sockets.at(-1);
+  ws.onopen();ws.onerror(); // the error path closes the socket; onclose schedules exactly one reconnect
+  assert.equal(h.sockets.length,before,'no socket is created before the backoff fires');
+  h.timers.at(-1)();await tick();
+  assert.equal(h.sockets.length,before+1,'each storm cycle creates exactly one replacement socket');
+ }
+ // Cleanup must neutralize the pending reconnect timer of the torn-down session.
+ h.cleanups.at(-1)();
+ const live=h.sockets.length;h.timers.at(-1)();await tick();
+ assert.equal(h.sockets.length,live,'a timer belonging to a closed session must not reconnect');
+ const stale=h.sockets.at(-1);stale.onclose();stale.onmessage({data:JSON.stringify({type:'event',event_id:1001})});
+ await tick();
+ assert.equal(h.states.filter(x=>x?.event_id===1001).length,0,'stale sockets cannot publish events');
+});
