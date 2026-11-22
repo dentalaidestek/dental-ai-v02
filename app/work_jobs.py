@@ -388,7 +388,9 @@ def enqueue_analysis_asset_cleanup(session: Session, reference: str) -> bool:
     """Queue a generated analysis image after its asset row is rolled back or deleted."""
     if not is_analysis_asset_reference(reference):
         return False
-    return _enqueue_cleanup_reference(session, reference, delay_seconds=0)
+    # Give any cancelled threadpool-backed R2 write time to settle before the
+    # collector can remove the partially published object.
+    return _enqueue_cleanup_reference(session, reference, delay_seconds=30)
 
 
 def enqueue_ai_result_cleanup(session: Session, reference: str) -> bool:
