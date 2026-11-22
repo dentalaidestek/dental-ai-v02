@@ -122,22 +122,36 @@ def include_missing_routes(app, source_router):
             return path
         return normalized_prefix + (path if path.startswith("/") else "/" + path)
 
+    normalized_prefix = prefix.rstrip("/")
+
+    def in_scope(path):
+        return (
+            not normalized_prefix
+            or path == normalized_prefix
+            or path.startswith(normalized_prefix + "/")
+        )
+
     existing = {}
 
     def remember(key, symbol):
-        owner = existing.get(key)
-        if owner is not None and owner != symbol:
+        if key in existing:
+            owner = existing[key]
             method, path = key
             label = f"{method} {path}" if method else path
+            if owner != symbol:
+                raise RuntimeError(
+                    f"mobile route ownership conflict for {label}: "
+                    f"{owner[0]}.{owner[1]} vs {symbol[0]}.{symbol[1]}"
+                )
             raise RuntimeError(
-                f"mobile route ownership conflict for {label}: "
-                f"{owner[0]}.{owner[1]} vs {symbol[0]}.{symbol[1]}"
+                f"duplicate mobile route registration for {label}: "
+                f"{symbol[0]}.{symbol[1]}"
             )
         existing[key] = symbol
 
     for route in iter_registered_routes(getattr(app, "routes", ())):
         path = _route_path(route)
-        if path is None:
+        if path is None or not in_scope(path):
             continue
         methods = getattr(route, "methods", None) or ()
         symbol = _endpoint_symbol(getattr(route, "endpoint", None))
@@ -148,6 +162,7 @@ def include_missing_routes(app, source_router):
             remember((None, path), symbol)
 
     missing = []
+    source_keys = set()
     for route in iter_registered_routes(getattr(source_router, "routes", ())):
         path = full_path(route)
         if path is None:
@@ -159,6 +174,11 @@ def include_missing_routes(app, source_router):
             for method in methods:
                 normalized_method = str(method).upper()
                 key = (normalized_method, path)
+                if key in source_keys:
+                    raise RuntimeError(
+                        f"duplicate source mobile route registration for {normalized_method} {path}"
+                    )
+                source_keys.add(key)
                 owner = existing.get(key)
                 if owner is None:
                     remaining.add(method)
@@ -176,6 +196,9 @@ def include_missing_routes(app, source_router):
                 existing[(str(method).upper(), path)] = symbol
         else:
             key = (None, path)
+            if key in source_keys:
+                raise RuntimeError(f"duplicate source mobile route registration for {path}")
+            source_keys.add(key)
             owner = existing.get(key)
             if owner is not None:
                 if owner != symbol:
