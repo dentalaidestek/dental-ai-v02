@@ -96,3 +96,30 @@ def test_clinical_workspace_returns_modality_only_asset_metadata(chat,monkeypatc
     assert asset['image_type']=='PERIAPICAL'
     assert 'patient-secret-name.png' not in response.text
     assert 'uploads/analysis_1_private.png' not in response.text
+
+
+def test_single_tooth_analysis_is_owner_locked_and_reuses_the_same_durable_job(chat,monkeypatch,tmp_path):
+    c,engine,_=setup(chat,monkeypatch,tmp_path)
+    path='/api/mobile/v1/analyses/1/tooth/36/analyze'
+    first=c.post(path);assert first.status_code==202,first.text
+    receipt=first.json();assert receipt['ok'] is True and receipt['analysis_id']==1 and receipt['patient_id']==1 and receipt['tooth_fdi']=='36'
+    job_id=receipt['job']['id'];assert receipt['job']['kind']=='PRELIMINARY' and receipt['job']['status']=='QUEUED'
+    second=c.post(path);assert second.status_code==202,second.text
+    assert second.json()['job']['id']==job_id,'a lost response/retry for the same FDI input must recover the original durable job'
+    with Session(engine) as s:
+        analysis=s.get(main.Analysis,1)
+        assert analysis.tooth_number=='36' and analysis.status=='AI_ANALYZING'
+        jobs=s.exec(select(work_jobs.WorkJob)).all()
+        assert len(jobs)==1 and jobs[0].id==job_id and jobs[0].owner_user_id==1
+
+
+def test_single_tooth_analysis_rejects_invalid_fdi_and_another_account_without_queueing(chat,monkeypatch,tmp_path):
+    c,engine,_=setup(chat,monkeypatch,tmp_path)
+    path='/api/mobile/v1/analyses/1/tooth/59/analyze'
+    assert c.post(path).status_code==422
+    c.headers['Authorization']='Bearer '+_SESSION_TOKEN[2]
+    denied=c.post('/api/mobile/v1/analyses/1/tooth/36/analyze')
+    assert denied.status_code==404,denied.text
+    with Session(engine) as s:
+        assert not s.exec(select(work_jobs.WorkJob)).all()
+        assert s.get(main.Analysis,1).tooth_number is None
