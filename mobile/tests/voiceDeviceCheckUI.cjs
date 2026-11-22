@@ -54,7 +54,7 @@ test('device preflight fails closed when app-wide playback audio mode cannot be 
  assert.match(component,/audioModeRestored=await resetAudioMode\(\)/);
  assert.match(component,/audio_mode_restore_failed/);
  assert.match(component,/audioModeBlocked\|\|uri\.current!==null/);
- assert.match(component,/\(cleanupPending\|\|audioModeBlocked\)&&<Pressable/);
+ assert.match(component,/\(stopPending\|\|cleanupPending\|\|audioModeBlocked\)&&<Pressable/);
  assert.match(component,/Cihaz ses yönlendirmesini yeniden dene/);
  assert.doesNotMatch(component,/setAudioModeAsync\(\{allowsRecording:false\}\)\.catch\(\(\)=>\{\}\)/);
 });
