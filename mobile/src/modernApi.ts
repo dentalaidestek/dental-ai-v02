@@ -337,7 +337,19 @@ export const getMedia=async(t:string,p:number,before?:number):Promise<{items:Pat
  }
  if(cursor!==null&&(!items.length||cursor!==items[items.length-1].id))
   throw Error("Klinik medya sunucusundan geçersiz liste alındı. Sayfalama imleci doğrulanamadı.");
- return {items:items.map(media=>({...media,filename:media.filename||media.original_filename||"",url:`${API_BASE}/patients/${p}/media/${media.id}/file`,thumbnail_url:`${API_BASE}/patients/${p}/media/${media.id}/thumbnail`})),next_before:cursor};
+ return {items:items.map(media=>({
+  // Keep the client model to the fields used by the clinical gallery. Never
+  // propagate accidental server additions such as owner IDs or storage keys.
+  id:media.id,
+  filename:media.filename||media.original_filename||"",
+  media_type:media.media_type,
+  tooth_number:media.tooth_number??null,
+  note:media.note??null,
+  uploaded_at:media.uploaded_at??null,
+  // Ignore server-provided URLs; only same-origin authenticated API paths are used.
+  url:`${API_BASE}/patients/${p}/media/${media.id}/file`,
+  thumbnail_url:`${API_BASE}/patients/${p}/media/${media.id}/thumbnail`
+ })),next_before:cursor};
 };
 export const getExperts=(t:string,q="",opts?:{specialty?:string;available?:boolean})=>req<{items:Expert[]}>("/experts?q="+encodeURIComponent(q)+(opts&&opts.specialty?"&specialty="+encodeURIComponent(opts.specialty):"")+(opts&&opts.available?"&available=true":""),t);
 export type ConsultationRequestPayload={expert_user_id:number;clinical_summary:string;question:string;requester_opinion?:string;tooth_region?:string;patient_id?:number;media_ids?:string;urgency?:string;request_key?:string};
