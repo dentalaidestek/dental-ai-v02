@@ -53,6 +53,9 @@ def test_photo_upload_is_sanitized_and_attachment_authorized(chat):
     raw=io.BytesIO();Image.new("RGB",(12,12),"white").save(raw,format="PNG")
     r=c.post("/api/mobile/v1/consultations/1/attachments",files={"file":("image.png",raw.getvalue(),"image/png")})
     assert r.status_code==200,r.text
+    assert r.headers["cache-control"] == "private, no-store"
+    assert "authorization" in r.headers.get("vary", "").lower()
+    assert r.headers["x-content-type-options"] == "nosniff"
     ident=r.json()["message"]["id"]
     assert c.get("/api/mobile/v1/consultations/1").json()["messages"][-1]["has_media"] is True
     r=c.get(f"/api/mobile/v1/consultations/1/attachments/{ident}")
