@@ -13006,6 +13006,42 @@ def create_guest_analysis(
     return RedirectResponse(url=target, status_code=303)
 
 
+def _recover_failed_web_analysis_upload(analysis_id: int, references: list[str]) -> None:
+    """Durably collect files from a failed web upload without deleting an ambiguous commit.
+
+    Object-store writes happen after the initial Analysis allocation commit. If a
+    later write or the final metadata commit fails, persist cleanup receipts in a
+    fresh transaction. A fresh read fences an ambiguous commit: committed
+    ImageAsset/WorkJob/legacy-path references keep the Analysis and its objects.
+    """
+    with Session(engine, expire_on_commit=False) as cleanup:
+        for reference in dict.fromkeys(references):
+            if not work_jobs.enqueue_analysis_asset_cleanup(cleanup, reference):
+                raise RuntimeError("Generated analysis asset cleanup key was rejected.")
+
+        statement = select(Analysis).where(Analysis.id == analysis_id)
+        if cleanup.get_bind().dialect.name == "postgresql":
+            statement = statement.with_for_update()
+        analysis = cleanup.exec(statement.execution_options(populate_existing=True)).first()
+        if analysis is not None:
+            has_assets = cleanup.exec(
+                select(ImageAsset.id).where(ImageAsset.analysis_id == analysis_id).limit(1)
+            ).first()
+            has_jobs = cleanup.exec(
+                select(work_jobs.WorkJob.id).where(
+                    work_jobs.WorkJob.resource_type == "ANALYSIS",
+                    work_jobs.WorkJob.resource_id == analysis_id,
+                ).limit(1)
+            ).first()
+            has_legacy_reference = bool(
+                getattr(analysis, "image_path", None)
+                or getattr(analysis, "radiograph_path", None)
+            )
+            if not has_assets and not has_jobs and not has_legacy_reference:
+                cleanup.delete(analysis)
+        cleanup.commit()
+
+
 @app.post("/analysis/new/{patient_id}")
 @offload
 def create_analysis(
@@ -13084,78 +13120,106 @@ def create_analysis(
         s.add(analysis)
         s.commit()
         s.refresh(analysis)
+        analysis_id = analysis.id
         s.close()
         pending_assets = []
+        published_references = []
 
         allowed_extensions = {
             ".jpg", ".jpeg", ".png", ".webp"
         }
 
-        for selected_media, selected_media_path in selected_media_items:
-            source_ext = selected_media_path.suffix.lower()
-            stored_name = (
-                f"analysis_{analysis.id}_"
-                f"{uuid.uuid4().hex}{source_ext}"
-            )
-            destination = UPLOAD_DIR / stored_name
-            with selected_media_path.open("rb") as source:
-                copy_image(source, destination, maximum=MAX_ANALYSIS_IMAGE_BYTES)
-            # Legacy gallery objects are sanitized again on the analysis copy
-            # before classification/provider work; the archived original is untouched.
-            sanitize_clinical_media_image(destination, source_ext, max_pixels=40_000_000)
-            storage_persist_file(destination)
-            pending_assets.append(ImageAsset(
-                analysis_id=analysis.id,
-                original_filename=selected_media.original_filename,
-                stored_filename=stored_name,
-                file_path=str(destination),
-                image_type=classify_dental_image(str(destination)),
-            ))
+        try:
+            for selected_media, selected_media_path in selected_media_items:
+                source_ext = selected_media_path.suffix.lower()
+                stored_name = (
+                    f"analysis_{analysis_id}_"
+                    f"{uuid.uuid4().hex}{source_ext}"
+                )
+                destination = UPLOAD_DIR / stored_name
+                # Register before local copy/R2 persistence: either operation may
+                # fail after creating a partial object.
+                published_references.append(str(destination))
+                with selected_media_path.open("rb") as source:
+                    copy_image(source, destination, maximum=MAX_ANALYSIS_IMAGE_BYTES)
+                sanitize_clinical_media_image(destination, source_ext, max_pixels=40_000_000)
+                storage_persist_file(destination)
+                pending_assets.append(ImageAsset(
+                    analysis_id=analysis_id,
+                    original_filename=selected_media.original_filename,
+                    stored_filename=stored_name,
+                    file_path=str(destination),
+                    image_type=classify_dental_image(str(destination)),
+                ))
 
-        for image in images:
-            if not image or not image.filename:
-                continue
+            for image in images:
+                if not image or not image.filename:
+                    continue
 
-            original_name = Path(image.filename).name
-            extension = Path(original_name).suffix.lower()
+                original_name = Path(image.filename).name
+                extension = Path(original_name).suffix.lower()
+                if extension not in allowed_extensions:
+                    continue
 
-            if extension not in allowed_extensions:
-                continue
+                stored_name = (
+                    f"analysis_{analysis_id}_"
+                    f"{uuid.uuid4().hex}{extension}"
+                )
+                destination = UPLOAD_DIR / stored_name
+                published_references.append(str(destination))
+                copy_image(image.file, destination, maximum=MAX_ANALYSIS_IMAGE_BYTES)
+                sanitize_clinical_media_image(destination, extension, max_pixels=40_000_000)
+                storage_persist_file(destination)
+                pending_assets.append(ImageAsset(
+                    analysis_id=analysis_id,
+                    original_filename=original_name,
+                    stored_filename=stored_name,
+                    file_path=str(destination),
+                    image_type=classify_dental_image(str(destination)),
+                ))
 
-            stored_name = (
-                f"analysis_{analysis.id}_"
-                f"{uuid.uuid4().hex}{extension}"
-            )
+            live_user = s.get(User, user.id)
+            if not live_user or not live_user.is_active:
+                raise work_jobs.WorkCancelled("OWNER_UNAVAILABLE")
+            live_patient = s.exec(
+                select(Patient).where(Patient.id == patient_id).with_for_update()
+            ).first()
+            if not live_patient or (user.role != "ADMIN" and live_patient.owner_user_id != user.id):
+                raise work_jobs.WorkCancelled("OWNER_CHANGED")
+            s.add_all(pending_assets)
+            s.flush()
+            _enqueue_work(s, "VISION" if pending_assets else "PRELIMINARY", "ANALYSIS", analysis_id)
+            s.commit()
+        except asyncio.CancelledError:
+            s.rollback()
+            s.close()
+            try:
+                _recover_failed_web_analysis_upload(analysis_id, published_references)
+            except Exception:
+                logger.exception("Could not persist cleanup receipts for a cancelled web analysis upload")
+            raise
+        except Exception as exc:
+            s.rollback()
+            s.close()
+            try:
+                _recover_failed_web_analysis_upload(analysis_id, published_references)
+            except Exception:
+                logger.exception("Could not persist cleanup receipts for a failed web analysis upload")
 
-            destination = UPLOAD_DIR / stored_name
-
-            copy_image(image.file, destination)
-            sanitize_clinical_media_image(destination, extension, max_pixels=40_000_000)
-
-            storage_persist_file(destination)
-
-            asset = ImageAsset(
-                analysis_id=analysis.id,
-                original_filename=original_name,
-                stored_filename=stored_name,
-                file_path=str(destination),
-                image_type=classify_dental_image(str(destination)),
-            )
-
-            pending_assets.append(asset)
-
-        live_user = s.get(User, user.id)
-        if not live_user or not live_user.is_active:
-            raise work_jobs.WorkCancelled("OWNER_UNAVAILABLE")
-        live_patient = s.exec(select(Patient).where(Patient.id == patient_id).with_for_update()).first()
-        if not live_patient or (user.role != "ADMIN" and live_patient.owner_user_id != user.id):
-            raise work_jobs.WorkCancelled("OWNER_CHANGED")
-        s.add_all(pending_assets)
-        s.flush()
-        _enqueue_work(s, "VISION" if pending_assets else "PRELIMINARY", "ANALYSIS", analysis.id)
-        s.commit()
-
-        analysis_id = analysis.id
+            status_code = getattr(exc, "status_code", None)
+            if status_code is None and isinstance(exc, ValueError):
+                status_code = 422
+            if not isinstance(status_code, int) or status_code < 400 or status_code > 599:
+                status_code = 503
+            if status_code >= 500:
+                logger.exception(
+                    "Web clinical analysis upload failed for analysis_id=%s",
+                    analysis_id,
+                )
+                message = "Görüntüler şu anda güvenli biçimde kaydedilemedi. Lütfen tekrar deneyin."
+                return HTMLResponse(message, status_code=503, headers={"Retry-After": "5"})
+            message = str(getattr(exc, "detail", exc))
+            return HTMLResponse(message, status_code=status_code)
 
     target = f"/analysis/{analysis_id}" + ("/viewer" if pending_assets else "")
     return RedirectResponse(url=target, status_code=303)
