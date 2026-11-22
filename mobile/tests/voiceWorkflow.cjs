@@ -151,18 +151,31 @@ function nativeVoiceAudioModule(files,transcribe){
  if(typeof transcribe==='function')exports.transcribeNativeRecording=transcribe;
  return exports;
 }
-function recorderUI({saved=null,loadDraft=null,transcribe=async()=>({transcript:'Synthetic dictated speech',revision:'r'}),stopFailures=0,stopFailureStopsRecorder=false,stopGate=null,permissionGate=null,prepareFailureAt=0,audioModeFailureAt=0,restoredFileInfo={exists:true,size:1024}}={}){
- const exports={},store=new Map(),calls=[],modeCalls=[],timers=[],files=new Map(),state={isRecording:false,durationMillis:0,mediaServicesDidReset:false};
+test('orphaned recorder artifacts are removed only from a direct app-private cache child',async()=>{
+ const files=new Map([['file:///cache/unexpected.tmp',{exists:true,size:80}],['file:///outside/unexpected.m4a',{exists:true,size:80}]]);
+ const api=nativeVoiceAudioModule(files);
+ assert.equal(api.isPrivateVoiceCacheChildUri('file:///cache/unexpected.tmp'),true);
+ assert.equal(api.isPrivateVoiceCacheChildUri('file:///cache/nested/unexpected.tmp'),false);
+ assert.equal(api.isPrivateVoiceCacheChildUri('file:///cache/../outside/unexpected.tmp'),false);
+ assert.equal(api.isPrivateVoiceCacheChildUri('file:///outside/unexpected.m4a'),false);
+ assert.equal(await api.removePrivateVoiceCacheChildFile('file:///cache/unexpected.tmp'),true);
+ assert.equal(files.get('file:///cache/unexpected.tmp').exists,false);
+ assert.equal(await api.removePrivateVoiceCacheChildFile('file:///outside/unexpected.m4a'),false);
+ assert.equal(files.get('file:///outside/unexpected.m4a').exists,true,'outside paths are never passed to file deletion');
+});
+
+function recorderUI({saved=null,loadDraft=null,transcribe=async()=>({transcript:'Synthetic dictated speech',revision:'r'}),stopFailures=0,stopFailureStopsRecorder=false,stopGate=null,permissionGate=null,prepareFailureAt=0,audioModeFailureAt=0,unsafeUriAt=0,persistGate=null,restoredFileInfo={exists:true,size:1024}}={}){
+ const exports={},store=new Map(),calls=[],modeCalls=[],timers=[],files=new Map(),alerts=[],state={isRecording:false,durationMillis:0,mediaServicesDidReset:false};
  
  if(saved){try{for(const segment of JSON.parse(saved).segments||[])files.set(segment.uri,{...restoredFileInfo})}catch{}}
  let audioUri='file:///cache/record-0.m4a',stopFailuresRemaining=stopFailures;
- const audio={get uri(){return audioUri},prepareToRecordAsync:async options=>{if(!options?.extension)throw Error('iOS segment preparation must receive fresh recording options');const index=calls.filter(value=>value==='prepare').length+1;if(index===prepareFailureAt)throw Error('Synthetic prepare failure');audioUri='file:///cache/record-'+index+'.m4a';files.set(audioUri,{exists:true,size:1024});calls.push('prepare')},record(){state.isRecording=true;calls.push('record')},stop:async()=>{calls.push('stop');if(stopGate)await stopGate();if(stopFailuresRemaining>0){stopFailuresRemaining--;if(stopFailureStopsRecorder)state.isRecording=false;throw Error('Synthetic stop failure')}state.isRecording=false}};
+ const audio={get uri(){return audioUri},getStatus:()=>({...state}),prepareToRecordAsync:async options=>{if(!options?.extension)throw Error('iOS segment preparation must receive fresh recording options');const index=calls.filter(value=>value==='prepare').length+1;if(index===prepareFailureAt)throw Error('Synthetic prepare failure');audioUri=unsafeUriAt===index?'file:///outside/record-'+index+'.m4a':'file:///cache/record-'+index+'.m4a';files.set(audioUri,{exists:true,size:1024});calls.push('prepare')},record(){state.isRecording=true;calls.push('record')},stop:async()=>{calls.push('stop');if(stopGate)await stopGate();if(stopFailuresRemaining>0){stopFailuresRemaining--;if(stopFailureStopsRecorder)state.isRecording=false;throw Error('Synthetic stop failure')}state.isRecording=false}};
  let focusValue=true,focusSubs=new Set(),clockNow=Date.now(),nextInterval=0,appStateListener=null;const intervals=new Map(),appState={currentState:'active',addEventListener:(event,listener)=>{appStateListener=listener;return{remove(){if(appStateListener===listener)appStateListener=null}}}};
  const secure={getItemAsync:async key=>store.get(key)||null,setItemAsync:async(k,v)=>store.set(k,v),deleteItemAsync:async k=>store.delete(k)};
- const native={StyleSheet:{create:x=>x},Alert:{alert(){}},AppState:appState,...Object.fromEntries(['ActivityIndicator','Pressable','Text','TextInput','View'].map(x=>[x,x]))};
+ const native={StyleSheet:{create:x=>x},Alert:{alert:(...args)=>alerts.push(args)},AppState:appState,...Object.fromEntries(['ActivityIndicator','Pressable','Text','TextInput','View'].map(x=>[x,x]))};
  const code=ts.transpileModule(fs.readFileSync(require.resolve('../src/NativeVoiceRecorder.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
- vm.runInNewContext(code,{exports,Date:{now:()=>clockNow},setInterval:fn=>{const id=++nextInterval;intervals.set(id,fn);return id},clearInterval:id=>intervals.delete(id),setTimeout:(fn,ms)=>ms===15000?(timers.push(fn),timers.length):setTimeout(fn,ms),clearTimeout:id=>{if(typeof id!=='number')clearTimeout(id)},AbortController,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='expo-audio'?{useAudioRecorder:()=>audio,useAudioRecorderState:()=>state,RecordingPresets:{HIGH_QUALITY:{extension:'.m4a',android:{outputFormat:'mpeg4',audioEncoder:'aac'},ios:{}}},requestRecordingPermissionsAsync:async()=>{if(permissionGate)await permissionGate();return{granted:true}},setAudioModeAsync:async mode=>{modeCalls.push(mode?.allowsRecording===true);if(modeCalls.length===audioModeFailureAt)throw Error('Synthetic audio mode restore failure')}}:n==='expo-file-system/legacy'?{cacheDirectory:'file:///cache/',deleteAsync:async uri=>files.set(uri,{exists:false,size:0}),getInfoAsync:async uri=>files.get(uri)||{exists:false,size:0}}:n==='expo-document-picker'?{getDocumentAsync:async()=>({canceled:true,assets:[]})}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=>crypto.randomUUID()} :n==='@react-navigation/native'?{useIsFocused:()=>{const [current,setCurrent]=React.useState(focusValue);React.useEffect(()=>{focusSubs.add(setCurrent);return()=>{focusSubs.delete(setCurrent)}},[]);return current},usePreventRemove(){}}:n==='./socialDraft'?{chunkedDraftStore:()=>({getItemAsync:async key=>loadDraft?loadDraft(key):saved,setItemAsync:async(k,v)=>{store.set('draft',v);store.set(k,v)},deleteItemAsync:async k=>store.delete(k)})}:n==='./voiceDraftScope'?require('../src/voiceDraftScope.ts'):n==='./voiceSession'?require('../src/voiceSession.ts'):n==='./nativeVoiceAudio'?nativeVoiceAudioModule(files,transcribe):n==='./voiceAudioImport'?require('../src/voiceAudioImport.ts'):n==='./voiceDeviceCheck'?require('../src/voiceDeviceCheck.ts'):n==='./voiceRecorderLifecycle'?require('../src/voiceRecorderLifecycle.ts'):(()=>{throw Error('Unexpected NativeVoiceRecorder dependency: '+n)})()});
- return{Component:exports.default,calls,modeCalls,store,timers,files,focus:value=>{focusValue=value;for(const notify of[...focusSubs])notify(value)},background:()=>{appState.currentState='background';appStateListener?.('background')},foreground:()=>{appState.currentState='active';appStateListener?.('active')},advance:ms=>{clockNow+=ms;for(const fn of intervals.values())fn()}};
+ vm.runInNewContext(code,{exports,Date:{now:()=>clockNow},setInterval:fn=>{const id=++nextInterval;intervals.set(id,fn);return id},clearInterval:id=>intervals.delete(id),setTimeout:(fn,ms)=>ms===15000?(timers.push(fn),timers.length):setTimeout(fn,ms),clearTimeout:id=>{if(typeof id!=='number')clearTimeout(id)},AbortController,Error,require:n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='expo-audio'?{useAudioRecorder:()=>audio,useAudioRecorderState:()=>state,RecordingPresets:{HIGH_QUALITY:{extension:'.m4a',android:{outputFormat:'mpeg4',audioEncoder:'aac'},ios:{}}},requestRecordingPermissionsAsync:async()=>{if(permissionGate)await permissionGate();return{granted:true}},setAudioModeAsync:async mode=>{modeCalls.push(mode?.allowsRecording===true);if(modeCalls.length===audioModeFailureAt)throw Error('Synthetic audio mode restore failure')}}:n==='expo-file-system/legacy'?{cacheDirectory:'file:///cache/',deleteAsync:async uri=>files.set(uri,{exists:false,size:0}),getInfoAsync:async uri=>files.get(uri)||{exists:false,size:0}}:n==='expo-document-picker'?{getDocumentAsync:async()=>({canceled:true,assets:[]})}:n==='expo-secure-store'?secure:n==='expo-crypto'?{randomUUID:()=>crypto.randomUUID()} :n==='@react-navigation/native'?{useIsFocused:()=>{const [current,setCurrent]=React.useState(focusValue);React.useEffect(()=>{focusSubs.add(setCurrent);return()=>{focusSubs.delete(setCurrent)}},[]);return current},usePreventRemove(){}}:n==='./socialDraft'?{chunkedDraftStore:()=>({getItemAsync:async key=>loadDraft?loadDraft(key):saved,setItemAsync:async(k,v)=>{if(persistGate?.current)await persistGate.current;store.set('draft',v);store.set(k,v)},deleteItemAsync:async k=>store.delete(k)})}:n==='./voiceDraftScope'?require('../src/voiceDraftScope.ts'):n==='./voiceSession'?require('../src/voiceSession.ts'):n==='./nativeVoiceAudio'?nativeVoiceAudioModule(files,transcribe):n==='./voiceAudioImport'?require('../src/voiceAudioImport.ts'):n==='./voiceDeviceCheck'?require('../src/voiceDeviceCheck.ts'):n==='./voiceRecorderLifecycle'?require('../src/voiceRecorderLifecycle.ts'):(()=>{throw Error('Unexpected NativeVoiceRecorder dependency: '+n)})()});
+ return{Component:exports.default,calls,modeCalls,store,timers,files,alerts,focus:value=>{focusValue=value;for(const notify of[...focusSubs])notify(value)},background:()=>{appState.currentState='background';appStateListener?.('background')},foreground:()=>{appState.currentState='active';appStateListener?.('active')},advance:ms=>{clockNow+=ms;for(const fn of intervals.values())fn()}};
 }
 test('native recorder disables new microphone and file input at the web transcript budget',async()=>{
  const h=recorderUI();let tree;
@@ -186,6 +199,50 @@ test('native recorder restores global audio mode when a chunk rotation cannot st
  await renderer.act(async()=>{h.timers[0]();await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve));});
  assert.equal(h.modeCalls.at(-1),false,'a failed rotation must leave Expo Audio out of recording mode');
  assert.ok(text(tree.toJSON()).includes('Synthetic prepare failure'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('background during the prepared-before-record persistence window stops and removes the unstarted segment',async()=>{
+ let release;
+ const persistGate={current:null};
+ const h=recorderUI({persistGate});let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished(){}})));
+ await renderer.act(async()=>new Promise(resolve=>setImmediate(resolve)));
+ persistGate.current=new Promise(resolve=>{release=resolve});
+ await renderer.act(async()=>{button(tree,'Mikrofonu başlat').props.onPress();await new Promise(resolve=>setImmediate(resolve));});
+ assert.ok(h.calls.includes('prepare'));
+ assert.equal(h.calls.includes('record'),false,'the pending draft write must finish before recording starts');
+ h.background();
+ release();
+ await renderer.act(async()=>{await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve));});
+ assert.ok(h.calls.includes('stop'),'the prepared recorder must be stopped even though record() never ran');
+ assert.equal(h.files.get('file:///cache/record-1.m4a').exists,false,'the unstarted cache file is removed after recorder stop');
+ assert.equal(JSON.parse(h.store.get('draft')).segments.length,0,'the interrupted unstarted segment is not left in the draft');
+ assert.equal(h.modeCalls.at(-1),false,'playback routing is restored only after the prepared recorder stops');
+ await renderer.act(async()=>tree.unmount());
+});
+
+test('an unsafe recorder URI stops capture, stays local, and blocks another recording',async()=>{
+ const h=recorderUI({unsafeUriAt:1});let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(h.Component,{token:'A',userId:1,patientId:8,consent:true,value:'',onTranscript(){},onFinished(){}})));
+ await renderer.act(async()=>{button(tree,'Mikrofonu başlat').props.onPress();await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve));});
+ assert.ok(h.calls.includes('stop'),'prepared recorder is stopped after URI validation fails');
+ assert.equal(h.calls.includes('record'),false,'unvalidated audio is never recorded or sent for ASR');
+ assert.equal(h.files.get('file:///outside/record-1.m4a').exists,true,'an outside-cache path is never deleted');
+ assert.equal(h.modeCalls.at(-1),false,'audio mode is restored after a successful stop');
+ const start=button(tree,'Mikrofonu başlat');
+ assert.equal(start.props.disabled,true,'unsafe cleanup state blocks a new microphone session');
+ const before=h.calls.filter(value=>value==='prepare').length;
+ await renderer.act(async()=>{button(tree,'Taslağı ve yerel sesleri sil').props.onPress();});
+ const confirmation=h.alerts.at(-1);
+ assert.ok(confirmation,'draft clearing must ask for explicit destructive confirmation');
+ assert.equal(confirmation[0],'Muayene taslağı silinsin mi?');
+ const destructive=confirmation[2]?.find(option=>option.text==='Sil');
+ assert.ok(destructive,'the destructive confirmation action is present');
+ await renderer.act(async()=>{destructive.onPress();await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve));});
+ assert.equal(h.files.get('file:///outside/record-1.m4a').exists,true,'clear does not cross the private-cache boundary');
+ assert.ok(text(tree.toJSON()).includes('Güvenlik nedeniyle yeni kayıt engellendi'));
+ assert.equal(h.calls.filter(value=>value==='prepare').length,before);
  await renderer.act(async()=>tree.unmount());
 });
 
@@ -491,11 +548,25 @@ test('native voice history is loaded privately, requires patient confirmation, a
  assert.ok(historyCheck);
  await renderer.act(async()=>historyCheck.props.onPress());
  await renderer.act(async()=>button(tree,'Doğruladığım bilgileri muayeneye ekle').props.onPress());
- const consentCheck=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='checkbox'&&text(node).includes('Hastayı bilgilendirdim.'));
+ let consentCheck=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='checkbox'&&text(node).includes('Hastayı bilgilendirdim.'));
  assert.ok(consentCheck);
- await renderer.act(async()=>consentCheck.props.onPress());
  const recorder=tree.root.findByType('NativeVoiceRecorder');
- await renderer.act(async()=>{recorder.props.onTranscript('Güncel sentetik muayene metni');recorder.props.onFinished('Güncel sentetik muayene metni');await new Promise(resolve=>setImmediate(resolve))});
+ await renderer.act(async()=>consentCheck.props.onPress());
+ assert.equal(tree.root.findByType('NativeVoiceRecorder').props.consent,true,'recording starts only after explicit consent');
+ await renderer.act(async()=>tree.root.findByType('NativeVoiceRecorder').props.onBusyChanged(true));
+ consentCheck=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='checkbox'&&text(node).includes('Hastayı bilgilendirdim.'));
+ assert.equal(consentCheck.props.disabled,false,'consent remains withdrawable while native recording/ASR is busy');
+ assert.equal(consentCheck.props.accessibilityState.disabled,false,'screen readers must expose the active consent control as enabled');
+ await renderer.act(async()=>consentCheck.props.onPress());
+ assert.equal(tree.root.findByType('NativeVoiceRecorder').props.consent,false);
+ await renderer.act(async()=>tree.root.findByType('NativeVoiceRecorder').props.onFinished('Must not be processed after opt-out', '33333333-3333-4333-8333-333333333333'));
+ assert.equal(extractCalls.length,0,'a stale finish callback cannot start extraction after consent withdrawal');
+ consentCheck=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='checkbox'&&text(node).includes('Hastayı bilgilendirdim.'));
+ await renderer.act(async()=>consentCheck.props.onPress());
+ assert.equal(tree.root.findByType('NativeVoiceRecorder').props.consent,true);
+ await renderer.act(async()=>tree.root.findByType('NativeVoiceRecorder').props.onBusyChanged(false));
+ const activeRecorder=tree.root.findByType('NativeVoiceRecorder');
+ await renderer.act(async()=>{activeRecorder.props.onTranscript('Güncel sentetik muayene metni');activeRecorder.props.onFinished('Güncel sentetik muayene metni');await new Promise(resolve=>setImmediate(resolve))});
  assert.equal(extractCalls.length,1);assert.equal(finalCalls.length,1);assert.equal(finalCalls[0][2].conversation_text,'Güncel sentetik muayene metni');
  const rendered=text(tree.toJSON());
  assert.ok(rendered.includes('Düzenli ilaç beyanı'));

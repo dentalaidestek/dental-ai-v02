@@ -58,12 +58,22 @@ def test_program_edit_copy_complete_delete_reuse_web_lifecycle(program):
     created=client.post('/api/mobile/v1/program/events',json=values)
     assert created.status_code==200,created.text
     ident=created.json()['event']['id']
-    invalid=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'patient_id':9})
+    original_revision=created.json()['event']['revision']
+    assert len(original_revision)==64
+    invalid=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'patient_id':9,'expected_revision':original_revision})
     assert invalid.status_code==400
-    edited=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'start_at':'2030-01-07T11:00','end_at':'2030-01-07T11:30','reminder_minutes':'NONE'})
+    edited=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'start_at':'2030-01-07T11:00','end_at':'2030-01-07T11:30','reminder_minutes':'NONE','expected_revision':original_revision})
     assert edited.status_code==200,edited.text
     assert edited.json()['event']['start_local']=='2030-01-07T11:00'
     assert edited.json()['event']['reminder_minutes']=='NONE'
+    latest_revision=edited.json()['event']['revision']
+    assert latest_revision!=original_revision
+    stale=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'title':'Stale overwrite','expected_revision':original_revision})
+    assert stale.status_code==409
+    current=client.get(f'/api/mobile/v1/program/events/{ident}').json()['event']
+    assert current['title']=='Synthetic visit' and current['revision']==latest_revision
+    missing=client.put(f'/api/mobile/v1/program/events/{ident}',json=values)
+    assert missing.status_code==422
     copied=client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08','2030-01-09']})
     assert copied.status_code==200,copied.text
     assert client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08','2030-01-09']}).status_code==200
@@ -370,6 +380,7 @@ def test_mobile_program_routes_prevent_caching_of_account_scoped_calendar_data(p
     assert created.status_code == 200, created.text
     _assert_program_private_no_store(created)
     event_id = created.json()["event"]["id"]
+    revision = created.json()["event"]["revision"]
 
     detail = client.get(f"/api/mobile/v1/program/events/{event_id}")
     assert detail.status_code == 200, detail.text
@@ -382,7 +393,8 @@ def test_mobile_program_routes_prevent_caching_of_account_scoped_calendar_data(p
     edited = client.put(
         f"/api/mobile/v1/program/events/{event_id}",
         json={**values, "title": "Synthetic private calendar entry edited",
-              "start_at": "2030-01-07T11:00", "end_at": "2030-01-07T11:30"},
+              "start_at": "2030-01-07T11:00", "end_at": "2030-01-07T11:30",
+              "expected_revision": revision},
     )
     assert edited.status_code == 200, edited.text
     _assert_program_private_no_store(edited)
@@ -484,9 +496,10 @@ def test_program_copy_receipt_rejects_changed_source_payload(program):
     created=client.post('/api/mobile/v1/program/events',json=values)
     assert created.status_code==200,created.text
     ident=created.json()['event']['id']
+    revision=created.json()['event']['revision']
     copied=client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08']})
     assert copied.status_code==200,copied.text
-    changed=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'title':'Changed source title'})
+    changed=client.put(f'/api/mobile/v1/program/events/{ident}',json={**values,'title':'Changed source title','expected_revision':revision})
     assert changed.status_code==200,changed.text
     replay=client.post(f'/api/mobile/v1/program/events/{ident}/copy',json={'days':['2030-01-08']})
     assert replay.status_code==409,replay.text
@@ -496,3 +509,191 @@ def test_program_copy_receipt_rejects_changed_source_payload(program):
         copies=[row for row in rows if row.id!=ident]
         assert len(copies)==1 and copies[0].title=='Synthetic copy receipt'
 
+
+
+def test_web_program_edit_rejects_stale_revision_and_preserves_the_local_draft(program):
+    client,engine=program
+    values={'event_type':'APPOINTMENT','title':'Synthetic web visit','start_at':'2030-01-07T10:00','end_at':'2030-01-07T10:30','patient_id':8,'reminder_minutes':'30','recurrence_rule':'NONE','request_key':'program-web-revision-request-001'}
+    created=client.post('/api/mobile/v1/program/events',json=values)
+    assert created.status_code==200,created.text
+    ident=created.json()['event']['id']
+    original_revision=created.json()['event']['revision']
+
+    edit_page=client.get(f'/program/{ident}/edit')
+    assert edit_page.status_code==200
+    assert edit_page.context['expected_revision']==original_revision
+    assert edit_page.context['revision_conflict'] is False
+
+    with Session(engine) as session:
+        event=session.get(main.ScheduleEvent,ident)
+        event.title='Changed on another device'
+        main._touch_schedule_event(event)
+        session.add(event)
+        session.commit()
+        latest_revision=main._schedule_event_revision(event)
+
+    draft={'event_type':'APPOINTMENT','title':'My unsaved local draft','start_at':'2030-01-07T10:00','end_at':'2030-01-07T10:30','patient_id':'8','location':'','notes':'Local-only note','reminder_minutes':'30','recurrence_rule':'NONE','recurrence_until':'','expected_revision':original_revision}
+    stale=client.post(f'/program/{ident}/edit',data=draft)
+    assert stale.status_code==409
+    assert stale.context['revision_conflict'] is True
+    assert stale.context['expected_revision']==original_revision
+    assert stale.context['initial_title']=='My unsaved local draft'
+    assert stale.context['initial_notes']=='Local-only note'
+
+    with Session(engine) as session:
+        event=session.get(main.ScheduleEvent,ident)
+        assert event.title=='Changed on another device'
+        assert main._schedule_event_revision(event)==latest_revision
+
+    current=client.post(f'/program/{ident}/edit',data={**draft,'expected_revision':latest_revision})
+    assert current.status_code==303
+    with Session(engine) as session:
+        event=session.get(main.ScheduleEvent,ident)
+        assert event.title=='My unsaved local draft'
+        assert event.notes=='Local-only note'
+
+
+def test_program_revision_advances_after_complete_and_delete(program):
+    client,engine=program
+    values={'event_type':'TASK','title':'Synthetic revision task','start_at':'2030-01-07T10:00','reminder_minutes':'NONE','recurrence_rule':'NONE','request_key':'program-revision-actions-001'}
+    created=client.post('/api/mobile/v1/program/events',json=values)
+    assert created.status_code==200,created.text
+    ident=created.json()['event']['id']
+    first=created.json()['event']['revision']
+    assert client.post(f'/api/mobile/v1/program/events/{ident}/complete').status_code==200
+    completed=client.get(f'/api/mobile/v1/program/events/{ident}').json()['event']['revision']
+    assert completed!=first
+    assert client.delete(f'/api/mobile/v1/program/events/{ident}').status_code==200
+    deleted=client.get(f'/api/mobile/v1/program/events/{ident}').json()['event']['revision']
+    assert deleted!=completed
+
+
+def test_web_program_edit_form_posts_revision_and_disables_stale_drafts():
+    from pathlib import Path
+
+    template=(Path(__file__).resolve().parents[1]/'app/templates/program_form.html').read_text(encoding='utf-8')
+    assert 'name="expected_revision"' in template
+    assert 'value="{{ expected_revision or \'\' }}"' in template
+    assert '{% if revision_conflict %}disabled aria-disabled="true"{% endif %}' in template
+    assert 'Güncel kaydı yeniden yükleyin' in template
+
+
+def test_legacy_mobile_schedule_actions_advance_the_shared_program_revision(program):
+    client,_=program
+    values={'event_type':'TASK','title':'Synthetic legacy completion','start_at':'2030-01-07T10:00','reminder_minutes':'NONE','recurrence_rule':'NONE','request_key':'program-legacy-complete-001'}
+    created=client.post('/api/mobile/v1/program/events',json=values)
+    assert created.status_code==200,created.text
+    ident=created.json()['event']['id']
+    original=created.json()['event']['revision']
+    assert client.post(f'/api/mobile/v1/schedule/{ident}/complete').status_code==200
+    completed=client.get(f'/api/mobile/v1/program/events/{ident}').json()['event']
+    assert completed['status']=='COMPLETED' and completed['revision']!=original
+
+    deleted_values={**values,'title':'Synthetic legacy deletion','request_key':'program-legacy-delete-001'}
+    deleted_create=client.post('/api/mobile/v1/program/events',json=deleted_values)
+    assert deleted_create.status_code==200,deleted_create.text
+    deleted_id=deleted_create.json()['event']['id']
+    before_delete=deleted_create.json()['event']['revision']
+    assert client.delete(f'/api/mobile/v1/schedule/{deleted_id}').status_code==200
+    deleted=client.get(f'/api/mobile/v1/program/events/{deleted_id}').json()['event']
+    assert deleted['status']=='DELETED' and deleted['revision']!=before_delete
+
+def test_program_complete_and_delete_reject_other_account_before_web_dispatch(program, monkeypatch):
+    client, engine = program
+    from app import mobile_program_api
+
+    values = {
+        "event_type": "APPOINTMENT",
+        "title": "Synthetic owner-isolation visit",
+        "start_at": "2030-01-07T10:00",
+        "end_at": "2030-01-07T10:30",
+        "patient_id": 8,
+        "reminder_minutes": "NONE",
+        "recurrence_rule": "NONE",
+        "request_key": "program-owner-action-000001",
+    }
+    created = client.post("/api/mobile/v1/program/events", json=values)
+    assert created.status_code == 200, created.text
+    event_id = created.json()["event"]["id"]
+    original_revision = created.json()["event"]["revision"]
+
+    async def unexpected_web_dispatch(*args, **kwargs):
+        raise AssertionError("non-owner request reached the web mutation handler")
+
+    monkeypatch.setattr(mobile_program_api, "_invoke", unexpected_web_dispatch)
+    client.headers["Authorization"] = "Bearer " + _SESSION_TOKEN[2]
+
+    complete = client.post(f"/api/mobile/v1/program/events/{event_id}/complete")
+    delete = client.delete(f"/api/mobile/v1/program/events/{event_id}")
+    assert complete.status_code == 404
+    assert delete.status_code == 404
+
+    with Session(engine) as session:
+        stored = session.get(main.ScheduleEvent, event_id)
+        assert stored is not None
+        assert stored.owner_user_id == 1
+        assert stored.status == "ACTIVE"
+        assert main._schedule_event_revision(stored) == original_revision
+
+def test_repeated_program_completion_does_not_advance_revision_or_duplicate_reminders(program):
+    client, engine = program
+    values = {
+        "event_type": "APPOINTMENT",
+        "title": "Synthetic idempotent completion",
+        "start_at": "2030-01-07T10:00",
+        "end_at": "2030-01-07T10:30",
+        "patient_id": 8,
+        "reminder_minutes": "30",
+        "recurrence_rule": "NONE",
+        "request_key": "program-complete-idempotent-0001",
+    }
+    created = client.post("/api/mobile/v1/program/events", json=values)
+    assert created.status_code == 200, created.text
+    event_id = created.json()["event"]["id"]
+
+    first = client.post(f"/api/mobile/v1/program/events/{event_id}/complete")
+    assert first.status_code == 200, first.text
+    with Session(engine) as session:
+        completed = session.get(main.ScheduleEvent, event_id)
+        first_revision = main._schedule_event_revision(completed)
+        first_updated_at = completed.updated_at
+        jobs = session.exec(
+            select(main.ProgramReminderJob).where(
+                main.ProgramReminderJob.schedule_event_id == event_id
+            )
+        ).all()
+        assert completed.status == "COMPLETED"
+        assert len(jobs) == 1
+        assert jobs[0].status != "PENDING"
+
+    second = client.post(f"/api/mobile/v1/program/events/{event_id}/complete")
+    assert second.status_code == 200, second.text
+    with Session(engine) as session:
+        completed = session.get(main.ScheduleEvent, event_id)
+        second_revision = main._schedule_event_revision(completed)
+        second_updated_at = completed.updated_at
+        jobs = session.exec(
+            select(main.ProgramReminderJob).where(
+                main.ProgramReminderJob.schedule_event_id == event_id
+            )
+        ).all()
+        assert completed.status == "COMPLETED"
+        assert second_revision == first_revision
+        assert second_updated_at == first_updated_at
+        assert len(jobs) == 1
+
+def test_mobile_program_router_has_one_handler_per_method_and_path():
+    from app import mobile_program_api
+
+    seen = set()
+    for route in mobile_program_api.router.routes:
+        if not route.path.startswith("/program"):
+            continue
+        for method in route.methods or ():
+            key = (method, route.path)
+            assert key not in seen, f"duplicate Program route registration: {method} {route.path}"
+            seen.add(key)
+    assert ("POST", "/program/events") in seen
+    assert ("PUT", "/program/events/{event_id}") in seen
+    assert ("POST", "/program/events/{event_id}/complete") in seen
+    assert ("DELETE", "/program/events/{event_id}") in seen

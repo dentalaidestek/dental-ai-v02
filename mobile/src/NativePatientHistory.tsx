@@ -9,15 +9,16 @@ import { shouldRefreshOnAppResume } from './appResumeRefresh';
 import {groupPatientAnalysisAssets,shouldShowLegacyPatientRadiograph} from './patientAnalysisPresentation';
 import {createPatientAnalysisHistoryImageScope,patientAnalysisHistoryImageKey,patientAnalysisHistoryImageSource} from './patientAnalysisHistoryImages';
 import {patientAnalysisHistoryDate,patientAnalysisHistoryStatus,patientAnalysisHistoryStatusTone,patientAnalysisHistoryTitle,patientAnalysisHistoryTooth} from './patientHistoryPresentation';
+import useSessionRenderKey from './useSessionRenderKey';
 
 export function analysisStatus(item:{status:string;is_voice_review?:boolean}){
  return patientAnalysisHistoryStatus(item);
 }
 
 export default function NativePatientHistory({token,patientId,toothNumber,onOpenAnalysis,onNew}:{token:string;patientId:number;toothNumber?:string;onOpenAnalysis?:(id:number)=>void;onNew?:()=>void}){
- const focused=useIsFocused(),{lastEvent}=useRealtime(),scope=`${token}:${patientId}:${toothNumber||''}`,active=useRef(scope),generation=useRef(0),detailRequest=useRef(0),locked=useRef(false),refreshPending=useRef(false),focusInitialized=useRef(false),lastEventSeen=useRef(lastEvent);
- const imageScope=useRef<{token:string;scope:string}|null>(null);
- if(!imageScope.current||imageScope.current.token!==token)imageScope.current={token,scope:createPatientAnalysisHistoryImageScope()};
+ const focused=useIsFocused(),{lastEvent}=useRealtime(),scope=useSessionRenderKey(`${token}:${patientId}:${toothNumber||''}`),active=useRef(scope),generation=useRef(0),detailRequest=useRef(0),locked=useRef(false),refreshPending=useRef(false),focusInitialized=useRef(false),lastEventSeen=useRef(lastEvent);
+ const imageScope=useRef<{sessionKey:string;scope:string}|null>(null);
+ if(!imageScope.current||imageScope.current.sessionKey!==scope)imageScope.current={sessionKey:scope,scope:createPatientAnalysisHistoryImageScope()};
  if(active.current!==scope){active.current=scope;generation.current++;detailRequest.current++}
  const [data,setData]=useState<{scope:string;items:AnalysisHistory[];next:PatientAnalysisHistoryCursor|null}|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[errorMore,setErrorMore]=useState(false),[selected,setSelected]=useState<number|null>(null),[detail,setDetail]=useState<MobileAnalysis|null>(null),[detailError,setDetailError]=useState(''),[zoom,setZoom]=useState(1),[clinical,setClinical]=useState<ClinicalWorkspace|null>(null),[legacyRadiographError,setLegacyRadiographError]=useState(false),[historyImageError,setHistoryImageError]=useState(false),[imageRetryRevision,setImageRetryRevision]=useState(0);
  const visible=data?.scope===scope?data:null;

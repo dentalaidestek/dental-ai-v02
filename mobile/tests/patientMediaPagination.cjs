@@ -5,6 +5,14 @@ const path=require('node:path');
 const vm=require('node:vm');
 const ts=require('typescript');
 
+function loadCompatibility(){
+ const source=fs.readFileSync(path.join(__dirname,'../src/apiCompatibility.ts'),'utf8');
+ const compiled=ts.transpileModule(source,{fileName:'apiCompatibility.ts',compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+ const exports={};
+ vm.runInNewContext(compiled,{exports,Error,String,Object});
+ return exports;
+}
+
 function loadApi(payload,status=200){
  const calls=[];
  const source=fs.readFileSync(path.join(__dirname,'../src/modernApi.ts'),'utf8');
@@ -22,6 +30,7 @@ function loadApi(payload,status=200){
    if(name==='./api')return{ApiError,API_BASE:'https://dentalai.tr/api/mobile/v1'};
    if(name==='./sessionExpiry')return{revalidateSession:async()=>{}};
    if(name==='./notificationState')return{normalizeNotificationReadAt:value=>value};
+   if(name==='./apiCompatibility')return loadCompatibility();
    throw Error('Unexpected module '+name);
   }
  });
@@ -45,6 +54,29 @@ test('native clinical media accepts the web-compatible descending cursor page an
  assert.match(calls[0].url,/\/patients\/7\/media\?limit=40$/);
  assert.equal(calls[0].init.credentials,'omit');
  assert.equal(calls[0].init.headers.Authorization,'Bearer synthetic-token');
+});
+
+test('native clinical media allowlists response fields and rebuilds same-origin original and thumbnail URLs',async()=>{
+ const hostile={
+  ...row(42),
+  patient_id:999,
+  owner_user_id:999,
+  file_path:'r2://private/patient-999/original.jpg',
+  storage_key:'private-storage-key',
+  url:'https://attacker.invalid/original',
+  thumbnail_url:'https://attacker.invalid/thumbnail'
+ };
+ const {api}=loadApi({items:[hostile],next_before:null});
+ const item=(await api.getMedia('synthetic-token',7)).items[0];
+ assert.equal(item.url,'https://dentalai.tr/api/mobile/v1/patients/7/media/42/file');
+ assert.equal(item.thumbnail_url,'https://dentalai.tr/api/mobile/v1/patients/7/media/42/thumbnail');
+ assert.deepEqual(Object.keys(item).sort(),[
+  'id','filename','media_type','tooth_number','note','uploaded_at','url','thumbnail_url'
+ ].sort());
+ assert.equal(item.patient_id,undefined);
+ assert.equal(item.owner_user_id,undefined);
+ assert.equal(item.file_path,undefined);
+ assert.equal(item.storage_key,undefined);
 });
 
 test('native clinical media accepts an explicit terminal cursor and empty terminal page',async()=>{

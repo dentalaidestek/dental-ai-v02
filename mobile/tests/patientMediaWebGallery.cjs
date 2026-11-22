@@ -61,7 +61,10 @@ test('native clinical archive mirrors the web mobile file picker with camera cap
   assert.match(native,/clinicalMediaImageKey\(imageScope,item\.id,'thumbnail'\)/);
   assert.match(native,/clinicalMediaImageKey\(imageScope,preview\.id,'original'\)/);
   assert.match(native,/clinicalMediaImageSource\(item\.thumbnail_url\|\|item\.url,token\)/);
-  assert.match(native,/const imageScope=useMemo/);
+  assert.match(native,/import useSessionRenderKey from '\.\/useSessionRenderKey'/);
+  assert.match(native,/const owner=useSessionRenderKey\(`\$\{userId\}:\$\{token\}:\$\{patientId\}`\)/);
+  assert.match(native,/const imageScope=owner/);
+  assert.doesNotMatch(native,/const owner=`\$\{userId\}:\$\{token\}:\$\{patientId\}`/);
   assert.doesNotMatch(native,/clinicalMediaImageKey\(owner,/);
   assert.match(presentation,/cache:'reload'/);
   assert.match(presentation,/Authorization:'Bearer '\+token/);

@@ -69,3 +69,33 @@ Security Recovery showed the same five VoiceExamEntry failures in the native voi
 ### Validation boundary
 
 Fresh CI for the repaired head must still complete before these changes are called verified. No local Android build or device test is claimed. No web/backend code, provider behavior, database, patient data, production environment, main branch or live deployment was changed. The next gate is the new Android and Security Recovery runs; after they pass, continue the web-first patient profile/media and AI-analysis acceptance work. The 60,000-user target remains un-certified.
+
+
+## 2026-11-22 follow-up — approved anamnesis cache scope
+
+### Web-first comparison
+
+Re-read the web patient profile's patient_detail.html approved-history section and the shared /patients/{patient_id}/voice-exam/history handler in app/voice_exam.py, then compared the separately fetched native NativePatientVoiceHistory section and its foreground/realtime refresh behavior.
+
+The web page renders only the latest explicitly approved values per field, their source Analysis IDs, and the server-provided warning to confirm current status with the patient. Native retains the same field allowlist, source IDs, warning, account/patient isolation, and refresh-on-focus/resume behavior.
+
+### Finding
+
+The native history component correctly rejected stale responses after account or patient changes, but it also copied the raw token:patientId scope into an explicit React ref and the data.scope state field. The token is already required as an API prop, but duplicating it into the history cache state was unnecessary and made credential-bearing cache metadata visible to React state inspection.
+
+### Repair
+
+- Reused the production useSessionRenderKey hook, which keeps the credential-bearing scope in its private ref and returns only a process-local opaque key.
+- Request-generation ownership and the history state now store only that opaque key.
+- The API call still receives the current Bearer token and patient ID; authorization and endpoint behavior are unchanged.
+- Account/patient changes still rotate the identity, hide prior values immediately, and reject late responses.
+- No polling, new server request path, transcript/audio persistence, or clinical record mutation was added.
+
+### Regression coverage
+
+- The patient voice-history VM harness now loads the real production useSessionRenderKey hook rather than a fallback module stub.
+- Existing delayed-response tests for patient switching and account switching therefore exercise the real identity rotation.
+- Added static privacy guards to both the shared session-render identity suite and the voice-render identity suite; they assert that history state and request-generation refs carry scopeKey, not the credential-bearing scope.
+- These tests are part of the existing npm run test:beta command. They have been committed; the new HEAD still requires fresh CI execution.
+
+No web/backend behavior, database schema, provider, patient data, main branch, production deployment, or release artifact was changed.

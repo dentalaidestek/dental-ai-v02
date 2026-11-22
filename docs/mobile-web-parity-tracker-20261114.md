@@ -1,3 +1,17 @@
+## Latest CI and upload-recovery follow-up — 2026-11-22
+
+Starting head `ec31691f093918f72936264a31a7f1ca4ed681e3` was checked against live GitHub Actions before further edits.
+
+- Mobile Android run [#44978631156](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44978631156) completed successfully. Its typecheck, session/auth, realtime/pagination, beta regression, Android+iOS Expo export and internal APK jobs all completed successfully; the APK artifact was uploaded. This is a CI internal test APK, not a store-signed or device-accepted release.
+- Security recovery [#44978631170](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44978631170) ran the Python suite: 613 passed, one failed. The only failure was `test_registered_clinical_media_routes_use_the_expected_private_handlers`: it compared Python callable object identity across FastAPI router inclusion and found zero matches for the canonical `app.mobile_api.mobile_patient_media` symbol. Native security jobs all passed. PostgreSQL and duplicate-submission steps were skipped because the Python step failed.
+- The route regression now compares the unwrapped fully-qualified endpoint symbol (module + qualname), while still requiring exactly one mounted route with the expected HTTP method and path. It continues to assert the actual private handler implementation and ownership boundary.
+- The security workflow now explicitly executes `tests/test_web_analysis_upload_recovery.py`; that file existed but was omitted from the Python CI command. A workflow-contract test prevents this coverage from silently disappearing again.
+- The partial-upload test now advances the 30-second grace receipt and exercises the existing garbage collector, verifying that both orphaned files are deleted and both durable cleanup rows are consumed. The committed-asset test still verifies that a live reference prevents deletion.
+
+These changes are committed on `feature/mobile-web-parity-20261110`. Final-head CI is still required to validate the route-symbol correction and newly wired web cleanup tests. No local pytest execution is claimed in this connector-only session. No main merge, live deploy, production database mutation or patient-file operation was performed.
+
+---
+
 # Dental AI mobile completion tracker
 
 ## Working contract
@@ -1380,3 +1394,229 @@ was left untouched.
    arrived without an `identifier`; dedupe identifier-less responses by payload
    window in `subscribeToNativePushResponses`.
 
+## 2026-11-22 — Revision-21 anamnesis index integrity and PostgreSQL CI correction
+
+Web-first review was repeated before this follow-up: patient_detail.html renders only the owner-scoped voice_history.fields supplied by reviewed_history_payload; the native NativePatientProfile mounts NativePatientVoiceHistory, which reads the same root-mounted voice history API. The profile edit revision, treatment receipts, clinical media and FDI quick actions were not replaced or bypassed.
+
+### Verified starting CI
+- Android run #4682 on starting head 7b0ca8f: TypeScript typecheck, session/auth, realtime/pagination, 985 beta regressions, Hermes export, Android APK assembly and artifact upload all succeeded.
+- Security Recovery #2381 on starting head 7b0ca8f: Python security suite succeeded; PostgreSQL optimization had 28 passed / 1 failed. The only failure was the second migrate.apply() assertion in test_program_pending_reminder_index_migration_upgrades_revision19_and_is_idempotent, which still expected revision 20. The migration log showed revision 21 after the approved-anamnesis migration. Updated only that final-state assertion to 21; earlier revision-20 partial-migration assertions remain unchanged.
+
+### New source-level finding and correction
+The approved-anamnesis query index was checked by name only. A malformed index with the expected name but wrong columns could therefore pass require_schema; a revision-21 migration retry could also silently accept it because CREATE INDEX ... IF NOT EXISTS does not replace a same-name index. The migration/startup guard now verifies the exact non-unique columns owner_user_id, patient_id, field_key, analysis_id and PostgreSQL indisvalid. A malformed same-name index fails closed without changing revision or existing ledger rows; a missing index is recreated when safe.
+
+Additional voice regressions prove that partial approval of one field does not erase other previously approved fields, and a stale revision cannot replace or duplicate existing anamnesis.
+
+### Commits in this follow-up
+- d11028c — correct the repeated full-release migration assertion to revision 21
+- 794f627 — validate the exact approved-anamnesis query index at migration and startup
+- 2ead7cc — malformed/missing index migration and startup regressions
+- db40960 — partial approval retention and stale-revision data-preservation regressions
+
+The new tests are committed but have not yet been executed on this updated head. The only verified green Android run and the one-failure Security run above predate these commits. No local repository checkout or workflow-dispatch action is available through the current GitHub connector, so no new test result is claimed until a workflow run is associated with the new head. No staging or production database was modified; no main merge or live deployment occurred.
+
+
+## 2026-11-22 — Current-head security correction and patient-profile warning parity
+
+Web-first review:
+- Re-read `app/templates/patient_detail.html`: the approved anamnesis card renders the backend-provided `voice_history.notice` once after the field rows.
+- Re-read `mobile/src/NativePatientProfile.tsx` and `NativePatientVoiceHistory.tsx`: native uses the same approved-history endpoint and displays the server notice, but also appended a second native-only current-status warning. Removed the duplicate; the clinical caution remains in the canonical server notice.
+- Rechecked the web profile action inventory (expert support, FDI chart, AI analysis, appointment, treatment, patient edit/delete, clinical media, analysis history, approved anamnesis and treatment history) against the native profile and its existing parity tests. No placeholder or WebView was introduced.
+
+Starting-head CI evidence (PR head `5aa447dc052b60119357b32011b99fea92bc124f`):
+- Android run #4688: TypeScript typecheck, session/auth, realtime/pagination, mobile beta regressions, Android/iOS Hermes export, and internal Android APK assembly/artifact upload all succeeded.
+- Security Recovery run #2387: all six native security jobs succeeded. Python security ran 605 tests: 604 passed and one failed. The only failure was `test_require_schema_fails_closed_if_latest_history_index_is_missing`; its expected stable phrase `approved anamnesis query index` was split by the new error wording (`approved anamnesis owner/patient/field/source query index`). This was a message-contract mismatch, not a migration/index assertion failure.
+- Fixed the production error message to retain the stable phrase and still explain the exact owner/patient/field/source columns. Strengthened the existing regression to assert the actionable detail; no test was weakened or removed.
+
+Commits in this follow-up:
+- `8830412` — keep the approved-anamnesis index error contract stable
+- `96e15ab` — assert the actionable owner/patient/field/source detail
+- `0b47b61` — remove the duplicate native-only anamnesis warning
+- `a4fe29a` — verify the canonical warning is rendered exactly once
+
+The next PR-triggered CI run is expected to execute on this updated head because the changed paths are included in the Android and Security Recovery workflows. Until that run completes, the updated Python regression and native warning test are committed but not claimed as passed. PostgreSQL staging migration/count/provenance/idempotency/rollback acceptance and 60,000-user load testing remain open. No staging or production database was changed; no main merge or live deployment occurred.
+
+
+## 2026-11-22 — FastAPI lazy mobile route ownership and idempotent reconciliation
+
+### Starting-head CI evidence
+- Android run #44989322878 on 32a272c: TypeScript typecheck, session/auth, realtime/pagination, 991 beta regressions, Android/iOS Expo export and internal Android APK build/artifact upload succeeded.
+- Security Recovery #44989322945: all six native security jobs succeeded; the Python suite reported 618 passed / 1 failed. The only failure was tests/test_mobile_route_registry.py::test_registered_clinical_media_routes_use_the_expected_private_handlers. The failure was in test route discovery: it inspected main.app.routes as a flat APIRoute list and therefore did not see endpoints nested under FastAPI 0.141.1 lazy included-router objects. The failure did not show a failed patient-owner check or a failed media handler.
+- The browser form/live-voice regression step still passed 13/13. PostgreSQL migration/concurrency was skipped because the Python step failed.
+
+### Corrections
+- Added iter_registered_routes() to recursively inspect FastAPI's effective route contexts by capability detection, without importing the private included-router class.
+- include_missing_routes() now sees routes already exposed by lazy includes, so repeat reconciliation does not create a second router mount. It still detects late routes on older eager/snapshot route implementations.
+- Route ownership tests now inspect effective application routes rather than only the top-level list.
+- Added nested-prefix collision handling to remove_shadowed_routes().
+- Reconciliation now fails closed for conflicting existing endpoint owners and duplicate registrations within the mobile API prefix.
+- Updated the lazy-router test contract: on FastAPI 0.141.1, a route appended after include is already visible through the lazy original router, so reconciliation must return 0 and prove each effective path/method exists exactly once.
+
+### Commits
+- abf6870 — flatten FastAPI lazy route contexts during mobile reconciliation
+- 9120b1d — inspect effective routes in the clinical media ownership regression
+- 9afe397 — cover lazy and nested mobile router reconciliation
+- 2575b2a — reject ambiguous duplicate mobile route registrations
+- d2dcae3 — normalize router prefixes during method-aware collision checks
+- 9749812 — test nested route collisions and duplicate ownership rejection
+
+### Validation boundary
+Current PR head: 97498128fe775ad1bf2a45494f147d10fc4ffd71. Android run #44994351696 and Security Recovery #44994351674 were created for this head but still show pending with no job records at the time of this update. The new Python route-registry tests and final-head Android checks have not yet executed; no new green result is claimed. The previous Android pass is baseline evidence only, not proof for this updated HEAD.
+
+No main merge, live deploy, staging/production migration, patient record mutation, or R2 object operation was performed. The 60,000-user target remains unverified and still requires dedicated multi-instance load and queue/backpressure testing.
+
+
+## 2026-11-22 — Restore canonical mobile router mount and repair CI regressions
+
+Starting PR HEAD: `23e504adef451eb83a3a3fc2ba5685c1fcff4614`.
+
+### CI evidence before changes
+- Android run [#44994445273](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44994445273): TypeScript typecheck passed; session/auth and realtime/pagination passed; Expo Android+iOS export passed; internal APK build and artifact upload passed. The beta suite reported 993/996 passed and three failures.
+- The three beta failures were two brittle source-text assertions expecting a one-line route-registry import and one voice cleanup test whose Alert mock discarded the destructive confirmation callback.
+- Security Recovery [#44994445262](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44994445262): Python security suite had 66 failures. Most mobile API tests received 404 because `main.py` used `include_missing_routes(app, mobile_router)` instead of mounting the canonical primary router directly. This also contradicted the existing patient-media route contract. The route-registry tests had two independent defects: a helper scoped inside a nested function but referenced outside it, and an expected path that omitted the FastAPI 0.141.1 effective `/api/mobile/v1` prefix.
+- Native voice and native clinical security each failed only the unsafe-recorder-URI test because the harness did not execute the explicit confirmation callback. Native social failed the same brittle import-format assertion. Native support, academic and program security jobs passed. Browser form/live-voice regressions passed 13/13. PostgreSQL validation was skipped after Python failure.
+
+### Corrections
+- Restored `app.include_router(mobile_router)` as the single canonical mount for the primary mobile API. The modern adapter still passes through method-aware `remove_shadowed_routes` before it is mounted; no ownership checks were relaxed.
+- Moved the route-path helper to the test scope that actually uses it and corrected the nested-prefix assertion to the full effective FastAPI path.
+- Updated the voice test harness to capture Alert confirmation actions and explicitly invoke the user's destructive confirmation before asserting safe cleanup behavior.
+- Made Dental Flow and clinical-media source regressions accept either one-line or parenthesized import formatting while retaining the router ordering checks.
+
+### Commits in this follow-up
+- `4740c350` — restore canonical mobile API mount
+- `960512ad` — repair route-registry helper scope (followed by prefix correction in `4fa3621e`)
+- `0fc7562e` — exercise explicit voice cleanup confirmation
+- `71e9c431` — make Dental Flow route import regression formatting-independent (regex escaping corrected in `495a2225`)
+- `4e4b6358` — make clinical media route import regression formatting-independent (regex escaping corrected in `f761c0f2`)
+
+Code changes through `f761c0f2` are the final code head for this follow-up; the subsequent tracker-only commit does not alter application or test code. Final-head Android, Python/PostgreSQL, native security and browser regressions must run after these code commits. No local pytest or typecheck execution is claimed in this connector-only session. No patient data, storage object, staging/production database, main branch or live deployment was changed.
+
+## 2026-11-22 — duplicate canonical mobile router mount
+
+Starting PR head: `a50597052209cbf053edd5c7e1e30f10cc276235`.
+
+### Security CI diagnosis
+
+Android run [#44996660901](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44996660901) completed successfully: TypeScript typecheck, session/auth, realtime/pagination, mobile beta regressions, Android/iOS bundle export, and internal Android APK artifact build all passed.
+
+Security Recovery [#44996660876](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44996660876) ran its jobs. Six native security jobs passed; browser auth/account/live-voice regressions passed 13/13. Python security reported **624 passed / 1 failed**. PostgreSQL follow-up was skipped because the Python step failed.
+
+The only Python failure was `test_registered_clinical_media_routes_use_the_expected_private_handlers`: the canonical `app.mobile_api.mobile_patient_media` GET handler was effectively mounted twice. The duplicate OpenAPI operation-ID warnings were consistent with the duplicate effective route contexts.
+
+### Confirmed import-order root cause
+
+`app/main.py` imports `app.mobile_api.router` and only calls `app.include_router(mobile_router)` after that import returns. At the bottom of `app/mobile_api.py`, however, a module-level circular import of `app.main` called `include_missing_routes(_mobile_main.app, router)` before the suspended `from app.mobile_api import router` statement in `main.py` could finish. The reconciler therefore mounted the router once while `main.py` was still importing it; when control returned, `main.py` mounted the same router a second time.
+
+This was a real duplicate registration, not a test-only FastAPI lazy-route enumeration issue.
+
+### Fix and regression coverage
+
+- Removed the module-level `app.main` import and premature `include_missing_routes` call from `app/mobile_api.py`. All nested account, program, voice, academic and clinical routers are attached before the import returns; `app/main.py` now remains the single canonical mount point.
+- Added `tests/test_mobile_route_mount_order.py` to guard against reintroducing module-import-time mounting/reconciliation, verify exactly one canonical mount in `main.py`, and assert the clinical-media gallery handler is effectively mounted once.
+- Added the new test file to the Security Recovery pytest command.
+- Kept the existing route-ownership assertions intact; no security assertion was weakened.
+
+Commits:
+- `44b1ff3` — remove premature module-level mobile router reconciliation
+- `43f0476` — add import/mount-order regression tests
+- `c2ec906` — match the unprefixed source router path correctly
+- `fb36adc` — fix Python line continuation in the route assertion
+- `3fdb65e` — execute the new mount-order regression in Security Recovery
+
+Final validation for these commits is pending. No local checkout was available in this connector-only run, so no local pytest execution is claimed. No main merge, production deployment, database migration or patient-data mutation.
+
+
+## 2026-11-22 — patient profile account-scope privacy follow-up
+
+### Web-first flow traced
+
+Re-read \`app/templates/patient_detail.html\` before the native change. The web patient detail keeps its patient identity in the route and uses distinct server actions for profile edit/delete, clinical media upload, analysis history paging and treatment history paging. Native \`NativePatientProfile\` reuses the same patient API, edit revision, treatment receipts, media, analysis history and approved voice history components.
+
+### New finding
+
+The native profile built \`scope = userId:token:patientId\` and reused it as the \`loadedScope\` React state value and in owner, edit-snapshot and treatment-history refs. This duplicated the bearer token into ordinary component cache/ownership state even though only an opaque identity is needed for stale-response rejection and child remounting.
+
+### Change
+
+- Replaced the local \`profileRenderIdentity\` credential-bearing object with the existing \`useSessionRenderKey\` hook.
+- All profile state and request-ownership refs now compare the opaque returned scope key; the bearer remains used only for authenticated API calls and as the private scope input used by the hook to rotate identity.
+- Kept profile revision conflict handling, durable treatment mutation receipts, delete-intent scope, pagination cursor guards, realtime refresh and web-aligned action ordering unchanged.
+- Updated the React component harness to load the production hook, not a placeholder.
+- Added a regression for the same patient ID switching between two accounts while the old account's profile request is still pending; the old response must not overwrite the new account's profile.
+
+The Android and Security Recovery runs on the new HEAD are required before these regressions can be reported as passing. No patient data or production API was used, and no merge or deployment occurred.
+
+
+## 2026-11-22 — patient-profile and voice regression CI follow-up
+
+The first intermediate Android run after the profile scope change, [#45031297510](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/45031297510) on \`debd5d6\`, passed TypeScript typecheck, session/auth, realtime/pagination and Android/iOS bundle export. Its beta suite exposed one stale assertion in \`sessionRenderKey.cjs\`: it still required the removed \`nextSessionRenderKey\` import and the old local \`profileRenderIdentity\` ref. The test now checks the production \`useSessionRenderKey\` hook and opaque \`profileRenderKey\` contract instead.
+
+The same run's voice UI test also exposed a test-only false negative: a fixed 150-character substring did not reach the parent busy notification in the retry branch. That assertion now checks ordering relative to the next audio-mode recovery block. The corresponding native voice Security Recovery failure on [#45031337939](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/45031337939) was the same stale assertion; its native-clinical job, including the new same-patient/different-account late-response regression, passed.
+
+The current branch head must still complete both Android and Security Recovery. Intermediate typecheck/profile results do not substitute for final-head CI, and no APK from a failed beta suite is considered accepted.
+
+
+## 2026-11-22 — analysis refresh CI harness root causes
+
+### Starting-head evidence
+PR #257 head was `0e7f5df5878bee0351f7f282e34bbc259c2277bd`. Android run [#45054527911](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/45054527911) executed on GitHub-hosted runners:
+- TypeScript typecheck passed.
+- Session/auth passed (20/20).
+- Realtime/pagination failed (48/52): four `analysisRefresh.cjs` cases threw `(0, useSessionRenderKey_1.default) is not a function`.
+- Beta regressions failed (1,031/1,032): one account-scope assertion in `sessionRenderKey.cjs` expected a single exact source substring that no longer matched the valid comma-separated declaration in `NativeAccount.tsx`.
+- Android and iOS Expo bundle export passed. The ARM64 APK Gradle assemble was still running when inspected.
+
+### Root causes and corrections
+The realtime harness compiled `NativeDentalAI.tsx`, whose production import is `./useSessionRenderKey`, but its VM resolver still exposed the lower-level `./sessionRenderKey` helper. The component therefore received no callable default hook. The harness now bridges the real opaque identity resolver through its mocked React `useRef`, matching the production hook's default-export contract. A focused regression verifies key stability within a session and rotation after credential change without embedding the credential in the key.
+
+The beta failure was a brittle string assertion, not a production account-scope defect. `NativeAccount.tsx` already initializes `scope` from `accountRenderKey` and updates `scope.current` from that same key; the declaration also initializes `changed` in the same statement. The test now parses the TypeScript AST and checks the initializer and assignment semantically.
+
+The `analysisRefresh.cjs` suite is also added to the Security Recovery native-clinical job so patient/account selection and stale-result isolation are covered there as well as Android CI.
+
+### Validation boundary
+These changes require fresh PR-head Android and Security Recovery runs. The starting-head TypeScript check and Expo exports were green, but the realtime/beta suites were not. Security Recovery run #2617 was pending with no job records when this entry was written. No production handler, patient record, database, R2 object, main branch or live deployment was changed. The 60,000-user target remains unverified.
+
+
+## 2026-11-22 — native single-tooth analysis parity
+
+### Web-first flow and gap
+Re-read `app/templates/analysis_viewer.html` and the embedded viewer message handler before changing native code. When the web viewer emits `dental-ai:analyze-tooth`, the page POSTs to `/analysis/{analysis_id}/tooth/{tooth_fdi}/analyze`. The web handler validates the FDI value, checks the signed-in user's patient ownership, writes the selected tooth to the analysis and enqueues one durable `PRELIMINARY` work item. The existing native viewer already supported multi-tooth treatment evaluation through `/selected-teeth`, but it did not expose the web viewer's separate single-tooth action or corresponding mobile endpoint.
+
+### Change
+- Added `POST /api/mobile/v1/analyses/{analysis_id}/tooth/{tooth_fdi}/analyze` to the mobile clinical router.
+- The route validates the same supported FDI set used by native clinical notes, locks the analysis and patient rows, and rechecks patient ownership before changing the analysis tooth.
+- It reuses the canonical `_enqueue_work(..., 'PRELIMINARY', 'ANALYSIS', ...)` queue. The queue's source-identity dedupe includes the selected tooth and inference revision, so a retry after a lost response returns the same job receipt; selecting a different tooth creates a distinct source revision. No provider call or inference is run in the request handler.
+- Added a strict native `analyzeTooth` API helper and a chart-tab action in `NativeVisionViewer`. The parent clinical workspace reloads the durable job receipt after the action. Existing multi-tooth treatment analysis, clinical-note approval, and no-auto-write-to-patient-chart behavior remain unchanged.
+
+### Regression coverage
+- Python: same-tooth retry returns the same job ID; different-account access is 404; invalid FDI is 422; rejected requests create no job and do not change the analysis.
+- Native API: validates FDI before network access and rejects malformed job receipts.
+- Native UI: selects FDI 36, invokes the parent action and displays the accepted job message; parent callback wiring is asserted.
+
+### Baseline and validation boundary
+The preceding CI head `ef3eded1d97868231dfd1ec01853dbbd016fc64a` passed Android typecheck, session/auth, realtime/pagination, beta regressions, Android/iOS bundle export and ARM64 APK build. Its Security Recovery run passed the Python/PostgreSQL/browser step and all six native security jobs. The single-tooth feature commits below require fresh final-head CI; their tests are not claimed as passed until those runs finish. No production data, database migration, R2 object, main branch or live deployment was changed. The 60,000-user target remains unverified.
+
+
+### Follow-up — native single-tooth test harness correction
+
+The first CI run for the single-tooth feature exposed one test-only failure in both Android beta and native-clinical Security Recovery: 287/288 native-clinical tests passed, and the only failing assertion compared a request-options object created inside the TypeScript VM with a host-realm literal using `deepStrictEqual`. Both objects contained `method: 'POST'`; the failure was their cross-realm prototype identity, not the API method or route. The assertion now checks the `method` field directly. TypeScript typecheck passed on that run; the beta suite and native-clinical suite must be rerun on the corrected head. The Python/PostgreSQL security step was still running when inspected, so its result remains unreported.
+
+## 2026-11-22 — Program route recovery, ownership and retry parity
+
+### Web-first inspection
+Re-read `app/templates/program.html`, `app/templates/program_form.html`, the Program page's fragment-navigation/copy/realtime script, and the web handlers in `app/main.py` for create, edit, copy, complete and delete. Compared the form fields (event type, title, local start/end, patient, reminder, recurrence, location and notes) with `NativeProgramEditor`, then traced the native calendar's pending-action receipt and revision-recovery flow.
+
+### CI root cause and correction
+The PR-head Security Recovery job exposed a real Python import failure: `app/mobile_program_api.py:372` contained an unmatched closing parenthesis. The same module also contained a second, stale copy of the Program conflicts/create/edit/copy/complete/delete routes after the first complete route set. Removed the malformed terminator and the duplicate legacy block, leaving one route registration per method/path. The repeated SQLModel `user` table collection errors in the same job were cascading collection failures after this import error, not a separate schema change.
+
+### Changes
+- Added explicit owner/active-event preflight to native complete and delete before dispatching to the canonical web handler. A non-owner or already-deleted event is rejected without invoking the web mutation handler.
+- Made web Program completion idempotent: repeating completion for an already-completed non-recurring event returns the normal success redirect without advancing the revision, cancelling reminders again, or emitting duplicate realtime events.
+- Added regressions for cross-account complete/delete, unchanged owner state and revision, repeat-completion revision/reminder stability, and duplicate router registration.
+- Kept the existing web validation, patient ownership, row lock, revision/CAS, request-receipt and reminder-worker behavior intact.
+
+### Commits in this follow-up
+`0e61a24`, `ba2644b`, `7b70549`, `757556e`, `3926710`, `bb0f599`, `62a2a20`.
+
+### Validation boundary
+At the starting head `99422209`, Android typecheck completed successfully; the beta suite was still running when inspected. Security Recovery failed during Python test collection because of the unmatched parenthesis. The latest-head Android and Security Recovery runs must complete after these commits before this work can be called green. No migration, main merge, production deployment, or clinical-data mutation was performed. The 60,000-user capacity target remains unverified.

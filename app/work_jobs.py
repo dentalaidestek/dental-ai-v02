@@ -274,11 +274,14 @@ class WorkGarbage(SQLModel, table=True):
 
 
 _PATIENT_MEDIA_OBJECT = re.compile(
-    r"uploads/(?:patient_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)|"
-    r"patient-media/patient_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp))"
+    r"uploads/(?:patient_[1-9][0-9]*_[0-9a-f]{32}(?:\.thumb\.jpg|\.(?:jpg|jpeg|png|webp))|"
+    r"patient-media/patient_[1-9][0-9]*_[0-9a-f]{32}(?:\.thumb\.jpg|\.(?:jpg|jpeg|png|webp)))"
 )
 _GUEST_ANALYSIS_OBJECT = re.compile(
     r"uploads/guest_analysis_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)"
+)
+_ANALYSIS_ASSET_OBJECT = re.compile(
+    r"uploads/analysis_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)"
 )
 _ACCOUNT_ASSET_OBJECT = re.compile(
     r"uploads/(?:"
@@ -298,6 +301,11 @@ def is_patient_media_reference(reference: str) -> bool:
 def is_guest_analysis_reference(reference: str) -> bool:
     """Accept only server-generated guest-analysis upload object keys."""
     return isinstance(reference, str) and _GUEST_ANALYSIS_OBJECT.fullmatch(reference) is not None
+
+
+def is_analysis_asset_reference(reference: str) -> bool:
+    """Accept only server-generated, analysis-owned image asset object keys."""
+    return isinstance(reference, str) and _ANALYSIS_ASSET_OBJECT.fullmatch(reference) is not None
 
 
 def is_account_asset_reference(reference: str) -> bool:
@@ -376,6 +384,15 @@ def enqueue_guest_analysis_cleanup(session: Session, reference: str) -> bool:
     return _enqueue_cleanup_reference(session, reference, delay_seconds=30)
 
 
+def enqueue_analysis_asset_cleanup(session: Session, reference: str) -> bool:
+    """Queue a generated analysis image after its asset row is rolled back or deleted."""
+    if not is_analysis_asset_reference(reference):
+        return False
+    # Give any cancelled threadpool-backed R2 write time to settle before the
+    # collector can remove the partially published object.
+    return _enqueue_cleanup_reference(session, reference, delay_seconds=30)
+
+
 def enqueue_ai_result_cleanup(session: Session, reference: str) -> bool:
     """Queue a private generated result for deletion after its parent row is removed."""
     if not is_ai_result_reference(reference):
@@ -415,7 +432,7 @@ def enqueue_replaced_account_asset_cleanup(
 
 def collect_garbage(engine):
     from app.object_storage import delete
-    from app.main import Analysis, ExpertProfile, ExpertTitleChange, GuestAnalysis, GuestImageAsset, PatientMedia, User
+    from app.main import Analysis, ExpertProfile, ExpertTitleChange, GuestAnalysis, GuestImageAsset, ImageAsset, PatientMedia, User
 
     with Session(engine, expire_on_commit=False) as session:
         query = select(WorkGarbage).where(WorkGarbage.available_at <= now()).order_by(WorkGarbage.id).limit(1)
@@ -437,9 +454,10 @@ def collect_garbage(engine):
         reference = str(garbage.reference)
         patient_media = is_patient_media_reference(reference)
         guest_asset = is_guest_analysis_reference(reference)
+        analysis_asset = is_analysis_asset_reference(reference)
         ai_result = is_ai_result_reference(reference)
         account_asset = is_account_asset_reference(reference)
-        if not ai_result and not patient_media and not guest_asset and not account_asset:
+        if not ai_result and not patient_media and not guest_asset and not analysis_asset and not account_asset:
             return
 
         # A cleanup receipt is visible only after metadata deletion commits.
@@ -453,6 +471,18 @@ def collect_garbage(engine):
             in_use = session.exec(
                 select(GuestImageAsset.id).where(GuestImageAsset.file_path == reference).limit(1)
             ).first()
+        elif analysis_asset:
+            in_use = session.exec(
+                select(ImageAsset.id).where(ImageAsset.file_path == reference).limit(1)
+            ).first()
+            if not in_use:
+                in_use = session.exec(
+                    select(Analysis.id).where(Analysis.image_path == reference).limit(1)
+                ).first()
+            if not in_use:
+                in_use = session.exec(
+                    select(Analysis.id).where(Analysis.radiograph_path == reference).limit(1)
+                ).first()
         elif account_asset:
             # A path can be shared by a retained/other account record. Re-check
             # every private identity-document owner before deleting the object.

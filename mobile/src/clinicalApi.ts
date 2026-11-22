@@ -79,6 +79,12 @@ export function parseClinicalIntent(raw:string,user:number,analysis:number):Clin
 export async function submitClinical(token:string,intent:ClinicalIntent){const r=await request<{ok:boolean;job:ClinicalJob}>(path(intent.analysis)+'/final-review',token,{method:'POST',body:JSON.stringify({revision:intent.revision,answers:intent.answers})});if(r.ok!==true||!r.job||!Number.isSafeInteger(r.job.id)||r.job.id<1||r.job.kind!=='FINAL')throw Error('Nihai iş kaydı doğrulanamadı. Aynı klinik cevap kaydı korundu.');return r}
 export const saveClinicalNote=(t:string,a:number,value:{note:string;finding:string;tooth:string})=>request<{ok:boolean}>(path(a)+'/clinical-note',t,{method:'POST',body:JSON.stringify(value)});
 export const analyzeTeeth=(t:string,a:number,teeth:string[])=>request<{ok:boolean;job:ClinicalJob}>(path(a)+'/selected-teeth',t,{method:'POST',body:JSON.stringify({teeth})});
+export async function analyzeTooth(t:string,a:number,tooth:string){
+ if(typeof tooth!=='string'||! /^(?:[1-4][1-8]|[5-8][1-5])$/.test(tooth))throw Error('Geçersiz FDI diş numarası.');
+ const result=await request<{ok:boolean;analysis_id?:number;patient_id?:number;tooth_fdi?:string;job:ClinicalJob}>(path(a)+`/tooth/${tooth}/analyze`,t,{method:'POST'});
+ if(result?.ok!==true||result.analysis_id!==a||result.tooth_fdi!==tooth||!result.job||!Number.isSafeInteger(result.job.id)||result.job.id<1||result.job.kind!=='PRELIMINARY'||typeof result.job.status!=='string'||result.job.status.length<1||result.job.status.length>40||typeof result.job.retryable!=='boolean')throw Error('Tek diş analiz iş kaydı doğrulanamadı.');
+ return result;
+}
 export const clinicalJobAction=(t:string,a:number,j:number,action:'cancel'|'retry')=>request<{ok:boolean}>(path(a)+`/jobs/${id(j)}/${action}`,t,{method:'POST'});
 export function clinicalImage(token:string,a:number,idValue:number){return{uri:API_BASE+path(a)+'/assets/'+id(idValue),headers:{Authorization:'Bearer '+token,Cookie:''},cache:'reload' as const}}
 export function legacyClinicalImage(token:string,analysis:number){return{uri:API_BASE+path(analysis)+'/legacy-radiograph',headers:{Authorization:'Bearer '+token,Cookie:''},cache:'reload' as const}}

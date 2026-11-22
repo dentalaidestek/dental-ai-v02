@@ -517,6 +517,8 @@ def test_mobile_patient_media_upload_receipt_replays_once_and_is_owner_scoped(ch
         "media_type": "PHOTO", "request_key": key, "batch_id": batch_id,
     }, files={"file": ("synthetic.png", payload, "image/png")})
     assert first.status_code == 200, first.text
+    assert first.headers.get("cache-control") == "private, no-store"
+    assert "authorization" in first.headers.get("vary", "").lower()
     assert first.json()["replayed"] is False
     first_media = first.json()["media"]
     assert isinstance(first_media["uploaded_at"], str)
@@ -536,6 +538,7 @@ def test_mobile_patient_media_upload_receipt_replays_once_and_is_owner_scoped(ch
     status = client.get(f"/api/mobile/v1/patients/84/media/uploads/{key}")
     assert status.status_code == 200, status.text
     assert status.headers.get("cache-control") == "private, no-store"
+    assert "authorization" in status.headers.get("vary", "").lower()
     assert status.json()["found"] is True
     assert status.json()["media"]["id"] == first.json()["media"]["id"]
 
@@ -1083,14 +1086,16 @@ def test_native_tooth_chart_blocks_all_clinical_writes_until_treatment_intent_re
     assert "editable={!clinicalMutationBlocked} value={note}" in component
     assert "disabled={treatmentBusy||clinicalMutationBlocked}" in component
     assert component.count("if(result.patient.id!==patientId)") == 2
-    assert component.count("if(updated.patient.id!==patientId)") == 4
+    # Includes the explicit 409 conflict-snapshot read in addition to the four mutation responses.
+    assert component.count("if(updated.patient.id!==patientId)") == 5
     assert "disabled={busy||surfaceBusy||treatmentBusy||clinicalMutationBlocked}" in component
     assert "Güvenli tedavi kaydı kontrol ediliyor." in component
     assert "Bekleyen tedavi taslağı okunamadı." in component
     assert "gate.treatmentIntentReady !== true" in presentation
     assert "gate.hasPendingTreatment === true" in presentation
     assert component.count("if(result.patient.id!==patientId)") == 2
-    assert component.count("if(updated.patient.id!==patientId)") == 4
+    # Includes the explicit 409 conflict-snapshot read in addition to the four mutation responses.
+    assert component.count("if(updated.patient.id!==patientId)") == 5
 
 
 def test_mobile_patient_detail_exposes_surface_updated_at_for_history_parity(chat):

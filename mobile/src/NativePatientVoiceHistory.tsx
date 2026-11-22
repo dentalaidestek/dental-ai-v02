@@ -6,27 +6,31 @@ import type {VoiceHistory} from './voiceApi';
 import {useRealtime} from './realtime';
 import {patientVoiceHistoryRows} from './patientVoiceHistoryPresentation';
 import {shouldRefreshPatientVoiceHistoryOnResume} from './patientVoiceHistoryRefresh';
+import useSessionRenderKey from './useSessionRenderKey';
 
 export default function NativePatientVoiceHistory({token,patientId}:{token:string;patientId:number}){
- const focused=useIsFocused(),{lastEvent}=useRealtime(),scope=token+':'+patientId;
- const active=useRef(scope),generation=useRef(0);
- if(active.current!==scope){active.current=scope;generation.current++}
- const [data,setData]=useState<{scope:string;history:VoiceHistory}|null>(null);
+ const focused=useIsFocused(),{lastEvent}=useRealtime(),scope=`${token}:${patientId}`;
+ // Keep the credential-bearing scope inside the shared hook's private ref.
+ // React state and request-generation refs carry only an opaque identity.
+ const scopeKey=useSessionRenderKey(scope);
+ const active=useRef(scopeKey),generation=useRef(0);
+ if(active.current!==scopeKey){active.current=scopeKey;generation.current++}
+ const [data,setData]=useState<{scopeKey:string;history:VoiceHistory}|null>(null);
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
- const visible=data?.scope===scope?data.history:null;
+ const visible=data?.scopeKey===scopeKey?data.history:null;
  const load=useCallback(async()=>{
-  const owner=scope,seq=++generation.current;
+  const owner=scopeKey,seq=++generation.current;
   setBusy(true);setError('');
   try{
    const history=await getVoiceHistory(token,patientId);
    if(active.current!==owner||generation.current!==seq)return;
-   setData({scope:owner,history});
+   setData({scopeKey:owner,history});
   }catch(e){
    if(active.current===owner&&generation.current===seq){setError(e instanceof Error?e.message:'Hekim onaylı anamnez alınamadı.');setData(null);}
   }finally{
    if(active.current===owner&&generation.current===seq)setBusy(false);
   }
- },[scope,token,patientId]);
+ },[scopeKey,token,patientId]);
  useEffect(()=>{
   if(focused)void load();
   return()=>{generation.current++};
@@ -70,7 +74,6 @@ export default function NativePatientVoiceHistory({token,patientId}:{token:strin
    <Text style={{fontSize:11,color:'#718096',marginTop:5}}>Kaynak: Sesli muayene #{row.analysisId}</Text>
   </View>)}
   {!!visible&&rows.length>0&&<Text style={{fontSize:12,color:'#8A5A00',lineHeight:19,marginTop:12}}>{visible.notice}</Text>}
-  {rows.length>0&&<Text style={{fontSize:12,color:'#8A5A00',lineHeight:19,marginTop:8}}>Bu kayıtlar önceki sesli muayenelerden gelir; güncel hastalık durumu ve tedaviler hastayla doğrulanmadan kullanılmamalıdır.</Text>}
   {!visible&&!!error&&<Pressable accessibilityRole="button" onPress={()=>void load()} disabled={busy} style={{padding:12,marginTop:6,backgroundColor:'#E8F0FF',borderRadius:10}}>
    <Text style={{color:'#1769AA',fontWeight:'800',textAlign:'center'}}>Yeniden dene</Text>
   </Pressable>}

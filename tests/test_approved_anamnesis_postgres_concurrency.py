@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 
 import pytest
-from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select, text
+from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, func, select, text
 
 from app.approved_anamnesis import ApprovedAnamnesis
 
@@ -88,13 +88,47 @@ def test_same_patient_approvals_serialize_and_keep_both_analysis_sources():
             first.result(timeout=15)
             second.result(timeout=15)
 
+        # Simulate a delayed legacy backfill and a corrupt cross-owner row.
+        # The web/native reader must choose by source Analysis identity and still
+        # scope by both patient and owner, never by ledger insertion order alone.
+        with engine.begin() as connection:
+            connection.execute(ledger.insert().values(
+                owner_user_id=9, patient_id=1, field_key="allergies",
+                value="Gecikmiş eski backfill", analysis_id=100,
+            ))
+            connection.execute(ledger.insert().values(
+                owner_user_id=10, patient_id=1, field_key="allergies",
+                value="Başka sahibin kaydı", analysis_id=999,
+            ))
+
         with engine.connect() as connection:
             rows = connection.execute(
                 select(ledger.c.value, ledger.c.analysis_id)
-                .where(ledger.c.patient_id == 1, ledger.c.field_key == "allergies")
+                .where(ledger.c.owner_user_id == 9, ledger.c.patient_id == 1,
+                       ledger.c.field_key == "allergies")
                 .order_by(ledger.c.id)
             ).all()
-        assert rows == [("İlk onay", 101), ("İkinci onay", 102)]
+            latest = (
+                select(ledger.c.field_key,
+                       func.max(ledger.c.analysis_id).label("latest_analysis_id"))
+                .where(ledger.c.owner_user_id == 9, ledger.c.patient_id == 1)
+                .group_by(ledger.c.field_key)
+                .subquery()
+            )
+            current = connection.execute(
+                select(ledger.c.value, ledger.c.analysis_id)
+                .join(latest,
+                      (ledger.c.field_key == latest.c.field_key)
+                      & (ledger.c.analysis_id == latest.c.latest_analysis_id))
+                .where(ledger.c.owner_user_id == 9, ledger.c.patient_id == 1,
+                       ledger.c.field_key == "allergies")
+            ).one()
+        assert rows == [
+            ("İlk onay", 101),
+            ("İkinci onay", 102),
+            ("Gecikmiş eski backfill", 100),
+        ]
+        assert current == ("İkinci onay", 102)
     finally:
         release_first.set()
         with engine.begin() as connection:

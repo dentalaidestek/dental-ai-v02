@@ -765,8 +765,13 @@ def mobile_create_schedule(payload: MobileScheduleCreate, user: User = Depends(_
 
 @router.post("/schedule/{event_id}/complete")
 def mobile_complete_schedule(event_id: int, user: User = Depends(_mobile_user)):
+    from app import main as web
     with Session(engine, expire_on_commit=False) as session:
-        event = session.get(ScheduleEvent, event_id)
+        event = session.exec(
+            select(ScheduleEvent)
+            .where(ScheduleEvent.id == event_id)
+            .with_for_update()
+        ).first()
         if not event or event.owner_user_id != user.id or event.status == "DELETED":
             raise HTTPException(status_code=404, detail="Program kaydı bulunamadı.")
         if event.recurrence_rule != "NONE":
@@ -774,7 +779,7 @@ def mobile_complete_schedule(event_id: int, user: User = Depends(_mobile_user)):
         if event.status == "COMPLETED":
             return {"ok": True, "status": "COMPLETED"}
         event.status = "COMPLETED"
-        event.updated_at = _utcnow_naive()
+        web._touch_schedule_event(event)
         session.add(event)
         _cancel_pending_program_reminders(session, event.id)
         realtime_events = _resolve_notifications(session, user_id=user.id, notice_type="PROGRAM_REMINDER", related_type="schedule_event", related_id=event.id)
@@ -787,12 +792,17 @@ def mobile_complete_schedule(event_id: int, user: User = Depends(_mobile_user)):
 
 @router.delete("/schedule/{event_id}")
 def mobile_delete_schedule(event_id: int, user: User = Depends(_mobile_user)):
+    from app import main as web
     with Session(engine, expire_on_commit=False) as session:
-        event = session.get(ScheduleEvent, event_id)
+        event = session.exec(
+            select(ScheduleEvent)
+            .where(ScheduleEvent.id == event_id)
+            .with_for_update()
+        ).first()
         if not event or event.owner_user_id != user.id or event.status == "DELETED":
             raise HTTPException(status_code=404, detail="Program kaydı bulunamadı.")
         event.status = "DELETED"
-        event.updated_at = datetime.utcnow()
+        web._touch_schedule_event(event)
         session.add(event)
         _cancel_pending_program_reminders(session, event.id)
         realtime_events = _resolve_notifications(session, user_id=user.id, notice_type="PROGRAM_REMINDER", related_type="schedule_event", related_id=event.id)
@@ -801,7 +811,6 @@ def mobile_delete_schedule(event_id: int, user: User = Depends(_mobile_user)):
     for realtime_event in realtime_events:
         on_loop(_publish_realtime_event, realtime_event)
     return {"ok": True}
-
 
 
 @router.put("/patients/{patient_id}/teeth/{tooth_number}/surfaces/{surface_name}")
@@ -2777,6 +2786,16 @@ def mobile_consultation_message_receipt(
         _mobile_private_no_store(response)
         if case.messages_deleted_at:
             return {"message": None, "deleted": True}
+        # A locally deleted inbox is hidden from this participant until restore.
+        # Match the web attachment-download boundary and never expose receipt
+        # content through a stale direct URL while the conversation is hidden.
+        latest_inbox_state = session.exec(
+            select(ConsultationInboxState)
+            .where(ConsultationInboxState.case_id == case_id, ConsultationInboxState.user_id == user.id)
+            .order_by(ConsultationInboxState.id.desc())
+        ).first()
+        if latest_inbox_state and latest_inbox_state.deleted_at:
+            raise HTTPException(status_code=404, detail="Önce görüşmeyi geri yükleyin.")
         receipt = session.exec(select(web.ConsultationMessageReceipt).where(
             web.ConsultationMessageReceipt.case_id == case.id,
             web.ConsultationMessageReceipt.sender_user_id == user.id,
@@ -2788,6 +2807,8 @@ def mobile_consultation_message_receipt(
         if not message or message.case_id != case.id or message.sender_user_id != user.id:
             return {"message": None, "deleted": True}
         return {"message": {
+            "case_id": case.id,
+            "client_message_id": key,
             "id": message.id,
             "sender_user_id": message.sender_user_id,
             "message_type": message.message_type,
@@ -3851,8 +3872,11 @@ def mobile_chat_attachment(case_id: int, message_id: int, user: User = Depends(_
         message = session.get(ConsultationMessage, message_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at or not message or message.case_id != case_id or not message.media_path:
             raise HTTPException(status_code=404, detail="Ek bulunamadı.")
-        state = session.exec(select(ConsultationInboxState).where(
-            ConsultationInboxState.case_id == case_id, ConsultationInboxState.user_id == user.id)).first()
+        state = session.exec(
+            select(ConsultationInboxState)
+            .where(ConsultationInboxState.case_id == case_id, ConsultationInboxState.user_id == user.id)
+            .order_by(ConsultationInboxState.id.desc())
+        ).first()
         if state and state.deleted_at:
             raise HTTPException(status_code=404, detail="Önce görüşmeyi geri yükleyin.")
         reference = message.media_path
@@ -3860,7 +3884,10 @@ def mobile_chat_attachment(case_id: int, message_id: int, user: User = Depends(_
         path = storage_ensure_local(reference)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Ek bulunamadı.")
-    return _ChatFileResponse(path, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+    return _ChatFileResponse(path, headers={
+        "Cache-Control": "private, no-store", "Pragma": "no-cache",
+        "Vary": "Authorization", "X-Content-Type-Options": "nosniff",
+    })
 
 @router.get("/consultations/{case_id}/shared-media/{link_id}")
 def mobile_case_shared_media(case_id: int, link_id: int, user: User = Depends(_mobile_user)):
@@ -3882,48 +3909,55 @@ def mobile_case_shared_media(case_id: int, link_id: int, user: User = Depends(_m
     return _ChatFileResponse(path, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
 
 @router.post("/consultations/{case_id}/attachments")
-async def mobile_chat_upload(case_id: int, file: UploadFile = File(...),
+async def mobile_chat_upload(case_id: int, response: Response, file: UploadFile = File(...),
                              reply_to_message_id: Optional[int] = Form(None),
-                             client_message_id: str = Form(""),
+                             client_message_id: str = Form(..., min_length=16, max_length=96),
                              token: str = Depends(_mobile_access_token),
                              user: User = Depends(_mobile_user)):
+    _mobile_private_no_store(response)
+    response.headers["X-Content-Type-Options"] = "nosniff"
     from app import main as web
-    # Authorize before touching the payload, then let the existing web handler
-    # recheck state/participant permissions under its normal case lock.
+    # A mobile attachment is always a recoverable mutation. Reject a missing or
+    # malformed intent key before reading the multipart body or allocating storage.
+    client_key = web._normalize_consultation_client_message_id(client_message_id)
+    if not client_key:
+        raise HTTPException(status_code=422, detail="Ek gönderimi için işlem anahtarı zorunludur.")
     with Session(engine, expire_on_commit=False) as session:
         case = session.get(ConsultationCase, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at:
             raise HTTPException(status_code=404, detail="Görüşme bulunamadı.")
+        latest_inbox_state = session.exec(
+            select(ConsultationInboxState)
+            .where(ConsultationInboxState.case_id == case_id, ConsultationInboxState.user_id == user.id)
+            .order_by(ConsultationInboxState.id.desc())
+        ).first()
+        if latest_inbox_state and latest_inbox_state.deleted_at:
+            raise HTTPException(status_code=404, detail="Önce görüşmeyi geri yükleyin.")
         if web._users_blocked(session, user.id, case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id):
             raise HTTPException(status_code=403, detail="Engellenen görüşmeye ek gönderilemez.")
-    suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".pdf", ".m4a", ".mp3", ".wav", ".ogg"}:
-        raise HTTPException(status_code=415, detail="Desteklenmeyen ek türü.")
-    import tempfile
+        # Cheap preflight only: the canonical web handler rechecks all lifecycle
+        # conditions under its case lock before persisting the attachment.
+        if case.status not in {"ACTIVE", "WAITING_START", "EXPERT_COMPLETED", "DISPUTE"}:
+            raise HTTPException(status_code=409, detail="Bu vakaya dosya gönderilemez.")
+        now = web._utcnow_naive()
+        if (case.status == "WAITING_START" and user.id == case.requester_user_id
+                and case.consultation_start_deadline and now < case.consultation_start_deadline):
+            raise HTTPException(status_code=423, detail="Uzmanın belirttiği başlangıç süresi henüz dolmadı.")
     from io import BytesIO
-    if suffix in {".jpg", ".jpeg", ".png", ".webp"}:
-        with tempfile.TemporaryDirectory(prefix="dai-chat-") as directory:
-            destination = Path(directory) / ("image" + suffix)
-            await _chat_offload(_copy_validated_image, file, destination, min(MOBILE_MAX_IMAGE_BYTES, web.CONSULTATION_UPLOAD_MAX_BYTES))
-            raw = await _chat_offload(destination.read_bytes)
-    else:
-        raw = await _chat_offload(file.file.read, web.CONSULTATION_UPLOAD_MAX_BYTES + 1)
-        if not raw or len(raw) > web.CONSULTATION_UPLOAD_MAX_BYTES:
-            raise HTTPException(status_code=413, detail="Ek boş veya 25 MB sınırını aşıyor.")
-        signatures = {
-            ".pdf": raw.startswith(b"%PDF-"),
-            ".wav": raw.startswith(b"RIFF") and raw[8:12] == b"WAVE",
-            ".ogg": raw.startswith(b"OggS"),
-            ".m4a": len(raw) >= 12 and raw[4:8] == b"ftyp",
-            ".mp3": raw.startswith(b"ID3") or (len(raw) >= 2 and raw[0] == 255 and raw[1] & 224 == 224),
-        }
-        if not signatures[suffix]:
-            raise HTTPException(status_code=422, detail="Dosya içeriği seçilen ek türüyle eşleşmiyor.")
-    clean = UploadFile(filename=Path(file.filename or ("attachment" + suffix)).name,
-                       file=BytesIO(raw), headers=file.headers)
+    suffix = Path(file.filename or "").suffix.lower()
+    image_suffixes = {".jpg", ".jpeg", ".png", ".webp"}
+    byte_limit = min(MOBILE_MAX_IMAGE_BYTES, web.CONSULTATION_UPLOAD_MAX_BYTES) if suffix in image_suffixes else web.CONSULTATION_UPLOAD_MAX_BYTES
+    raw = await _chat_offload(file.file.read, byte_limit + 1)
+    if len(raw) > byte_limit:
+        raise HTTPException(status_code=413, detail="Ek dosyası boyut sınırını aşıyor.")
+    clean = UploadFile(filename=Path(file.filename or "attachment").name, file=BytesIO(raw), headers=file.headers)
+    request = _mobile_request(token)
+    request.state._dai_consultation_attachment_max_pixels = MOBILE_MAX_IMAGE_PIXELS
     try:
-        return await _mobile_chat_dispatch(web.expert_support_media_message,
-            _mobile_request(token), case_id, clean, reply_to_message_id, client_message_id)
+        return await _mobile_chat_dispatch(
+            web.expert_support_media_message, request, case_id, clean,
+            reply_to_message_id, client_key,
+        )
     finally:
         await clean.close()
 

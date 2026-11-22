@@ -77,9 +77,7 @@ test('analysis and clinical viewer components never interpolate credentials into
 
 test('all VM component harnesses resolve the opaque session-key helper',()=>{
  const cases=[
-  ['analysisRefresh.cjs',"name==='./sessionRenderKey'?sessionRenderKeyExports"],
-  ['analysisRecovery.cjs',"name==='./sessionRenderKey'?sessionRenderKeyExports"],
-  ['clinicalWorkflow.cjs',"n==='./sessionRenderKey'?sessionRenderKeyExports"],
+  ['analysisRefresh.cjs',"name==='./useSessionRenderKey'?{__esModule:true,default:useSessionRenderKey}"],
  ];
  for(const [file,contract] of cases){
   const source=fs.readFileSync(require.resolve('./'+file),'utf8');
@@ -113,9 +111,10 @@ test('patient profile child sections use an opaque key across token and patient 
  assert.equal(keys.length,3,'media, analysis history and approved voice history keep explicit remount boundaries');
  assert.ok(keys.every(value=>value==='profileRenderKey'),'profile children must not use the raw token-bearing scope as a React key');
  assert.ok(!keys.some(value=>value.includes('token')||value.includes('scope')||value.includes('userId')),'React keys must not contain bearer credentials or identity tuples');
- assert.ok(source.includes("import {nextSessionRenderKey} from './sessionRenderKey';"));
- assert.ok(source.includes('const profileRenderIdentity=useRef<{scope:string;key:string}|null>(null);'));
- assert.ok(source.includes('profileRenderIdentity.current.scope!==scope'),'the opaque key must rotate when the account, token or patient scope changes');
+ assert.ok(source.includes("import useSessionRenderKey from './useSessionRenderKey';"));
+ assert.ok(source.includes('const scope=useSessionRenderKey(`${userId}:${token}:${patientId}`);'),'the opaque identity rotates when account, token or patient scope changes');
+ assert.ok(source.includes('const profileRenderKey=scope;'));
+ assert.ok(!source.includes('profileRenderIdentity'),'the component must not duplicate the credential-bearing scope in a second ref');
 });
 
 
@@ -134,9 +133,11 @@ test('tooth-chart analysis history uses an opaque render key while retaining too
  assert.equal(history.length,1,'the selected tooth must own exactly one analysis-history section');
  assert.equal(history[0],'historyRenderKey','the history section must not use a raw token-bearing React key');
  assert.ok(!history[0].includes('token')&&!history[0].includes('scope'),'renderer identity must not contain credentials or the raw identity tuple');
- assert.ok(source.includes('import {nextSessionRenderKey} from "./sessionRenderKey";'));
- assert.ok(source.includes('const historyScope=`${userId}:${token}:${patientId}:${selected}`;'));
- assert.ok(source.includes('historyRenderIdentity.current.scope!==historyScope'),'switching account, session, patient or selected tooth must remount the scoped history section');
+  assert.ok(source.includes('import useSessionRenderKey from "./useSessionRenderKey";'));
+  assert.ok(source.includes('const historyScopeKey=useSessionRenderKey(`${userId}:${token}:${patientId}:${selected}`);'));
+  assert.ok(source.includes('const historyRenderKey=historyScopeKey;'));
+  assert.ok(source.includes('const treatmentHistoryScope=historyScopeKey;'));
+  assert.ok(!source.includes('historyRenderIdentity'),'the selected-tooth renderer must not retain a credential-bearing duplicate scope');
 });
 
 test('clinical media analysis-upload child uses the opaque account image scope as its key',()=>{
@@ -153,7 +154,9 @@ test('clinical media analysis-upload child uses the opaque account image scope a
  visit(parsed);
  assert.equal(uploads.length,1,'the clinical archive owns one analysis composer');
  assert.equal(uploads[0],'imageScope','the upload composer key must not be the bearer-token owner tuple');
- assert.ok(source.includes("const imageScope=useMemo(()=>'clinical-media-scope-'+(++nextClinicalMediaImageScope),[token,userId,patientId]);"),'the opaque scope must rotate on account, session or patient changes');
+ assert.ok(source.includes("import useSessionRenderKey from './useSessionRenderKey';"),'clinical media must use the shared production session-key hook');
+    assert.ok(source.includes("const owner=useSessionRenderKey(`${userId}:${token}:${patientId}`);"),'account, credential and patient changes must rotate the opaque owner identity');
+    assert.ok(source.includes('const imageScope=owner;'),'the analysis-upload child must share the opaque gallery session identity');
 });
 
 test('React session-key hook rotates on account, patient and credential scope changes',()=>{
@@ -212,4 +215,85 @@ test('VM bridge exposes a callable production hook without CommonJS wrapper coll
  assert.ok(!/\\b(?:const|let|var)\\s+exports\\b/.test(helper),'a CommonJS module must not redeclare its wrapper exports binding');
  assert.ok(helper.includes('const hookExports = {};'));
  assert.equal(typeof useSessionRenderKey,'function');
+});
+
+
+test('approved voice-history cache state and generation refs use opaque session identity',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientVoiceHistory.tsx'),'utf8');
+ assert.ok(source.includes("import useSessionRenderKey from './useSessionRenderKey';"));
+ assert.ok(source.includes('const scopeKey=useSessionRenderKey(scope);'));
+ assert.ok(source.includes('const active=useRef(scopeKey),generation=useRef(0);'));
+ assert.ok(source.includes('useState<{scopeKey:string;history:VoiceHistory}|null>'));
+ assert.ok(source.includes('data?.scopeKey===scopeKey'));
+ assert.ok(source.includes('setData({scopeKey:owner,history})'));
+ assert.ok(!source.includes('useState<{scope:string;history:VoiceHistory}|null>'),'credential-bearing scope must not be copied into React state');
+ assert.ok(!source.includes('const active=useRef(scope),'),'request generation refs must store only the opaque identity');
+ assert.ok(!source.includes('data?.scope===scope'),'rendered history must be scoped by the opaque identity');
+});
+
+
+test('account, professional, patient history and tooth chart keep bearer scopes inside the shared hook only',()=>{
+ const account=fs.readFileSync(require.resolve('../src/NativeAccount.tsx'),'utf8');
+ const professional=fs.readFileSync(require.resolve('../src/NativeProfessional.tsx'),'utf8');
+ const history=fs.readFileSync(require.resolve('../src/NativePatientHistory.tsx'),'utf8');
+ const chart=fs.readFileSync(require.resolve('../src/NativeToothChart.tsx'),'utf8');
+ const historyHarness=fs.readFileSync(require.resolve('./patientAnalysisHistory.cjs'),'utf8');
+ const chartHarness=fs.readFileSync(require.resolve('./toothChartLifecycle.cjs'),'utf8');
+ const historyRetryHarness=fs.readFileSync(require.resolve('./patientHistoryRetry.cjs'),'utf8');
+ const accountAst=ts.createSourceFile('NativeAccount.tsx',account,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+ let accountScopeRef=false,accountScopeAssignment=false;
+ const inspectAccount=node=>{
+  if(ts.isVariableDeclaration(node)&&node.name.getText(accountAst)==='scope'&&node.initializer&&ts.isCallExpression(node.initializer)&&node.initializer.expression.getText(accountAst)==='useRef'&&node.initializer.arguments[0]?.getText(accountAst)==='accountRenderKey')accountScopeRef=true;
+  if(ts.isBinaryExpression(node)&&node.operatorToken.kind===ts.SyntaxKind.EqualsToken&&node.left.getText(accountAst)==='scope.current'&&node.right.getText(accountAst)==='accountRenderKey')accountScopeAssignment=true;
+  ts.forEachChild(node,inspectAccount);
+ };
+ inspectAccount(accountAst);
+ assert.ok(accountScopeRef,'account request ownership ref must be initialized from the opaque account render key');
+ assert.ok(accountScopeAssignment,'account request ownership ref must rotate with the opaque account render key');
+ assert.ok(!account.includes('scope=useRef(token)'));
+ assert.ok(!account.includes('scope.current=token'));
+ assert.ok(professional.includes('useState<{scopeKey:string;data:Professional}|null>'));
+ assert.ok(professional.includes('scope=useRef(sessionRenderKey)'));
+ assert.ok(professional.includes('setState({scopeKey:sessionRenderKey,data})'));
+ assert.ok(!professional.includes('useState<{token:string;data:Professional}|null>'));
+ assert.ok(!professional.includes('scope=useRef(token)'));
+ assert.ok(history.includes("scope=useSessionRenderKey(`${token}:${patientId}:${toothNumber||''}`)"));
+ assert.ok(history.includes('imageScope=useRef<{sessionKey:string;scope:string}|null>(null)'));
+ assert.ok(!history.includes('imageScope=useRef<{token:string;scope:string}|null>(null)'));
+ assert.ok(!history.includes('const focused=useIsFocused(),{lastEvent}=useRealtime(),scope=`${token}:'));
+ assert.ok(chart.includes('patientScopeKey=useSessionRenderKey(`${userId}:${token}:${patientId}`)'));
+ assert.ok(chart.includes('historyScopeKey=useSessionRenderKey(`${userId}:${token}:${patientId}:${selected}`)'));
+ assert.ok(chart.includes('patientScope=useRef(patientScopeKey)'));
+ assert.ok(chart.includes('const treatmentHistoryScope=historyScopeKey;'));
+ assert.ok(!chart.includes('patientScope=useRef(`${userId}:${token}:${patientId}`)'));
+ assert.ok(!chart.includes('historyRenderIdentity'));
+ assert.ok(historyHarness.includes("if(name==='./useSessionRenderKey')return sessionRenderKeyExports;"));
+ assert.ok(chartHarness.includes("if(name==='./useSessionRenderKey')return require('./helpers/useSessionRenderKeyModule.cjs');"));
+ assert.ok(historyRetryHarness.includes("if(name==='./useSessionRenderKey')return useSessionRenderKeyExports;"));
+});
+
+
+test('AI analysis, clinical review and vision viewer keep bearer credentials out of cache refs',()=>{
+ const dental=fs.readFileSync(require.resolve('../src/NativeDentalAI.tsx'),'utf8');
+ const clinical=fs.readFileSync(require.resolve('../src/NativeClinicalReview.tsx'),'utf8');
+ const vision=fs.readFileSync(require.resolve('../src/NativeVisionViewer.tsx'),'utf8');
+ const analysisHarness=fs.readFileSync(require.resolve('./analysisRecovery.cjs'),'utf8');
+ const clinicalHarness=fs.readFileSync(require.resolve('./clinicalWorkflow.cjs'),'utf8');
+ const visionHarness=fs.readFileSync(require.resolve('./visionViewer.cjs'),'utf8');
+ assert.ok(dental.includes('renderSessionKey=useSessionRenderKey(`${token}:${userId||0}`)'));
+ assert.ok(dental.includes('sessionScope=useRef(renderSessionKey)'));
+ assert.ok(dental.includes('previousSearchScope=useRef({scopeKey:renderSessionKey,userId,patientQuery})'));
+ assert.ok(!dental.includes('renderSession=useRef({token'));
+ assert.ok(!dental.includes('sessionScope=useRef(`${token}:'));
+ assert.ok(!dental.includes('previousSearchScope=useRef({token'));
+ assert.ok(clinical.includes('viewerSessionKey=useSessionRenderKey(token)'));
+ assert.ok(!clinical.includes('viewerSession=useRef({token'));
+ assert.ok(vision.includes('imageScope=useRef<{sessionKey:string;scope:string}|null>(null)'));
+ assert.ok(vision.includes('latestRequest=useRef({sessionKey:sessionRenderKey'));
+ assert.ok(!vision.includes('imageScope=useRef<{token:string;scope:string}|null>(null)'));
+ assert.ok(!vision.includes('latestRequest=useRef({token'));
+ assert.ok(!vision.includes('target.token'));
+ assert.ok(analysisHarness.includes("name==='./useSessionRenderKey'?{__esModule:true,default:useSessionRenderKey}"));
+ assert.ok(clinicalHarness.includes("n==='./useSessionRenderKey'?useSessionRenderKeyExports"));
+ assert.ok(visionHarness.includes("n==='./useSessionRenderKey'?useSessionRenderKeyExports"));
 });

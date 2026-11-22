@@ -9,7 +9,7 @@ The database row was deleted before remote object deletion. If R2 deletion faile
 ## Changes
 
 - Reuse the existing `WorkGarbage` table and `work_worker` maintenance path; no schema migration or new service.
-- Add a strict allow-list for the two server-generated patient-media object-key layouts: legacy web `uploads/patient_<id>_<uuid>.<image>` and native `uploads/patient-media/patient_<id>_<uuid>.<image>`.
+- Add a strict allow-list for the two server-generated patient-media object-key layouts and their deterministic JPEG derivatives: legacy web `uploads/patient_<id>_<uuid>.thumb.jpg` and native `uploads/patient-media/patient_<id>_<uuid>.thumb.jpg` (alongside the original supported image extensions).
 - Enqueue the opaque storage key in the same database transaction that deletes its `PatientMedia` row. A rollback therefore leaves both the row and the absence of a cleanup receipt consistent.
 - Extend the existing garbage collector to delete only a patient-media object that matches the allow-list and is no longer referenced by any live `PatientMedia.file_path`.
 - Failed R2 deletes retain the durable queue row and retry after five minutes. A repeated delete of an already absent row remains an idempotent success.
@@ -32,3 +32,19 @@ No main merge, production deploy, migration, APK/IPA publication, or patient-rec
 ## Native response validation follow-up
 
 The native delete transport previously accepted any JSON object returned with HTTP 200. It now requires `ok === true`, the exact requested `media_id`, and correctly typed optional `already_deleted` / `storage_cleanup_pending` receipt fields before the gallery clears its uncertain-delete state. Two renderer/transport regressions were added to the existing `clinicalMediaRecovery.cjs` file, which is already part of `npm run test:beta`. They are committed but remain unexecuted while Actions jobs terminate before steps.
+
+
+## 2026-11-22 follow-up — durable thumbnail cleanup
+
+A regression review found that the strict cleanup allow-list admitted original media objects but not the deterministic derivative names produced by `thumbnail_reference()`. As a result, deleting a media row could queue the original while rejecting its thumbnail receipt. The route then fell back to synchronous object deletion for the derivative; a transient R2 failure after the metadata commit could leave an orphan with no durable retry.
+
+The allow-list now accepts exactly one optional `.thumb` segment before the supported image extension for both server-generated web and native object-key layouts. It still rejects arbitrary suffixes, nested paths, uppercase UUIDs, unsupported extensions and non-media object keys. The existing collector treats an unreferenced derivative as a patient-media object and retains its normal delayed retry when R2 deletion fails.
+
+Regression coverage now checks:
+- admission of both web/native original keys and their exact thumbnail derivatives;
+- rejection of malformed derivative suffixes and path traversal;
+- worker deletion and receipt removal for an unreferenced thumbnail;
+- delayed retry after a thumbnail R2 delete failure;
+- the real native single-delete handler queues original and derivative in the same transaction without synchronous storage deletion.
+
+No migration, new service, polling loop, provider call or production object mutation was introduced.

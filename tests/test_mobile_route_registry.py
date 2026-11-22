@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.mobile_route_registry import remove_shadowed_routes
+from app.mobile_route_registry import include_missing_routes, iter_registered_routes, remove_shadowed_routes
 
 
 def route(path, methods=None):
@@ -127,3 +127,352 @@ def test_real_fastapi_multi_method_route_keeps_the_nonconflicting_openapi_operat
         route for route in candidate.routes
         if getattr(route, "path", None) == "/registry-probe/{item_id}"
     ).methods == {"PATCH"}
+
+
+
+def test_registered_clinical_media_routes_use_the_expected_private_handlers():
+    import inspect
+
+    from app import main
+    from app.mobile_api import router as primary_mobile_router
+    from app.mobile_modern_api_v3 import router as modern_mobile_router
+
+    def route_path(route):
+        path = getattr(route, "path", None)
+        if not isinstance(path, str):
+            path = getattr(route, "path_format", None)
+        return path if isinstance(path, str) else ""
+
+    def registered(source_router, suffix, method):
+        # APIRouter prefixes are represented differently across FastAPI
+        # versions: some route objects expose the prefixed path before mount,
+        # while others apply it during include_router(). Resolve the canonical
+        # source endpoint first, then assert that this exact callable is mounted
+        # once on the application. This tests route ownership without guessing
+        # how the framework materializes the prefix.
+        normalized_suffix = suffix.rstrip("/")
+        source_matches = [
+            route for route in iter_registered_routes(source_router.routes)
+            if route_path(route).rstrip("/").endswith(normalized_suffix)
+            and method in (getattr(route, "methods", None) or set())
+        ]
+        assert len(source_matches) == 1, (
+            f"expected one source {method} route ending in {suffix}, found {len(source_matches)}"
+        )
+        source = source_matches[0]
+        def endpoint_symbol(endpoint):
+            # FastAPI can clone APIRoute objects while including routers. The
+            # callable object identity is not a stable registration contract;
+            # its fully-qualified source symbol is. Unwrap decorators before
+            # comparing so instrumentation does not hide the canonical owner.
+            endpoint = inspect.unwrap(endpoint)
+            return (
+                getattr(endpoint, "__module__", None),
+                getattr(endpoint, "__qualname__", getattr(endpoint, "__name__", None)),
+            )
+
+        expected_symbol = endpoint_symbol(source.endpoint)
+        matches = [
+            route for route in iter_registered_routes(main.app.routes)
+            if endpoint_symbol(getattr(route, "endpoint", None)) == expected_symbol
+            and method in (getattr(route, "methods", None) or set())
+        ]
+        app_media_routes = [
+            (
+                route_path(route),
+                sorted(getattr(route, "methods", None) or ()),
+                endpoint_symbol(getattr(route, "endpoint", None)),
+            )
+            for route in iter_registered_routes(main.app.routes)
+            if "media" in route_path(route).lower()
+            and method in (getattr(route, "methods", None) or set())
+        ]
+        assert len(matches) == 1, (
+            f"expected source endpoint {expected_symbol[0]}.{expected_symbol[1]} "
+            f"to be mounted once, found {len(matches)}; app_media_routes={app_media_routes}"
+        )
+        assert route_path(matches[0]).rstrip("/").endswith(normalized_suffix), (
+            f"mounted endpoint path {route_path(matches[0])!r} does not end with {normalized_suffix!r}"
+        )
+        return matches[0]
+
+    # The primary router owns both the cache-private GET gallery and the
+    # receipt-aware POST upload. The modern router's duplicate GET/POST
+    # adapters must be removed by method-aware route deduplication.
+    media_list = registered(primary_mobile_router, "/patients/{patient_id}/media", "GET")
+    assert not any(
+        route_path(route).rstrip("/").endswith("/patients/{patient_id}/media")
+        and "GET" in (getattr(route, "methods", None) or set())
+        for route in iter_registered_routes(modern_mobile_router.routes)
+    ), "the primary GET gallery must shadow the legacy v3 GET adapter"
+    media_upload = registered(primary_mobile_router, "/patients/{patient_id}/media", "POST")
+    assert not any(
+        route_path(route).rstrip("/").endswith("/patients/{patient_id}/media")
+        and "POST" in (getattr(route, "methods", None) or set())
+        for route in iter_registered_routes(modern_mobile_router.routes)
+    ), "the receipt-aware primary POST must shadow the legacy v3 upload adapter"
+    original_file = registered(primary_mobile_router, "/patients/{patient_id}/media/{media_id}/file", "GET")
+    thumbnail = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}/thumbnail", "GET")
+    metadata = registered(modern_mobile_router, "/patients/{patient_id}/media/{media_id}", "GET")
+
+    assert media_list.endpoint.__module__ == "app.mobile_api"
+    assert media_list.endpoint.__name__ == "mobile_patient_media"
+    assert "_mobile_private_no_store(response)" in inspect.getsource(media_list.endpoint)
+
+    assert media_upload.endpoint.__module__ == "app.mobile_api"
+    assert media_upload.endpoint.__name__ == "mobile_patient_media_upload"
+
+    assert original_file.endpoint.__module__ == "app.mobile_api"
+    assert "current_media.file_path == file_path" in inspect.getsource(original_file.endpoint)
+
+    assert thumbnail.endpoint.__module__ == "app.mobile_modern_api_v3"
+    assert "current_media.file_path == file_path" in inspect.getsource(thumbnail.endpoint)
+    assert "headers = dict(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in inspect.getsource(thumbnail.endpoint)
+
+    assert metadata.endpoint.__module__ == "app.mobile_modern_api_v3"
+    assert "response.headers.update(_PRIVATE_CLINICAL_MEDIA_HEADERS)" in inspect.getsource(metadata.endpoint)
+
+
+def test_include_missing_routes_reconciles_a_router_that_grows_after_initial_mount():
+    from fastapi import APIRouter, FastAPI
+
+    app = FastAPI()
+    source = APIRouter(prefix="/api/mobile/v1")
+
+    @source.get("/initial")
+    def initial_route():
+        return {"source": "initial"}
+
+    app.include_router(source)
+
+    @source.get("/late")
+    def late_route():
+        return {"source": "late"}
+
+    # FastAPI 0.141 uses a lazy include: the original router remains live,
+    # so the late route is already effective and must not be mounted twice.
+    assert include_missing_routes(app, source) == 0
+    assert include_missing_routes(app, source) == 0
+    mounted = [
+        (
+            getattr(route, "path", getattr(route, "path_format", None)),
+            method,
+        )
+        for route in iter_registered_routes(app.routes)
+        for method in (getattr(route, "methods", None) or ())
+    ]
+    assert mounted.count(("/api/mobile/v1/initial", "GET")) == 1
+    assert mounted.count(("/api/mobile/v1/late", "GET")) == 1
+
+
+def test_include_missing_routes_rejects_a_different_existing_endpoint_owner():
+    from fastapi import APIRouter, FastAPI
+    import pytest
+
+    app = FastAPI()
+
+    def existing():
+        return {"source": "existing"}
+
+    def conflicting():
+        return {"source": "conflicting"}
+
+    app.add_api_route("/api/mobile/v1/conflict", existing, methods=["GET"])
+    source = APIRouter(prefix="/api/mobile/v1")
+    source.add_api_route("/conflict", conflicting, methods=["GET"])
+
+    with pytest.raises(RuntimeError, match="mobile route ownership conflict"):
+        include_missing_routes(app, source)
+
+
+
+def test_include_missing_routes_flattens_nested_lazy_router_prefixes():
+    from fastapi import APIRouter, FastAPI
+
+    app = FastAPI()
+    root = APIRouter(prefix="/api/mobile/v1")
+    patients = APIRouter(prefix="/patients")
+
+    @patients.get("/{patient_id}/media")
+    def patient_media(patient_id: int):
+        return {"patient_id": patient_id}
+
+    root.include_router(patients)
+    app.include_router(root)
+
+    assert include_missing_routes(app, root) == 0
+    matches = [
+        route for route in iter_registered_routes(app.routes)
+        if getattr(route, "path", getattr(route, "path_format", None))
+        == "/api/mobile/v1/patients/{patient_id}/media"
+        and "GET" in (getattr(route, "methods", None) or set())
+    ]
+    assert len(matches) == 1
+    assert matches[0].endpoint.__name__ == "patient_media"
+
+
+def test_remove_shadowed_routes_normalizes_nested_primary_prefixes():
+    from fastapi import APIRouter
+
+    primary = APIRouter(prefix="/api/mobile/v1")
+    patients = APIRouter(prefix="/patients")
+
+    @patients.get("/{patient_id}/media")
+    def canonical_media(patient_id: int):
+        return {"owner": "canonical"}
+
+    primary.include_router(patients)
+    candidate = APIRouter(prefix="/api/mobile/v1")
+
+    @candidate.api_route("/patients/{patient_id}/media", methods=["GET", "POST"])
+    def adapter_media(patient_id: int):
+        return {"owner": "adapter"}
+
+    remove_shadowed_routes((primary,), candidate)
+
+    assert route_signature(candidate) == [
+        ("/api/mobile/v1/patients/{patient_id}/media", frozenset({"POST"}))
+    ]
+
+
+def test_include_missing_routes_fails_closed_on_conflicting_existing_owners():
+    from fastapi import APIRouter, FastAPI
+    import pytest
+
+    app = FastAPI()
+
+    def first_owner():
+        return {"owner": "first"}
+
+    def second_owner():
+        return {"owner": "second"}
+
+    app.add_api_route("/api/mobile/v1/conflict", first_owner, methods=["GET"])
+    app.add_api_route("/api/mobile/v1/conflict", second_owner, methods=["GET"])
+    source = APIRouter(prefix="/api/mobile/v1")
+    source.add_api_route("/new", lambda: {"ok": True}, methods=["GET"])
+
+    with pytest.raises(RuntimeError, match="mobile route ownership conflict"):
+        include_missing_routes(app, source)
+
+
+def test_include_missing_routes_fails_closed_on_duplicate_same_owner_registration():
+    from fastapi import APIRouter, FastAPI
+    import pytest
+
+    app = FastAPI()
+
+    def shared_owner():
+        return {"owner": "shared"}
+
+    app.add_api_route("/api/mobile/v1/duplicate", shared_owner, methods=["GET"])
+    app.add_api_route("/api/mobile/v1/duplicate", shared_owner, methods=["GET"])
+    source = APIRouter(prefix="/api/mobile/v1")
+    source.add_api_route("/new", lambda: {"ok": True}, methods=["GET"])
+
+    with pytest.raises(RuntimeError, match="duplicate mobile route registration"):
+        include_missing_routes(app, source)
+
+
+def test_native_media_and_chat_recovery_routes_are_mounted_once_with_owner_checks():
+    import inspect
+
+    from app import main
+    from app.mobile_api import router as primary_mobile_router
+    from app.mobile_route_registry import iter_registered_routes
+
+    expected = [
+        ("/patients/{patient_id}/media/uploads/{request_key}", "GET", "mobile_patient_media_upload_status"),
+        ("/consultations/{case_id}/message-receipt", "GET", "mobile_consultation_message_receipt"),
+        ("/consultations/{case_id}/attachments", "POST", "mobile_chat_upload"),
+        ("/consultations/{case_id}/attachments/{message_id}", "GET", "mobile_chat_attachment"),
+    ]
+
+    def matching(routes, suffix, method):
+        return [
+            route for route in iter_registered_routes(routes)
+            if getattr(route, "path", getattr(route, "path_format", ""))
+            .rstrip("/")
+            .endswith(suffix)
+            and method in (getattr(route, "methods", None) or set())
+        ]
+
+    for suffix, method, endpoint_name in expected:
+        source = matching(primary_mobile_router.routes, suffix, method)
+        assert len(source) == 1, (
+            f"expected one canonical {method} {suffix} source route, found {len(source)}"
+        )
+        endpoint = source[0].endpoint
+        assert endpoint.__module__ == "app.mobile_api"
+        assert endpoint.__name__ == endpoint_name
+
+        def endpoint_symbol(value):
+            value = inspect.unwrap(value)
+            return (
+                getattr(value, "__module__", None),
+                getattr(value, "__qualname__", getattr(value, "__name__", None)),
+            )
+
+        mounted = [
+            route for route in matching(main.app.routes, suffix, method)
+            if endpoint_symbol(route.endpoint) == endpoint_symbol(endpoint)
+        ]
+        assert len(mounted) == 1, (
+            f"{method} {suffix} must be mounted exactly once on the live FastAPI app"
+        )
+
+        source_text = inspect.getsource(endpoint)
+        if endpoint_name == "mobile_patient_media_upload_status":
+            assert "Patient.owner_user_id == user.id" in source_text
+            assert "_find_patient_media_receipt" in source_text
+        elif endpoint_name == "mobile_consultation_message_receipt":
+            assert "user.id not in {case.requester_user_id, case.expert_user_id}" in source_text
+            assert "client_message_id" in source_text
+        elif endpoint_name == "mobile_chat_upload":
+            assert "user.id not in {case.requester_user_id, case.expert_user_id}" in source_text
+            assert "web._users_blocked" in source_text
+        elif endpoint_name == "mobile_chat_attachment":
+            assert "user.id not in {case.requester_user_id, case.expert_user_id}" in source_text
+            assert "message.case_id != case_id" in source_text
+
+
+def test_analysis_upload_receipt_route_is_mounted_once_and_patient_scoped():
+    import inspect
+
+    from app import main
+    from app.mobile_analysis_api import router as analysis_router
+    from app.mobile_route_registry import iter_registered_routes
+
+    suffix = "/analyses/uploads/receipt"
+
+    def matches(routes):
+        return [
+            route for route in iter_registered_routes(routes)
+            if getattr(route, "path", getattr(route, "path_format", ""))
+            .rstrip("/")
+            .endswith(suffix)
+            and "GET" in (getattr(route, "methods", None) or set())
+        ]
+
+    source = matches(analysis_router.routes)
+    assert len(source) == 1
+    endpoint = source[0].endpoint
+    assert endpoint.__module__ == "app.mobile_analysis_api"
+    assert endpoint.__name__ == "upload_receipt"
+
+    def endpoint_symbol(value):
+        value = inspect.unwrap(value)
+        return (
+            getattr(value, "__module__", None),
+            getattr(value, "__qualname__", getattr(value, "__name__", None)),
+        )
+
+    mounted = [
+        route for route in matches(main.app.routes)
+        if endpoint_symbol(route.endpoint) == endpoint_symbol(endpoint)
+    ]
+    assert len(mounted) == 1
+    source_text = inspect.getsource(endpoint)
+    assert "patient.owner_user_id!=user.id" in source_text
+    assert "WorkJob.owner_user_id==user.id" in source_text
+    assert "'Cache-Control':'private, no-store'" in source_text

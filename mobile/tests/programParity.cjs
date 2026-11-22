@@ -53,7 +53,7 @@ test('program API refuses mismatched days, malformed pages and another event rec
 test('program API sends a stable request key and reconciles the server receipt',async()=>{
  const api=require('../src/programApi.ts'),original=global.fetch;
  const draft={event_type:'APPOINTMENT',title:'Synthetic API visit',start_at:'2030-01-07T10:00',end_at:'2030-01-07T10:30',patient_id:8,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
- const event={id:7,event_type:'APPOINTMENT',title:draft.title,status:'ACTIVE',start_local:draft.start_at,end_local:draft.end_at,patient_id:8,patient_name:'Synthetic',location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const event={id:7,event_type:'APPOINTMENT',title:draft.title,status:'ACTIVE',start_local:draft.start_at,end_local:draft.end_at,patient_id:8,patient_name:'Synthetic',location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:'',revision:'a'.repeat(64)};
  try{
   let body,url;
   global.fetch=async(path,options)=>{url=String(path);body=JSON.parse(options.body);return new Response(JSON.stringify({event}),{status:200})};
@@ -70,7 +70,7 @@ test('program API sends a stable request key and reconciles the server receipt',
 test('program create receipt must match every persisted field, not only start time and patient',async()=>{
  const api=require('../src/programApi.ts'),original=global.fetch;
  const draft={event_type:'APPOINTMENT',title:'Synthetic API visit',start_at:'2030-01-07T10:00',end_at:'2030-01-07T10:30',patient_id:8,location:'Clinic A',notes:'Synthetic note',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
- const event={id:7,event_type:'APPOINTMENT',title:draft.title,status:'ACTIVE',start_local:draft.start_at,end_local:draft.end_at,patient_id:8,patient_name:'Synthetic',location:draft.location,notes:draft.notes,reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const event={id:7,event_type:'APPOINTMENT',title:draft.title,status:'ACTIVE',start_local:draft.start_at,end_local:draft.end_at,patient_id:8,patient_name:'Synthetic',location:draft.location,notes:draft.notes,reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:'',revision:'a'.repeat(64)};
  try{
   assert.equal(api.programEventMatchesPayload(event,draft),true);
   const mismatches=[
@@ -92,7 +92,7 @@ test('program create receipt must match every persisted field, not only start ti
 
 test('program event receipts reject invalid end ordering, malformed nullable fields and recurrence dates',async()=>{
  const api=require('../src/programApi.ts'),original=global.fetch;
- const event={id:7,event_type:'APPOINTMENT',title:'Synthetic visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:8,patient_name:'Synthetic',location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const event={id:7,event_type:'APPOINTMENT',title:'Synthetic visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:8,patient_name:'Synthetic',location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:'',revision:'a'.repeat(64)};
  try{
   for(const malformed of [
    {...event,end_local:'2030-01-07T09:59'},
@@ -111,7 +111,7 @@ test('program event receipts reject invalid end ordering, malformed nullable fie
 
 test('create recovery preserves its request key when a found receipt does not match the submitted appointment',async()=>{
  let clears=0,saved=0,lookups=0;
- const mismatch={id:77,event_type:'APPOINTMENT',title:'Another appointment',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const mismatch={id:77,event_type:'APPOINTMENT',title:'Another appointment',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:'',revision:'a'.repeat(64)};
  const Editor=component('NativeProgramEditor',{
   getOrCreateProgramRequestKey:async()=> 'program-create-request-000001',
   getProgramMutation:async()=>{lookups++;return{state:'FOUND',event:mismatch}},
@@ -276,7 +276,7 @@ test('native editor mirrors web title copy and caps location at 160 characters',
 
 
 test('uncertain program edit verifies the server and closes only when the saved fields match',async()=>{
- const original={id:7,event_type:'APPOINTMENT',title:'Old visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const original={id:7,event_type:'APPOINTMENT',title:'Old visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:'',revision:'a'.repeat(64)};
  const updated={...original,title:'Updated visit'};
  let reads=0,writes=0,saved=0;
  const Editor=component('NativeProgramEditor',{
@@ -297,7 +297,7 @@ test('uncertain program edit verifies the server and closes only when the saved 
 });
 
 test('uncertain program edit does not claim success when the server still has old values',async()=>{
- const original={id:7,event_type:'APPOINTMENT',title:'Old visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const original={id:7,event_type:'APPOINTMENT',title:'Old visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:'',revision:'a'.repeat(64)};
  let reads=0,writes=0,saved=0;
  const Editor=component('NativeProgramEditor',{
   getProgramEvent:async()=>{reads++;return original},
@@ -313,7 +313,8 @@ test('uncertain program edit does not claim success when the server still has ol
  assert.equal(saved,0);
  assert.equal(tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.value,'Updated visit');
  assert.ok(tree.root.findAllByType('Text').some(node=>text(node).includes('eşleşmiyor')));
- assert.equal(button(tree,'Değişiklikleri Kaydet').props.disabled,false);
+ assert.equal(button(tree,'Değişiklikleri Kaydet').props.disabled,true);
+  assert.ok(button(tree,'Yerel taslağı son sürüme uygula'));
  await renderer.act(async()=>tree.unmount());
 });
 
@@ -389,7 +390,7 @@ test('a confirmed not-applied Program action unlocks only after its intent is cl
 
 test('copy verification follows the snapshot cursor to find a later target-day page',async()=>{
  const api=require('../src/programApi.ts'),original=global.fetch,cursor='program-cursor-token-00000001';
- const source={id:1,event_type:'APPOINTMENT',title:'Synthetic source',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:8,patient_name:'Synthetic',location:'Clinic',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const source={id:1,event_type:'APPOINTMENT',title:'Synthetic source',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:8,patient_name:'Synthetic',location:'Clinic',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:'',revision:'a'.repeat(64)};
  const occurrence=(id,title='Other')=>({key:id+':2030-01-08T09:00',event_id:id,event_type:'TASK',title,status:'ACTIVE',start_local:'2030-01-08T09:00',end_local:'2030-01-08T09:30',patient_id:null,patient_name:null,location:null,notes:null,recurrence_rule:'NONE'});
  const first={...page('today'),focus_date:'2030-01-08',days:[{date:'2030-01-08',label:'8',in_month:true,count:51,event_types:[],has_more:false}],copy_days:Array.from({length:7},(_,i)=>({date:new Date(Date.UTC(2030,0,8+i)).toISOString().slice(0,10),label:'Gün'})),items:Array.from({length:50},(_,i)=>occurrence(100+i)),total:51,next_cursor:cursor,next_offset:null};
  const target={...occurrence(999,'Synthetic source'),event_type:'APPOINTMENT',start_local:'2030-01-08T10:00',end_local:'2030-01-08T10:30',patient_id:8,location:'Clinic',notes:''};
@@ -552,5 +553,111 @@ test('Program cards mirror web event type, recurrence, completion and today labe
  assert.ok(text(tree.toJSON()).includes('Her hafta'));
  assert.ok(text(tree.toJSON()).includes('Tamamlandı'));
  assert.ok(text(tree.toJSON()).includes('Bugün'));
+ await renderer.act(async()=>tree.unmount());
+});
+
+
+test('Program session render identity never exposes bearer credentials in renderer keys',()=>{
+ const {resolveSessionRenderIdentity}=require('../src/sessionRenderKey.ts');
+ const secret='Bearer_opaque_program_session_token_1234567890';
+ const first=resolveSessionRenderIdentity(null,secret+':7:week:2030-01-07');
+ assert.ok(first.key.startsWith('dai-session-'));
+ assert.equal(first.key.includes(secret),false);
+ const same=resolveSessionRenderIdentity(first,secret+':7:week:2030-01-07');
+ assert.equal(same.key,first.key);
+ const changedAccount=resolveSessionRenderIdentity(same,'rotated-session-token:7:week:2030-01-07');
+ assert.notEqual(changedAccount.key,first.key);
+ assert.equal(changedAccount.key.includes('rotated-session-token'),false);
+});
+
+test('Program calendar and editor keep async response ownership on opaque session keys',()=>{
+ const calendar=fs.readFileSync(require.resolve('../src/NativeProgram.tsx'),'utf8');
+ const editor=fs.readFileSync(require.resolve('../src/NativeProgramEditor.tsx'),'utf8');
+ assert.match(calendar,/const scope=useSessionRenderKey\(\x60\$\{token\}:\$\{userId\}:\$\{view\}:\$\{day\}\x60\)/);
+ assert.match(editor,/const scopeKey=useSessionRenderKey\(\x60\$\{token\}:\$\{userId\}:\$\{eventId\|\|0\}:\$\{initialPatientId\|\|0\}\x60\)/);
+ assert.match(editor,/scope\.current=scopeKey/);
+ assert.doesNotMatch(calendar,/data\?\.scope===\x60\$\{token\}/);
+ assert.doesNotMatch(editor,/scope=useRef\(\x60\$\{token\}/);
+});
+
+test('Program updates require and send the exact opaque revision from the loaded event',async()=>{
+ const api=require('../src/programApi.ts'),original=global.fetch,revision='b'.repeat(64);
+ const draft={event_type:'APPOINTMENT',title:'Synthetic update',start_at:'2030-01-07T10:00',end_at:'2030-01-07T10:30',patient_id:8,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:''};
+ const event={id:7,event_type:'APPOINTMENT',title:draft.title,status:'ACTIVE',start_local:draft.start_at,end_local:draft.end_at,patient_id:8,patient_name:'Synthetic',location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:'',revision};
+ try{
+  await assert.rejects(()=>api.saveProgramEvent('token',draft,7),/güncel sürüm anahtarı gerekli/);
+  let body,url;
+  global.fetch=async(path,options)=>{url=String(path);body=JSON.parse(options.body);return new Response(JSON.stringify({event}),{status:200})};
+  const saved=await api.saveProgramEvent('token',draft,7,undefined,revision);
+  assert.equal(saved.revision,revision);
+  assert.equal(body.expected_revision,revision);
+  assert.ok(url.endsWith('/api/mobile/v1/program/events/7'));
+ }finally{global.fetch=original}
+});
+
+test('native Program edit preserves local draft and requires explicit rebase after a web revision conflict',async()=>{
+ const firstRevision='a'.repeat(64),latestRevision='b'.repeat(64),savedRevision='c'.repeat(64);
+ const original={id:7,event_type:'APPOINTMENT',title:'Original visit',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:'',revision:firstRevision};
+ const latest={...original,title:'Changed on web',revision:latestRevision};
+ let reads=0,saved=0;const updates=[];
+ const Editor=component('NativeProgramEditor',{
+  getProgramEvent:async()=>{reads++;return reads===1?original:latest},
+  checkProgramConflicts:async()=>({advisory:true,total:0}),
+  saveProgramEvent:async(_token,payload,_id,_key,revision)=>{updates.push({payload,revision});if(updates.length===1)throw Object.assign(new Error('stale revision'),{status:409});return{...latest,...payload,id:7,status:'ACTIVE',start_local:payload.start_at,revision:savedRevision}}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),eventId:7,onSaved(){saved++},onClose(){}}));await tick()});
+ await renderer.act(async()=>tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.onChangeText('Local draft'));
+ await renderer.act(async()=>button(tree,'Değişiklikleri Kaydet').props.onPress());
+ assert.equal(updates.length,1);
+ assert.equal(updates[0].revision,firstRevision);
+ assert.equal(saved,0);
+ assert.equal(tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.value,'Local draft');
+ assert.ok(button(tree,'Güncel sürümü karşılaştır'));
+ await renderer.act(async()=>button(tree,'Güncel sürümü karşılaştır').props.onPress());
+ assert.equal(reads,2);
+ assert.ok(text(tree.root).includes('Changed on web'));
+ assert.equal(tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.value,'Local draft');
+ await renderer.act(async()=>button(tree,'Yerel taslağı son sürüme uygula').props.onPress());
+ assert.equal(tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.value,'Local draft');
+ await renderer.act(async()=>button(tree,'Değişiklikleri Kaydet').props.onPress());
+ assert.equal(updates.length,2);
+ assert.equal(updates[1].revision,latestRevision);
+ assert.equal(updates[1].payload.title,'Local draft');
+ assert.equal(saved,1);
+ await renderer.act(async()=>tree.unmount());
+});
+
+
+test('a second Program edit race requires a second explicit comparison before any further write',async()=>{
+ const rev0='a'.repeat(64),rev1='b'.repeat(64),rev2='c'.repeat(64),rev3='d'.repeat(64);
+ const original={id:7,event_type:'APPOINTMENT',title:'Original',status:'ACTIVE',start_local:'2030-01-07T10:00',end_local:'2030-01-07T10:30',patient_id:null,patient_name:null,location:'',notes:'',reminder_minutes:'30',recurrence_rule:'NONE',recurrence_until:'',revision:rev0};
+ const latest1={...original,title:'Web edit one',revision:rev1};
+ const latest2={...original,title:'Web edit two',revision:rev2};
+ let reads=0,writes=0,saved=0;const revisions=[];
+ const Editor=component('NativeProgramEditor',{
+  getProgramEvent:async()=>{reads++;return reads===1?original:reads===2?latest1:latest2},
+  checkProgramConflicts:async()=>({advisory:true,total:0}),
+  saveProgramEvent:async(_token,payload,_id,_key,revision)=>{writes++;revisions.push(revision);if(writes<3)throw Object.assign(new Error('another writer won'),{status:409});return{...latest2,...payload,id:7,status:'ACTIVE',start_local:payload.start_at,revision:rev3}}
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Editor,{token:'token',userId:1,page:page(),eventId:7,onSaved(){saved++},onClose(){}}));await tick()});
+ await renderer.act(async()=>tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.onChangeText('My local draft'));
+ await renderer.act(async()=>button(tree,'Değişiklikleri Kaydet').props.onPress());
+ assert.equal(writes,1);assert.equal(saved,0);
+ await renderer.act(async()=>button(tree,'Güncel sürümü karşılaştır').props.onPress());
+ assert.ok(text(tree.root).includes('Web edit one'));
+ await renderer.act(async()=>button(tree,'Yerel taslağı son sürüme uygula').props.onPress());
+ await renderer.act(async()=>button(tree,'Değişiklikleri Kaydet').props.onPress());
+ assert.equal(writes,2);assert.equal(saved,0);
+ assert.equal(tree.root.findByProps({accessibilityLabel:'Program başlığı'}).props.value,'My local draft');
+ assert.equal(button(tree,'Değişiklikleri Kaydet').props.disabled,true);
+ await renderer.act(async()=>button(tree,'Güncel sürümü karşılaştır').props.onPress());
+ assert.ok(text(tree.root).includes('Web edit two'));
+ assert.equal(writes,2);
+ await renderer.act(async()=>button(tree,'Yerel taslağı son sürüme uygula').props.onPress());
+ await renderer.act(async()=>button(tree,'Değişiklikleri Kaydet').props.onPress());
+ assert.equal(writes,3);assert.equal(saved,1);
+ assert.deepEqual(revisions,[rev0,rev1,rev2]);
  await renderer.act(async()=>tree.unmount());
 });

@@ -18,6 +18,7 @@ function loadModernApi(payload){
   require:name=>{
    if(name==='./chatFiles')return {validateChatFile:()=>true};
    if(name==='./api')return {ApiError,API_BASE:'https://dentalai.tr/api/mobile/v1'};
+   if(name==='./apiCompatibility')return {MISSING_API_ROUTE_MESSAGE:'Sunucuda istenen API rotası bulunamadı (404). Uygulama güncel olsa bile sunucu API sürümü geride olabilir; güvenli taslakları koruyun ve sunucu güncellenene kadar aynı işlemi yeni bir anahtarla göndermeyin.'};
    if(name==='./sessionExpiry')return {revalidateSession:async()=>{}};
    if(name==='./notificationState')return {normalizeNotificationReadAt:value=>value};
    throw new Error('Unexpected import '+name);

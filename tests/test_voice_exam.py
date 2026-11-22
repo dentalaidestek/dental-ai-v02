@@ -40,7 +40,8 @@ class User(VoiceTestModel, table=True):
     role: str = 'DOCTOR'
     is_active: bool = True
     email: str | None = None
-    email_verified_at: datetime | None = Field(default_factory=datetime.utcnow)
+    # Match the production User model: an omitted verification timestamp is unverified.
+    email_verified_at: datetime | None = None
 
 
 class SessionToken(VoiceTestModel, table=True):
@@ -124,7 +125,7 @@ def app_client(monkeypatch):
     import app
     monkeypatch.setattr(app, 'main', main, raising=False)
     with Session(engine) as session:
-        session.add_all([User(id=1), User(id=2), Patient(id=1, owner_user_id=1, first_name='Mevcut', age=40,
+        session.add_all([User(id=1, email_verified_at=datetime.utcnow()), User(id=2, email_verified_at=datetime.utcnow()), Patient(id=1, owner_user_id=1, first_name='Mevcut', age=40,
             chief_complaint='Eski şikâyet'), Patient(id=2, owner_user_id=2),
             StudyCourse(id=1, owner_user_id=1, title='Notlarım'), StudyCourse(id=2, owner_user_id=2, title='Yabancı ders')])
         session.commit()
@@ -167,17 +168,38 @@ def test_native_bearer_session_can_apply_and_read_only_its_own_approved_anamnesi
     assert client.get('/patients/2/voice-exam/history', headers=headers).status_code == 404
 
 
-def test_native_bearer_voice_auth_rejects_unverified_expired_and_non_doctor_sessions(app_client):
+def test_bearer_voice_identity_never_falls_back_to_a_different_cookie_user(app_client):
     client, engine = app_client
+    with Session(engine) as session:
+        session.add(User(id=3, role='PATIENT', email_verified_at=datetime.utcnow()))
+        session.commit()
+    headers, _ = _bearer_headers(engine, 'patient-token', user_id=3)
+    # Simulate a browser cookie resolving to doctor #1 while the Authorization
+    # header identifies a different, non-clinician account. Bearer must win.
+    headers['x-login'] = '1'
+    response = client.get('/patients/1/voice-exam/history', headers=headers)
+    assert response.status_code == 401, response.text
+
+
+def test_native_bearer_voice_auth_rejects_unverified_expired_and_non_doctor_sessions(app_client, monkeypatch):
+    client, engine = app_client
+    main = sys.modules['app.main']
+    # Make this an explicitly Bearer-only integration test. A cookie/session
+    # stub must not mask which persisted token identity the route evaluates.
+    monkeypatch.setattr(main, 'get_current_user', lambda request: None)
     with Session(engine) as session:
         session.add(User(id=3, role='PATIENT', email_verified_at=datetime.utcnow()))
         session.add(User(id=4, role='DOCTOR', email_verified_at=None))
         session.commit()
+        assert session.get(User, 3).role == 'PATIENT'
+        assert session.get(User, 4).email_verified_at is None
     patient_headers, _ = _bearer_headers(engine, 'patient-token', user_id=3)
     unverified_headers, _ = _bearer_headers(engine, 'unverified-token', user_id=4)
     expired_headers, expired_hash = _bearer_headers(engine, 'expired-token', expires_at=datetime.utcnow()-timedelta(seconds=1))
     for headers in (patient_headers, unverified_headers, expired_headers):
-        assert client.get('/patients/1/voice-exam/history', headers=headers).status_code == 401
+        assert voice._user(SimpleNamespace(method='GET', headers=headers)) is None
+        response = client.get('/patients/1/voice-exam/history', headers=headers)
+        assert response.status_code == 401, response.text
     with Session(engine) as session:
         assert session.get(SessionToken, expired_hash) is None
 
@@ -254,7 +276,8 @@ def test_reviewed_voice_history_reads_only_explicitly_saved_anamnesis(app_client
     assert client.get('/patients/2/voice-exam/history').status_code == 404
     with Session(engine) as session:
         rows = session.execute(select(ApprovedAnamnesis.__table__)).mappings().all()
-        assert len(rows) == 3
+        assert len(rows) == len(approved) == 4
+        assert {(row['field_key'], row['value']) for row in rows} == set(approved.items())
         assert all(row['owner_user_id'] == 1 and row['patient_id'] == 1 for row in rows)
         assert all(row['analysis_id'] == saved.json()['analysis_id'] for row in rows)
 
@@ -303,6 +326,39 @@ def test_reapproving_field_preserves_prior_provenance_and_returns_latest_value(a
         assert [row['analysis_id'] for row in rows] == [
             first.json()['analysis_id'], second.json()['analysis_id']
         ]
+
+
+def test_history_uses_source_analysis_order_when_backfill_inserts_older_row_later(app_client):
+    client, engine = app_client
+    with Session(engine) as session:
+        # The newer approval is already in the ledger. A later legacy backfill
+        # inserts the older source analysis afterward and therefore gets a
+        # larger ledger row ID; source Analysis chronology must still win.
+        session.add_all([
+            ApprovedAnamnesis(
+                owner_user_id=1, patient_id=1, field_key='allergies',
+                value='Yeni alerji beyanı', analysis_id=900,
+            ),
+            ApprovedAnamnesis(
+                owner_user_id=1, patient_id=1, field_key='allergies',
+                value='Eski alerji beyanı', analysis_id=100,
+            ),
+        ])
+        session.commit()
+
+    history = client.get('/patients/1/voice-exam/history')
+    assert history.status_code == 200, history.text
+    field = history.json()['fields']['allergies']
+    assert field['value'] == 'Yeni alerji beyanı'
+    assert field['analysis_id'] == 900
+    with Session(engine) as session:
+        rows = session.execute(
+            select(ApprovedAnamnesis.__table__.c.id, ApprovedAnamnesis.__table__.c.analysis_id)
+            .where(ApprovedAnamnesis.__table__.c.field_key == 'allergies')
+            .order_by(ApprovedAnamnesis.__table__.c.id)
+        ).all()
+        assert rows[0][1] == 900 and rows[1][1] == 100
+        assert rows[0][0] < rows[1][0]
 
 
 def test_idempotent_review_does_not_duplicate_approved_anamnesis_rows(app_client):
@@ -778,3 +834,74 @@ def test_history_rejects_ledger_rows_with_a_different_owner_id(app_client):
     history = client.get("/patients/1/voice-exam/history")
     assert history.status_code == 200
     assert history.json()["fields"] == {}
+
+
+def test_partial_reapproval_preserves_unmentioned_approved_fields_and_source_identity(app_client):
+    client, engine = app_client
+    first = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='f' * 32,
+        fields={
+            'allergies': 'Penisilin alerjisi olduğunu belirtti',
+            'medications': 'Metformin kullandığını belirtti',
+        },
+    ))
+    assert first.status_code == 200
+    second = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='1' * 32,
+        fields={'medications': 'Metformin kullanımını bıraktığını belirtti'},
+    ))
+    assert second.status_code == 200
+
+    fields = client.get('/patients/1/voice-exam/history').json()['fields']
+    assert fields['allergies'] == {
+        'value': 'Penisilin alerjisi olduğunu belirtti',
+        'quote': '',
+        'analysis_id': first.json()['analysis_id'],
+    }
+    assert fields['medications'] == {
+        'value': 'Metformin kullanımını bıraktığını belirtti',
+        'quote': '',
+        'analysis_id': second.json()['analysis_id'],
+    }
+    with Session(engine) as session:
+        rows = session.execute(
+            select(ApprovedAnamnesis.__table__.c.field_key,
+                   ApprovedAnamnesis.__table__.c.value,
+                   ApprovedAnamnesis.__table__.c.analysis_id)
+            .order_by(ApprovedAnamnesis.__table__.c.analysis_id)
+        ).all()
+        assert rows == [
+            ('allergies', 'Penisilin alerjisi olduğunu belirtti', first.json()['analysis_id']),
+            ('medications', 'Metformin kullandığını belirtti', first.json()['analysis_id']),
+            ('medications', 'Metformin kullanımını bıraktığını belirtti', second.json()['analysis_id']),
+        ]
+
+
+def test_stale_revision_cannot_replace_existing_approved_anamnesis(app_client):
+    client, engine = app_client
+    first = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='2' * 32,
+        fields={'allergies': 'Penisilin alerjisi olduğunu belirtti'},
+    ))
+    assert first.status_code == 200
+
+    stale = payload(
+        engine, request_key='3' * 32,
+        fields={'allergies': 'Penisilin alerjisi olmadığını belirtti'},
+    )
+    with Session(engine) as session:
+        patient = session.get(Patient, 1)
+        patient.age = 42
+        session.add(patient)
+        session.commit()
+
+    rejected = client.post('/patients/1/voice-exam/apply', json=stale)
+    assert rejected.status_code == 409
+    history = client.get('/patients/1/voice-exam/history')
+    assert history.status_code == 200
+    assert history.json()['fields']['allergies']['value'] == 'Penisilin alerjisi olduğunu belirtti'
+    assert history.json()['fields']['allergies']['analysis_id'] == first.json()['analysis_id']
+    with Session(engine) as session:
+        rows = session.execute(select(ApprovedAnamnesis.__table__)).mappings().all()
+        assert len(rows) == 1
+        assert rows[0]['analysis_id'] == first.json()['analysis_id']

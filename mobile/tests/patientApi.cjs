@@ -1,7 +1,7 @@
 const ts=require('typescript'),fs=require('node:fs'),assert=require('node:assert/strict');
 const {test}=require('node:test');
 require.extensions['.ts']=(module,filename)=>module._compile(ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,filename);
-const {getPatients,getPatient,getPatientTreatments,getToothTreatments}=require('../src/api.ts');
+const {getPatients,getPatient,getPatientTreatments,getToothTreatments,getPatientMediaUpload}=require('../src/api.ts');
 const reply=body=>({ok:true,status:200,text:async()=>JSON.stringify(body)});
 test('duplicate patient conflicts preserve only a valid existing record id',async()=>{
  const {createPatient,ApiError}=require('../src/api.ts');const original=global.fetch;
@@ -389,5 +389,23 @@ test('patient profile keeps tooth-chart data opt-in while chart reads request it
   assert.match(urls[0],/\/patients\/8\?include_chart=false&include_media=false$/,'ordinary profile reads must omit unused chart and media collections');
   assert.match(urls[1],/\/patients\/8\?include_chart=true&include_media=false$/,'tooth-chart reads must request FDI data without a duplicate gallery page');
   assert.match(urls[2],/\/patients\/8\?include_chart=false&include_media=true$/,'a future screen can explicitly request the legacy media preview');
+ }finally{global.fetch=original}
+});
+
+
+test('patient media upload receipt uses patient-scoped route and bearer identity',async()=>{
+ const original=global.fetch;
+ try{
+  global.fetch=async(url,init)=>{
+   assert.match(url,/\/patients\/84\/media\/uploads\/native-media-receipt-0001$/);
+   assert.equal(init.headers.Authorization,'Bearer secret');
+   return reply({found:true,media:{id:19,original_filename:'synthetic.png',media_type:'PHOTO'}});
+  };
+  const result=await getPatientMediaUpload('secret',84,'native-media-receipt-0001');
+  assert.equal(result.found,true);
+  assert.equal(result.media.id,19);
+  global.fetch=async()=>{throw Error('network must not be called for invalid intent')};
+  await assert.rejects(()=>getPatientMediaUpload('secret',84,'short'),/Geçersiz/);
+  await assert.rejects(()=>getPatientMediaUpload('secret',0,'native-media-receipt-0001'),/Geçersiz/);
  }finally{global.fetch=original}
 });

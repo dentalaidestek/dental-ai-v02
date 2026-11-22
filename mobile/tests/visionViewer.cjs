@@ -1,6 +1,7 @@
 const fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),assert=require('node:assert/strict'),{test}=require('node:test'),React=require('react'),renderer=require('react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
 require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{fileName:f,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,f);
+const useSessionRenderKeyExports=require('./helpers/useSessionRenderKeyModule.cjs');
 const compile=f=>ts.transpileModule(fs.readFileSync(require.resolve(f),'utf8'),{fileName:f,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.React}}).outputText;
 const model=require('../src/visionModel.ts'),presentation=require('../src/clinicalMediaPresentation.ts'),text=n=>typeof n==='string'?n:!n?'':(n.children||[]).map(text).join('');
 const finding={finding_code:'CARIES',label:'Synthetic caries',confidence:.9,bbox:[.2,.3,.4,.5],fdi:'36'};
@@ -19,7 +20,7 @@ test('Grad-CAM attention matches the web modality pools',()=>{
  assert.ok(!unknown.some(item=>item.attention));
  assert.ok(!model.visionFindings(snapshot).some(item=>item.attention),'missing modality fails closed');
 });
-function ui(getVision,onScrollTo=()=>{},getClinicalImage=()=>({uri:'https://example.invalid/synthetic.png',headers:{Authorization:'Bearer synthetic'}})){const exports={},timers=[];let nextTimer=0;const schedule=(fn,delay)=>{const id=++nextTimer;timers.push({id,fn,delay,cancelled:false});return id},cancel=id=>{const timer=timers.find(x=>x.id===id);if(timer)timer.cancelled=true};const ScrollView=React.forwardRef((props,ref)=>{React.useImperativeHandle(ref,()=>({scrollTo:onScrollTo}));return React.createElement('ScrollView',props,props.children)});const native={StyleSheet:{create:x=>x},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};native.ScrollView=ScrollView;vm.compileFunction(compile('../src/NativeVisionViewer.tsx'),['exports','require','Error','setTimeout','clearTimeout'])(exports,n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='react-native-svg'?{default:'Svg',Rect:'Rect'}:n==='@react-navigation/native'?{useIsFocused:()=>true}:n==='./visionModel'?model:n==='./clinicalMediaPresentation'?presentation:{getVision,clinicalImage:getClinicalImage},Error,schedule,cancel);exports.default.__timers=timers;return exports.default}
+function ui(getVision,onScrollTo=()=>{},getClinicalImage=()=>({uri:'https://example.invalid/synthetic.png',headers:{Authorization:'Bearer synthetic'}})){const exports={},timers=[];let nextTimer=0;const schedule=(fn,delay)=>{const id=++nextTimer;timers.push({id,fn,delay,cancelled:false});return id},cancel=id=>{const timer=timers.find(x=>x.id===id);if(timer)timer.cancelled=true};const ScrollView=React.forwardRef((props,ref)=>{React.useImperativeHandle(ref,()=>({scrollTo:onScrollTo}));return React.createElement('ScrollView',props,props.children)});const native={StyleSheet:{create:x=>x},AppState:{currentState:'active',addEventListener:()=>({remove(){}})},...Object.fromEntries(['ActivityIndicator','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]))};native.ScrollView=ScrollView;vm.compileFunction(compile('../src/NativeVisionViewer.tsx'),['exports','require','Error','setTimeout','clearTimeout'])(exports,n=>n==='react'?{...React,default:React}:n==='react-native'?native:n==='react-native-svg'?{default:'Svg',Rect:'Rect'}:n==='@react-navigation/native'?{useIsFocused:()=>true}:n==='./visionModel'?model:n==='./clinicalMediaPresentation'?presentation:n==='./useSessionRenderKey'?useSessionRenderKeyExports:{getVision,clinicalImage:getClinicalImage},Error,schedule,cancel);exports.default.__timers=timers;return exports.default}
 test('native findings match web fallback descriptions without inventing an image region',()=>{const list=model.visionFindings({findings:[{finding_code:'CARIES',label:'Çürük şüphesi',confidence:.9,fdi:'36',surface:'O'},{label:'Unlocalized finding',confidence:null},{label:'Long description',confidence:.9,description:'x'.repeat(5000)}]},'INTRAORAL_PHOTO');assert.equal(list[0].description,'Çürük şüphesi 36 numaralı diş ile ilişkilendirilmiştir. İlgili yüzey: O.');assert.equal(list[1].description,'Unlocalized finding');assert.equal(list[1].box,null);assert.equal(list[2].description.length,4000)});
 
 test('selecting a native finding returns to the image so its overlay is visible',async()=>{const scrolls=[],Component=ui(async()=>({pending:false,findings:model.visionFindings({findings:[finding]},'PANORAMIC')}),value=>scrolls.push(value));let t;await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:21,assetId:4,onClose(){}})));await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});const card=t.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='button'&&text(node).includes('Synthetic caries'));assert.ok(card);await renderer.act(async()=>card.props.onPress());assert.equal(scrolls.length,1);assert.equal(scrolls[0].y,0);assert.equal(scrolls[0].animated,true);const selectedCard=t.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='button'&&text(node).includes('Synthetic caries'));assert.ok(selectedCard.props.accessibilityHint.includes('görüntü'));await renderer.act(async()=>t.unmount())});
@@ -67,6 +68,19 @@ test('native viewer switches between authorized assets using web modality labels
 
 
 const findPressable=(root,label)=>root.findAllByType('Pressable').find(node=>text(node)===label);
+test('clinical chart can start a single-FDI analysis through the parent-owned durable job flow',async()=>{
+ const Component=ui(async()=>({pending:false,findings:[]})),calls=[];let tree;
+ await renderer.act(async()=>tree=renderer.create(React.createElement(Component,{token:'A',analysisId:17,assetId:4,onClose(){},onAnalyzeTooth:async tooth=>{calls.push(tooth);return true}})));
+ await renderer.act(async()=>findPressable(tree.root,'Klinik Bilgi').props.onPress());
+ const tooth=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityRole==='radio'&&text(node)==='36');assert.ok(tooth);
+ await renderer.act(async()=>tooth.props.onPress());
+ const action=findPressable(tree.root,'Diş 36 için AI Analizi Başlat');assert.ok(action);
+ await renderer.act(async()=>action.props.onPress());
+ assert.deepEqual(calls,['36']);
+ assert.ok(text(tree.toJSON()).includes('Diş 36 için ön klinik analiz başlatıldı.'));
+ await renderer.act(async()=>tree.unmount());
+});
+
 test('native viewer exposes the same three clinical tabs as the web viewer',async()=>{
  const Component=ui(async()=>({pending:false,findings:[]}));let t;
  await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:7,assetId:4,onClose(){}})));
@@ -230,18 +244,39 @@ test('failed private image can be retried without repeating the vision request',
  let calls=0;const Component=ui(async()=>{calls++;return{pending:false,findings:[]}});let t;
  await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:31,assetId:7,onClose(){}})));
  await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
- const first=t.root.findByType('Image'),firstKey=first.props.testID;
- await renderer.act(async()=>first.props.onError());
+ const first=t.root.findByType('Image'),firstKey=first.props.testID,staleError=first.props.onError;
+ await renderer.act(async()=>staleError());
  assert.ok(text(t.toJSON()).includes('Görüntü yüklenemedi'));
  const retry=findPressable(t.root,'Görüntüyü Yeniden Yükle');assert.ok(retry);
  await renderer.act(async()=>retry.props.onPress());
- assert.notEqual(t.root.findByType('Image').props.testID,firstKey);
+ const retried=t.root.findByType('Image');
+ assert.notEqual(retried.props.testID,firstKey);
  assert.equal(calls,1,'image retry must not call getVision or create another AI job');
  assert.ok(!text(t.toJSON()).includes('Görüntü yüklenemedi'));
+ await renderer.act(async()=>staleError());
+ assert.ok(!text(t.toJSON()).includes('Görüntü yüklenemedi'),'a late error from the previous image revision must not poison the retry');
+ await renderer.act(async()=>retried.props.onError());
+ assert.ok(text(t.toJSON()).includes('Görüntü yüklenemedi'),'the current image revision must still expose its own load failure');
  await renderer.act(async()=>t.unmount());
 });
 
 
+
+test('late image load from a previous retry revision cannot restore stale overlay dimensions',async()=>{
+ const Component=ui(async()=>({pending:false,findings:model.visionFindings({findings:[finding]},'PANORAMIC')}));let t;
+ await renderer.act(async()=>t=renderer.create(React.createElement(Component,{token:'A',analysisId:31,assetId:7,onClose(){}})));
+ await renderer.act(async()=>{await new Promise(r=>setImmediate(r))});
+ const first=t.root.findByType('Image'),staleLoad=first.props.onLoad;
+ await renderer.act(async()=>first.props.onError());
+ await renderer.act(async()=>findPressable(t.root,'Görüntüyü Yeniden Yükle').props.onPress());
+ assert.equal(t.root.findAllByType('Svg').length,0);
+ await renderer.act(async()=>staleLoad({nativeEvent:{source:{width:1200,height:600}}}));
+ assert.equal(t.root.findAllByType('Svg').length,0,'a previous image revision must not provide dimensions for the retried source');
+ const current=t.root.findByType('Image');
+ await renderer.act(async()=>current.props.onLoad({nativeEvent:{source:{width:800,height:400}}}));
+ assert.equal(t.root.findByType('Svg').props.viewBox,'0 0 800 400','the current image revision supplies its own overlay geometry');
+ await renderer.act(async()=>t.unmount());
+});
 
 test('viewer image identity changes on account switch without exposing the bearer token',async()=>{
  const visionCalls=[],imageCalls=[];

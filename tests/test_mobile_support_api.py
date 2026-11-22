@@ -133,7 +133,8 @@ def test_support_receipt_schema_has_serialized_production_upgrade():
     migration = (Path(__file__).resolve().parents[1] / "app" / "migrate.py").read_text(encoding="utf-8")
     assert "SUPPORT_RECEIPTS_REVISION = 14" in migration
     assert "PROGRAM_REMINDER_PENDING_INDEX_REVISION = 20" in migration
-    assert "REVISION = PROGRAM_REMINDER_PENDING_INDEX_REVISION" in migration
+    assert "APPROVED_ANAMNESIS_REVISION = 21" in migration
+    assert "REVISION = APPROVED_ANAMNESIS_REVISION" in migration
     assert "def _upgrade_support_receipts_schema(main):" in migration
     assert migration.count("MobileSupportMutationReceipt.__table__.create(connection, checkfirst=True)") >= 2
     assert "if _upgrade_support_receipts_schema(main):" in migration

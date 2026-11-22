@@ -7,6 +7,7 @@ import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import {ChatFile,validateChatFile} from "./chatFiles";
 import {getConsultationMessageReceipt,sendChatFile} from "./modernApi";
+import {isMissingApiRoute404} from "./apiCompatibility";
 import type {ChatMessage} from "./modernApi";
 import NativeImageEditor from "./NativeImageEditor";
 
@@ -40,7 +41,12 @@ export default function ChatAttachmentComposer({token,userId,caseId,replyTo,disa
      if(!live)return;
      setPendingId(null);setPendingMeta(null);setFile(null);await onSent(receipt.message||undefined);
     }
-   }catch{/* Keep the encrypted intent for an explicit same-key retry. */}
+   }catch(receiptError){
+    if(live&&isMissingApiRoute404(receiptError)){
+     setRecoveryBlocked(true);
+     setError("Sunucu vaka eki gönderim/makbuz API rotasını desteklemiyor (404). Bekleyen ek güvenli taslakta korunuyor; sunucu güncellenene kadar yeni ek göndermeyin.");
+    }
+   }
   }).catch(()=>{
    if(live){setRecoveryBlocked(true);setError("Bekleyen ek kaydı okunamadı. Güvenlik için yeni gönderim kilitlendi; tekrar kontrol edin.")};
   }).finally(()=>{if(live)setRestoring(false)});
@@ -81,8 +87,24 @@ export default function ChatAttachmentComposer({token,userId,caseId,replyTo,disa
    await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});setPendingId(null);setPendingMeta(null);setFile(null);setUncertain(false);await onSent(result.message);
   }catch(e){
    if(current(owner)){
-    try{const receipt=await getConsultationMessageReceipt(token,caseId,intent.id);if(current(owner)&&(receipt.deleted||receipt.message)){await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});setPendingId(null);setPendingMeta(null);setFile(null);await onSent(receipt.message||undefined);return}}catch{}
-    if(current(owner)){setUncertain(false);setError((e instanceof Error?e.message:"Ek gönderilemedi.")+" Aynı dosya ve istek anahtarı korunuyor; tekrar deneyebilirsiniz.");void onRefresh()}
+    let receiptFailure:unknown=null;
+    try{
+     const receipt=await getConsultationMessageReceipt(token,caseId,intent.id);
+     if(current(owner)&&(receipt.deleted||receipt.message)){
+      await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});
+      setPendingId(null);setPendingMeta(null);setFile(null);await onSent(receipt.message||undefined);return;
+     }
+    }catch(receiptError){receiptFailure=receiptError}
+    if(current(owner)){
+     if(isMissingApiRoute404(e)||isMissingApiRoute404(receiptFailure)){
+      setRecoveryBlocked(true);
+      setError("Sunucu vaka eki gönderim/makbuz API rotasını desteklemiyor (404). Bekleyen dosya ve aynı istek anahtarı güvenli alanda korunuyor; sunucu güncellenene kadar yeni ek göndermeyin.");
+     }else{
+      setUncertain(false);
+      setError((e instanceof Error?e.message:"Ek gönderilemedi.")+" Aynı dosya ve istek anahtarı korunuyor; tekrar deneyebilirsiniz.");
+      void onRefresh();
+     }
+    }
    }
   }finally{if(current(owner)){lock.current=false;setBusy(false)}}
  }
@@ -103,7 +125,7 @@ export default function ChatAttachmentComposer({token,userId,caseId,replyTo,disa
    <Pressable accessibilityRole="button" accessibilityLabel="Eki gönder" disabled={restoring||recoveryBlocked||busy||disabled||uncertain} onPress={()=>void send()} style={{paddingVertical:10,paddingHorizontal:18,borderRadius:10,backgroundColor:"#071B35",opacity:restoring||recoveryBlocked||busy||disabled||uncertain?0.5:1}}><Text style={{fontWeight:"800",color:"white"}}>{busy?"Gönderiliyor…":"Eki gönder"}</Text></Pressable>
   </View>
  </View>}
- {pendingMeta&&!file&&<Text style={{color:"#63748A",padding:8}}>Önceki ek gönderiminin sonucu doğrulanıyor. Aynı dosyayı yeniden seçerseniz aynı istek anahtarıyla güvenli biçimde devam edilir.</Text>}
+ {pendingMeta&&!file&&!recoveryBlocked&&<Text style={{color:"#63748A",padding:8}}>Önceki ek gönderiminin sonucu doğrulanıyor. Aynı dosyayı yeniden seçerseniz aynı istek anahtarıyla güvenli biçimde devam edilir.</Text>}{pendingMeta&&!file&&recoveryBlocked&&<Text style={{color:"#B42318",padding:8}}>Sunucu makbuz rotası eksik. Bekleyen ek cihazda korunuyor; sunucu güncellenene kadar dosyayı yeniden göndermeyin.</Text>}
  {pendingId&&file&&<Text style={{color:"#63748A",padding:8}}>Bekleyen ek aynı istek anahtarıyla gönderilecek.</Text>}
  {(busy||restoring)&&<ActivityIndicator/>}{restoring&&<Text style={{color:"#63748A",padding:8}}>Bekleyen ek kaydı kontrol ediliyor; kontrol bitmeden yeni gönderim açılamaz.</Text>}{recoveryBlocked&&<Button title="Bekleyen kaydı yeniden kontrol et" disabled={restoring} onPress={()=>setRestoreAttempt(value=>value+1)}/>} {!!error&&<Text style={{color:"#B42318"}}>{error}</Text>}
  {uncertain&&<><Button title="Son mesajları yenile" onPress={()=>void onRefresh()}/><Button title="Bekleyen gönderimi kontrol et" onPress={()=>{if(pendingId)void getConsultationMessageReceipt(token,caseId,pendingId).then(async receipt=>{if(receipt.deleted||receipt.message){await SecureStore.deleteItemAsync(pendingKey).catch(()=>{});setPendingId(null);setPendingMeta(null);setFile(null);setUncertain(false);await onSent()}else setError("Sunucuda henüz makbuz yok; aynı dosya ve anahtarla tekrar deneyin.")}).catch(()=>setError("Makbuz kontrol edilemedi."))}}/></>}

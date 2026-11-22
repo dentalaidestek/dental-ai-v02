@@ -19,6 +19,26 @@ export type VoiceDeviceCheckFileSystem={
  deleteAsync(uri:string,options:{idempotent:true}):Promise<unknown>;
 };
 
+const PRIVATE_CACHE_CHILD=/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}$/;
+
+/** Safe fallback for a recorder artifact whose expected .m4a name failed validation. */
+export function isPrivateVoiceDeviceCheckCacheChildUri(uri:unknown,cacheDirectory:string|null|undefined):uri is string{
+ if(typeof uri!=='string'||typeof cacheDirectory!=='string'||!cacheDirectory.startsWith('file:///')||!cacheDirectory.endsWith('/')||!uri.startsWith(cacheDirectory))return false;
+ const filename=uri.slice(cacheDirectory.length);
+ return PRIVATE_CACHE_CHILD.test(filename)&&filename!=='.'&&filename!=='..';
+}
+
+export async function removePrivateVoiceDeviceCheckCacheChildFile(uri:unknown,cacheDirectory:string|null|undefined,fileSystem:VoiceDeviceCheckFileSystem):Promise<boolean>{
+ if(!isPrivateVoiceDeviceCheckCacheChildUri(uri,cacheDirectory))return false;
+ try{
+  const before=await fileSystem.getInfoAsync(uri);
+  if(!before.exists)return true;
+  await fileSystem.deleteAsync(uri,{idempotent:true});
+  const after=await fileSystem.getInfoAsync(uri);
+  return after.exists!==true;
+ }catch{return false;}
+}
+
 /** Delete only a validated cache file and confirm that it is absent afterward. */
 export async function removePrivateVoiceDeviceCheckFile(
  uri:unknown,cacheDirectory:string|null|undefined,fileSystem:VoiceDeviceCheckFileSystem
@@ -33,6 +53,26 @@ export async function removePrivateVoiceDeviceCheckFile(
  }catch{return false;}
 }
 
+/** Expo Audio recorder contract used by the local microphone preflight. */
+export type VoiceDeviceRecorder = Readonly<{
+ stop(): Promise<unknown>;
+ getStatus(): Readonly<{isRecording?:boolean}>;
+}>;
+
+/** A fulfilled stop call is not enough: confirm Expo's synchronous status is inactive. */
+export async function stopVoiceDeviceRecorderVerified(recorder:VoiceDeviceRecorder):Promise<boolean>{
+ try{
+  await recorder.stop();
+ }catch{
+  return false;
+ }
+ try{
+  return recorder.getStatus().isRecording===false;
+ }catch{
+  return false;
+ }
+}
+
 export type VoiceDeviceCheckOutcome=
  | 'permission_denied'
  | 'capture_incomplete'
@@ -40,6 +80,7 @@ export type VoiceDeviceCheckOutcome=
  | 'metering_unavailable'
  | 'low_signal'
  | 'cleanup_failed'
+ | 'audio_mode_restore_failed'
  | 'passed';
 
 export type VoiceDeviceCheckInput={
@@ -48,11 +89,13 @@ export type VoiceDeviceCheckInput={
  fileBytes:number;
  peakMeteringDb:number|null;
  cleanupVerified?:boolean;
+ audioModeRestored?:boolean;
 };
 
 /** Classifies only local capture metadata. It never accepts or returns audio or transcript data. */
 export function evaluateVoiceDeviceCheck(input:VoiceDeviceCheckInput):VoiceDeviceCheckOutcome{
  if(input.cleanupVerified===false)return 'cleanup_failed';
+ if(input.audioModeRestored===false)return 'audio_mode_restore_failed';
  if(!input.permissionGranted)return 'permission_denied';
  if(!Number.isFinite(input.durationMs)||input.durationMs<VOICE_DEVICE_CHECK_MIN_DURATION_MS)return 'capture_incomplete';
  if(!Number.isFinite(input.fileBytes)||input.fileBytes<=0)return 'no_audio_file';

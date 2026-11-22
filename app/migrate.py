@@ -60,6 +60,36 @@ def _ensure_mobile_push_delivery_table(engine):
             index.create(connection, checkfirst=True)
 
 
+def _approved_anamnesis_has_unique_provenance(connection):
+    """Require one immutable source-analysis/field pair per ledger entry."""
+    constraints = inspect(connection).get_unique_constraints("approvedanamnesis")
+    return any(
+        item.get("name") == "uq_approvedanamnesis_analysis_field"
+        and item.get("column_names") == ["analysis_id", "field_key"]
+        for item in constraints
+    )
+
+
+def _approved_anamnesis_has_query_index(connection):
+    """Require the exact owner/patient/field/source index used by the history query."""
+    expected_columns = ["owner_user_id", "patient_id", "field_key", "analysis_id"]
+    indexes = inspect(connection).get_indexes("approvedanamnesis")
+    if not any(
+        item.get("name") == "ix_approvedanamnesis_owner_patient_field_analysis"
+        and item.get("column_names") == expected_columns
+        and not item.get("unique")
+        for item in indexes
+    ):
+        return False
+    if connection.dialect.name == "postgresql":
+        valid = connection.execute(
+            text("SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)"),
+            {"name": "ix_approvedanamnesis_owner_patient_field_analysis"},
+        ).scalar()
+        return valid is True
+    return True
+
+
 def require_schema(engine,*,require_study=False):
     try:
         with engine.connect() as connection:
@@ -68,12 +98,18 @@ def require_schema(engine,*,require_study=False):
         raise RuntimeError('Run python -m app.migrate before starting this service') from exc
     if revision != REVISION:
         raise RuntimeError(f'Expected schema revision {REVISION}; run python -m app.migrate')
-    inspector = inspect(engine)
-    if not inspector.has_table("approvedanamnesis"):
-        raise RuntimeError("Run python -m app.migrate to create the approved anamnesis ledger")
-    approved_indexes = {item.get("name") for item in inspector.get_indexes("approvedanamnesis")}
-    if "ix_approvedanamnesis_owner_patient_field_id" not in approved_indexes:
-        raise RuntimeError("Run python -m app.migrate to install the approved anamnesis query index")
+    with engine.connect() as connection:
+        inspector = inspect(connection)
+        if not inspector.has_table("approvedanamnesis"):
+            raise RuntimeError("Run python -m app.migrate to create the approved anamnesis ledger")
+        if not _approved_anamnesis_has_query_index(connection):
+            raise RuntimeError(
+                "Run a reviewed migration to install the approved anamnesis query index with exact owner/patient/field/source columns"
+            )
+        if not _approved_anamnesis_has_unique_provenance(connection):
+            raise RuntimeError(
+                "Run a reviewed migration to restore the approved anamnesis source/field unique constraint"
+            )
     # Additive admin MFA tables: the production startup only checks schema revision,
     # so the original init_db() DDL never runs on Render. Serialize this small
     # compatibility migration across concurrent web instances.
@@ -750,9 +786,18 @@ def _upgrade_approved_anamnesis_schema(main):
         ).scalar()
         table_exists = inspect(connection).has_table(table.name)
         if revision == APPROVED_ANAMNESIS_REVISION and table_exists:
+            if not _approved_anamnesis_has_unique_provenance(connection):
+                raise RuntimeError(
+                    "Approved anamnesis source/field unique constraint is missing; refusing unsafe repair"
+                )
             for index in table.indexes:
                 index.create(connection, checkfirst=True)
+            if not _approved_anamnesis_has_query_index(connection):
+                raise RuntimeError(
+                    "Approved anamnesis query index is missing, invalid or has the wrong columns"
+                )
             for legacy_index in (
+                "ix_approvedanamnesis_owner_patient_field_id",
                 "ix_approvedanamnesis_patient_field_id",
                 "ix_approvedanamnesis_owner_patient",
                 "ix_approvedanamnesis_owner_user_id",
@@ -771,10 +816,19 @@ def _upgrade_approved_anamnesis_schema(main):
             if not inspect(connection).has_table(required):
                 raise RuntimeError(f"Approved anamnesis migration requires {required}")
         table.create(connection, checkfirst=True)
+        if not _approved_anamnesis_has_unique_provenance(connection):
+            raise RuntimeError(
+                "Approved anamnesis source/field unique constraint was not created"
+            )
         for index in table.indexes:
             index.create(connection, checkfirst=True)
+        if not _approved_anamnesis_has_query_index(connection):
+            raise RuntimeError(
+                "Approved anamnesis query index is missing, invalid or has the wrong columns"
+            )
         for legacy_index in (
-            "ix_approvedanamnesis_patient_field_id",
+            "ix_approvedanamnesis_owner_patient_field_id",
+                "ix_approvedanamnesis_patient_field_id",
             "ix_approvedanamnesis_owner_patient",
             "ix_approvedanamnesis_owner_user_id",
             "ix_approvedanamnesis_patient_id",

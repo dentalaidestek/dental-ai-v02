@@ -6,6 +6,7 @@ import * as Crypto from 'expo-crypto';
 import {chunkedDraftStore} from './socialDraft';
 import {analysisUploadReceipt,canStartAnalysis,parseUploadIntent,UploadImage,UploadIntent,uploadAnalysis,validateUploadFields} from './analysisUpload';
 import {ANALYSIS_MAX_IMAGES} from './analysisApi';
+import {isMissingApiRoute404} from './apiCompatibility';
 import {ANALYSIS_COMPOSER_SAFETY_NOTE,analysisComposerImageCountLabel,analysisComposerSteps} from './analysisComposerPresentation';
 import type {Patient} from './api';
 import {cacheAnalysisImages,clearAnalysisImages,clearLegacyAnalysisSources,cleanupStaleClinicalMediaTemps,ensureEncryptedAnalysisImages,prepareAnalysisUploadImages,validateCachedAnalysisImages} from './nativeAnalysisFiles';
@@ -13,7 +14,7 @@ const store=chunkedDraftStore(SecureStore,Crypto.randomUUID);
 type Props={token:string;userId:number;patientId:number;patient?:Pick<Patient,'anonymous_id'|'age'|'chief_complaint'>|null;onCreated:(id:number)=>Promise<void>;existingMediaIds?:number[];initialToothNumber?:string;initialClinicalNotes?:string;intentScope?:'ai'|'patient-media';onExistingMediaIdsLoaded?:(ids:number[])=>void};
 function storedIntent(intent:UploadIntent):UploadIntent{return {...intent,images:intent.images.map(({previewUri,...image})=>image)}}
 export default function NativeAnalysisUpload({token,userId,patientId,patient,onCreated,existingMediaIds=[],initialToothNumber='',initialClinicalNotes='',intentScope='ai',onExistingMediaIdsLoaded}:Props){
- const [files,setFiles]=useState<UploadImage[]>([]),[savedIds,setSavedIds]=useState<number[]>(existingMediaIds),[tooth,setTooth]=useState(initialToothNumber),[notes,setNotes]=useState(initialClinicalNotes),[intent,setIntent]=useState<UploadIntent|null>(null),[busy,setBusy]=useState(false),[ready,setReady]=useState(false),[error,setError]=useState(''),[progress,setProgress]=useState<number|null>(null),[transferBytes,setTransferBytes]=useState({loaded:0,total:0}),[phase,setPhase]=useState(''),[notice,setNotice]=useState(''),[blocked,setBlocked]=useState(false),[blockedIntent,setBlockedIntent]=useState<UploadIntent|null>(null),[createdId,setCreatedId]=useState<number|null>(null);
+ const [files,setFiles]=useState<UploadImage[]>([]),[savedIds,setSavedIds]=useState<number[]>(existingMediaIds),[tooth,setTooth]=useState(initialToothNumber),[notes,setNotes]=useState(initialClinicalNotes),[intent,setIntent]=useState<UploadIntent|null>(null),[busy,setBusy]=useState(false),[ready,setReady]=useState(false),[error,setError]=useState(''),[progress,setProgress]=useState<number|null>(null),[transferBytes,setTransferBytes]=useState({loaded:0,total:0}),[phase,setPhase]=useState(''),[notice,setNotice]=useState(''),[blocked,setBlocked]=useState(false),[blockedByMissingReceiptRoute,setBlockedByMissingReceiptRoute]=useState(false),[blockedIntent,setBlockedIntent]=useState<UploadIntent|null>(null),[createdId,setCreatedId]=useState<number|null>(null);
  const alive=useRef(true),lock=useRef(false),abort=useRef<AbortController|null>(null),key=intentScope==='patient-media'?`dai.analysis.upload.patient-media.${userId}.${patientId}`:`dai.analysis.upload.${userId}.${patientId}`;
  useEffect(()=>{void(async()=>{
    let hadSaved=false,cleanupCompleted=false;
@@ -56,9 +57,9 @@ export default function NativeAnalysisUpload({token,userId,patientId,patient,onC
      setBlockedIntent(null);
     }
     if(alive.current)setReady(true);
-   }catch(e){if(alive.current){if(hadSaved&&!cleanupCompleted)setBlocked(true);setReady(true);setError(e instanceof Error?e.message:'Bekleyen yükleme doğrulanamadı.');}}
+   }catch(e){if(alive.current){if(hadSaved&&!cleanupCompleted)setBlocked(true);const missingRoute=isMissingApiRoute404(e);setBlockedByMissingReceiptRoute(missingRoute);setReady(true);setError(missingRoute?'Sunucu analiz yükleme makbuzu API rotasını desteklemiyor (404). Şifreli taslak ve aynı istek anahtarı korundu; sunucu güncellenene kadar yeni analiz başlatmayın.':e instanceof Error?e.message:'Bekleyen yükleme doğrulanamadı.');}}
   })();return()=>{alive.current=false;abort.current?.abort()}},[]);
-  async function perform(work:()=>Promise<void>){if(lock.current||!alive.current)return;lock.current=true;setBusy(true);setError('');setNotice('');try{await work()}catch(e){if(alive.current)setError(e instanceof Error?e.message:'Analiz yüklemesi tamamlanamadı.')}finally{lock.current=false;if(alive.current){setBusy(false);abort.current=null}}}
+  async function perform(work:()=>Promise<void>){if(lock.current||!alive.current)return;lock.current=true;setBusy(true);setError('');setNotice('');try{await work()}catch(e){if(alive.current){if(isMissingApiRoute404(e)){setBlocked(true);setBlockedByMissingReceiptRoute(true)}setError(isMissingApiRoute404(e)?'Sunucu analiz yükleme makbuzu API rotasını desteklemiyor (404). Şifreli taslak ve aynı istek anahtarı korundu; sunucu güncellenene kadar yeni analiz başlatmayın.':e instanceof Error?e.message:'Analiz yüklemesi tamamlanamadı.')}}finally{lock.current=false;if(alive.current){setBusy(false);abort.current=null}}}
  async function pick(camera:boolean){if(intent||!ready||savedIds.length+files.length>=ANALYSIS_MAX_IMAGES)return;await perform(async()=>{const permission=camera?await Picker.requestCameraPermissionsAsync():await Picker.requestMediaLibraryPermissionsAsync();if(!alive.current)return;if(!permission.granted)throw Error(camera?'Kamera izni gerekli.':'Galeri izni gerekli.');const result=camera?await Picker.launchCameraAsync({mediaTypes:['images'],quality:1}):await Picker.launchImageLibraryAsync({mediaTypes:['images'],quality:1,allowsMultipleSelection:true,selectionLimit:ANALYSIS_MAX_IMAGES-savedIds.length-files.length,orderedSelection:true});if(!alive.current||result.canceled)return;const next=await cacheAnalysisImages(result.assets.map(a=>({uri:a.uri,name:a.fileName||undefined,type:a.mimeType||undefined})),userId,patientId);if(!alive.current){await clearAnalysisImages(next);return}if(savedIds.length+files.length+next.length>ANALYSIS_MAX_IMAGES){await clearAnalysisImages(next);throw Error(`Bir analizde en fazla ${ANALYSIS_MAX_IMAGES} görüntü olabilir.`)}setFiles(old=>[...old,...next])})}
  async function recoverBlockedIntent(){
    await perform(async()=>{
@@ -108,7 +109,7 @@ export default function NativeAnalysisUpload({token,userId,patientId,patient,onC
     if(!alive.current)return;
     setIntent(pending);setFiles(pending.images);
    }
-   const known=await analysisUploadReceipt(token,pending);if(!alive.current)return;
+   const known=await analysisUploadReceipt(token,pending).catch(e=>{if(isMissingApiRoute404(e)){setBlocked(true);setBlockedByMissingReceiptRoute(true);setBlockedIntent(pending);setIntent(pending)}throw e});if(!alive.current)return;setBlockedByMissingReceiptRoute(false);
   if(!known&&checkOnly){setPhase('');setNotice('Sunucuda henüz fiş bulunamadı. İsterseniz aynı anahtar ve şifreli dosyalarla yüklemeyi sürdürebilirsiniz.');return}
   let receipt=known;
   if(!receipt){
@@ -192,9 +193,9 @@ export default function NativeAnalysisUpload({token,userId,patientId,patient,onC
    {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
    {!!notice&&<Text accessibilityRole="alert" style={s.meta}>{notice}</Text>}
    {blocked&&<>
-    <Text style={s.error}>Bekleyen eski yükleme dosyası doğrulanamadı. Yeni analiz başlatmadan önce sunucu fişini kontrol edin.</Text>
+    <Text style={s.error}>{blockedByMissingReceiptRoute?'Sunucu analiz yükleme makbuzu API rotasını desteklemiyor (404). Şifreli taslak ve aynı istek anahtarı korundu; sunucu güncellenene kadar yeni analiz başlatmayın.':'Bekleyen eski yükleme dosyası doğrulanamadı. Yeni analiz başlatmadan önce sunucu fişini kontrol edin.'}</Text>
     <Pressable accessibilityRole="button" disabled={busy||!ready} onPress={()=>void recoverBlockedIntent()} style={[s.button,(busy||!ready)&&{opacity:.4}]}>
-     <Text style={s.action}>Eski Taslağı Kontrol Et / Temizle</Text>
+     <Text style={s.action}>{blockedByMissingReceiptRoute?'Sunucu Fişini Yeniden Kontrol Et':'Eski Taslağı Kontrol Et / Temizle'}</Text>
     </Pressable>
    </>}
    {createdId&&button('Analiz #'+createdId+' Kaydını Aç',()=>void perform(async()=>{await onCreated(createdId)}))}

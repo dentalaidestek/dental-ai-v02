@@ -80,7 +80,10 @@ def test_protected_clinical_media_is_not_browser_cached():
     )[0]
     assert "patient.owner_user_id != user.id" in block
     assert "media.owner_user_id != user.id" in block
-    assert 'FileResponse(path, headers={"Cache-Control":"private, no-store"})' in block
+    assert '"Cache-Control": "private, no-store"' in block
+    assert '"Pragma": "no-cache"' in block
+    assert '"Vary": "Cookie"' in block
+    assert '"X-Content-Type-Options": "nosniff"' in block
 
 
 def test_admin_login_uses_same_brute_force_throttle():

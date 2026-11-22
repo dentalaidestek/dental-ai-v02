@@ -149,7 +149,7 @@ def test_release_migration_preserves_existing_records_and_repeats_on_postgres(pg
     with engine.connect() as connection:
         assert connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all() == before
         assert set(connection.execute(text('SELECT id FROM guestanalysis')).scalars()) == {resource.id for resource in resources}
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 20
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 21
         assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('authratebucket')")).scalar_one() is not None
@@ -174,7 +174,7 @@ def test_program_idempotency_migration_upgrades_revision14_without_baseline_repl
         ))}
         assert {'client_request_hash','client_payload_hash'} <= columns
         assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 20
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 21
 
 
 def test_program_create_receipt_is_atomic_under_concurrent_postgres_requests(pg, monkeypatch):
@@ -445,7 +445,7 @@ def test_consultation_receipt_revision_13_upgrade_on_postgres(pg):
     migrate.require_schema(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 20
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 21
         assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
 
 
@@ -464,10 +464,10 @@ def test_consultation_receipt_revision_12_creates_both_receipt_tables(pg):
         assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('mobilesupportmutationreceipt')")).scalar_one() is not None
         # The study tables are additive revision-12 objects. The receipt upgrade
-        # advances through revisions 14 and 15 to the current revision 20, so they must be created before those bumps.
+        # advances through revisions 14, 15, and the additive releases to current revision 21, so they must be created before those bumps.
         for table in ('studylearningstate', 'studyreview', 'studyattempt', 'studyrun'):
             assert connection.execute(text("SELECT to_regclass(:name)"), {'name': table}).scalar_one() is not None
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 20
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 21
 
 def test_consultation_message_same_key_replays_once_under_concurrent_postgres_writes(pg, monkeypatch):
     from fastapi.testclient import TestClient
@@ -707,7 +707,7 @@ def test_program_query_index_migration_upgrades_revision15_online(pg):
     migrate.apply()
     migrate.require_schema(engine)
     with engine.connect() as connection:
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 20
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 21
         for name in index_names:
             assert connection.execute(
                 text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
@@ -753,7 +753,7 @@ def test_program_pending_reminder_index_migration_upgrades_revision19_and_is_ide
     with engine.connect() as connection:
         assert connection.execute(
             text('SELECT version FROM dental_schema_revision WHERE id=1')
-        ).scalar_one() == 20
+        ).scalar_one() == 21
         assert connection.execute(
             text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
             {'name': 'ix_programreminderjob_pending_run_at'},
@@ -772,7 +772,7 @@ def test_program_pending_reminder_index_migration_upgrades_revision19_and_is_ide
     with engine.connect() as connection:
         assert connection.execute(
             text('SELECT version FROM dental_schema_revision WHERE id=1')
-        ).scalar_one() == 20
+        ).scalar_one() == 21
 
 
 def test_program_pending_reminder_index_rebuilds_broader_postgres_predicate(pg):
@@ -1070,7 +1070,7 @@ def test_treatment_history_index_migration_upgrades_revision18_online(pg):
     with engine.connect() as connection:
         assert connection.execute(
             text('SELECT version FROM dental_schema_revision WHERE id=1')
-        ).scalar_one() == 20
+        ).scalar_one() == 21
         assert connection.execute(
             text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
             {'name': 'ix_treatment_patient_created_id'},
@@ -1080,3 +1080,49 @@ def test_treatment_history_index_migration_upgrades_revision18_online(pg):
             if item.get('name') == 'ix_treatment_patient_created_id'
         )
         assert index['column_names'] == ['patient_id', 'created_at', 'id']
+
+
+def test_program_revision_row_lock_allows_only_one_concurrent_postgres_edit(pg):
+    from threading import Barrier
+
+    engine, _, resources = pg
+    owner_id = resources[0].owner_user_id
+    with Session(engine, expire_on_commit=False) as session:
+        event = main.ScheduleEvent(
+            owner_user_id=owner_id,
+            event_type="APPOINTMENT",
+            title="Synthetic concurrent Program edit",
+            start_at=datetime(2030, 1, 7, 7, 0),
+            end_at=datetime(2030, 1, 7, 7, 30),
+            created_at=datetime(2026, 1, 1),
+            updated_at=datetime(2026, 1, 1),
+        )
+        session.add(event)
+        session.commit()
+        event_id = event.id
+        expected_revision = main._schedule_event_revision(event)
+
+    barrier = Barrier(2)
+
+    def edit(title):
+        with Session(engine, expire_on_commit=False) as session:
+            barrier.wait(timeout=5)
+            locked, status = main._lock_schedule_event_for_edit(
+                session, owner_id, event_id, expected_revision
+            )
+            if status is not None:
+                return status
+            locked.title = title
+            main._touch_schedule_event(locked)
+            session.add(locked)
+            session.commit()
+            return 303
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(edit, ["Synthetic writer A", "Synthetic writer B"]))
+
+    assert sorted(results) == [303, 409]
+    with Session(engine) as session:
+        final = session.get(main.ScheduleEvent, event_id)
+        assert final.title in {"Synthetic writer A", "Synthetic writer B"}
+        assert main._schedule_event_revision(final) != expected_revision

@@ -6,9 +6,17 @@
         <h1>{% if mode == 'edit' %}Programı Düzenle{% elif initial_type == 'CLASS' %}Ders Ekle{% else %}Programa Ekle{% endif %}</h1>
     </div>
 
-    {% if error %}<div class="workspace-flash error">{{ error }}</div>{% endif %}
+    {% if error %}<div class="workspace-flash error" role="alert">{{ error }}</div>{% endif %}
+    {% if revision_conflict %}
+    <p class="workspace-flash error">
+        Yerel taslağınız kaybolmadı ve gönderilmedi.
+        <a href="/program/{{ event.id }}/edit">Güncel kaydı yeniden yükleyin</a>;
+        son sürümü inceleyip değişikliklerinizi tekrar uygulayın.
+    </p>
+    {% endif %}
 
     <form class="program-form-card" method="post" action="{% if mode == 'edit' %}/program/{{ event.id }}/edit{% else %}/program/new{% endif %}">
+        {% if mode == 'edit' %}<input type="hidden" name="expected_revision" value="{{ expected_revision or '' }}">{% endif %}
         <div class="program-form-grid">
             <label class="program-field">
                 <span>Tür</span>
@@ -89,7 +97,7 @@
 
         <div class="program-form-actions">
             <a class="btn workspace-btn-secondary" href="/program">Vazgeç</a>
-            <button class="btn" type="submit">{% if mode == 'edit' %}Kaydet{% else %}Programa Ekle{% endif %}</button>
+            <button class="btn" type="submit" {% if revision_conflict %}disabled aria-disabled="true"{% endif %}>{% if mode == 'edit' %}Kaydet{% else %}Programa Ekle{% endif %}</button>
         </div>
     </form>
 </div>

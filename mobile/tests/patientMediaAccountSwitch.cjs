@@ -20,6 +20,19 @@ function loadSrcModule(base,requireChain){
  return moduleExports;
 }
 function mountMedia(getMedia, options={}){
+ const componentReact={...React};
+ if(options.stateValues){
+  componentReact.useState=initial=>{
+   const [value,setValue]=React.useState(initial);
+   options.stateValues.push(value);
+   return [value,next=>setValue(previous=>{
+    const resolved=typeof next==='function'?next(previous):next;
+    options.stateValues.push(resolved);
+    return resolved;
+   })];
+  };
+ }
+ componentReact.default=componentReact;
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText;
  const native=Object.fromEntries(['ActivityIndicator','FlatList','Image','Modal','Pressable','ScrollView','Text','TextInput','View'].map(x=>[x,x]));
@@ -36,7 +49,7 @@ function mountMedia(getMedia, options={}){
  let keySequence=0;
  const exports={};
  const requireChain=name=>{
-  if(name==='react')return {...React,default:React};
+  if(name==='react')return componentReact;
   if(name==='react-native')return native;
   if(name==='@react-navigation/native')return {useIsFocused:()=>options.focused===undefined?true:options.focused};
   if(name==='expo-image-picker')return options.picker||{};
@@ -54,6 +67,7 @@ function mountMedia(getMedia, options={}){
    isClinicalMediaVaultUri:(uri,userId,patientId)=>typeof uri==='string'&&uri.startsWith('file:///documents/dai-clinical-vault/'+userId+'/'+patientId+'/')&&uri.endsWith('.dai'),
    validateClinicalMediaVaultFile:async()=>{}
   };
+  if(name==='./useSessionRenderKey')return require('./helpers/useSessionRenderKeyModule.cjs');
   if(name==='./clinicalMediaPresentation')return loadSrcModule('clinicalMediaPresentation',requireChain);
   if(name==='./api')return {
    API_BASE:'https://dentalai.tr/api/mobile/v1',
@@ -66,7 +80,7 @@ function mountMedia(getMedia, options={}){
   if(name==='./NativeAnalysisUpload')return {default:props=>React.createElement('NativeAnalysisUpload',props)};
   if(name==='expo-file-system/legacy')return {getInfoAsync:async uri=>({uri,exists:true,size:1064,isDirectory:()=>false})};
   if(name==='./sessionExpiry')return {revalidateSession:async()=>{}};
-  if(name==='./appResumeRefresh'||name==='./uploadLimits'||name==='./clinicalMediaPicker'||name==='./clinicalMediaBatch'||name==='./clinicalMediaRecovery'||name==='./analysisApi'||name==='./analysisComposerPresentation')return loadSrcModule(name.slice(2),requireChain);
+  if(name==='./appResumeRefresh'||name==='./uploadLimits'||name==='./clinicalMediaPicker'||name==='./clinicalMediaBatch'||name==='./clinicalMediaRecovery'||name==='./analysisApi'||name==='./analysisComposerPresentation'||name==='./apiCompatibility'||name==='./patientMediaSelection')return loadSrcModule(name.slice(2),requireChain);
   throw Error('Unexpected import '+name);
  };
  vm.runInNewContext(code,{exports,Error,Date,Set,JSON,Number,Array,Promise,require:requireChain});
@@ -81,6 +95,22 @@ async function press(tree,label){
  const node=findButton(tree,label);assert.ok(node,'missing button: '+label);
  await renderer.act(async()=>{node.props.onPress?.();await new Promise(resolve=>setImmediate(resolve))});
 }
+
+test('clinical media React state stores an opaque session key, never the bearer token',async()=>{
+ const stateValues=[];
+ const token='synthetic-bearer-token-must-not-enter-state';
+ const Media=mountMedia(async()=>({items:[],next_before:null}),{stateValues});
+ let tree;
+ await renderer.act(async()=>{
+  tree=renderer.create(React.createElement(Media,{token,userId:1,patientId:5,onAnalysis:()=>{}}));
+  await new Promise(resolve=>setImmediate(resolve));
+ });
+ assert.ok(stateValues.some(value=>typeof value==='string'&&/^dai-session-[a-z0-9]+$/.test(value)),
+  'the loaded gallery owner must be represented by an opaque session key');
+ assert.equal(stateValues.some(value=>typeof value==='string'&&value.includes(token)),false,
+  'bearer credentials must not be retained in React state');
+ await renderer.act(async()=>tree.unmount());
+});
 
 test('switching accounts starts a new gallery request while the old request is pending',async()=>{
  let resolveOld;
@@ -102,6 +132,26 @@ test('switching accounts starts a new gallery request while the old request is p
  await renderer.act(async()=>tree.unmount());
 });
 
+
+test('refreshing a session for the same patient fences the previous token response',async()=>{
+ let resolveOld;
+ const calls=[];
+ const Media=mountMedia(async(token,id)=>{
+  calls.push([token,id]);
+  if(token==='expired-token')return new Promise(resolve=>{resolveOld=resolve});
+  return {items:[{id:22,url:'https://dentalai.tr/api/mobile/v1/patients/5/media/22/file',media_type:'RADIOGRAPH'}],next_before:null};
+ });
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Media,{token:'expired-token',userId:1,patientId:5,onAnalysis:()=>{}}))});
+ await renderer.act(async()=>{tree.update(React.createElement(Media,{token:'refreshed-token',userId:1,patientId:5,onAnalysis:()=>{}}))});
+ assert.deepEqual(calls,[['expired-token',5],['refreshed-token',5]]);
+ await renderer.act(async()=>{resolveOld({items:[{id:11,url:'https://dentalai.tr/api/mobile/v1/patients/5/media/11/file',media_type:'PHOTO'}],next_before:null})});
+ const images=tree.root.findAllByType('Image');
+ assert.ok(images.some(image=>String(image.props.source?.uri).includes('/media/22/file')));
+ assert.ok(!images.some(image=>String(image.props.source?.uri).includes('/media/11/file')),
+  'a late response from the expired token must not overwrite the refreshed session');
+ await renderer.act(async()=>tree.unmount());
+});
 
 test('uncertain media deletion exposes a safe replay action for the same request',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
@@ -169,7 +219,7 @@ test('clinical gallery offers recovery for failed reads and distinguishes empty 
 test('uncertain media mutations freeze selection and pagination until reconciliation',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
  assert.match(source,/disabled=\{readOnly\|\|busy\|\|uncertain\} onPress=\{\(\)=>toggle\(item\.id\)\}/);
- assert.match(source,/setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,ANALYSIS_MAX_IMAGES\)\.map\(x=>x\.id\)\)\},readOnly\|\|busy\|\|uncertain\|\|loadedOwner!==owner/);
+ assert.match(source,/setSelected\(patientMediaSelectAllIds\(selected,visibleItems\.map\(x=>x\.id\),ANALYSIS_MAX_IMAGES\)\)\},readOnly\|\|busy\|\|uncertain\|\|loadedOwner!==owner\|\|visibleItems\.length===0/);
  assert.match(source,/onEndReached=\{\(\)=>\{if\(loadedOwner===owner&&cursor&&!loading&&!error&&!uncertain&&!mutation\.current\)/);
 });
 
@@ -299,10 +349,11 @@ test('failed older gallery page retains verified images and cursor for an explic
  assert.deepEqual(Array.from(tree.root.findByType('FlatList').props.data,x=>x.id),[9,4]);assert.equal(cursors.at(-1),5);await renderer.act(async()=>tree.unmount());
 });
 
-test('bulk analysis selection is limited to four and rejects stale patient actions',()=>{
+test('bulk analysis selection matches web select-all semantics and rejects stale patient actions',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientMedia.tsx'),'utf8');
- assert.match(source,/İlk \$\{ANALYSIS_MAX_IMAGES\} Görseli Seç/);
- assert.match(source,/if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|readOnly\|\|loadedOwner!==owner\)return;setSelected\(selected\.length\?\[\]:visibleItems\.slice\(0,ANALYSIS_MAX_IMAGES\)\.map\(x=>x\.id\)\)/);
+ assert.match(source,/patientMediaSelectAllLabel\(selected,visibleItems\.map\(x=>x\.id\),ANALYSIS_MAX_IMAGES\)/);
+ assert.match(source,/setSelected\(patientMediaSelectAllIds\(selected,visibleItems\.map\(x=>x\.id\),ANALYSIS_MAX_IMAGES\)\)/);
+ assert.match(source,/if\(!current\(\)\|\|mutation\.current\|\|uncertain\|\|readOnly\|\|loadedOwner!==owner\)return/);
 });
 
 
@@ -337,7 +388,7 @@ function loadModernApi(fetchImpl){
  const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
  class ApiError extends Error{constructor(status,message){super(message);this.status=status}}
  const exports={};
- const requireChain=name=>name==='./api'?{ApiError,API_BASE:'https://dentalai.tr/api/mobile/v1'}:name==='./sessionExpiry'?{revalidateSession:async()=>{}}:name==='./chatFiles'?{validateChatFile:()=>{}}:name==='./notificationState'?loadSrcModule('notificationState',requireChain):(()=>{throw Error('Unexpected import '+name)})();
+ const requireChain=name=>name==='./api'?{ApiError,API_BASE:'https://dentalai.tr/api/mobile/v1'}:name==='./sessionExpiry'?{revalidateSession:async()=>{}}:name==='./chatFiles'?{validateChatFile:()=>{}}:name==='./notificationState'?loadSrcModule('notificationState',requireChain):name==='./apiCompatibility'?loadSrcModule('apiCompatibility',requireChain):(()=>{throw Error('Unexpected import '+name)})();
  vm.runInNewContext(code,{
   exports,fetch:fetchImpl,AbortController,FormData,URLSearchParams,Response,
   setTimeout,clearTimeout,require:requireChain

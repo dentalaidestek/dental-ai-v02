@@ -134,10 +134,11 @@ test('consultation message receipt lookup is account-authenticated and validates
   assert.ok(url.includes('/consultations/42/message-receipt?client_message_id=native-message-receipt-0001'));
   assert.equal(init.headers.Authorization,'Bearer secret');
   assert.equal(init.method||'GET','GET');
-  return json({message:{id:91,sender_user_id:10,message_type:'TEXT',content:'Klinik not',created_at:'2026-11-17T00:00:00'},deleted:false});
+  return json({message:{case_id:42,client_message_id:'native-message-receipt-0001',id:91,sender_user_id:10,message_type:'TEXT',content:'Klinik not',reply_to_message_id:null,created_at:'2026-11-17T00:00:00',has_media:false},deleted:false});
  },async()=>{
   const receipt=await api.getConsultationMessageReceipt('secret',42,'native-message-receipt-0001');
   assert.equal(receipt.message.id,91);
+  assert.equal(receipt.message.client_message_id,'native-message-receipt-0001');
   assert.equal(receipt.deleted,false);
  });
 });
@@ -154,6 +155,18 @@ test('consultation message receipt rejects invalid intent keys before network ac
  await withFetch(async()=>{throw Error('network must not be called')},async()=>{
   await assert.rejects(()=>api.getConsultationMessageReceipt('secret',42,'short'),/Geçersiz/);
  });
+});
+
+test('consultation message receipt rejects another case or another client intent',async()=>{
+ const base={id:91,sender_user_id:10,message_type:'TEXT',content:'Klinik not',reply_to_message_id:null,created_at:'2026-11-17T00:00:00',has_media:false};
+ for(const message of [
+  {...base,case_id:43,client_message_id:'native-message-receipt-0001'},
+  {...base,case_id:42,client_message_id:'different-native-key-0001'}
+ ]){
+  await withFetch(async()=>json({message,deleted:false}),async()=>{
+   await assert.rejects(()=>api.getConsultationMessageReceipt('secret',42,'native-message-receipt-0001'),/makbuzu doğrulanamadı/);
+  });
+ }
 });
 
 test('consultation text sends carry the stable client intent key and reply target',async()=>{
@@ -179,10 +192,21 @@ test('consultation media upload carries the persisted client intent key',async()
    const entries=init.body.entries;
    assert.ok(entries.some(([name,value])=>name==='client_message_id'&&value==='native-media-send-0001'));
    assert.ok(entries.some(([name,value])=>name==='file'&&value.name==='case.pdf'));
-   return json({ok:true,message:{id:93,sender_user_id:10,message_type:'FILE',created_at:'2026-11-17T00:00:00'}});
+   return json({ok:true,message:{id:93,sender_user_id:10,message_type:'FILE',content:'case.pdf',created_at:'2026-11-17T00:00:00',has_media:true,client_message_id:'native-media-send-0001'}});
   },async()=>{
    const result=await api.sendChatFile('secret',42,{uri:'file:///case.pdf',name:'case.pdf',type:'application/pdf',size:120},undefined,'native-media-send-0001');
    assert.equal(result.message.id,93);
+  });
+ }finally{global.FormData=OriginalFormData}
+});
+
+test('consultation attachment upload rejects a mismatched acknowledgement key',async()=>{
+ const OriginalFormData=global.FormData;
+ class TestFormData{constructor(){this.entries=[]}append(name,value){this.entries.push([name,value])}}
+ global.FormData=TestFormData;
+ try{
+  await withFetch(async()=>json({ok:true,message:{id:93,sender_user_id:10,message_type:'FILE',content:'case.pdf',created_at:'2026-11-17T00:00:00',has_media:true,client_message_id:'another-native-key-0001'}}),async()=>{
+   await assert.rejects(()=>api.sendChatFile('secret',42,{uri:'file:///case.pdf',name:'case.pdf',type:'application/pdf',size:120},undefined,'native-media-send-0001'),/Ek kaydı doğrulanamadı/);
   });
  }finally{global.FormData=OriginalFormData}
 });
@@ -298,4 +322,19 @@ test('native attachment acknowledgements append the persisted message without a 
  assert.equal(screen.includes('onSent={async()=>{setReplyTo(null);await load()}}'),false);
  assert.ok(composer.includes('await onSent(result.message)'));
  assert.ok(composer.includes('await onSent(receipt.message||undefined)'));
+});
+
+test('native attachment viewer uses the exact participant-scoped route and bearer header',()=>{
+ const source=api.chatImageSource('synthetic-token',42,93);
+ assert.equal(source.uri,'https://dentalai.tr/api/mobile/v1/consultations/42/attachments/93');
+ assert.deepEqual(source.headers,{Authorization:'Bearer synthetic-token'});
+});
+
+
+test('native attachment viewer uses the exact case-scoped download route and bearer header',()=>{
+ const source=api.chatImageSource('secret',42,93);
+ assert.equal(source.uri,'https://dentalai.tr/api/mobile/v1/consultations/42/attachments/93');
+ assert.deepEqual(source.headers,{Authorization:'Bearer secret'});
+ assert.throws(()=>api.chatImageSource('secret',0,93),/Geçersiz/);
+ assert.throws(()=>api.chatImageSource('secret',42,0),/Geçersiz/);
 });

@@ -44,8 +44,8 @@ class ApprovedAnamnesis(SQLModel, table=True):
         # Covers the owner/patient filter and per-field latest-row grouping in
         # reviewed_history_payload without redundant single-column indexes.
         Index(
-            "ix_approvedanamnesis_owner_patient_field_id",
-            "owner_user_id", "patient_id", "field_key", "id",
+            "ix_approvedanamnesis_owner_patient_field_analysis",
+            "owner_user_id", "patient_id", "field_key", "analysis_id",
         ),
     )
 

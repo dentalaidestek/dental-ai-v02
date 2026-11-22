@@ -65,7 +65,7 @@
         const limit = Number(form.dataset.analysisImageLimit);
         const existingCount = Number(form.dataset.existingImageCount);
         const maxFileBytes = Number(form.dataset.analysisMaxImageBytes);
-        const maxBatchBytes = Number(form.dataset.analysisBatchMaxBytes);
+        const maxBatchBytes = Number(form.dataset.analysisMaxBatchBytes);
         const fileInput = form.querySelector('input[name="images"]');
         if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(existingCount) || existingCount < 0) return;
         function totalSelected() {

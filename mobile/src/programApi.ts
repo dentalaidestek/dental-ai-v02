@@ -3,7 +3,7 @@ import {ProgramDraft,programPayload,validWallTime} from './programModel';
 import type {ProgramActionIntent} from './programIntent';
 export type ProgramView='today'|'week'|'month';
 export type ProgramOccurrence={key:string;event_id:number;event_type:string;title:string;status:string;start_local:string;end_local:string|null;patient_id:number|null;patient_name:string|null;location:string|null;notes:string|null;recurrence_rule:string};
-export type ProgramEvent=Omit<ProgramOccurrence,'key'|'event_id'>&{id:number;reminder_minutes:string;recurrence_until:string|null};
+export type ProgramEvent=Omit<ProgramOccurrence,'key'|'event_id'>&{id:number;reminder_minutes:string;recurrence_until:string|null;revision:string};
 export type ProgramPage={copy_days:Array<{date:string;label:string}>;month_title:string;view:ProgramView;focus_date:string;today:string;timezone:string;previous_day:string;next_day:string;days:Array<{date:string;label:string;in_month:boolean;count:number;event_types?:string[];has_more?:boolean}>;items:ProgramOccurrence[];total:number;next_offset:number|null;next_cursor?:string|null;event_types:Record<string,string>;reminders:string[];recurrences:string[];suggested_start_local:string;suggested_end_local:string};
 const id=(value:number)=>{if(!Number.isSafeInteger(value)||value<=0)throw Error('Geçersiz program kaydı.');return value;};
 const PROGRAM_EVENT_TYPES=new Set(['APPOINTMENT','CLASS','CLINIC','EXAM','ASSIGNMENT','THESIS','MEETING','TASK','PERSONAL']);
@@ -23,6 +23,7 @@ function eventValid(event:ProgramEvent):boolean{
     !(event.patient_id===null||Number.isSafeInteger(event.patient_id)&&event.patient_id>0)||
     !nullableText(event.patient_name,240)||!nullableText(event.location,160)||!nullableText(event.notes,2000)||
     !PROGRAM_REMINDER_VALUES.has(event.reminder_minutes)||!PROGRAM_RECURRENCES.has(event.recurrence_rule)||
+    typeof event.revision!=='string'||!/^[0-9a-f]{64}$/.test(event.revision)||
     !(event.recurrence_until===null||event.recurrence_until===''||validProgramDay(event.recurrence_until)&&event.recurrence_until>=event.start_local.slice(0,10)))return false;
  return true;
 }
@@ -88,10 +89,11 @@ export async function getProgramMutation(token:string,requestKey:string):Promise
  if(result.state==='FOUND'&&eventValid(result.event))return result;
  throw Error('Bekleyen Program kaydı sunucuda doğrulanamadı.');
 }
-export async function saveProgramEvent(token:string,draft:ProgramDraft,eventId?:number,requestKey?:string){
+export async function saveProgramEvent(token:string,draft:ProgramDraft,eventId?:number,requestKey?:string,expectedRevision?:string){
  const values=programPayload(draft);
  if(eventId===undefined&&(!requestKey||!requestKeyValid(requestKey)))throw Error('Yeni Program kaydı için güvenli istek anahtarı gerekli.');
- const body=eventId===undefined?{...values,request_key:requestKey}:values;
+ if(eventId!==undefined&&(!expectedRevision||!/^[0-9a-f]{64}$/.test(expectedRevision)))throw Error('Program düzenlemesi için güncel sürüm anahtarı gerekli.');
+ const body=eventId===undefined?{...values,request_key:requestKey}:{...values,expected_revision:expectedRevision};
  const result=await request<{event:ProgramEvent}>('/program/events'+(eventId!==undefined?`/${id(eventId)}`:''),token,{method:eventId!==undefined?'PUT':'POST',body:JSON.stringify(body)});
  if(!eventValid(result.event)||eventId!==undefined&&result.event.id!==eventId||!programEventMatchesPayload(result.event,values))
   throw Error('Program kaydı sunucudan doğrulanamadı. Yeniden göndermeden önce takvimi kontrol edin.');

@@ -28,7 +28,7 @@ test('appointment form rejects malformed dates and duplicate submission',()=>{
  assert.match(editor,/programPayload\(/);
  // The save() guard also blocks on !intentReady (request-key receipt reconciliation);
  // all four duplicate-submission guards remain, so allow that extra real gate.
- assert.match(editor,/if\(lock\.current\|\|loading(?:\|\|!intentReady)?\|\|loadError\|\|uncertain\)return/);
+ assert.match(editor,/if\(lock\.current\|\|loading\|\|!intentReady\|\|loadError\|\|uncertain\|\|revisionConflict\|\|eventId!==undefined&&!expectedRevision\)return/);
  assert.match(editor,/lock\.current=true;setBusy\(true\)/);
  assert.match(editor,/lock\.current=false;setBusy\(false\)/);
  const model=fs.readFileSync(path.join(__dirname,'../src/programModel.ts'),'utf8');

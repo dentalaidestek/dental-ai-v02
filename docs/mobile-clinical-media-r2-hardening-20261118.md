@@ -21,12 +21,12 @@ Referanslar:
 - Native liste API'si cursor tabanlı, en fazla 40 kayıtlık sayfa döndürüyor; client before cursor, duplicate ID ve sayfa sırası doğrulaması yapıyor.
 - Upload başına en fazla 12 dosya, dosya başına 12 MiB ve batch başına 96 MiB sınırları korunuyor.
 - Upload receipt idempotency, HMAC fingerprint, patient row lock ve batch quota final transaction içinde korunuyor.
-- Liste, upload receipt ve file response private/no-store sözleşmesini koruyor.
+- Liste, upload receipt ve file response private/no-store sözleşmesini koruyor. Aktif route kaydı ayrıca `tests/test_mobile_route_registry.py` ile doğrulanıyor.
 - R2 network I/O artık upload/download sırasında SQL bağlantısı veya patient row lock tutmuyor.
 
 ## Bilinen açıklar
 
-- Web ve native galeri kartları hâlâ orijinal dosya endpoint'ini kullanıyor; ayrı thumbnail endpoint/derivative storage yok. Thumbnail eklemek için R2 object cleanup worker'ının türev dosyaları da güvenli şekilde temizlemesi ve cache invalidation sözleşmesi tasarlanmalı. Bu turda orphan thumbnail üretmemek için sahte thumbnail URL eklenmedi.
+- Web ve native galeriler için özel thumbnail endpoint/derivative storage artık mevcut. 2026-11-22 incelemesinde cleanup allow-list'inin yalnızca orijinal dosya anahtarlarını kabul ettiği ve `.thumb` türevlerini reddettiği bulundu; bu, türev silme işlemini senkron fallback'e bırakıyordu. Allow-list şimdi yalnızca sunucunun deterministik `.thumb` adını da kabul ediyor; türevler aynı durable cleanup worker ve retry yolunu kullanıyor.
 - R2 timeout/partial-write cleanup, PostgreSQL yarış testleri, browser/device E2E ve gerçek R2 entegrasyon testi bu ortamda çalıştırılmadı.
 - 60.000 kullanıcı kapasitesi kanıtlanmadı; bu değişiklik yalnızca DB bağlantı/lock tutma süresini azaltır.
 
@@ -38,3 +38,57 @@ Referanslar:
 - mobile/tests/clinicalMediaDraft.cjs: metadata'nın native pending draft'ta korunması ve restore edilmesi kontrol edilir.
 
 Test kaynakları eklendi; bu çalışma ortamında pytest, Node suite, TypeScript, Android build veya gerçek R2/DB yük testi çalıştırılmadı. CI sonucu ayrıca raporlanacaktır.
+
+## 2026-11-22 follow-up — mobile gallery cache privacy and beta test root causes
+
+### Starting-head CI (2068c4158dba3a152c06e86ac4fd402c7199b354)
+
+- Android run #4699: TypeScript typecheck, session/auth, realtime/pagination and Hermes exports succeeded; Android APK assembly/artifact upload succeeded. The beta suite reported 986 passed / 2 failed.
+- Security Recovery #2398: all seven jobs completed successfully, including Python security/PostgreSQL migration and the native voice, academic, support, clinical, program and social suites.
+- The two beta failures were test-source assumptions, not a TypeScript or tooth-chart runtime failure:
+  1. The lower-jaw test searched for the UMD global assignment inside tooth_chart.html, although the assignment belongs to the separately loaded static/tooth-chart/surface-options.js. The test now evaluates that exact helper in a browser-like VM and checks all 52 valid FDI values against the native visual model.
+  2. The surface-state test required a local variable named pin; the actual handler correctly iterates .surface-pin elements as b. Replaced the brittle name match with a behavioral test that executes the actual setSurface function against DOM test doubles and verifies chip/pin state plus clearing.
+- These are corrections to test scope and execution; no production tooth-chart behavior was weakened.
+
+### New clinical-media privacy issue
+
+app/main.py mounts `mobile_api.router` first, then calls `remove_shadowed_routes((mobile_router, mobile_analysis_router), mobile_modern_router)`. The registry removes colliding method/path pairs from the v3 candidate router; it does not remove the earlier primary handlers.
+
+The active route map is therefore:
+- GET `/api/mobile/v1/patients/{patient_id}/media`: primary `app.mobile_api.mobile_patient_media`, which applies `_mobile_private_no_store(response)` and owner-scoped queries.
+- POST `/api/mobile/v1/patients/{patient_id}/media`: primary receipt-aware `app.mobile_api.mobile_patient_media_upload`; the simpler v3 duplicate is pruned.
+- GET `.../media/{media_id}/file`: primary `app.mobile_api.mobile_patient_media_file`, including post-R2-hydration owner/source revalidation.
+- GET `.../media/{media_id}/thumbnail` and GET `.../media/{media_id}`: unique v3 routes, retained with private/no-store headers and ownership checks.
+
+The v3 duplicate list route retains the same headers as defensive parity if route registration changes, but it is not the active list handler today. A runtime route-registration regression now checks the actual FastAPI app route table. The owner-scoped patient and media checks remain unchanged.
+
+### Native response minimization
+
+modernApi.getMedia() previously spread the full server object into the native gallery model. It now constructs an explicit allowlist of display fields and rebuilds original/thumbnail URLs from the canonical API base and validated patient/media IDs. Unexpected fields such as owner_user_id, file_path, storage_key, and server-supplied external URLs cannot propagate into the gallery model.
+
+Added regressions for:
+- the canonical v3 list and metadata handlers' no-store headers and owner checks, including route-deduplication order;
+- browser UMD helper publication and all 52 FDI lower-jaw mappings;
+- actual surface chip/pin aria-pressed behavior and clear-state reset;
+- native media response allowlisting and same-origin URL reconstruction.
+
+### Commits
+
+- b224702 — test lower-jaw preview through the loaded browser helper
+- 4182106 — execute web surface selection behavior in the parity test
+- 1ad3832 — private/no-store headers on active native media list and metadata handlers
+- b697caf — backend regression for route selection and private response headers
+- 3a31838 — allowlist native media fields and rebuild private URLs
+- 0d002f9 — native response allowlisting and URL-isolation regression
+
+### Validation boundary
+
+The fixes above are committed, but their new-head CI has not yet completed. The green Security Recovery #2398 and the Android typecheck/APK results belong to starting head 2068c41, not the new commits. No new pass is claimed until the new branch-head Android and Security runs finish. No patient data, database schema, R2 object, main branch, production deployment or staging database was changed.
+
+
+
+## 2026-11-22 correction — durable thumbnail object keys
+
+The cleanup worker's allow-list previously accepted the original patient-media key but rejected the deterministic `.thumb.jpg` derivative. The rejected derivative used the synchronous fallback after the metadata commit, so an R2 outage could leave it without a durable retry. The allow-list and worker regressions now cover both original and thumbnail keys, and the native delete handler is exercised against a SQLite transaction fixture to prove both receipts are committed together.
+
+The earlier route note in this document is also corrected: method/path collisions are removed from the v3 candidate router, while the earlier `mobile_api` route remains active. The primary list route already sets private/no-store headers; the unique v3 metadata and thumbnail routes retain their own private headers and owner checks.

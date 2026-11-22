@@ -1,5 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),React=require('react'),renderer=require('react-test-renderer');
 const sessionRenderKeyExports=require('./helpers/sessionRenderKeyModule.cjs');
+const useSessionRenderKeyExports=require('./helpers/useSessionRenderKeyModule.cjs');
 global.IS_REACT_ACT_ENVIRONMENT=true;
 // Evaluate transpiled CommonJS in THIS realm instead of a fresh vm context:
 // arrays/objects the modules return then share prototypes with the test's
@@ -29,7 +30,7 @@ function component(api,file='NativePatientProfile',storage=new Map()){
  const alertCalls=[];
  const native={StyleSheet:{create:s=>s},AppState:{addEventListener:()=>({remove(){}})},Platform:{OS:'android'},Alert:{alert:(title,message,buttons)=>alertCalls.push({title,message,buttons})},...Object.fromEntries(['Modal','ActivityIndicator','KeyboardAvoidingView','Pressable','RefreshControl','ScrollView','Text','TextInput','View'].map(s=>[s,s])),ScrollView:props=>React.createElement('ScrollView',props,props.refreshControl,props.children)},exports={};
  const endpoints={getPatient:async()=>patient(8),getPatientTreatments:async()=>({items:[],next_cursor:null}),createTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),updateTreatment:async()=>({ok:true,treatment_id:7,edit_revision:'d'.repeat(64),replayed:false}),...api};
- loadModuleRealm(code,exports,name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:name==='./patientDeleteIntent'?deleteIntentExports:name==='./patientTreatmentPresentation'?patientTreatmentExports:name==='./patientTreatmentHistoryExpansion'?historyExpansionExports:name==='./patientProfilePresentation'?presentationExports:name==='./sessionRenderKey'?sessionRenderKeyExports:{default:'Child'});
+ loadModuleRealm(code,exports,name=>name==='react'?{...React,default:React}:name==='react-native'?native:name==='@react-navigation/native'?{useIsFocused:()=>focusState.current}:name==='./api'?endpoints:name==='./clinicalDate'?{clinicalDate:(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,parseClinicalDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value)}:name==='./realtime'?{useRealtime:()=>({lastEvent:null})}:name==='expo-secure-store'?secure:name==='expo-crypto'?{randomUUID:()=>`synthetic-treatment-request-${String(++sequence).padStart(8,'0')}`}:name==='./socialDraft'?{chunkedDraftStore:raw=>raw}:name==='./treatmentMutation'?intentExports:name==='./patientDeleteIntent'?deleteIntentExports:name==='./patientTreatmentPresentation'?patientTreatmentExports:name==='./patientTreatmentHistoryExpansion'?historyExpansionExports:name==='./patientProfilePresentation'?presentationExports:name==='./useSessionRenderKey'?useSessionRenderKeyExports:name==='./sessionRenderKey'?sessionRenderKeyExports:{default:'Child'});
  const Original=exports.default;
  const Wrapped=props=>React.createElement(Original,{userId:1,...props});
  Wrapped.storage=storage;
@@ -41,6 +42,14 @@ const actions=Object.fromEntries(['chart','analysis','appointment','expert','ana
 const patient=id=>({patient:{id,first_name:'Synthetic'+id,last_name:'Test',anonymous_id:'SYN-'+id,chief_complaint:'Complaint',age:0},edit_revision:'a'.repeat(64),teeth:[],surfaces:[],treatments:[{id:1,treatment_name:'Root canal',material:'Synthetic material',result:'Synthetic result',doctor_note:'Synthetic note',edit_revision:'c'.repeat(64),created_at:'2026-11-18T10:00:00'}],media:[]});
 const pagedPatient=(id,cursor)=>{const value=patient(id);value.treatments=[{id:1,treatment_name:'Root canal',edit_revision:'c'.repeat(64),created_at:'2026-11-18T10:00:00'},{id:2,treatment_name:'Second treatment',edit_revision:'d'.repeat(64),created_at:'2026-11-17T10:00:00'},{id:3,treatment_name:'Third treatment',edit_revision:'e'.repeat(64),created_at:'2026-11-16T10:00:00'}];value.treatments_next_cursor=cursor;return value};
 const text=node=>typeof node==='string'?node:Array.isArray(node)?node.map(text).join(''):node?.children?node.children.map(text).join(''):'';
+test('patient profile cache and async ownership use an opaque session key, not the bearer token',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativePatientProfile.tsx'),'utf8');
+ assert.match(source,/import useSessionRenderKey from ['"]\.\/useSessionRenderKey['"]/);
+ assert.match(source,/const scope=useSessionRenderKey\(`\$\{userId\}:\$\{token\}:\$\{patientId\}`\);/);
+ assert.match(source,/const profileRenderKey=scope;/);
+ assert.doesNotMatch(source,/profileRenderIdentity/);
+ assert.doesNotMatch(source,/const scope=`\$\{userId\}:\$\{token\}:\$\{patientId\}`/);
+});
 test('presentation model preserves zero age, safe identity fallbacks, and web action order',()=>{
  assert.equal(presentationExports.patientProfileName(' Ada ',' Kaya '),'Ada Kaya');
  assert.equal(presentationExports.patientProfileName(null,'  '),'İsimsiz Hasta');
@@ -135,6 +144,20 @@ test('profile follows web section order, expands patient info, and preserves com
  const toggle=tree.root.findAllByType('Pressable').find(n=>n.props.accessibilityState?.expanded===false);
  await renderer.act(async()=>toggle.props.onPress());
  assert.ok(tree.root.findAllByType('TextInput').some(n=>n.props.accessibilityLabel==='Adres'));
+ await renderer.act(async()=>tree.unmount());
+});
+test('same patient id cannot accept a late profile response from the previous account',async()=>{
+ let resolveOld;
+ const Profile=component({getPatient:async(token,id)=>token==='old-token'?new Promise(resolve=>{resolveOld=resolve}):{...patient(id),patient:{...patient(id).patient,first_name:'New account'}}});
+ let tree;
+ await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'old-token',userId:1,patientId:8,actions}));await Promise.resolve()});
+ assert.equal(typeof resolveOld,'function','the previous account request must be pending');
+ await renderer.act(async()=>{tree.update(React.createElement(Profile,{token:'new-token',userId:2,patientId:8,actions}));await Promise.resolve()});
+ assert.ok(text(tree.toJSON()).includes('New account'),'the current account profile must load for the same patient id');
+ const stale=patient(8);stale.patient.first_name='Old account';
+ await renderer.act(async()=>{resolveOld(stale);await new Promise(resolve=>setImmediate(resolve))});
+ assert.ok(text(tree.toJSON()).includes('New account'));
+ assert.ok(!text(tree.toJSON()).includes('Old account'),'late previous-account data must not overwrite the current profile');
  await renderer.act(async()=>tree.unmount());
 });
 test('account switch invalidates the previous patient edit snapshot before a new profile resolves',async()=>{

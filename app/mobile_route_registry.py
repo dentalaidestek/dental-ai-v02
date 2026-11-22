@@ -1,9 +1,66 @@
 """Method-aware route deduplication for the canonical mobile API registry.
 
-FastAPI may keep included APIRouter objects lazy. Compare source routers before
-mounting, and remove only the HTTP method/path pairs already owned by an
-earlier router. Multi-method routes retain any non-conflicting methods.
+FastAPI 0.141 keeps included routers lazy. Inspect their effective route
+contexts instead of assuming app.routes is a flat list of APIRoute objects.
+This keeps route ownership checks correct across supported FastAPI versions
+and prevents a second reconciliation pass from mounting duplicates.
 """
+
+
+def iter_registered_routes(routes):
+    """Yield effective routes, recursively expanding FastAPI lazy includes.
+
+    Older FastAPI releases expose copied APIRoute objects directly. Newer
+    releases expose an included-router object whose public routing behavior is
+    represented by effective_candidates(). Use capability detection rather
+    than importing FastAPI's private class so this helper also works with the
+    older, eagerly-expanded route list.
+    """
+    visited_includes = set()
+
+    def walk(items):
+        for route in items or ():
+            effective_candidates = getattr(route, "effective_candidates", None)
+            if callable(effective_candidates):
+                marker = id(route)
+                if marker in visited_includes:
+                    continue
+                visited_includes.add(marker)
+                yield from walk(effective_candidates())
+                low_priority = getattr(route, "effective_low_priority_routes", None)
+                if callable(low_priority):
+                    yield from walk(low_priority())
+                continue
+            yield route
+
+    yield from walk(routes)
+
+
+def _route_path(route):
+    path = getattr(route, "path", None)
+    if not isinstance(path, str):
+        path = getattr(route, "path_format", None)
+    return path if isinstance(path, str) else None
+
+
+def _endpoint_symbol(endpoint):
+    import inspect
+
+    endpoint = inspect.unwrap(endpoint)
+    return (
+        getattr(endpoint, "__module__", None),
+        getattr(endpoint, "__qualname__", getattr(endpoint, "__name__", None)),
+    )
+
+
+def _router_path(router, route):
+    path = _route_path(route)
+    if path is None:
+        return None
+    prefix = (getattr(router, "prefix", "") or "").rstrip("/")
+    if not prefix or path == prefix or path.startswith(prefix + "/"):
+        return path
+    return prefix + (path if path.startswith("/") else "/" + path)
 
 
 def remove_shadowed_routes(primary_routers, candidate_router):
@@ -14,8 +71,8 @@ def remove_shadowed_routes(primary_routers, candidate_router):
     """
     mounted_methods = {}
     for primary_router in primary_routers:
-        for route in getattr(primary_router, "routes", ()):
-            path = getattr(route, "path", None)
+        for route in iter_registered_routes(getattr(primary_router, "routes", ())):
+            path = _router_path(primary_router, route)
             methods = getattr(route, "methods", None)
             if not isinstance(path, str) or not methods:
                 continue
@@ -29,7 +86,7 @@ def remove_shadowed_routes(primary_routers, candidate_router):
 
     kept = []
     for route in routes:
-        path = getattr(route, "path", None)
+        path = _router_path(candidate_router, route)
         methods = getattr(route, "methods", None)
         if not isinstance(path, str) or not methods:
             kept.append(route)
@@ -48,3 +105,117 @@ def remove_shadowed_routes(primary_routers, candidate_router):
 
     routes[:] = kept
     return candidate_router
+
+
+def include_missing_routes(app, source_router):
+    """Mount routes added after an earlier include, without duplicate owners.
+
+    FastAPI versions with lazy includes automatically expose routes added to
+    the original router. Older versions snapshot the route list at include
+    time. Flatten effective routes first so this function is idempotent in
+    both implementations and fails closed if an existing path/method already
+    has a different endpoint owner.
+    """
+    from copy import copy
+    from fastapi import APIRouter
+
+    prefix = getattr(source_router, "prefix", "") or ""
+
+    def full_path(route):
+        return _router_path(source_router, route)
+
+    normalized_prefix = prefix.rstrip("/")
+
+    def in_scope(path):
+        return (
+            not normalized_prefix
+            or path == normalized_prefix
+            or path.startswith(normalized_prefix + "/")
+        )
+
+    existing = {}
+
+    def remember(key, symbol):
+        if key in existing:
+            owner = existing[key]
+            method, path = key
+            label = f"{method} {path}" if method else path
+            if owner != symbol:
+                raise RuntimeError(
+                    f"mobile route ownership conflict for {label}: "
+                    f"{owner[0]}.{owner[1]} vs {symbol[0]}.{symbol[1]}"
+                )
+            raise RuntimeError(
+                f"duplicate mobile route registration for {label}: "
+                f"{symbol[0]}.{symbol[1]}"
+            )
+        existing[key] = symbol
+
+    for route in iter_registered_routes(getattr(app, "routes", ())):
+        path = _route_path(route)
+        if path is None or not in_scope(path):
+            continue
+        methods = getattr(route, "methods", None) or ()
+        symbol = _endpoint_symbol(getattr(route, "endpoint", None))
+        if methods:
+            for method in methods:
+                remember((str(method).upper(), path), symbol)
+        else:
+            remember((None, path), symbol)
+
+    missing = []
+    source_keys = set()
+    for route in iter_registered_routes(getattr(source_router, "routes", ())):
+        path = full_path(route)
+        if path is None:
+            continue
+        methods = getattr(route, "methods", None) or ()
+        symbol = _endpoint_symbol(getattr(route, "endpoint", None))
+        if methods:
+            remaining = set()
+            for method in methods:
+                normalized_method = str(method).upper()
+                key = (normalized_method, path)
+                if key in source_keys:
+                    raise RuntimeError(
+                        f"duplicate source mobile route registration for {normalized_method} {path}"
+                    )
+                source_keys.add(key)
+                owner = existing.get(key)
+                if owner is None:
+                    remaining.add(method)
+                elif owner != symbol:
+                    raise RuntimeError(
+                        f"mobile route ownership conflict for {normalized_method} {path}: "
+                        f"{owner[0]}.{owner[1]} vs {symbol[0]}.{symbol[1]}"
+                    )
+            if not remaining:
+                continue
+            cloned = copy(route)
+            cloned.methods = remaining
+            missing.append(cloned)
+            for method in remaining:
+                existing[(str(method).upper(), path)] = symbol
+        else:
+            key = (None, path)
+            if key in source_keys:
+                raise RuntimeError(f"duplicate source mobile route registration for {path}")
+            source_keys.add(key)
+            owner = existing.get(key)
+            if owner is not None:
+                if owner != symbol:
+                    raise RuntimeError(
+                        f"mobile route ownership conflict for {path}: "
+                        f"{owner[0]}.{owner[1]} vs {symbol[0]}.{symbol[1]}"
+                    )
+                continue
+            missing.append(copy(route))
+            existing[key] = symbol
+
+    if not missing:
+        return 0
+
+    target = APIRouter(prefix=prefix)
+    target.routes.extend(missing)
+    app.include_router(target)
+    return len(missing)
