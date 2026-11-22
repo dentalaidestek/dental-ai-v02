@@ -1296,3 +1296,87 @@ routes; `mobile/tests/fiveRoutesParityContract.cjs` pins each client call to the
 exact server path/method, response field names, the 120s upload deadline, the
 Bearer image-uri pattern, the 401 `revalidateSession` flow, the unchanged Turkish
 copy and the absence of these routes on live main.
+
+## 2026-11-22 — Adversarial scenario matrix audit (mobile robustness)
+
+Adversarial completeness pass over the mobile app driven by a problem scenario
+matrix (session/token, network, server responses, media, push/deep-link,
+realtime, UI edges, quota, idempotency). Every scenario was first probed
+against the current clients; a passing probe became a locked regression test.
+No scenario exposed a new runtime defect: the shared session probe, bounded
+deadlines, JSON-only 200 contract, multipart header policy, push payload
+allowlist, realtime storm discipline, pagination boundaries, idempotency keys
+and in-flight locks all behaved correctly, so this wave is test-only plus this
+record. `mobile/src/e2ee.ts` remains a dormant primitive with no callers and
+was left untouched.
+
+### Scenario matrix
+
+| Scenario | Proof (file:line) | Outcome |
+|---|---|---|
+| A1 sequential 401 waves after expiry | mobile/tests/sessionHealth.cjs:34 (new) | correct: probe re-created per wave, exactly one sign-out |
+| A2 401 during multipart upload | mobile/tests/sessionHealth.cjs:47 (new) | correct: one revalidation, ApiError 401 keeps server detail |
+| A3 concurrent 401s share one probe | mobile/tests/sessionHealth.cjs:19 | already green |
+| A4 cold start with stale token | mobile/tests/session.cjs:29,34 | already green: 401 clears, network failure keeps retry screen |
+| B1 attachment upload 120s deadline | mobile/tests/transportResilience.cjs:9 (new) | correct: 408 Turkish stalled-transfer copy |
+| B2 offline vs HTTP error separation | mobile/tests/transportResilience.cjs:22 (new) | correct: TypeError→503 Turkish; non-transport errors keep identity |
+| B3 duplicate submit while in-flight | ModernScreens ConsultationChat `sending` ref; NativeConsultationRequest `frozen` | already guarded (verified) |
+| C1 proxy HTML 502/500/200 pages | mobile/tests/transportResilience.cjs:33 (new) | correct: Turkish copy, no crash, HTML-200 never parsed as data |
+| C2 malformed JSON / missing 200 fields | mobile/tests/sessionExpiry.cjs + modernApi validators | already green |
+| C3 bare 404 "Not Found" version copy | mobile/tests/messagesBadgeParity.cjs:4 | already green |
+| D1 multipart without JSON Content-Type | mobile/tests/transportResilience.cjs:48 (new) | correct: boundary left to the transport on both upload paths |
+| D2 picker permission denied + cancel | NativePatientMedia pick/capture | correct in code (canceled→return, denied→Turkish error, busy cleared); device check remains |
+| D3 oversize / wrong MIME rejection | mobile/tests/uploadLimits.cjs, clinicalMediaPicker.cjs | already green (12 MiB file / 96 MiB batch contract) |
+| E1 duplicate tap identifier dedup | mobile/tests/nativePushResponses.cjs:44 (new) | correct: one navigation, later deliberate re-tap allowed |
+| E2 missing/extra/non-object payloads | mobile/tests/nativePushResponses.cjs:59 (new) | correct: allowlist navigation only, no crash |
+| E3 dead token cleanup | mobile/tests/nativePushResponses.cjs:77 (new) | correct: lost OS permission unregisters stored device, clears opt-in |
+| E4 parseRecoveryLink origin looseness | mobile/tests/flowAuditParity.cjs:94, nativeAuth.cjs | still green (deliberate any-https-origin acceptance) |
+| F1 reconnect storm | mobile/tests/realtime.cjs:53 (new) | correct: one socket per cycle, stale timers/sockets inert |
+| F2 replay guard / cursor dedup | mobile/tests/realtime.cjs:39 | already green |
+| F3 badge reseed after CASE_READ | App.tsx TabShell unread-count reseed; messagesBadgeParity.cjs | already green |
+| F4 catch-up without socket | mobile/tests/consultations.cjs:261 + chat catch-up loop | already green |
+| G1 long Turkish names | RN Text wraps; chat/list rows use numberOfLines | no overflow defect; small-screen visual check remains |
+| G2 empty states | ModernScreens Notifications/Consultations/AnalysisHistory/chat + NativePatientHistory | present (verified) |
+| G3 zero-state badges | App.tsx TabShell: badge undefined at 0, unread capped at "99+" | correct (verified) |
+| H1 quota 429 Turkish copy | app/mobile_api.py voice `reply(429,...)` detail surfaces verbatim | correct (verified) |
+| H2 history pagination last page | mobile/tests/sessionExpiry.cjs pagination, modernApi next_before contract | already green |
+| I1 same client_message_id retry | mobile/tests/session.cjs:82, consultationRequest.cjs | already green |
+| I2 double-tap on send | ConsultationChat `sending.current`, pending-intent receipt recovery | already guarded (verified) |
+
+### Commits (this wave)
+
+- d8342764 Cover sequential 401 expiry waves and multipart upload revalidation
+- 399dd04d Cover transport deadlines, offline errors, proxy HTML pages and multipart headers
+- 1e6e9df7 Cover push response dedup, payload edges and dead token cleanup
+- dc88e3aa Cover realtime reconnect storm and stale timer discipline
+- (this commit) audit record
+
+### Verification
+
+- `node --test mobile/tests/*.cjs`: 1136 pass / 0 fail (1126 baseline + 10 new).
+- `python3 -m pytest tests -k "mobile" -q`: 295 passed, 18 failed / 20 errors,
+  identical to a detached base-commit `53fc50ed` worktree run; all failures and
+  errors are the pre-existing environmental chromium-dependent
+  expert_social/browser set. No new failures.
+- `cd mobile && npm run typecheck`: exit 0.
+
+### Still open (device-only; manual APK checklist steps)
+
+1. Image picker permission denial and cancel on device: open Hasta Medyası,
+   deny the photo permission (expect the Turkish permission error, no spinner),
+   then open the picker and cancel (expect no error and no stuck loading).
+2. Killed-app push tap: send a consultation push, force-stop the app, tap the
+   notification; expect a single navigation to the case chat (cold-start plus
+   listener dedup).
+3. Airplane-mode socket storm: toggle airplane mode repeatedly on the Messages
+   tab; expect at most one reconnecting socket, badge restored from the
+   unread-count endpoint after CASE_READ.
+4. Real throttled-network deadlines: upload a chat attachment over a throttled
+   connection; expect the 408 Turkish copy after two minutes and a recoverable
+   pending-intent banner.
+5. Very long Turkish display names on a small device: verify wrapping (no
+   clipped text or pushed-out action buttons) in patient rows and chat headers.
+6. If a device build ever duplicates a cold-start push navigation, the response
+   arrived without an `identifier`; dedupe identifier-less responses by payload
+   window in `subscribeToNativePushResponses`.
+
