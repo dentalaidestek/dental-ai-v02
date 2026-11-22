@@ -28,7 +28,7 @@ No provider, prompt, clinical taxonomy, database schema, patient record, or prod
 - Browser regression covers withdrawal after a Finish command is sent but before the server's final flush response; the client downgrades the result to paused and does not emit a finished examination.
 - Browser UI keeps consent withdrawable while live capture is active.
 
-The new regressions are committed to the existing native and browser test files. Final-head execution is pending; no green result is claimed for these newly added assertions until the workflow reruns.
+The native regression is included in the existing `native-voice-security` command. The browser regression is explicitly included in the final `Validate web form and live voice browser regressions` step of Security Recovery. Final-head execution is pending; no green result is claimed for these newly added assertions until the workflow reruns.
 
 ## CI evidence at the start of this follow-up
 
