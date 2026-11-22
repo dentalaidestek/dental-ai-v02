@@ -309,3 +309,66 @@ def test_include_missing_routes_flattens_nested_lazy_router_prefixes():
     ]
     assert len(matches) == 1
     assert matches[0].endpoint.__name__ == "patient_media"
+
+
+def test_remove_shadowed_routes_normalizes_nested_primary_prefixes():
+    from fastapi import APIRouter
+
+    primary = APIRouter(prefix="/api/mobile/v1")
+    patients = APIRouter(prefix="/patients")
+
+    @patients.get("/{patient_id}/media")
+    def canonical_media(patient_id: int):
+        return {"owner": "canonical"}
+
+    primary.include_router(patients)
+    candidate = APIRouter(prefix="/api/mobile/v1")
+
+    @candidate.api_route("/patients/{patient_id}/media", methods=["GET", "POST"])
+    def adapter_media(patient_id: int):
+        return {"owner": "adapter"}
+
+    remove_shadowed_routes((primary,), candidate)
+
+    assert route_signature(candidate) == [
+        ("/patients/{patient_id}/media", frozenset({"POST"}))
+    ]
+
+
+def test_include_missing_routes_fails_closed_on_conflicting_existing_owners():
+    from fastapi import APIRouter, FastAPI
+    import pytest
+
+    app = FastAPI()
+
+    def first_owner():
+        return {"owner": "first"}
+
+    def second_owner():
+        return {"owner": "second"}
+
+    app.add_api_route("/api/mobile/v1/conflict", first_owner, methods=["GET"])
+    app.add_api_route("/api/mobile/v1/conflict", second_owner, methods=["GET"])
+    source = APIRouter(prefix="/api/mobile/v1")
+    source.add_api_route("/new", lambda: {"ok": True}, methods=["GET"])
+
+    with pytest.raises(RuntimeError, match="mobile route ownership conflict"):
+        include_missing_routes(app, source)
+
+
+def test_include_missing_routes_fails_closed_on_duplicate_same_owner_registration():
+    from fastapi import APIRouter, FastAPI
+    import pytest
+
+    app = FastAPI()
+
+    def shared_owner():
+        return {"owner": "shared"}
+
+    app.add_api_route("/api/mobile/v1/duplicate", shared_owner, methods=["GET"])
+    app.add_api_route("/api/mobile/v1/duplicate", shared_owner, methods=["GET"])
+    source = APIRouter(prefix="/api/mobile/v1")
+    source.add_api_route("/new", lambda: {"ok": True}, methods=["GET"])
+
+    with pytest.raises(RuntimeError, match="duplicate mobile route registration"):
+        include_missing_routes(app, source)
