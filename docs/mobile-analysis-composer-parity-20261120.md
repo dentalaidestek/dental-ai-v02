@@ -60,3 +60,24 @@ Added and registered in `npm run test:beta`:
 - At the inspected starting HEAD, the current branch had no workflow runs, no check runs and no commit statuses. Android, Android APK and Security Recovery workflows are `workflow_dispatch`-only. The last retrieved code-bearing hosted jobs from 18 November ended before their first step (empty steps / unavailable `BlobNotFound` logs); they did not execute npm, TypeScript, Gradle or pytest. The exact hosted-runner/account cause remains outside the repository evidence.
 
 No main merge, production deploy, database migration, APK/IPA publication or clinical record mutation.
+
+
+## 2026-11-22 — web form aggregate-limit regression
+
+A second web-first pass of `analysis_new.html` found a dataset-property mismatch:
+
+- Markup exposes `data-analysis-max-batch-bytes`.
+- The browser's `dataset` API maps that attribute to `analysisMaxBatchBytes`.
+- The inline validator read `analysisBatchMaxBytes`, which is `undefined`; `Number(undefined)` becomes `NaN`.
+- Consequently, the condition that admits a valid aggregate upload never succeeded. The form cleared valid selections and could also block a clinical-only submission with no image.
+
+The template now reads `form.dataset.analysisMaxBatchBytes`. Added `tests/analysis_new_upload_form.cjs` with DOM-dataset-compatible fixtures for:
+- clinical-only submission with zero files;
+- a valid image and a valid saved-media + new-image combination;
+- rejection of a fifth combined image;
+- per-file size rejection;
+- acceptance at exactly 48 MiB and rejection above 48 MiB.
+
+The browser regression is registered in the Security Recovery web-form step. These are synthetic file metadata fixtures; no clinical image or patient record is used. The branch's existing server-side owner checks, image sanitization, four-image combined admission limit and 15 MiB / 48 MiB byte limits remain authoritative.
+
+Validation boundary: the source/test/workflow commits are on the PR branch. The final-head GitHub Actions run must execute the new test before it is called CI-passing; no local full checkout was available for running the Node test here. No schema/provider change, main merge or production deploy.
