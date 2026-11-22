@@ -39,3 +39,20 @@ The patient media archive and an individual AI analysis are separate operations 
 - Saved-media IDs are revalidated against the requested patient and owner on both web and mobile routes. The existing idempotent upload receipt continues to bind retries to the exact patient, saved IDs, clinical context and file bytes.
 
 Regression coverage now explicitly distinguishes the limits: archive 12 accepted / 13 rejected; web and mobile analysis 4 accepted / 5 rejected; saved-plus-new mixed totals are checked against four. Hosted GitHub Actions jobs on the inspected head still did not allocate a runner (empty step arrays and missing job-log blobs), so these new tests are committed but not represented as executed or green.
+
+
+## 2026-11-22 follow-up — durable cleanup after partial analysis-image publication
+
+Web-first review rechecked `analysis_new.html` and the web `create_analysis` route, then traced the native `POST /api/mobile/v1/analyses` receipt-first upload. Native image files are staged and published before the Analysis/ImageAsset transaction commits. If an R2 write for a later image failed after an earlier image had already been published, the transaction rolled back but the earlier object had no durable cleanup receipt.
+
+The shared garbage collector now accepts only the generated analysis asset key shape `uploads/analysis_<positive-id>_<32-lowercase-hex>.<jpg|jpeg|png|webp>`. Before deleting it, the worker checks `ImageAsset.file_path` and the legacy `Analysis.image_path/radiograph_path` references. A live asset therefore cannot be deleted by a stale cleanup receipt.
+
+The native upload route records every destination before move/persist. If publication, receipt/job commit or realtime publication raises, it rolls back the current session, releases that DB connection, and commits cleanup receipts in a separate transaction. If the original commit actually succeeded but only realtime publication failed, the worker's live-reference check removes the cleanup receipt and preserves the committed image.
+
+Added regressions in:
+- `tests/test_patient_media_cleanup.py`: strict analysis asset key admission, rejection of malformed paths, deletion of orphan assets, preservation of live ImageAsset references, and delayed retry after object-store failure.
+- `tests/test_mobile_analysis_upload_receipt.py`: second-image R2 failure after the first image was persisted; both generated objects receive cleanup receipts while Analysis, ImageAsset and upload-receipt rows roll back.
+
+### Remaining scale boundary
+
+This closes the orphan-object gap but does not yet move analysis R2 persistence outside the patient/analysis SQL transaction. The current handler still holds its DB session while publishing the batch. That connection/lock duration remains a separate scale optimization requiring a durable upload-intent state machine and recovery semantics; it was not changed casually in this fix. No 60,000-user capacity claim is made.
