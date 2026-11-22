@@ -26,6 +26,7 @@ function chartComponent(api,storage=new Map()){
   if(name==='./realtime')return{useRealtime:()=>({lastEvent})};
   if(name==='./toothChartPresentation')return require('../src/toothChartPresentation.ts');
   if(name==='./toothChartHistoryPresentation')return require('../src/toothChartHistoryPresentation.ts');
+  if(name==='./toothChartConflictPresentation')return require('../src/toothChartConflictPresentation.ts');
   if(name==='./toothSurfaceOptions')return require('../src/toothSurfaceOptions.ts');
   if(name==='./toothChartSurfaceSelection')return require('../src/toothChartSurfaceSelection.ts');
   if(name==='./appResumeRefresh')return require('../src/appResumeRefresh.ts');
@@ -520,7 +521,7 @@ test('a late tooth-history response cannot appear after switching to another FDI
 test('every tooth-chart patient refresh explicitly requests FDI chart collections',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativeToothChart.tsx'),'utf8');
  const chartReads=source.match(/getPatient\(token,patientId,true\)/g)||[];
- assert.equal(chartReads.length,6,'initial, foreground, realtime and post-mutation chart reads must opt in');
+ assert.equal(chartReads.length,7,'initial, foreground, realtime, post-mutation and explicit conflict-refresh reads must opt in');
  assert.doesNotMatch(source,/getPatient\(token,patientId\)(?!,true)/,'no chart refresh may silently receive the profile-only payload');
 });
 
