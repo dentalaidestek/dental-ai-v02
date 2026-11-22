@@ -4,6 +4,7 @@ from app.clinical_media import sanitize_clinical_media_image
 from app.upload_limits import MAX_ANALYSIS_IMAGE_BYTES, MAX_ANALYSIS_BATCH_BYTES, MAX_CLINICAL_IMAGE_PIXELS
 from app.upload_io import validate_upload_batch, validate_path_batch
 import json
+import asyncio
 import hashlib
 import re
 import os
@@ -402,7 +403,7 @@ async def create_mobile_analysis(
                 ))
             realtime=_record_realtime_event(session,user.id,"ANALYSIS_CREATED","analysis",analysis.id,{"analysis_id":analysis.id,"patient_id":patient_id,"status":analysis.status,"tooth_number":analysis.tooth_number})
             session.commit(); await _publish_realtime_event(realtime)
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             # File publication can succeed for an earlier image before a later
             # R2 write or the database commit fails. Roll back the Analysis and
             # ImageAsset rows, release the checked-out connection, then persist
