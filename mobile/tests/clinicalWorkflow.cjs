@@ -26,6 +26,14 @@ test('single-tooth analysis uses the owner-scoped mobile route and validates its
  await assert.rejects(()=>malformed.analyzeTooth('synthetic-token',17,'36'),/iş kaydı doğrulanamadı/);
 });
 
+test('clinical review wires the per-tooth action through the authenticated clinical API and reloads its durable receipt',()=>{
+ const source=fs.readFileSync(require.resolve('../src/NativeClinicalReview.tsx'),'utf8');
+ assert.match(source,/async function runViewerToothAnalysis\(toothFdi:string\)/);
+ assert.match(source,/A\.analyzeTooth\(token,analysisId,toothFdi\)/);
+ assert.match(source,/onAnalyzeTooth=\{runViewerToothAnalysis\}/);
+ assert.match(source,/started=true;await load\(\)/);
+});
+
 test('clinical image source rejects invalid analysis and asset IDs before building a private URL',()=>{
  const {clinicalImage}=api();
  assert.throws(()=>clinicalImage('synthetic-token',0,44),/Geçersiz analiz kimliği/);
