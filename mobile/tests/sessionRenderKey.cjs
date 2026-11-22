@@ -262,3 +262,29 @@ test('account, professional, patient history and tooth chart keep bearer scopes 
  assert.ok(historyHarness.includes("if(name==='./useSessionRenderKey')return sessionRenderKeyExports;"));
  assert.ok(chartHarness.includes("if(name==='./useSessionRenderKey')return require('./helpers/useSessionRenderKeyModule.cjs');"));
 });
+
+
+test('AI analysis, clinical review and vision viewer keep bearer credentials out of cache refs',()=>{
+ const dental=fs.readFileSync(require.resolve('../src/NativeDentalAI.tsx'),'utf8');
+ const clinical=fs.readFileSync(require.resolve('../src/NativeClinicalReview.tsx'),'utf8');
+ const vision=fs.readFileSync(require.resolve('../src/NativeVisionViewer.tsx'),'utf8');
+ const analysisHarness=fs.readFileSync(require.resolve('./analysisRecovery.cjs'),'utf8');
+ const clinicalHarness=fs.readFileSync(require.resolve('./clinicalWorkflow.cjs'),'utf8');
+ const visionHarness=fs.readFileSync(require.resolve('./visionViewer.cjs'),'utf8');
+ assert.ok(dental.includes('renderSessionKey=useSessionRenderKey(`${token}:${userId||0}`)'));
+ assert.ok(dental.includes('sessionScope=useRef(renderSessionKey)'));
+ assert.ok(dental.includes('previousSearchScope=useRef({scopeKey:renderSessionKey,userId,patientQuery})'));
+ assert.ok(!dental.includes('renderSession=useRef({token'));
+ assert.ok(!dental.includes('sessionScope=useRef(`${token}:'));
+ assert.ok(!dental.includes('previousSearchScope=useRef({token'));
+ assert.ok(clinical.includes('viewerSessionKey=useSessionRenderKey(token)'));
+ assert.ok(!clinical.includes('viewerSession=useRef({token'));
+ assert.ok(vision.includes('imageScope=useRef<{sessionKey:string;scope:string}|null>(null)'));
+ assert.ok(vision.includes('latestRequest=useRef({sessionKey:sessionRenderKey'));
+ assert.ok(!vision.includes('imageScope=useRef<{token:string;scope:string}|null>(null)'));
+ assert.ok(!vision.includes('latestRequest=useRef({token'));
+ assert.ok(!vision.includes('target.token'));
+ assert.ok(analysisHarness.includes("name==='./useSessionRenderKey'?{default:useSessionRenderKey}"));
+ assert.ok(clinicalHarness.includes("n==='./useSessionRenderKey'?useSessionRenderKeyExports"));
+ assert.ok(visionHarness.includes("n==='./useSessionRenderKey'?useSessionRenderKeyExports"));
+});
