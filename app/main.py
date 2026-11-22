@@ -13068,7 +13068,16 @@ def create_analysis(
         requested_media_ids = _parse_patient_media_ids(existing_media_ids)
         if existing_media_id is not None and existing_media_id not in requested_media_ids:
             requested_media_ids.insert(0, existing_media_id)
-        new_image_count = sum(1 for img in images if img and img.filename)
+        allowed_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+        if any(image is not None and not image.filename for image in images):
+            return HTMLResponse("Her klinik görüntünün dosya adı bulunmalıdır.", status_code=400)
+        new_images = [image for image in images if image and image.filename]
+        if any(
+            Path(Path(image.filename).name).suffix.lower() not in allowed_extensions
+            for image in new_images
+        ):
+            return HTMLResponse("Yalnızca JPEG, PNG veya WebP görüntüler yüklenebilir.", status_code=422)
+        new_image_count = len(new_images)
         if len(requested_media_ids) + new_image_count > MAX_ANALYSIS_IMAGES:
             return HTMLResponse(f"Tek analizde kayıtlı ve yeni görüntülerin toplamı en fazla {MAX_ANALYSIS_IMAGES} olabilir.", status_code=400)
 
@@ -13125,10 +13134,6 @@ def create_analysis(
         pending_assets = []
         published_references = []
 
-        allowed_extensions = {
-            ".jpg", ".jpeg", ".png", ".webp"
-        }
-
         try:
             for selected_media, selected_media_path in selected_media_items:
                 source_ext = selected_media_path.suffix.lower()
@@ -13159,7 +13164,10 @@ def create_analysis(
                 original_name = Path(image.filename).name
                 extension = Path(original_name).suffix.lower()
                 if extension not in allowed_extensions:
-                    continue
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Yalnızca JPEG, PNG veya WebP görüntüler yüklenebilir.",
+                    )
 
                 stored_name = (
                     f"analysis_{analysis_id}_"
