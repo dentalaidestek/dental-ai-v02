@@ -111,6 +111,27 @@ async def selected_teeth(analysis_id:int,payload:TeethInput,background_tasks:Bac
     with Session(web.engine) as s:
         _owned(s,user,analysis_id);return JSONResponse({'ok':True,'job':_job(_latest(s,analysis_id))},status_code=202,headers=HEADERS)
 
+@router.post('/analyses/{analysis_id}/tooth/{tooth_fdi}/analyze')
+def analyze_tooth(analysis_id:int,tooth_fdi:int,user=Depends(_account_user)):
+    """Match the web viewer's single-FDI action through the durable, content-deduped work queue."""
+    from app import main as web
+    tooth=str(tooth_fdi)
+    if not re.fullmatch(FDI,tooth):raise HTTPException(422,'Geçersiz FDI diş numarası.')
+    with Session(web.engine,expire_on_commit=False) as s:
+        analysis=s.exec(select(web.Analysis).where(web.Analysis.id==analysis_id).with_for_update()).first()
+        patient=s.exec(select(web.Patient).where(web.Patient.id==analysis.patient_id).with_for_update()).first() if analysis else None
+        if not analysis or not patient or user.role!='ADMIN' and patient.owner_user_id!=user.id:
+            raise HTTPException(404,'Analiz bulunamadı.')
+        analysis.tooth_number=tooth
+        s.add(analysis);s.flush()
+        # _enqueue_work derives its dedupe key from the locked owner, analysis,
+        # selected FDI tooth and inference revision. A retry after a lost response
+        # therefore returns the same durable PRELIMINARY job instead of billing twice.
+        job=web._enqueue_work(s,'PRELIMINARY','ANALYSIS',analysis.id)
+        s.commit()
+        return JSONResponse({'ok':True,'analysis_id':analysis.id,'patient_id':patient.id,
+                             'tooth_fdi':tooth,'job':_job(job)},status_code=202,headers=HEADERS)
+
 @router.post('/analyses/{analysis_id}/jobs/{job_id}/{action}')
 async def job_action(analysis_id:int,job_id:int,action:str,token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
     from app import main as web
