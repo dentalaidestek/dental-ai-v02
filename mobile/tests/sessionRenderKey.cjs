@@ -77,7 +77,7 @@ test('analysis and clinical viewer components never interpolate credentials into
 
 test('all VM component harnesses resolve the opaque session-key helper',()=>{
  const cases=[
-  ['analysisRefresh.cjs',"name==='./sessionRenderKey'?sessionRenderKeyExports"],
+  ['analysisRefresh.cjs',"name==='./useSessionRenderKey'?{__esModule:true,default:useSessionRenderKey}"],
  ];
  for(const [file,contract] of cases){
   const source=fs.readFileSync(require.resolve('./'+file),'utf8');
@@ -240,7 +240,16 @@ test('account, professional, patient history and tooth chart keep bearer scopes 
  const historyHarness=fs.readFileSync(require.resolve('./patientAnalysisHistory.cjs'),'utf8');
  const chartHarness=fs.readFileSync(require.resolve('./toothChartLifecycle.cjs'),'utf8');
  const historyRetryHarness=fs.readFileSync(require.resolve('./patientHistoryRetry.cjs'),'utf8');
- assert.ok(account.includes('scope=useRef(accountRenderKey);scope.current=accountRenderKey;'));
+ const accountAst=ts.createSourceFile('NativeAccount.tsx',account,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+ let accountScopeRef=false,accountScopeAssignment=false;
+ const inspectAccount=node=>{
+  if(ts.isVariableDeclaration(node)&&node.name.getText(accountAst)==='scope'&&node.initializer&&ts.isCallExpression(node.initializer)&&node.initializer.expression.getText(accountAst)==='useRef'&&node.initializer.arguments[0]?.getText(accountAst)==='accountRenderKey')accountScopeRef=true;
+  if(ts.isBinaryExpression(node)&&node.operatorToken.kind===ts.SyntaxKind.EqualsToken&&node.left.getText(accountAst)==='scope.current'&&node.right.getText(accountAst)==='accountRenderKey')accountScopeAssignment=true;
+  ts.forEachChild(node,inspectAccount);
+ };
+ inspectAccount(accountAst);
+ assert.ok(accountScopeRef,'account request ownership ref must be initialized from the opaque account render key');
+ assert.ok(accountScopeAssignment,'account request ownership ref must rotate with the opaque account render key');
  assert.ok(!account.includes('scope=useRef(token)'));
  assert.ok(!account.includes('scope.current=token'));
  assert.ok(professional.includes('useState<{scopeKey:string;data:Professional}|null>'));
