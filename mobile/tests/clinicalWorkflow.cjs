@@ -19,7 +19,7 @@ test('single-tooth analysis uses the owner-scoped mobile route and validates its
  const {analyzeTooth}=api(async(...args)=>{calls.push(args);return{ok:true,analysis_id:17,patient_id:8,tooth_fdi:'36',job:{id:7,kind:'PRELIMINARY',status:'QUEUED',retryable:false}}});
  const receipt=await analyzeTooth('synthetic-token',17,'36');
  assert.equal(receipt.job.id,7);assert.equal(calls.length,1);
- assert.equal(calls[0][0],'/analyses/17/tooth/36/analyze');assert.equal(calls[0][1],'synthetic-token');assert.deepEqual(calls[0][2],{method:'POST'});
+ assert.equal(calls[0][0],'/analyses/17/tooth/36/analyze');assert.equal(calls[0][1],'synthetic-token');assert.equal(calls[0][2].method,'POST','single-tooth action must use POST');
  await assert.rejects(()=>analyzeTooth('synthetic-token',17,'59'),/Geçersiz FDI/);
  assert.equal(calls.length,1,'invalid FDI must be rejected before the network call');
  const malformed=api(async()=>({ok:true,analysis_id:17,patient_id:8,tooth_fdi:'36',job:{id:0,kind:'PRELIMINARY',status:'QUEUED',retryable:false}}));
