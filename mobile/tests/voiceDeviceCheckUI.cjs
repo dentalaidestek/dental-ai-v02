@@ -59,6 +59,17 @@ test('device preflight fails closed when app-wide playback audio mode cannot be 
  assert.doesNotMatch(component,/setAudioModeAsync\(\{allowsRecording:false\}\)\.catch\(\(\)=>\{\}\)/);
 });
 
+test('failed audio-mode restoration keeps the parent voice screen locked until retry succeeds',()=>{
+ const restores=[...component.matchAll(/const audioModeRestored=await resetAudioMode\(\);/g)];
+ assert.equal(restores.length,4,'finish, cancel, retry and start-error recovery all report the route result');
+ for(const match of restores){
+  assert.match(component.slice(match.index,match.index+150),/notifyBusy\(!audioModeRestored\)/,'a failed route restore keeps the parent locked');
+ }
+ assert.match(component,/const restored=await resetAudioMode\(\);[\s\S]{0,100}notifyBusy\(!restored\)/,'stale-start cancellation also preserves the parent lock on failure');
+ assert.match(entry,/disabled=\{processing\|\|audioBusy\|\|deviceCheckBusy\|\|applyBusy\}/);
+ assert.match(entry,/NativeVoiceDeviceCheck[\s\S]{0,180}onBusyChange=\{setDeviceCheckBusy\}/);
+});
+
 test('microphone test never sends audio, patient identity or transcript to an API',()=>{
  assert.doesNotMatch(component,/\bfetch\s*\(|axios|FormData|transcribeNativeRecording|voiceApi|patientId|userId|transcript|token/);
 });
