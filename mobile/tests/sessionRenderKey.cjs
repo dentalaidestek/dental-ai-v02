@@ -135,9 +135,11 @@ test('tooth-chart analysis history uses an opaque render key while retaining too
  assert.equal(history.length,1,'the selected tooth must own exactly one analysis-history section');
  assert.equal(history[0],'historyRenderKey','the history section must not use a raw token-bearing React key');
  assert.ok(!history[0].includes('token')&&!history[0].includes('scope'),'renderer identity must not contain credentials or the raw identity tuple');
- assert.ok(source.includes('import {nextSessionRenderKey} from "./sessionRenderKey";'));
- assert.ok(source.includes('const historyScope=`${userId}:${token}:${patientId}:${selected}`;'));
- assert.ok(source.includes('historyRenderIdentity.current.scope!==historyScope'),'switching account, session, patient or selected tooth must remount the scoped history section');
+  assert.ok(source.includes('import useSessionRenderKey from "./useSessionRenderKey";'));
+  assert.ok(source.includes('const historyScopeKey=useSessionRenderKey(`${userId}:${token}:${patientId}:${selected}`);'));
+  assert.ok(source.includes('const historyRenderKey=historyScopeKey;'));
+  assert.ok(source.includes('const treatmentHistoryScope=historyScopeKey;'));
+  assert.ok(!source.includes('historyRenderIdentity'),'the selected-tooth renderer must not retain a credential-bearing duplicate scope');
 });
 
 test('clinical media analysis-upload child uses the opaque account image scope as its key',()=>{
@@ -229,4 +231,30 @@ test('approved voice-history cache state and generation refs use opaque session 
  assert.ok(!source.includes('useState<{scope:string;history:VoiceHistory}|null>'),'credential-bearing scope must not be copied into React state');
  assert.ok(!source.includes('const active=useRef(scope),'),'request generation refs must store only the opaque identity');
  assert.ok(!source.includes('data?.scope===scope'),'rendered history must be scoped by the opaque identity');
+});
+
+
+test('account, professional, patient history and tooth chart keep bearer scopes inside the shared hook only',()=>{
+ const account=fs.readFileSync(require.resolve('../src/NativeAccount.tsx'),'utf8');
+ const professional=fs.readFileSync(require.resolve('../src/NativeProfessional.tsx'),'utf8');
+ const history=fs.readFileSync(require.resolve('../src/NativePatientHistory.tsx'),'utf8');
+ const chart=fs.readFileSync(require.resolve('../src/NativeToothChart.tsx'),'utf8');
+ assert.ok(account.includes('scope=useRef(accountRenderKey);scope.current=accountRenderKey;'));
+ assert.ok(!account.includes('scope=useRef(token)'));
+ assert.ok(!account.includes('scope.current=token'));
+ assert.ok(professional.includes('useState<{scopeKey:string;data:Professional}|null>'));
+ assert.ok(professional.includes('scope=useRef(sessionRenderKey)'));
+ assert.ok(professional.includes('setState({scopeKey:sessionRenderKey,data})'));
+ assert.ok(!professional.includes('useState<{token:string;data:Professional}|null>'));
+ assert.ok(!professional.includes('scope=useRef(token)'));
+ assert.ok(history.includes("scope=useSessionRenderKey(`${token}:${patientId}:${toothNumber||''}`)"));
+ assert.ok(history.includes('imageScope=useRef<{sessionKey:string;scope:string}|null>(null)'));
+ assert.ok(!history.includes('imageScope=useRef<{token:string;scope:string}|null>(null)'));
+ assert.ok(!history.includes('const focused=useIsFocused(),{lastEvent}=useRealtime(),scope=`${token}:'));
+ assert.ok(chart.includes('patientScopeKey=useSessionRenderKey(`${userId}:${token}:${patientId}`)'));
+ assert.ok(chart.includes('historyScopeKey=useSessionRenderKey(`${userId}:${token}:${patientId}:${selected}`)'));
+ assert.ok(chart.includes('patientScope=useRef(patientScopeKey)'));
+ assert.ok(chart.includes('const treatmentHistoryScope=historyScopeKey;'));
+ assert.ok(!chart.includes('patientScope=useRef(`${userId}:${token}:${patientId}`)'));
+ assert.ok(!chart.includes('historyRenderIdentity'));
 });
