@@ -53,6 +53,26 @@ export async function removePrivateVoiceDeviceCheckFile(
  }catch{return false;}
 }
 
+/** Expo Audio recorder contract used by the local microphone preflight. */
+export type VoiceDeviceRecorder = Readonly<{
+ stop(): Promise<unknown>;
+ getStatus(): Readonly<{isRecording?:boolean}>;
+}>;
+
+/** A fulfilled stop call is not enough: confirm Expo's synchronous status is inactive. */
+export async function stopVoiceDeviceRecorderVerified(recorder:VoiceDeviceRecorder):Promise<boolean>{
+ try{
+  await recorder.stop();
+ }catch{
+  return false;
+ }
+ try{
+  return recorder.getStatus().isRecording===false;
+ }catch{
+  return false;
+ }
+}
+
 export type VoiceDeviceCheckOutcome=
  | 'permission_denied'
  | 'capture_incomplete'
