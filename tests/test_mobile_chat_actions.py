@@ -1,9 +1,14 @@
 """Native consultation adapters must preserve participant and web lifecycle rules."""
 import io
+import os
+import threading
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 from sqlmodel import SQLModel, Session, create_engine, select
 from app import main, mobile_api
 
@@ -274,3 +279,190 @@ def test_consultation_client_intent_key_has_bounded_format():
         main._normalize_consultation_client_message_id("short")
     assert error.value.status_code == 422
 
+
+
+def test_web_attachment_upload_validates_signatures_strips_metadata_and_replays(chat):
+    from pathlib import Path
+    client, engine = chat
+    client.cookies.set(main.SESSION_COOKIE, _SESSION_TOKEN[1])
+    headers = {"accept": "application/json", "x-requested-with": "fetch"}
+    bad = client.post(
+        "/expert-support/cases/1/media-message",
+        data={"client_message_id": "native-web-invalid-pdf-0001"},
+        files={"file": ("spoofed.pdf", b"not a PDF", "application/pdf")}, headers=headers,
+    )
+    assert bad.status_code == 422, bad.text
+    with Session(engine) as session:
+        assert session.exec(select(main.ConsultationMessage)).all() == []
+
+    metadata = PngInfo()
+    metadata.add_text("Comment", "SyntheticPrivateLocation")
+    raw = io.BytesIO()
+    Image.new("RGB", (16, 12), (20, 30, 40)).save(raw, format="PNG", pnginfo=metadata)
+    payload = raw.getvalue()
+    key = "native-web-attachment-0001"
+    first = client.post(
+        "/expert-support/cases/1/media-message",
+        data={"client_message_id": key},
+        files={"file": ("synthetic.png", payload, "image/png")}, headers=headers,
+    )
+    assert first.status_code == 200, first.text
+    message_id = first.json()["message"]["id"]
+    with Session(engine) as session:
+        message = session.get(main.ConsultationMessage, message_id)
+        assert b"SyntheticPrivateLocation" not in Path(message.media_path).read_bytes()
+
+    replay = client.post(
+        "/expert-support/cases/1/media-message",
+        data={"client_message_id": key},
+        files={"file": ("synthetic.png", payload, "image/png")}, headers=headers,
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["replayed"] is True
+    assert replay.json()["message"]["id"] == message_id
+    changed = io.BytesIO()
+    Image.new("RGB", (16, 12), (40, 30, 20)).save(changed, format="PNG")
+    conflict = client.post(
+        "/expert-support/cases/1/media-message",
+        data={"client_message_id": key},
+        files={"file": ("synthetic.png", changed.getvalue(), "image/png")}, headers=headers,
+    )
+    assert conflict.status_code == 409
+
+    download = client.get(f"/expert-support/cases/1/message-media/{message_id}")
+    assert download.status_code == 200
+    assert download.headers["cache-control"] == "private, no-store"
+    assert "cookie" in download.headers.get("vary", "").lower()
+    assert download.headers["x-content-type-options"] == "nosniff"
+    assert b"SyntheticPrivateLocation" not in download.content
+
+
+def test_attachment_download_uses_latest_inbox_state_and_case_scope(chat):
+    client, engine = chat
+    raw = io.BytesIO()
+    Image.new("RGB", (8, 8), "white").save(raw, format="PNG")
+    uploaded = client.post(
+        "/api/mobile/v1/consultations/1/attachments",
+        data={"client_message_id": "native-inbox-media-0001"},
+        files={"file": ("inbox.png", raw.getvalue(), "image/png")},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    message_id = uploaded.json()["message"]["id"]
+    with Session(engine) as session:
+        session.add(main.ConsultationCase(
+            id=2, requester_user_id=1, expert_user_id=2, specialty="Endodonti",
+            clinical_summary="Synthetic", question="Synthetic", status="ACTIVE",
+            expert_response_deadline=main._utcnow_naive() + timedelta(hours=1),
+        ))
+        session.add(main.ConsultationInboxState(case_id=1, user_id=1, deleted_at=None))
+        session.commit()
+        session.add(main.ConsultationInboxState(
+            case_id=1, user_id=1, deleted_at=main._utcnow_naive(),
+            recover_until=main._utcnow_naive() + timedelta(days=7),
+        ))
+        session.commit()
+
+    assert client.get(f"/api/mobile/v1/consultations/1/attachments/{message_id}").status_code == 404
+    assert client.get(f"/api/mobile/v1/consultations/2/attachments/{message_id}").status_code == 404
+    client.cookies.set(main.SESSION_COOKIE, _SESSION_TOKEN[1])
+    assert client.get(f"/expert-support/cases/1/message-media/{message_id}").status_code == 404
+    with Session(engine) as session:
+        session.add(main.ConsultationInboxState(case_id=1, user_id=1, deleted_at=None))
+        session.commit()
+
+    mobile_download = client.get(f"/api/mobile/v1/consultations/1/attachments/{message_id}")
+    assert mobile_download.status_code == 200
+    assert mobile_download.headers["cache-control"] == "private, no-store"
+    assert "authorization" in mobile_download.headers.get("vary", "").lower()
+    assert mobile_download.headers["x-content-type-options"] == "nosniff"
+    web_download = client.get(f"/expert-support/cases/1/message-media/{message_id}")
+    assert web_download.status_code == 200
+    assert web_download.headers["cache-control"] == "private, no-store"
+    assert "cookie" in web_download.headers.get("vary", "").lower()
+
+
+def test_postgres_parallel_attachment_retry_commits_one_message(monkeypatch, tmp_path):
+    database_url = os.getenv("TEST_POSTGRES_URL") or os.getenv("DENTAL_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("PostgreSQL concurrency service is not configured")
+    engine = create_engine(database_url, pool_size=8, max_overflow=8, pool_pre_ping=True)
+    SQLModel.metadata.create_all(engine)
+    token = "native-concurrent-" + uuid.uuid4().hex
+    username_suffix = uuid.uuid4().hex
+    with Session(engine) as session:
+        sender = main.User(
+            username="native-concurrent-sender-" + username_suffix,
+            display_name="Synthetic sender", role="DOCTOR", is_active=True,
+            email_verified_at=main._utcnow_naive(),
+        )
+        expert = main.User(
+            username="native-concurrent-expert-" + username_suffix,
+            display_name="Synthetic expert", role="DOCTOR", is_active=True,
+            email_verified_at=main._utcnow_naive(),
+        )
+        session.add_all([sender, expert])
+        session.flush()
+        session.add(main.SessionToken(
+            token_hash=main.hash_session_token(token), user_id=sender.id,
+            expires_at=main._utcnow_naive() + timedelta(days=1),
+        ))
+        case = main.ConsultationCase(
+            requester_user_id=sender.id, expert_user_id=expert.id, specialty="Endodonti",
+            clinical_summary="Synthetic", question="Synthetic", status="ACTIVE",
+            expert_response_deadline=main._utcnow_naive() + timedelta(hours=1),
+        )
+        session.add(case)
+        session.commit()
+        case_id, sender_id = case.id, sender.id
+
+    barrier = threading.Barrier(2)
+    def synchronized_store(path, raw, content_type=None):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+        barrier.wait(timeout=20)
+
+    monkeypatch.setattr(main, "engine", engine)
+    monkeypatch.setattr(mobile_api, "engine", engine)
+    monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path / "postgres-uploads")
+    monkeypatch.setattr(main, "storage_write_bytes", synchronized_store)
+    monkeypatch.setattr(main, "storage_delete", lambda path: __import__("pathlib").Path(path).unlink(missing_ok=True))
+    monkeypatch.setattr(main, "on_loop", lambda *args, **kwargs: None)
+
+    raw = io.BytesIO()
+    Image.new("RGB", (8, 8), "white").save(raw, format="PNG")
+    payload = raw.getvalue()
+    key = "native-postgres-retry-" + uuid.uuid4().hex[:20]
+
+    def send():
+        client = TestClient(main.app)
+        client.headers["Authorization"] = "Bearer " + token
+        return client.post(
+            f"/api/mobile/v1/consultations/{case_id}/attachments",
+            data={"client_message_id": key},
+            files={"file": ("parallel.png", payload, "image/png")},
+        )
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(lambda _: send(), range(2)))
+        assert [response.status_code for response in responses] == [200, 200], [response.text for response in responses]
+        bodies = [response.json() for response in responses]
+        assert {body["message"]["client_message_id"] for body in bodies} == {key}
+        assert sorted(body.get("replayed", False) for body in bodies) == [False, True]
+        with Session(engine) as session:
+            messages = session.exec(select(main.ConsultationMessage).where(
+                main.ConsultationMessage.case_id == case_id,
+                main.ConsultationMessage.sender_user_id == sender_id,
+            )).all()
+            receipts = session.exec(select(main.ConsultationMessageReceipt).where(
+                main.ConsultationMessageReceipt.case_id == case_id,
+                main.ConsultationMessageReceipt.sender_user_id == sender_id,
+                main.ConsultationMessageReceipt.client_message_id == key,
+            )).all()
+            assert len(messages) == 1
+            assert len(receipts) == 1
+            stored = __import__("pathlib").Path(messages[0].media_path)
+            assert stored.exists()
+            assert len(list(stored.parent.iterdir())) == 1
+    finally:
+        engine.dispose()
