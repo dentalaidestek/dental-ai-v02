@@ -369,5 +369,7 @@ async def complete_program_event(response:Response,event_id:int,token:str=Depend
 async def delete_program_event(response:Response,event_id:int,token:str=Depends(_mobile_access_token),user=Depends(_mobile_user)):
     _mobile_private_no_store(response)
     from app import main as web
+    with Session(web.engine) as session:
+        _owned(session,web,user,event_id)
     await _invoke(web.program_delete,_mobile_request(token),event_id)
     return {'ok':True}
