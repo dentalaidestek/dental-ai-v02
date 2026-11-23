@@ -10,9 +10,17 @@ import pytest
 @pytest.fixture
 def program(chat,monkeypatch):
     client,engine=chat
+    real_render=main.templates.TemplateResponse
+    seen={}
     def render(*args,**kwargs):
-        result=Response('',status_code=kwargs.get('status_code',200));result.context=kwargs.get('context') or {};return result
+        ctx=kwargs.get('context')
+        if ctx is None and len(args)>2 and isinstance(args[2],dict):
+            ctx=args[2]
+        seen.clear();seen.update(ctx or {})
+        return real_render(*args,**kwargs)
     monkeypatch.setattr(main.templates,'TemplateResponse',render)
+    client.program_context=seen
+    client.cookies.set(main.SESSION_COOKIE,_SESSION_TOKEN[1])
     with Session(engine) as s:
         s.add(main.Patient(id=8,owner_user_id=1,anonymous_id='SYNTHETIC-8',first_name='Synthetic'))
         s.add(main.Patient(id=9,owner_user_id=2,anonymous_id='SYNTHETIC-9'))
@@ -521,8 +529,8 @@ def test_web_program_edit_rejects_stale_revision_and_preserves_the_local_draft(p
 
     edit_page=client.get(f'/program/{ident}/edit')
     assert edit_page.status_code==200
-    assert edit_page.context['expected_revision']==original_revision
-    assert edit_page.context['revision_conflict'] is False
+    assert client.program_context['expected_revision']==original_revision
+    assert client.program_context['revision_conflict'] is False
 
     with Session(engine) as session:
         event=session.get(main.ScheduleEvent,ident)
@@ -535,17 +543,17 @@ def test_web_program_edit_rejects_stale_revision_and_preserves_the_local_draft(p
     draft={'event_type':'APPOINTMENT','title':'My unsaved local draft','start_at':'2030-01-07T10:00','end_at':'2030-01-07T10:30','patient_id':'8','location':'','notes':'Local-only note','reminder_minutes':'30','recurrence_rule':'NONE','recurrence_until':'','expected_revision':original_revision}
     stale=client.post(f'/program/{ident}/edit',data=draft)
     assert stale.status_code==409
-    assert stale.context['revision_conflict'] is True
-    assert stale.context['expected_revision']==original_revision
-    assert stale.context['initial_title']=='My unsaved local draft'
-    assert stale.context['initial_notes']=='Local-only note'
+    assert client.program_context['revision_conflict'] is True
+    assert client.program_context['expected_revision']==original_revision
+    assert client.program_context['initial_title']=='My unsaved local draft'
+    assert client.program_context['initial_notes']=='Local-only note'
 
     with Session(engine) as session:
         event=session.get(main.ScheduleEvent,ident)
         assert event.title=='Changed on another device'
         assert main._schedule_event_revision(event)==latest_revision
 
-    current=client.post(f'/program/{ident}/edit',data={**draft,'expected_revision':latest_revision})
+    current=client.post(f'/program/{ident}/edit',data={**draft,'expected_revision':latest_revision},follow_redirects=False)
     assert current.status_code==303
     with Session(engine) as session:
         event=session.get(main.ScheduleEvent,ident)
