@@ -801,13 +801,13 @@ def stream_rag_v2(
                 and type(retrieval.study_task.get('count')) is int
                 and not retrieval.study_task.get('batch_partial'))
             output_budget = 16000 if retrieval.study_task.get('inventory_output') or pdf_patch else 7000
-            # Claude's cap includes adaptive thinking as well as answer text.
-            # Whole-source extraction and long question sets need room for
-            # both; the earlier Gemini-sized cap truncated a real 20-item turn.
+            # Claude's adaptive-thinking budget can truncate source batches and
+            # large structured sets at the old 16k ceiling. Keep ordinary turns
+            # economical, but give those explicitly large tasks a 32k call budget.
             if target.provider == 'anthropic' and (
                     retrieval.study_task.get('batch_partial')
                     or structured_quiz or checked_set and (retrieval.study_task.get('count') or 0) >= 10):
-                output_budget = 16000
+                output_budget = 32768
             from app.academic_long_answer import stream_complete_answer, stream_complete_structured_answer, LongAnswerError
             pieces = []
             generation_call = dict(
@@ -827,7 +827,7 @@ def stream_rag_v2(
                         expected_count=retrieval.study_task.get('count') if structured_quiz else None)
                     if generation_options.get('response_schema') else
                     stream_complete_answer(provider, generation_call, retrieval,
-                        allow_continuation=not retrieval.study_task.get('batch_partial')))
+                        allow_continuation=True))
                 for chunk in completed:
                     if chunk:
                         emitted = True

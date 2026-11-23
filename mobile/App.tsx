@@ -1,77 +1,406 @@
-import React,{useCallback,useEffect,useState}from"react";
-import{ActivityIndicator,FlatList,KeyboardAvoidingView,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View,Image}from"react-native";
-import{NavigationContainer,useNavigation}from"@react-navigation/native";
+import './src/cryptoPolyfill';
+import NativeAcademic from './src/NativeAcademic';
+import NativeExpertProfile from "./src/NativeExpertProfile";
+import NativeProfessional from "./src/NativeProfessional";
+import NativeProgram from "./src/NativeProgram";
+import NativeAccount from "./src/NativeAccount";
+import NativeAuth from "./src/NativeAuth";
+import NativePatientAppointment from "./src/NativePatientAppointment";
+import NativePatientProfile from "./src/NativePatientProfile";
+import NativePatientMedia from "./src/NativePatientMedia";
+import useSessionRenderKey from "./src/useSessionRenderKey";
+import {resolvePatientMediaRouteId} from "./src/patientMediaRoute";
+import {patientAnalysisHistoryStatus} from "./src/patientHistoryPresentation";
+import React,{useCallback,useEffect,useRef,useState}from"react";
+import{ActivityIndicator,Alert,AppState,FlatList,KeyboardAvoidingView,Linking,Platform,Pressable,RefreshControl,ScrollView,StyleSheet,Text,TextInput,View,Image}from"react-native";
+import{NavigationContainer,createNavigationContainerRef,useNavigation,useIsFocused}from"@react-navigation/native";
 import{createBottomTabNavigator}from"@react-navigation/bottom-tabs";
 import{createNativeStackNavigator}from"@react-navigation/native-stack";
 import*as SecureStore from"expo-secure-store";
-import*as ImagePicker from"expo-image-picker";
-import{createPatient,createSchedule,getDashboard,getMe,getPatient,getPatients,getSchedule,login,verifyEmail,logout,Patient,PatientDetail,ScheduleEvent,User}from"./src/api";
+
+import NativeNewPatient from "./src/NativeNewPatient";
+import {StatusBar} from "expo-status-bar";
+import{createPatient,editPatient,deletePatient,createTreatment,updateTreatment,createSchedule,completeSchedule,deleteSchedule,getDashboard,getMe,getPatient,getPatients,getSchedule,login,verifyEmail,logout,Dashboard,Patient,PatientDetail,ScheduleEvent,User}from"./src/api";
 import {SafeAreaProvider,SafeAreaView} from "react-native-safe-area-context";
 import {DentalFlow} from "./src/SocialScreens";
+import NativeSocialAdmin from "./src/NativeSocialAdmin";
 import {usePagedRecords} from "./src/usePagedRecords";
+import {normalizePatientDirectorySearch,patientDirectoryDetails,patientDirectoryAgeLabel,PATIENT_DIRECTORY_SEARCH_DEBOUNCE_MS} from "./src/patientDirectoryPresentation";
 import {subscribeSessionExpiry} from "./src/sessionExpiry";
+import {useSessionHealth} from "./src/useSessionHealth";
 import{restoreStoredSession}from"./src/session";
 import NativeDentalAI from"./src/NativeDentalAI";
+import NativeFotoFikir from"./src/NativeFotoFikir";
 import NativeToothChart from"./src/NativeToothChart";
-import{Academic,AnalysisHistory,ConsultationChat,Consultations,ExpertDirectory,Notifications,MediaGallery,NewConsultation}from"./src/ModernScreens";
+import VoiceExamEntry from "./src/VoiceExamEntry";
+import NativeSupportRequests from "./src/NativeSupportRequests";
+import{Academic,AnalysisHistory,ConsultationChat,Consultations,ExpertDirectory,Notifications,NewConsultation}from"./src/ModernScreens";
 import{RealtimeProvider,useRealtime}from"./src/realtime";
-import{uploadPatientMedia}from"./src/api";
+
+import{getNotificationUnreadCount,getMessagesUnreadCount,getAnalysisHistory,AnalysisHistory as AnalysisHistoryItem}from"./src/modernApi";
+import {shouldRefreshHomeUnread} from "./src/notificationRefresh";
+import {dashboardGreetingForHour,dashboardProfessionalName,parseDashboardProgramSnapshot,applyDashboardProgramSnapshot,dashboardUpcomingRows} from "./src/dashboardPresentation";
+import{claimNativePushDeviceForSession,refreshNativePushRegistration,subscribeToNativePushResponses,unregisterNativePushForLogout}from"./src/nativePush";
 
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",red:"#B42318",green:"#16803C"};
+function SessionScope({scope,children}:{scope:string;children:(key:string)=>React.ReactNode}){
+ const renderKey=useSessionRenderKey(scope);
+ return <>{children(renderKey)}</>;
+}
+const notificationNavigationRef=createNavigationContainerRef<any>();
+let pendingNativeNotificationRoute:any=null;
+function navigateNativePushTarget(target:any){
+ if(target?.kind!=="navigate"||!target.route)return;
+ const route=target.route;
+ if(!notificationNavigationRef.isReady()){pendingNativeNotificationRoute=route;return;}
+ if("params" in route)notificationNavigationRef.navigate(route.screen,route.params);
+ else notificationNavigationRef.navigate(route.screen);
+}
+function flushPendingNativeNotificationRoute(){
+ if(!pendingNativeNotificationRoute||!notificationNavigationRef.isReady())return;
+ const route=pendingNativeNotificationRoute;pendingNativeNotificationRoute=null;
+ if("params" in route)notificationNavigationRef.navigate(route.screen,route.params);
+ else notificationNavigationRef.navigate(route.screen);
+}
 
-function Icon({n,a=false}:{n:string;a?:boolean}){const m:any={home:"⌂",patients:"♙",ai:"✦",calendar:"□",profile:"○",plus:"+",search:"⌕",chevron:"›",clock:"◷"};return <Text style={[s.icon,{color:a?C.navy:C.muted}]}>{m[n]||"•"}</Text>}
+
+function Icon({n,a=false}:{n:string;a?:boolean}){if(n==="messages")return <View style={{width:24,height:24}}><View style={{position:"absolute",left:2,top:3,width:21,height:16,borderWidth:2,borderRadius:4,borderColor:a?C.navy:C.muted}}/><View style={{position:"absolute",left:6,top:16,width:6,height:6,borderLeftWidth:2,borderBottomWidth:2,backgroundColor:C.white,borderColor:a?C.navy:C.muted,transform:[{skewY:"-35deg"}]}}/></View>;const m:any={home:"⌂",patients:"♙",ai:"✦",calendar:"□",profile:"○",plus:"+",search:"⌕",chevron:"›",clock:"◷"};return <Text style={[s.icon,{color:a?C.navy:C.muted}]}>{m[n]||"•"}</Text>}
 function Logo({small=false}){return <View style={[s.logo,{width:small?42:70,height:small?42:70,borderRadius:small?14:22}]}><Text style={{fontSize:small?22:36}}>🦷</Text></View>}
 function Splash(){return <View style={s.splash}><Logo/><Text style={s.brand}>DENTAL AI</Text><Text style={s.splashSub}>Diş hekimliği için akıllı çalışma alanı</Text></View>}
-function Login({done}:{done:(t:string,u:User)=>void}){
- const[l,setL]=useState(""),[p,setP]=useState(""),[code,setCode]=useState(""),[challenge,setChallenge]=useState<string|null>(null),[busy,setBusy]=useState(false),[err,setErr]=useState("");
- async function go(renewEmailCode=false){if(!l.trim()||!p)return setErr("Kullanıcı adı/e-posta ve şifre gerekli.");setBusy(true);setErr("");try{const r=await login(l,p,renewEmailCode);if(!r.access_token&&r.challenge_token){setChallenge(r.challenge_token);return}if(!r.access_token)throw new Error("E-posta doğrulaması gerekiyor.");const me=await getMe(r.access_token);await SecureStore.setItemAsync("dentalai_token",r.access_token);done(r.access_token,me.user)}catch(e){setErr(e instanceof Error?e.message:"Giriş başarısız.")}finally{setBusy(false)}}
- async function verify(){if(!challenge||!/^[0-9]{6}$/.test(code))return setErr("6 haneli doğrulama kodunu girin.");setBusy(true);setErr("");try{const r=await verifyEmail(challenge,code);const me=await getMe(r.access_token);await SecureStore.setItemAsync("dentalai_token",r.access_token);done(r.access_token,me.user)}catch(e){setErr(e instanceof Error?e.message:"Doğrulama başarısız.")}finally{setBusy(false)}}
- return <KeyboardAvoidingView style={s.login} behavior={Platform.OS==="ios"?"padding":undefined}><ScrollView contentContainerStyle={s.loginInner}><Logo/><Text style={s.title}>DENTAL AI</Text><Text style={s.sub}>{challenge?"E-posta adresinize gönderilen kodu girin.":"Kliniğin cebinde. Hızlı, sade, güvenli."}</Text><View style={s.form}>{challenge?<><Text style={s.label}>6 haneli doğrulama kodu</Text><TextInput style={s.input} value={code} onChangeText={setCode} keyboardType="number-pad" inputMode="numeric" maxLength={6} autoComplete="one-time-code"/><Text style={s.cardSub}>Kod 10 dakika geçerlidir ve yalnızca bir kez kullanılabilir. Kodun süresi dolduysa aşağıdaki yenileme düğmesini kullanın.</Text>{!!err&&<Text style={s.err}>{err}</Text>}<Pressable style={s.primary} onPress={verify} disabled={busy}>{busy?<ActivityIndicator color="#fff"/>:<Text style={s.primaryText}>E-postayı Doğrula</Text>}</Pressable><Pressable disabled={busy} onPress={()=>{setChallenge(null);setCode("");setErr("")}}><Text style={s.cardSub}>Giriş ekranına dön</Text></Pressable><Pressable disabled={busy} onPress={()=>{setCode("");void go(true)}}><Text style={s.cardSub}>Süresi dolan kodu yenile</Text></Pressable></>:<><Text style={s.label}>Kullanıcı adı veya e-posta</Text><TextInput style={s.input} placeholder="Hesabın" placeholderTextColor={C.muted} autoCapitalize="none" value={l} onChangeText={setL}/><Text style={s.label}>Şifre</Text><TextInput style={s.input} placeholder="Şifren" placeholderTextColor={C.muted} secureTextEntry value={p} onChangeText={setP}/>{!!err&&<Text style={s.err}>{err}</Text>}<Pressable style={s.primary} onPress={()=>void go()} disabled={busy}>{busy?<ActivityIndicator color="#fff"/>:<Text style={s.primaryText}>Giriş Yap</Text>}</Pressable></>}</View></ScrollView></KeyboardAvoidingView>
-}
+function Login({done}:{done:(token:string,user:User)=>void}){return <NativeAuth done={done}/>;}
+
 function Header({title,sub,action}:{title:string;sub?:string;action?:React.ReactNode}){return <View style={s.header}><View style={{flex:1}}><Text style={s.hTitle}>{title}</Text>{sub&&<Text style={s.hSub}>{sub}</Text>}</View>{action}</View>}
 function Stat({v,l}:{v:any;l:string}){return <View style={s.stat}><Text style={s.statV}>{v}</Text><Text style={s.statL}>{l}</Text></View>}
 function Quick({title,sub,icon,onPress}:{title:string;sub:string;icon:string;onPress?:()=>void}){return <Pressable style={s.quick} onPress={onPress}><View style={s.quickIcon}><Icon n={icon}/></View><Text style={s.cardTitle}>{title}</Text><Text style={s.cardSub}>{sub}</Text></Pressable>}
-const PatientRow=React.memo(function PatientRow({p,on}:{p:Patient;on:()=>void}){const ini=((p.first_name?.[0]||"")+(p.last_name?.[0]||"")).toUpperCase()||"H";return <Pressable style={s.patient} onPress={on}><View style={s.avatar}><Text style={s.avatarT}>{ini}</Text></View><View style={{flex:1}}><Text style={s.pName}>{p.first_name||"İsimsiz"} {p.last_name||"Hasta"}</Text><Text style={s.cardSub}>{p.phone||p.anonymous_id}</Text></View><Icon n="chevron"/></Pressable>});
+const PatientRow=React.memo(function PatientRow({p,on}:{p:Patient;on:()=>void}){const ini=((p.first_name?.[0]||"")+(p.last_name?.[0]||"")).toUpperCase()||"H",details=patientDirectoryDetails(p);return <Pressable style={s.patient} onPress={on}><View style={s.avatar}><Text style={s.avatarT}>{ini}</Text></View><View style={{flex:1,minWidth:0}}><Text style={s.pName}>{p.first_name||"İsimsiz"} {p.last_name||"Hasta"}</Text>{details.map((value,index)=><Text key={index} style={s.cardSub}>{value}</Text>)}</View><Icon n="chevron"/></Pressable>});
 
-function Home({token,user}:{token:string;user:User}){const nav:any=useNavigation();const{lastEvent}=useRealtime();
- const[d,setD]=useState<any>();const[r,setR]=useState(false);const load=useCallback(async()=>{try{setD(await getDashboard(token))}catch{}},[token]);useEffect(()=>{load()},[load]);useEffect(()=>{if(lastEvent&&["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED","ANALYSIS_CREATED","ANALYSIS_UPDATED","PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(String(lastEvent.event_type||lastEvent.type)))load()},[load,lastEvent]);
- return <ScrollView style={s.page} contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={r} onRefresh={async()=>{setR(true);await load();setR(false)}}/>}>
-  <View style={s.top}><View><Text style={s.muted}>Merhaba 👋</Text><Text style={s.userName}>{user.display_name}</Text></View><Logo small/></View>
-  <View style={s.hero}><View style={{flex:1}}><Text style={s.eyebrow}>DENTAL AI</Text><Text style={s.heroTitle}>Bugün kliniğinde ne var?</Text><Text style={s.heroSub}>Hastalarını, analizlerini ve programını tek yerden yönet.</Text></View><Text style={s.heroTooth}>🦷</Text></View>
-  <View style={s.stats}><Stat v={d?.stats?.patient_count??"—"} l="Hasta"/><Stat v={d?.stats?.analysis_count??"—"} l="Analiz"/><Stat v={d?.stats?.upcoming_event_count??"—"} l="Yaklaşan"/></View>
-  <Text style={s.section}>Hızlı işlemler</Text><View style={s.grid}><Quick icon="ai" title="Dental AI" sub="Görüntü analizi" onPress={()=>nav.navigate("AI")}/><Quick icon="patients" title="Yeni hasta" sub="Hastayı kaydet" onPress={()=>nav.navigate("Patients",{screen:"NewPatient"})}/><Quick icon="calendar" title="Program" sub="Bugünkü plan" onPress={()=>nav.navigate("Program")}/><Quick icon="plus" title="Hastalar" sub="Hasta listesini aç" onPress={()=>nav.navigate("Patients")}/></View><View style={s.grid}><Quick icon="calendar" title="Dental Akış" sub="Meslektaşlarınla paylaş" onPress={()=>nav.navigate("DentalFlow")}/><Quick icon="search" title="Akademik AI" sub="Notlarından sor" onPress={()=>nav.navigate("Academic")}/><Quick icon="clock" title="Analiz geçmişi" sub="Eski analizlerin" onPress={()=>nav.navigate("AnalysisHistory")}/><Quick icon="clock" title="Bildirimler" sub="Canlı gelişmeler" onPress={()=>nav.navigate("Notifications")}/></View>
-  <Text style={s.section}>Son hastalar</Text>{(d?.recent_patients||[]).slice(0,5).map((p:Patient)=><PatientRow key={p.id} p={p} on={()=>nav.navigate("Patients",{screen:"PatientDetail",params:{id:p.id}})}/>)}
-  <Text style={s.section}>Yaklaşan</Text>{(d?.upcoming_events||[]).slice(0,4).map((e:any)=><View style={s.event} key={e.id}><View style={s.eventIcon}><Icon n="clock"/></View><View><Text style={s.cardTitle}>{e.title}</Text><Text style={s.cardSub}>{new Date(e.start_at).toLocaleString("tr-TR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</Text></View></View>)}
+const DASHBOARD_ASSET="https://dentalai.tr/static/dashboard/mobile/";
+function VisualFeature({title,description,asset,tint,onPress,photo=false}:{title:string;description:string;asset:string;tint:string;onPress:()=>void;photo?:boolean}){
+ // Bare filenames stay under /static/dashboard/mobile/; root-relative or full
+ // URLs (Foto Fikir kartı gibi) are used as-is so dashboard art can be shared.
+ const imageSource={uri:/^[a-z][a-z0-9+.-]*:\/\//i.test(asset)?asset:(asset.startsWith("/")?"https://dentalai.tr"+asset:DASHBOARD_ASSET+asset)};
+ return <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={onPress} style={{height:78,borderRadius:15,backgroundColor:tint,overflow:"hidden",marginBottom:0,borderWidth:1,borderColor:"#E5EAF0"}}>
+  <Image source={imageSource} resizeMode="cover" style={{position:"absolute",right:0,top:0,width:"45%",height:"100%"}} accessibilityIgnoresInvertColors/>
+  <View pointerEvents="none" style={{position:"absolute",top:0,bottom:0,left:0,width:"67%",backgroundColor:tint,opacity:0.97}}/>
+  <View style={{position:"absolute",left:16,right:"39%",top:0,bottom:0,justifyContent:"center"}}>
+   <Text numberOfLines={1} style={{fontSize:16,fontWeight:"900",color:"#10263E"}}>{title}</Text>
+   <Text numberOfLines={2} style={{fontSize:9,lineHeight:12,color:"#38576D",marginTop:4}}>{description}</Text>
+  </View>
+  <Text style={{position:"absolute",right:12,top:20,fontSize:24,fontWeight:"800",color:"#143C59"}}>›</Text>
+ </Pressable>;
+}
+function Home({token,user}:{token:string;user:User}){
+ const nav:any=useNavigation();
+ const focused=useIsFocused();
+ const{lastEvent}=useRealtime();
+ const[d,setD]=useState<Dashboard|null>(null);
+ const[recentAnalyses,setRecentAnalyses]=useState<AnalysisHistoryItem[]>([]);
+ const[homeSearch,setHomeSearch]=useState("");
+ const[menuOpen,setMenuOpen]=useState(false);
+ const[refreshing,setRefreshing]=useState(false);
+ const[unread,setUnread]=useState(0);
+ const[homeError,setHomeError]=useState("");
+ const greeting=dashboardGreetingForHour(new Date().getHours());
+ const displayName=dashboardProfessionalName(user.professional_title,user.display_name||user.username);
+ const load=useCallback(async()=>{
+  try{setD(await getDashboard(token));setHomeError("")}
+  catch(e:any){setHomeError(e?.message||"Ana sayfa yüklenemedi.")}
+ },[token]);
+ // "Son Analizler" reads the real analysis-history first page so the voice-review
+ // flag and TR status labels work; the dashboard snapshot stays as fallback.
+ const loadRecentAnalyses=useCallback(async()=>{
+  try{const page=await getAnalysisHistory(token);setRecentAnalyses(page.items.slice(0,3))}catch{}
+ },[token]);
+ const loadUnread=useCallback(async()=>{
+  try{setUnread(await getNotificationUnreadCount(token))}catch{}
+ },[token]);
+ useEffect(()=>{void load();void loadRecentAnalyses();if(focused)void loadUnread()},[load,loadUnread,focused]);
+ useEffect(()=>{if(shouldRefreshHomeUnread(lastEvent))void loadUnread()},[lastEvent,loadUnread]);
+ useEffect(()=>{
+  if(!lastEvent)return;
+  const type=String(lastEvent.event_type||lastEvent.type||"");
+  if(["PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(type)){
+   const snapshot=parseDashboardProgramSnapshot(lastEvent);
+   if(snapshot)setD(previous=>previous?applyDashboardProgramSnapshot(previous,snapshot):previous);
+   else void load();
+   return;
+  }
+  if(["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED","ANALYSIS_CREATED","ANALYSIS_UPDATED"].includes(type)){void load();void loadRecentAnalyses()}
+ },[lastEvent,load,loadRecentAnalyses]);
+ const hasProgramSnapshot=d?.dashboard_event!==undefined;
+ const programEvent:any=hasProgramSnapshot?d?.dashboard_event:d?.upcoming_events?.[0]||null;
+ const programTitle=hasProgramSnapshot?(d?.dashboard_event_label==="Bugün"?"Bugünkü Program":"Yaklaşan Program"):"Yaklaşan Program";
+ const programTime=programEvent
+  ?(typeof programEvent.start_time==="string"?programEvent.start_time:programEvent.start_at?new Date(programEvent.start_at).toLocaleString("tr-TR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"Saat belirtilmedi")
+  :"";
+ const programDetail=programEvent?[programEvent.patient_name,programEvent.type_label||programEvent.event_type].filter(Boolean).join(" · "):"";
+ // Compact "gg.aa · aa:ss · başlık" rows for the next upcoming events; the event
+ // already shown on the program card is excluded so nothing is listed twice.
+ const shownProgramEvent=hasProgramSnapshot
+  ?(d?.dashboard_event?{title:d.dashboard_event.title,start_time:d.dashboard_event.start_time}:null)
+  :(programEvent&&typeof programEvent.title==="string"?{title:programEvent.title,start_at:typeof programEvent.start_at==="string"?programEvent.start_at:undefined}:null);
+ const upcomingRows=dashboardUpcomingRows(d?.upcoming_events,shownProgramEvent);
+ // Web topbar menu-toggle parity (base.html #mainMenu): same entries mapped to native screens.
+ const menuItems:Array<[string,()=>void]>=[["Hesabım (Profil)",()=>nav.navigate("Profile")],["Programım",()=>nav.navigate("Program")],["Dental Akış",()=>nav.navigate("DentalFlow")],["Diş Şemaları",()=>nav.navigate("Patients",{screen:"ToothChartBrowser"})],["Analiz Geçmişi",()=>nav.navigate("AnalysisHistory")],["Destek Taleplerim",()=>nav.navigate("SupportRequests")]];
+ if(String(user.role||"").toUpperCase()==="ADMIN")menuItems.push(["Dental Akış Yönetimi",()=>nav.navigate("SocialAdmin")]);
+ return <View style={{flex:1}}>
+ <ScrollView style={s.page} contentContainerStyle={[s.content,{paddingHorizontal:10,paddingTop:8}]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async()=>{setRefreshing(true);await load();setRefreshing(false)}}/>}>
+  <View style={[s.top,{marginBottom:8}]}>
+   <Logo small/>
+   <View style={{flex:1}}/>
+   {["DOCTOR","ADMIN"].includes(String(user.role||"").toUpperCase())&&<Pressable accessibilityRole="button" accessibilityLabel="Uzman Profilim" onPress={()=>nav.navigate("ExpertManagement")} style={{flexDirection:"row",alignItems:"center",backgroundColor:"#FFFFFF",borderWidth:1,borderColor:"#DCE7F4",borderRadius:19,paddingHorizontal:10,height:36,marginRight:6}}><Text style={{fontSize:13,fontWeight:"800",color:"#0878F9"}}>⭐ Uzman Profilim</Text></Pressable>}
+   <Pressable accessibilityRole="button" accessibilityLabel={unread>0?("Bildirimler, "+unread+" okunmamış"):"Bildirimler"} onPress={()=>nav.navigate("Notifications")} style={{width:44,height:44,alignItems:"center",justifyContent:"center",marginRight:2}}>
+    <Text style={{fontSize:25,color:C.navy}}>🔔</Text>
+    {unread>0&&<View style={{position:"absolute",right:0,top:0,minWidth:18,height:18,borderRadius:9,backgroundColor:C.red,alignItems:"center",justifyContent:"center",paddingHorizontal:3}}><Text style={{color:"#FFF",fontSize:10,fontWeight:"800"}}>{unread>99?"99+":unread}</Text></View>}
+   </Pressable>
+   <Pressable accessibilityRole="button" accessibilityLabel="Tüm menüyü aç" onPress={()=>setMenuOpen(true)} style={{width:44,height:44,alignItems:"center",justifyContent:"center"}}><Text style={{fontSize:24,color:C.navy,fontWeight:"800"}}>⋮</Text></Pressable>
+  </View>
+  {!!homeError&&<Pressable accessibilityRole="button" onPress={()=>void load()} style={s.card}><Text style={s.err}>{homeError} · Tekrar dene</Text></Pressable>}
+  <View style={[s.hero,{backgroundColor:"#EAF3FD",padding:0,minHeight:116,height:116,borderRadius:19}]}>
+   <View style={{flex:1,padding:14,zIndex:1}}>
+    <Text style={[s.eyebrow,{color:"#426B99"}]}>{greeting.toLocaleUpperCase("tr-TR")}</Text>
+    <Text accessibilityRole="header" style={[s.heroTitle,{color:"#08294F",fontSize:21,maxWidth:230}]}>{displayName}</Text>
+    <Text style={[s.heroSub,{color:"#42617C",maxWidth:220}]}>Kliniğini tek ekrandan yönet, Dental AI araçlarına hızlıca eriş.</Text>
+   </View>
+   <Image source={{uri:DASHBOARD_ASSET+"welcome_tooth.webp"}} resizeMode="cover" style={{width:112,height:110,alignSelf:"center"}}/>
+  </View>
+  <View style={{flexDirection:"row",alignItems:"center",backgroundColor:"#FFFFFF",borderWidth:1,borderColor:"#DCE7F4",borderRadius:14,marginTop:8,paddingHorizontal:11,height:46}}>
+   <Icon n="search"/>
+   <TextInput accessibilityLabel="Ana sayfada hasta ara" style={{flex:1,marginLeft:10,color:"#10233F",fontSize:13}} placeholder="Hasta adı, soyadı veya hasta no..." placeholderTextColor="#7B8B9D" value={homeSearch} onChangeText={setHomeSearch} maxLength={100} autoCapitalize="none" autoCorrect={false} returnKeyType="search" onSubmitEditing={()=>nav.navigate("Patients",{screen:"PatientsList",params:{search:normalizePatientDirectorySearch(homeSearch)}})}/>
+   <Pressable accessibilityRole="button" accessibilityLabel="Hastaları ara" onPress={()=>nav.navigate("Patients",{screen:"PatientsList",params:{search:normalizePatientDirectorySearch(homeSearch)}})}><Text style={{color:"#0878F9",fontWeight:"800"}}>Ara</Text></Pressable>
+  </View>
+  <View style={{gap:6}}>
+   {["DOCTOR","ADMIN"].includes(String(user.role||"").toUpperCase())&&d?.voice_exam_enabled!==false&&<VisualFeature title="Sesli Muayene" description="Hasta seç, görüşmeyi başlat ve muayene özetini kontrol et." asset="voice_exam.webp" tint="#F1F5FD" onPress={()=>nav.navigate("VoiceExam")} photo/>}
+   <VisualFeature title="Hastalar" description="Hasta kayıtlarını yönetin, yeni hasta ekleyin." asset="patients_clinic.webp" tint="#EDF8F5" onPress={()=>nav.navigate("Patients")}/>
+   <VisualFeature title="Dental AI ile Analiz" description="Röntgen ve klinik görüntüleri yapay zeka ile analiz edin." asset="ai_xray.webp" tint="#EEF4FD" onPress={()=>nav.navigate("AI")}/>
+   <VisualFeature title="Foto Fikir — İçerik stüdyosu" description="Onaylı metinlerinizden karusel görselleri, marka kiti ve Reels planı." asset="/static/dashboard/dental_ai_foto_fikir_card.webp" tint="#EEF4FD" onPress={()=>nav.navigate("FotoFikir")}/>
+   <VisualFeature title="Diş Şeması" description="Etkileşimli diş şeması ile kayıt ve planlama yapın. Hasta seçin." asset="tooth_chart.webp" tint="#F2F4FF" onPress={()=>nav.navigate("Patients",{screen:"ToothChartBrowser"})}/>
+   <VisualFeature title="Uzmandan Destek Al" description="Vakanız için doğrulanmış bir uzmandan ikinci görüş alın." asset="expert_consult.webp" tint="#F3F6FC" onPress={()=>nav.navigate("ExpertDirectory")} photo/>
+   <VisualFeature title="Dental Akış" description="Uzmanları takip et, mesleki paylaşımları keşfet." asset="dental_flow.webp?v=20261109-1" tint="#F7F2F9" onPress={()=>nav.navigate("DentalFlow")} photo/>
+   {String(user.role||"").toUpperCase()==="ADMIN"&&<VisualFeature title="Dental Akış Yönetimi" description="Bekleyen içerikleri ve şikâyetleri güvenli biçimde inceleyin." asset="dental_flow.webp?v=20261109-1" tint="#EEF3F8" onPress={()=>nav.navigate("SocialAdmin")} photo/>}
+  </View>
+  <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",marginTop:12}}>
+   <Text style={s.section}>{programTitle}</Text>
+   <Pressable accessibilityRole="button" onPress={()=>nav.navigate("Program")}><Text style={{color:"#0878F9",fontWeight:"800"}}>Tümünü Gör ›</Text></Pressable>
+  </View>
+  {programEvent?<Pressable accessibilityRole="button" accessibilityLabel={programEvent.title+" program kaydını aç"} onPress={()=>nav.navigate("Program",hasProgramSnapshot?{eventId:programEvent.id,openRequestId:Date.now()}:{})} style={s.event} key={programEvent.id}>
+   <View style={s.eventIcon}><Icon n="clock"/></View>
+   <View style={{flex:1}}>
+    <Text style={s.cardTitle}>{programEvent.title}</Text>
+    <Text style={s.cardSub}>{programTime}</Text>
+    {!!programDetail&&<Text style={s.cardSub}>{programDetail}</Text>}
+   </View>
+   <Icon n="chevron"/>
+  </Pressable>:<View style={s.card}>
+   <Text style={s.cardSub}>{hasProgramSnapshot?"Bugün için program bulunmuyor.":"Yaklaşan program bulunmuyor."}</Text>
+   <Pressable accessibilityRole="button" onPress={()=>nav.navigate("Program")} style={{marginTop:12}}><Text style={{color:"#0878F9",fontWeight:"800"}}>Programa Ekle ›</Text></Pressable>
+  </View>}
+  {upcomingRows.map(row=><Pressable accessibilityRole="button" accessibilityLabel={row.title+" yaklaşan program kaydını aç"} key={row.key} onPress={()=>nav.navigate("Program")} style={s.event}>
+   <View style={s.eventIcon}><Icon n="clock"/></View>
+   <Text numberOfLines={1} style={[s.cardTitle,{flex:1}]}>{row.day} · {row.time} · {row.title}</Text>
+   <Icon n="chevron"/>
+  </Pressable>)}
+  <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between"}}>
+   <Text style={s.section}>Son Hastalar</Text>
+   <Pressable accessibilityRole="button" onPress={()=>nav.navigate("Patients")}><Text style={{color:"#0878F9",fontWeight:"800"}}>Tümünü Gör ›</Text></Pressable>
+  </View>
+  {(d?.recent_patients||[]).slice(0,3).map((p:Patient)=><PatientRow key={p.id} p={p} on={()=>nav.navigate("Patients",{screen:"PatientDetail",params:{id:p.id}})}/>)}
+  {!(d?.recent_patients||[]).length&&<View style={s.card}>
+   <Text style={s.cardSub}>Henüz hasta kaydı yok.</Text>
+   <Pressable accessibilityRole="button" onPress={()=>nav.navigate("Patients",{screen:"NewPatient"})} style={{marginTop:12}}><Text style={{color:"#0878F9",fontWeight:"800"}}>Hasta Ekle ›</Text></Pressable>
+  </View>}
+  <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between"}}>
+   <Text style={s.section}>Son Analizler</Text>
+   <Pressable accessibilityRole="button" onPress={()=>nav.navigate("AnalysisHistory")}><Text style={{color:"#0878F9",fontWeight:"800"}}>Tümünü Gör ›</Text></Pressable>
+  </View>
+  {(recentAnalyses.length?recentAnalyses:(d?.recent_analyses||[]).slice(0,3)).map(item=><Pressable accessibilityRole="button" accessibilityLabel={item.patient_name+" analiz sonucunu aç"} key={item.id} onPress={()=>nav.navigate("AnalysisResult",{id:item.id})} style={s.event}>
+   <View style={s.eventIcon}><Text style={{fontSize:12,fontWeight:"900",color:C.navy}}>AI</Text></View>
+   <View style={{flex:1}}>
+    <Text style={s.cardTitle}>{item.patient_name||"Hasta"}</Text>
+    <Text style={s.cardSub}>{item.tooth_number?"Diş "+item.tooth_number+" · ":""}{patientAnalysisHistoryStatus({status:item.status,is_voice_review:(item as any).is_voice_review})}</Text>
+    <Text style={s.cardSub}>{new Date(item.created_at).toLocaleString("tr-TR")}</Text>
+   </View>
+   <Icon n="chevron"/>
+  </Pressable>)}
+  {!recentAnalyses.length&&!(d?.recent_analyses||[]).length&&<View style={s.card}>
+   <Text style={s.cardSub}>Henüz klinik analiz yok.</Text>
+   <Pressable accessibilityRole="button" onPress={()=>nav.navigate("AI")} style={{marginTop:12}}><Text style={{color:"#0878F9",fontWeight:"800"}}>Dental AI ile Analiz Başlat ›</Text></Pressable>
+  </View>}
+  <View style={[s.stats,{marginTop:12}]}><Stat v={d?.stats?.patient_count??"—"} l="Hasta"/><Stat v={d?.stats?.analysis_count??"—"} l="Analiz"/><Stat v={d?.stats?.upcoming_event_count??"—"} l="Yaklaşan"/></View>
+  <View style={s.grid}>
+   <Quick icon="search" title="Akademik AI" sub="Notlarından sor" onPress={()=>nav.navigate("Academic")}/>
+   <Quick icon="calendar" title="Program" sub="Bugünkü plan" onPress={()=>nav.navigate("Program")}/>
+   <Quick icon="clock" title="Analiz geçmişi" sub="Eski analizlerin" onPress={()=>nav.navigate("AnalysisHistory")}/>
+   <Quick icon="clock" title="Bildirimler" sub="Canlı gelişmeler" onPress={()=>nav.navigate("Notifications")}/>
+   <Quick icon="messages" title="Destek Talepleri" sub="Yardım ve destek" onPress={()=>nav.navigate("SupportRequests")}/>
+  </View>
+  <Text style={{fontSize:11,color:"#65778D",lineHeight:17,marginTop:20,textAlign:"center"}}>ⓘ Dental AI, araştırma ve prototip aşamasındadır. Klinik tanı veya tedavi amacıyla kullanılmamalıdır.</Text>
  </ScrollView>
+ {menuOpen&&<View style={{position:"absolute",left:0,right:0,top:0,bottom:0,backgroundColor:"rgba(7,27,53,.6)",justifyContent:"flex-end",zIndex:1000}}>
+  <Pressable accessibilityRole="button" accessibilityLabel="Menüyü kapat" onPress={()=>setMenuOpen(false)} style={{flex:1}}/>
+  <View style={{backgroundColor:"#FFFFFF",borderTopLeftRadius:18,borderTopRightRadius:18,paddingHorizontal:16,paddingTop:14,paddingBottom:26}}>
+   <Text style={{fontSize:18,fontWeight:"800",color:C.navy,marginBottom:4}}>Tüm menü</Text>
+   {menuItems.map(([label,action])=><Pressable key={label} accessibilityRole="button" onPress={()=>{setMenuOpen(false);action()}} style={{paddingVertical:12,borderBottomWidth:1,borderBottomColor:"#EEF2F7"}}><Text style={{color:"#10233F",fontWeight:"700"}}>{label}</Text></Pressable>)}
+   <Pressable accessibilityRole="button" onPress={()=>setMenuOpen(false)} style={{paddingVertical:12}}><Text style={{color:C.muted,fontWeight:"800"}}>Kapat</Text></Pressable>
+  </View>
+ </View>}
+ </View>
 }
-function NewPatient({token,onCreated}:{token:string;onCreated:(p:Patient)=>void}){
- const[f,setF]=useState({first_name:"",last_name:"",birth_date:"",phone:"",chief_complaint:""}),[busy,setBusy]=useState(false),[err,setErr]=useState("");
- async function save(){if(!f.first_name.trim()||!f.last_name.trim()){setErr("Ad ve soyad zorunlu.");return}setBusy(true);setErr("");try{const r=await createPatient(token,{...f});onCreated(r.patient)}catch(e:any){setErr(typeof e?.message==="string"?e.message:"Hasta oluşturulamadı.")}finally{setBusy(false)}}
- return <ScrollView style={s.page} contentContainerStyle={s.content}><Header title="Yeni Hasta" sub="Hasta kaydını doğrudan telefondan oluştur"/><View style={s.card}><Text style={s.label}>Ad</Text><TextInput style={s.input} value={f.first_name} onChangeText={v=>setF({...f,first_name:v})} placeholder="Ad" placeholderTextColor={C.muted}/><Text style={s.label}>Soyad</Text><TextInput style={s.input} value={f.last_name} onChangeText={v=>setF({...f,last_name:v})} placeholder="Soyad" placeholderTextColor={C.muted}/><Text style={s.label}>Doğum tarihi</Text><TextInput style={s.input} value={f.birth_date} onChangeText={v=>setF({...f,birth_date:v})} placeholder="YYYY-AA-GG" placeholderTextColor={C.muted}/><Text style={s.label}>Telefon</Text><TextInput style={s.input} value={f.phone} onChangeText={v=>setF({...f,phone:v.replace(/\D/g,"")})} keyboardType="phone-pad" placeholder="05XXXXXXXXX" placeholderTextColor={C.muted}/><Text style={s.label}>Şikayet</Text><TextInput style={[s.input,{height:90,textAlignVertical:"top"}]} multiline value={f.chief_complaint} onChangeText={v=>setF({...f,chief_complaint:v})} placeholder="Klinik şikayet" placeholderTextColor={C.muted}/>{!!err&&<Text style={s.err}>{err}</Text>}<Pressable style={s.primary} onPress={save} disabled={busy}>{busy?<ActivityIndicator color="#fff"/>:<Text style={s.primaryText}>Hastayı Kaydet</Text>}</Pressable></View></ScrollView>
+function NewPatient({token,onCreated}:{token:string;onCreated:(p:Patient)=>void}){return <NativeNewPatient token={token} onCreated={onCreated}/>;}
+
+function Patients({token,route,chartMode=false}:{token:string;route?:any;chartMode?:boolean}){
+ const nav:any=useNavigation(),[q,setQ]=useState(""),[search,setSearch]=useState("");
+ const{lastEvent}=useRealtime();
+ const applySearch=useCallback(()=>{
+  const normalized=normalizePatientDirectorySearch(q);
+  setQ(normalized);
+  setSearch(normalized);
+ },[q]);
+ // Match the web directory's live filtering while debouncing network-backed
+ // pagination so a long patient register does not trigger a request per key.
+ useEffect(()=>{
+  const normalized=normalizePatientDirectorySearch(q);
+  if(normalized===search)return;
+  const timer=setTimeout(()=>setSearch(normalized),PATIENT_DIRECTORY_SEARCH_DEBOUNCE_MS);
+  return()=>clearTimeout(timer);
+ },[q,search]);
+ useEffect(()=>{
+  const next=route?.params?.search;
+  if(typeof next==="string"){
+   const normalized=normalizePatientDirectorySearch(next);
+   setQ(normalized);
+   setSearch(normalized);
+  }
+ },[route?.params?.search]);
+ const pages=usePagedRecords<Patient>(token+":"+search,async offset=>{
+  const r=await getPatients(token,search,offset||0),next=(offset||0)+r.items.length;
+  return {items:r.items,next_before:next<r.total?next:null};
+ },false,true,"offset");
+ useEffect(()=>{
+  if(!["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED"].includes(String(lastEvent?.event_type||lastEvent?.type)))return;
+  const timer=setTimeout(()=>void pages.refresh(),150);
+  return()=>clearTimeout(timer);
+ },[lastEvent,pages.refresh]);
+ const emptyMessage=pages.busy?"Yükleniyor…":pages.error?"Hasta listesi alınamadı.":search?"Eşleşen hasta bulunamadı.":chartMode?"Henüz diş şeması için hasta kaydı bulunmuyor.":"Henüz kayıtlı hasta bulunmuyor.";
+ return <View style={s.page}>
+  <View style={{padding:18}}>
+   <Header title={chartMode?"Diş Şeması İçin Hasta Seç":"Hastalar"} sub={chartMode?"Hastanızı seçerek mevcut diş şemasına doğrudan ulaşın.":pages.items.length+" hasta yüklendi"} action={chartMode?undefined:<Pressable accessibilityRole="button" accessibilityLabel="Yeni hasta" style={s.add} onPress={()=>nav.navigate("NewPatient")}><Icon n="plus" a/></Pressable>}/>
+   <View style={s.search}>
+    <Icon n="search"/>
+    <TextInput accessibilityLabel={chartMode?"Diş şeması için hasta ara":"Hasta ara: ad, soyad, hasta no, telefon veya TC"} style={s.searchInput}
+     placeholder="Ad, soyad, hasta no, telefon veya TC ile ara…" value={q} onChangeText={setQ}
+     maxLength={100} autoCapitalize="none" autoCorrect={false} returnKeyType="search" onSubmitEditing={applySearch}/>
+    <Pressable accessibilityRole="button" accessibilityLabel="Hasta aramasını uygula" onPress={applySearch}><Text style={s.secondaryText}>Ara</Text></Pressable>
+   </View>
+  </View>
+  <FlatList data={pages.items} keyExtractor={p=>String(p.id)} contentContainerStyle={{padding:18,paddingTop:0}}
+   keyboardShouldPersistTaps="handled"
+   renderItem={({item})=>chartMode
+    ?<Pressable accessibilityRole="button" accessibilityLabel={`${item.first_name||"Hasta"} ${item.last_name||""}, diş şemasını aç`} style={s.patient} onPress={()=>nav.navigate("ToothChart",{id:item.id})}>
+      <View style={s.avatar}><Text style={s.avatarT}>{((item.first_name?.[0]||"")+(item.last_name?.[0]||"")).toUpperCase()||"H"}</Text></View>
+      <View style={{flex:1,minWidth:0}}><Text style={s.pName}>{item.first_name||"İsimsiz"} {item.last_name||"Hasta"}</Text><Text style={s.cardSub}>Hasta No: {item.anonymous_id||"-"} · {patientDirectoryAgeLabel(item.age)}</Text></View>
+      <Text style={{fontSize:11,fontWeight:"800",color:"#0878F9"}}>Şemayı Aç ›</Text>
+     </Pressable>
+    :<PatientRow p={item} on={()=>nav.navigate("PatientDetail",{id:item.id})}/>}
+   refreshing={pages.busy} onRefresh={pages.refresh}
+   onEndReached={()=>{if(pages.hasMore&&!pages.busy)void pages.loadMore();}} onEndReachedThreshold={0.4}
+   ListEmptyComponent={<View style={{alignItems:"center",paddingVertical:22}}>
+    <Text style={s.cardSub}>{emptyMessage}</Text>
+    {!!search&&!pages.busy&&!pages.error&&<Pressable accessibilityRole="button" onPress={()=>{setQ("");setSearch("");}} style={{marginTop:10}}><Text style={s.secondaryText}>Aramayı temizle</Text></Pressable>}
+    {pages.error&&<Pressable accessibilityRole="button" onPress={()=>void pages.refresh()} style={{marginTop:10}}><Text style={s.secondaryText}>Tekrar dene</Text></Pressable>}
+   </View>}
+   ListFooterComponent={<View style={{paddingVertical:12,alignItems:"center"}}>
+    {pages.error&&<Text style={s.err}>{pages.error}</Text>}
+    {pages.busy&&pages.items.length>0&&<ActivityIndicator size="small" color={C.navy}/>}
+    {pages.hasMore&&!pages.busy&&<Pressable accessibilityRole="button" style={s.secondary} onPress={()=>void pages.loadMore()}><Text style={s.secondaryText}>Daha fazla hasta</Text></Pressable>}
+   </View>}
+  />
+ </View>;
+}
+function PatientDetailScreen({token,userId,route,navigation}:{token:string;userId:number;route:any;navigation:any}){
+ const id=route.params.id,root=()=>navigation.getParent()?.getParent();
+ const profileRenderKey=useSessionRenderKey(`${token}:${userId}:${id}`);
+ return <NativePatientProfile key={profileRenderKey} token={token} userId={userId} patientId={id} actions={{chart:()=>navigation.navigate("ToothChart",{id}),analysis:()=>root()?.navigate("AppTabs",{screen:"AI",params:{patientId:id}}),appointment:()=>root()?.navigate("Program",{patientId:id}),expert:()=>root()?.navigate("ExpertDirectory",{patientId:id}),analysisResult:analysisId=>root()?.navigate("AnalysisResult",{id:analysisId}),deleted:()=>navigation.goBack()}}/>;
 }
 
-function Patients({token}:{token:string}){
- const nav:any=useNavigation(),[q,setQ]=useState(""),[search,setSearch]=useState("");const{lastEvent}=useRealtime();
- const pages=usePagedRecords<Patient>(token+":"+search,async offset=>{const r=await getPatients(token,search,offset||0);const next=(offset||0)+r.items.length;return {items:r.items,next_before:next<r.total?next:null}},false,true);
- useEffect(()=>{if(!["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED"].includes(String(lastEvent?.event_type||lastEvent?.type)))return;const timer=setTimeout(()=>void pages.refresh(),150);return()=>clearTimeout(timer)},[lastEvent,pages.refresh]);
- return <View style={s.page}><View style={{padding:18}}><Header title="Hastalar" sub={pages.items.length+" kayıt yüklendi"} action={<Pressable accessibilityLabel="Yeni hasta" style={s.add} onPress={()=>nav.navigate("NewPatient")}><Icon n="plus" a/></Pressable>}/><View style={s.search}><Icon n="search"/><TextInput accessibilityLabel="Hasta ara" style={s.searchInput} placeholder="Hasta ara…" value={q} onChangeText={setQ} returnKeyType="search" onSubmitEditing={()=>setSearch(q.trim())}/><Pressable onPress={()=>setSearch(q.trim())}><Text style={s.secondaryText}>Ara</Text></Pressable></View></View><FlatList data={pages.items} keyExtractor={p=>String(p.id)} contentContainerStyle={{padding:18,paddingTop:0}} renderItem={({item})=><PatientRow p={item} on={()=>nav.navigate("PatientDetail",{id:item.id})}/>} refreshing={pages.busy} onRefresh={pages.refresh} ListEmptyComponent={<Text style={s.cardSub}>{pages.busy?"Yükleniyor…":"Hasta bulunamadı."}</Text>} ListFooterComponent={<><Text style={s.err}>{pages.error}</Text>{pages.error&&<Pressable onPress={pages.refresh}><Text style={s.secondaryText}>Tekrar dene</Text></Pressable>}{pages.hasMore&&<Pressable disabled={pages.busy} style={s.secondary} onPress={pages.loadMore}><Text style={s.secondaryText}>Daha fazla hasta</Text></Pressable>}</>}/></View>
-}
-function PatientDetailScreen({token,route,navigation}:{token:string;route:any;navigation:any}){const{lastEvent}=useRealtime();const[d,setD]=useState<PatientDetail|null>(null);const[mediaBusy,setMediaBusy]=useState(false);const[detailError,setDetailError]=useState("");const load=useCallback(async()=>{try{setD(await getPatient(token,route.params.id));setDetailError("")}catch(e){setDetailError(e instanceof Error?e.message:"Hasta yüklenemedi.")}},[token,route.params.id]);useEffect(()=>{load()},[load]);useEffect(()=>{if(lastEvent&&((Number(lastEvent.entity_id)===Number(route.params.id))||(Number(lastEvent.payload?.patient_id)===Number(route.params.id)))&&["PATIENT_CREATED","PATIENT_UPDATED","PATIENT_DELETED","TOOTH_UPDATED","PATIENT_MEDIA_CREATED"].includes(String(lastEvent.event_type||lastEvent.type))){if(lastEvent.event_type==="PATIENT_DELETED")navigation.goBack();else load()}},[lastEvent,load,route.params.id]);if(!d)return <View style={s.center}>{detailError?<><Text style={s.err}>{detailError}</Text><Pressable style={s.secondary} onPress={load}><Text style={s.secondaryText}>Tekrar dene</Text></Pressable></>:<ActivityIndicator color={C.navy}/>}</View>;const p=d.patient;return <ScrollView style={s.page} contentContainerStyle={s.content}><View style={s.patientHero}><View style={s.heroAvatar}><Text style={s.heroAvatarT}>{((p.first_name?.[0]||"")+(p.last_name?.[0]||"")).toUpperCase()||"H"}</Text></View><Text style={s.patientHeroName}>{p.first_name} {p.last_name}</Text><Text style={s.cardSub}>{p.age?p.age+" yaş · ":""}{p.phone||"Telefon bilgisi yok"}</Text></View><Text style={s.section}>Klinik özet</Text><View style={s.card}><Text style={s.cardTitle}>Şikayet</Text><Text style={s.cardSub}>{p.chief_complaint||"Kayıtlı şikayet yok."}</Text></View><View style={s.metrics}><Stat v={d.teeth.length} l="Diş"/><Stat v={d.surfaces.length} l="Yüzey"/><Stat v={d.treatments.length} l="Tedavi"/><Stat v={d.media.length} l="Medya"/></View><Pressable style={s.primary} onPress={()=>navigation.navigate("ToothChart",{id:p.id})}><Text style={s.primaryText}>Diş Şeması</Text></Pressable><Pressable style={s.secondary} disabled={mediaBusy} onPress={async()=>{const perm=await ImagePicker.requestMediaLibraryPermissionsAsync();if(!perm.granted)return;const r=await ImagePicker.launchImageLibraryAsync({mediaTypes:["images"],quality:.88});if(r.canceled||!r.assets[0])return;setMediaBusy(true);try{const a=r.assets[0];await uploadPatientMedia(token,p.id,{uri:a.uri,name:a.fileName||"patient.jpg",type:a.mimeType||"image/jpeg"});await load()}catch{}finally{setMediaBusy(false)}}}><Text style={s.secondaryText}>{mediaBusy?"Yükleniyor…":"Hasta Görüntüsü Ekle"}</Text></Pressable><Pressable style={s.secondary} onPress={()=>navigation.navigate("MediaGallery",{patientId:p.id})}><Text style={s.secondaryText}>Hasta Medyası</Text></Pressable><Text style={s.section}>Diş durumu</Text><View style={s.card}>{d.teeth.slice(0,14).map(t=><View key={t.id} style={s.line}><Text style={s.cardTitle}>{t.tooth_number}</Text><Text style={s.badge}>{t.status}</Text></View>)}{!d.teeth.length&&<Text style={s.cardSub}>Henüz diş kaydı yok.</Text>}</View><Text style={s.section}>Tedaviler</Text><View style={s.card}>{d.treatments.slice(0,8).map(t=><View key={t.id} style={s.treat}><Text style={s.cardTitle}>{t.treatment_name}</Text><Text style={s.cardSub}>{t.tooth_number?"Diş "+t.tooth_number+" · ":""}{t.treatment_date||"Tarih yok"}</Text></View>)}{!d.treatments.length&&<Text style={s.cardSub}>Henüz tedavi kaydı yok.</Text>}</View></ScrollView>}
-function AI({token,userId}:{token:string;userId:number}){return <ScrollView style={s.page} contentContainerStyle={s.content}><Header title="Dental AI" sub="Görüntü analizi"/><View style={s.aiHero}><Text style={s.aiStar}>✦</Text><Text style={s.aiTitle}>Klinik görüntünü analiz et</Text><Text style={s.aiSub}>Görüntünü seç, hastana bağla ve analiz sonucunu incele.</Text><NativeDentalAI token={token} userId={userId}/></View><Text style={s.section}>Güvenli akış</Text>{["Görüntü hasta kaydına bağlanır","Mevcut Dental AI motoru kullanılır","Son klinik karar hekiminindir"].map(x=><View style={s.check} key={x}><Text style={s.checkMark}>✓</Text><Text style={s.cardSub}>{x}</Text></View>)}</ScrollView>}
-function Program({token}:{token:string}){const{lastEvent}=useRealtime();const[items,setItems]=useState<ScheduleEvent[]>([]),[busy,setBusy]=useState(true),[adding,setAdding]=useState(false),[title,setTitle]=useState(""),[start,setStart]=useState(""),[err,setErr]=useState("");const load=useCallback(async()=>{setBusy(true);try{setItems((await getSchedule(token)).items)}catch{}finally{setBusy(false)}},[token]);useEffect(()=>{load()},[load]);useEffect(()=>{if(lastEvent&&["PROGRAM_CREATED","PROGRAM_UPDATED","PROGRAM_COMPLETED","PROGRAM_DELETED"].includes(String(lastEvent.event_type||lastEvent.type)))load()},[lastEvent]);async function add(){if(!title.trim()||!start.trim()){setErr("Başlık ve başlangıç zamanı gerekli.");return}setErr("");try{const r:any=await createSchedule(token,{event_type:"PERSONAL",title,start_at:start});if(r?.event)setItems(v=>[...v,r.event].sort((a,b)=>String(a.start_at).localeCompare(String(b.start_at))));setTitle("");setStart("");setAdding(false)}catch(e:any){setErr(e?.message||"Program kaydı oluşturulamadı.")}}return <ScrollView style={s.page} contentContainerStyle={s.content}><Header title="Programım" sub="Ders, klinik, randevu ve görevler" action={<Pressable style={s.add} onPress={()=>setAdding(!adding)}><Icon n="plus" a/></Pressable>}/>{adding&&<View style={s.card}><Text style={s.label}>Başlık</Text><TextInput style={s.input} value={title} onChangeText={setTitle} placeholder="Örn. Klinik" placeholderTextColor={C.muted}/><Text style={s.label}>Başlangıç</Text><TextInput style={s.input} value={start} onChangeText={setStart} placeholder="YYYY-AA-GGTHH:MM" placeholderTextColor={C.muted}/>{!!err&&<Text style={s.err}>{err}</Text>}<Pressable style={s.primary} onPress={add}><Text style={s.primaryText}>Programa Ekle</Text></Pressable></View>}{busy?<View style={s.center}><ActivityIndicator color={C.navy}/></View>:items.length?<View>{items.slice(0,30).map(e=><View style={s.event} key={e.id}><View style={s.eventIcon}><Icon n="clock"/></View><View style={{flex:1}}><Text style={s.cardTitle}>{e.title}</Text><Text style={s.cardSub}>{new Date(e.start_at).toLocaleString("tr-TR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})} · {e.event_type}</Text></View></View>)}</View>:<View style={s.empty}><Text style={s.emptyIcon}>◷</Text><Text style={s.emptyTitle}>Program boş</Text><Text style={s.cardSub}>İlk kaydını sağ üstteki + ile ekle.</Text></View>}</ScrollView>}
-function Profile({user,signOut,token}:{user:User;signOut:()=>void;token:string}){const nav:any=useNavigation();return <ScrollView style={s.page} contentContainerStyle={s.content}><View style={s.profile}><View style={s.profileAvatar}><Text style={s.profileAvatarT}>{user.display_name?.[0]||"D"}</Text></View><Text style={s.profileName}>{user.display_name}</Text><Text style={s.profileRole}>{user.professional_title||"Diş hekimliği kullanıcısı"}</Text></View><View style={s.card}><Text style={s.cardSub}>E-posta</Text><Text style={s.value}>{user.email||"—"}</Text><Text style={s.cardSub}>Kullanıcı adı</Text><Text style={s.value}>{user.username}</Text><Text style={s.cardSub}>Uzmanlık</Text><Text style={s.value}>{user.specialty||"—"}</Text></View><Text style={s.section}>Hızlı erişim</Text><Pressable style={s.card} onPress={()=>nav.navigate("Notifications")}><Text style={s.cardTitle}>Bildirimler</Text><Text style={s.cardSub}>Canlı bildirim merkezi</Text></Pressable><Pressable style={s.card} onPress={()=>nav.navigate("ExpertDirectory")}><Text style={s.cardTitle}>Uzmandan Destek Al</Text><Text style={s.cardSub}>Doğrulanmış uzmanlarla danışmanlık</Text></Pressable><Pressable style={s.card} onPress={()=>nav.navigate("Consultations")}><Text style={s.cardTitle}>Danışmanlıklarım</Text><Text style={s.cardSub}>Vakalar ve mesajlaşmalar</Text></Pressable><Pressable style={s.card} onPress={()=>nav.navigate("Academic")}><Text style={s.cardTitle}>Academic AI</Text><Text style={s.cardSub}>Diş hekimliği ders notlarınla çalış</Text></Pressable><Pressable style={s.card} onPress={()=>nav.navigate("AnalysisHistory")}><Text style={s.cardTitle}>Analiz Geçmişi</Text><Text style={s.cardSub}>Dental AI sonuçlarını görüntüle</Text></Pressable><Pressable style={s.logout} onPress={signOut}><Text style={s.logoutT}>Çıkış Yap</Text></Pressable></ScrollView>}
+function AI({token,userId,patientId}:{token:string;userId:number;patientId?:number}){return <ScrollView style={s.page} contentContainerStyle={s.content}><Header title="Dental AI" sub="Görüntü analizi"/><View style={s.aiHero}><Text style={s.aiStar}>✦</Text><Text style={s.aiTitle}>Klinik görüntünü analiz et</Text><Text style={s.aiSub}>Görüntünü seç, hastana bağla ve analiz sonucunu incele.</Text><NativeDentalAI key={patientId||"new-analysis"} token={token} userId={userId} initialPatientId={patientId}/></View><Text style={s.section}>Güvenli akış</Text>{["Görüntü hasta kaydına bağlanır","Mevcut Dental AI motoru kullanılır","Son klinik karar hekiminindir"].map(x=><View style={s.check} key={x}><Text style={s.checkMark}>✓</Text><Text style={s.cardSub}>{x}</Text></View>)}</ScrollView>}
+function Program({token,userId,route}:{token:string;userId:number;route?:any}){const eventId=Number.isSafeInteger(route?.params?.eventId)&&route.params.eventId>0?route.params.eventId:undefined;const openRequestId=Number.isSafeInteger(route?.params?.openRequestId)?route.params.openRequestId:0;const programRenderKey=useSessionRenderKey(`${token}:${userId}:${openRequestId}`);return <NativeProgram key={programRenderKey} token={token} userId={userId} initialEventId={eventId}/>;}
+
+function Profile({user,signOut,token,onUserChanged}:{user:User;signOut:()=>void;token:string;onUserChanged:(user:User)=>void}){const nav:any=useNavigation();const accountRenderKey=useSessionRenderKey(`${token}:${user.id}`);return <NativeAccount key={accountRenderKey} token={token} user={user} onChanged={onUserChanged} signOut={signOut} onMessages={()=>nav.navigate("Consultations")} onNotifications={()=>nav.navigate("Notifications")} onExperts={()=>nav.navigate("ExpertDirectory")} onAcademic={()=>nav.navigate("Academic")} onHistory={()=>nav.navigate("AnalysisHistory")} onPublicProfile={()=>nav.navigate("ExpertProfile",{id:user.id,name:user.display_name})} onExpertProfile={id=>nav.navigate("ExpertProfile",{id})}/>;}
+
 const Tabs=createBottomTabNavigator(),Stack=createNativeStackNavigator();
-function PatientStack({token}:{token:string}){return <Stack.Navigator screenOptions={{headerTintColor:C.navy,headerShadowVisible:false,headerTitleStyle:{fontWeight:"800"}}}><Stack.Screen name="PatientsList" options={{title:"Hastalar",headerShown:false}}>{()=> <Patients token={token}/>}</Stack.Screen><Stack.Screen name="PatientDetail" options={{title:"Hasta"}}>{(p:any)=><PatientDetailScreen {...p} token={token}/>}</Stack.Screen><Stack.Screen name="ToothChart" options={{title:"Diş Şeması"}}>{(p:any)=><View style={s.page}><View style={s.content}><NativeToothChart token={token} patientId={p.route.params.id}/></View></View>}</Stack.Screen><Stack.Screen name="NewPatient" options={{title:"Yeni Hasta"}}>{({navigation}:any)=><NewPatient token={token} onCreated={(p)=>{navigation.replace("PatientDetail",{id:p.id})}}/>}</Stack.Screen></Stack.Navigator>}
-function TabShell({token,user,signOut}:{token:string;user:User;signOut:()=>void}){return <Tabs.Navigator screenOptions={{headerShown:false,tabBarActiveTintColor:C.navy,tabBarInactiveTintColor:C.muted,tabBarHideOnKeyboard:true,tabBarStyle:{paddingTop:7,borderTopColor:C.line},tabBarLabelStyle:{fontSize:11,fontWeight:"700"}}}>
+function PatientStack({token,userId}:{token:string;userId:number}){return <Stack.Navigator screenOptions={{headerTintColor:C.navy,headerShadowVisible:false,headerTitleStyle:{fontWeight:"800"}}}><Stack.Screen name="PatientsList" options={{title:"Hastalar",headerShown:false}}>{(p:any)=> <Patients token={token} route={p.route}/>}</Stack.Screen><Stack.Screen name="ToothChartBrowser" options={{title:"Diş Şeması"}}>{(p:any)=><Patients token={token} route={p.route} chartMode/>}</Stack.Screen><Stack.Screen name="PatientDetail" options={{title:"Hasta"}}>{(p:any)=><PatientDetailScreen {...p} token={token} userId={userId}/>}</Stack.Screen><Stack.Screen name="ToothChart" options={{title:"Diş Şeması"}}>{(p:any)=><View style={[s.page,{padding:0}]}><NativeToothChart token={token} userId={userId} patientId={p.route.params.id}/></View>}</Stack.Screen><Stack.Screen name="NewPatient" options={{title:"Yeni Hasta"}}>{({navigation}:any)=><NewPatient token={token} onCreated={(p)=>{navigation.replace("PatientDetail",{id:p.id})}}/>}</Stack.Screen></Stack.Navigator>}
+function MessagesTabScreen({token,userId,navigation,onClear,onFocusRef}:{token:string;userId:number;navigation:any;onClear:()=>void;onFocusRef:{current:boolean}}){
+ const focused=useIsFocused();
+ useEffect(()=>{onFocusRef.current=focused;if(focused)onClear()},[focused,onClear,onFocusRef]);
+ return <Consultations token={token} userId={userId} navigation={navigation}/>;
+}
+function TabShell({token,user,signOut,onUserChanged}:{token:string;user:User;signOut:()=>void;onUserChanged:(user:User)=>void}){
+ // Web paintMessageBadge parity: a red count on the Mesajlar tab that grows with
+ // incoming consultation messages and clears when the tab is opened.
+ const[msgUnread,setMsgUnread]=useState(0);
+ const messagesFocused=useRef(false);
+ const{lastEvent}=useRealtime();
+ useEffect(()=>{let live=true;getMessagesUnreadCount(token).then(r=>{if(live)setMsgUnread(r.count)}).catch(()=>{});return()=>{live=false}},[token]);
+ useEffect(()=>{
+  if(!lastEvent)return;
+  const type=String(lastEvent.event_type||lastEvent.type||"");
+  // Web parity (base.html): only incoming, non-replay MESSAGE_CREATED bumps the badge.
+  if(type==="MESSAGE_CREATED"&&Number(lastEvent.payload?.case_id||0)>0&&lastEvent.payload?.is_outgoing===false&&!lastEvent.replay&&!messagesFocused.current)setMsgUnread(value=>Math.min(99,value+1));
+ },[lastEvent]);
+ useEffect(()=>{
+  if(!lastEvent||String(lastEvent.event_type||lastEvent.type||"")!=="CASE_READ")return;
+  // CASE_READ: re-seed from the authoritative unread-count endpoint.
+  let live=true;getMessagesUnreadCount(token).then(r=>{if(live)setMsgUnread(Math.min(99,Number(r.count)||0))}).catch(()=>{});
+  return()=>{live=false};
+ },[lastEvent,token]);
+ return <Tabs.Navigator screenOptions={{headerShown:false,tabBarActiveTintColor:C.navy,tabBarInactiveTintColor:C.muted,tabBarHideOnKeyboard:true,tabBarStyle:{paddingTop:7,borderTopColor:C.line},tabBarLabelStyle:{fontSize:11,fontWeight:"700"}}}>
  <Tabs.Screen name="Home" options={{tabBarLabel:"Ana Sayfa",tabBarIcon:({focused})=><Icon n="home" a={focused}/>}}>{()=> <Home token={token} user={user}/>}</Tabs.Screen>
- <Tabs.Screen name="DentalFlow" options={{tabBarLabel:"Dental Akış",tabBarIcon:({focused})=><Icon n="calendar" a={focused}/>}}>{({navigation})=><DentalFlow token={token} user={user} navigation={navigation}/>}</Tabs.Screen>
- <Tabs.Screen name="AI" options={{tabBarLabel:"AI Analiz",tabBarIcon:({focused})=><Icon n="ai" a={focused}/>}}>{()=> <AI token={token} userId={user.id}/>}</Tabs.Screen>
- <Tabs.Screen name="Patients" options={{tabBarLabel:"Hastalar",tabBarIcon:({focused})=><Icon n="patients" a={focused}/>}}>{()=> <PatientStack token={token}/>}</Tabs.Screen>
- <Tabs.Screen name="Profile" options={{tabBarLabel:"Profil",tabBarIcon:({focused})=><Icon n="profile" a={focused}/>}}>{()=> <Profile user={user} token={token} signOut={signOut}/>}</Tabs.Screen>
+ <Tabs.Screen name="Patients" options={{tabBarLabel:"Hastalar",tabBarIcon:({focused})=><Icon n="patients" a={focused}/>}}>{()=> <PatientStack token={token} userId={user.id}/>}</Tabs.Screen>
+ <Tabs.Screen name="AI" options={{tabBarLabel:"AI Analiz",tabBarIcon:({focused})=><Icon n="ai" a={focused}/>}}>{({route}:any)=> <AI token={token} userId={user.id} patientId={route.params?.patientId}/>}</Tabs.Screen>
+ <Tabs.Screen name="Messages" options={{tabBarLabel:"Mesajlar",tabBarAccessibilityLabel:"Mesajlar",tabBarBadge:msgUnread>0?(msgUnread>99?"99+":msgUnread):undefined,tabBarBadgeStyle:{backgroundColor:"#D92D20",color:"white",fontSize:10},tabBarIcon:({focused})=><Icon n="messages" a={focused}/>}}>{({navigation})=><MessagesTabScreen token={token} userId={user.id} navigation={navigation} onClear={()=>setMsgUnread(0)} onFocusRef={messagesFocused}/>}</Tabs.Screen>
+ <Tabs.Screen name="Profile" options={{tabBarLabel:"Profil",tabBarIcon:({focused})=><Icon n="profile" a={focused}/>}}>{()=> <Profile user={user} token={token} signOut={signOut} onUserChanged={onUserChanged}/>}</Tabs.Screen>
  </Tabs.Navigator>}
-function Main({token,user,signOut}:{token:string;user:User;signOut:()=>void}){return <RealtimeProvider token={token} userId={user.id}><NavigationContainer><Stack.Navigator screenOptions={{headerTintColor:C.navy,headerShadowVisible:false,headerTitleStyle:{fontWeight:"800"}}}><Stack.Screen name="AppTabs" options={{headerShown:false}}>{()=> <TabShell token={token} user={user} signOut={signOut}/>}</Stack.Screen><Stack.Screen name="ExpertProfile" options={{title:"Uzman Profili"}}>{({route,navigation}:any)=><DentalFlow key={route.params.id} token={token} user={user} navigation={navigation} expertId={route.params.id} expertName={route.params.name}/>}</Stack.Screen><Stack.Screen name="AnalysisResult" options={{title:"Analiz Sonucu"}}>{({route}:any)=><ScrollView style={s.page} contentContainerStyle={{padding:18}}><NativeDentalAI token={token} userId={user.id} initialAnalysisId={route.params.id}/></ScrollView>}</Stack.Screen><Stack.Screen name="Program" options={{title:"Programım"}}>{()=> <Program token={token}/>}</Stack.Screen><Stack.Screen name="Notifications" options={{title:"Bildirimler"}}>{()=> <Notifications token={token}/>}</Stack.Screen><Stack.Screen name="AnalysisHistory" options={{title:"Analiz Geçmişi"}}>{()=> <AnalysisHistory token={token}/>}</Stack.Screen><Stack.Screen name="Academic" options={{title:"Akademik AI"}}>{()=> <Academic token={token}/>}</Stack.Screen><Stack.Screen name="ExpertDirectory" options={{title:"Uzmandan Destek Al"}}>{(p:any)=><ExpertDirectory token={token} navigation={p.navigation}/>}</Stack.Screen><Stack.Screen name="NewConsultation" options={{title:"Yeni Danışmanlık"}}>{(p:any)=><NewConsultation token={token} route={p.route} navigation={p.navigation}/>}</Stack.Screen><Stack.Screen name="Consultations" options={{title:"Danışmanlıklar"}}>{(p:any)=><Consultations token={token} navigation={p.navigation}/>}</Stack.Screen><Stack.Screen name="ConsultationChat" options={{title:"Vaka Görüşmesi"}}>{(p:any)=><ConsultationChat token={token} route={p.route}/>}</Stack.Screen><Stack.Screen name="MediaGallery" options={{title:"Hasta Medyası"}}>{(p:any)=><MediaGallery token={token} patientId={p.route.params.patientId}/>}</Stack.Screen></Stack.Navigator></NavigationContainer></RealtimeProvider>}
+function Main({token,user,signOut,onUserChanged}:{token:string;user:User;signOut:()=>void;onUserChanged:(user:User)=>void}){return <RealtimeProvider token={token} userId={user.id}><NavigationContainer ref={notificationNavigationRef} onReady={flushPendingNativeNotificationRoute}><Stack.Navigator screenOptions={{headerTintColor:C.navy,headerShadowVisible:false,headerTitleStyle:{fontWeight:"800"}}}><Stack.Screen name="AppTabs" options={{headerShown:false}}>{()=> <TabShell token={token} user={user} signOut={signOut} onUserChanged={onUserChanged}/>}</Stack.Screen><Stack.Screen name="DentalFlow" options={{title:"Dental Akış"}}>{({navigation})=><DentalFlow token={token} user={user} navigation={navigation}/>}</Stack.Screen><Stack.Screen name="SocialAdmin" options={{title:"Dental Akış Moderasyonu"}}>{()=> <SessionScope scope={`${token}:${user.id}:social-admin`}>{renderKey=><NativeSocialAdmin key={renderKey} token={token} user={user}/>}</SessionScope>}</Stack.Screen><Stack.Screen name="ExpertProfile" options={{title:"Uzman Profili"}}>{({route,navigation}:any)=><SessionScope scope={`${token}:${user.id}:expert:${route.params.id}`}>{renderKey=><NativeExpertProfile key={renderKey} token={token} user={user} navigation={navigation} expertId={route.params.id} patientId={route.params.patientId}/>}</SessionScope>}</Stack.Screen><Stack.Screen name="ExpertManagement" options={{title:"Uzman Profilimi Yönet"}}>{({navigation}:any)=><SessionScope scope={`${token}:${user.id}:expert-management`}>{renderKey=><ScrollView style={s.page} contentContainerStyle={{padding:16,paddingBottom:40}}><NativeProfessional key={renderKey} token={token} mode="expert" onChanged={()=>{void getMe(token).then(result=>onUserChanged(result.user)).catch(()=>Alert.alert("Profil yenilenemedi","Bilgiler kaydedildi; güncel hesap bilgileri için profilinizi yeniden açın."))}} onPublicProfile={()=>navigation.navigate("ExpertProfile",{id:user.id})}/></ScrollView>}</SessionScope>}</Stack.Screen><Stack.Screen name="AnalysisResult" options={{title:"Analiz Sonucu"}}>{({route}:any)=><ScrollView style={s.page} contentContainerStyle={{padding:18}}><NativeDentalAI token={token} userId={user.id} initialAnalysisId={route.params.id}/></ScrollView>}</Stack.Screen><Stack.Screen name="Program" options={{title:"Programım"}}>{({route,navigation}:any)=>route.params?.patientId?<SessionScope scope={`${token}:${user.id}:patient-appointment:${route.params.patientId}`}>{renderKey=><NativePatientAppointment key={renderKey} token={token} userId={user.id} patientId={route.params.patientId} onSaved={()=>navigation.goBack()}/>}</SessionScope>:<Program token={token} userId={user.id} route={route}/>}</Stack.Screen><Stack.Screen name="Notifications" options={{title:"Bildirimler"}}>{({route}:any)=> <Notifications token={token} initialNoticeId={route.params?.noticeId}/>}</Stack.Screen><Stack.Screen name="SupportRequests" options={{title:"Destek Taleplerim"}}>{({route}:any)=> <NativeSupportRequests token={token} userId={user.id} initialTicketId={route.params?.ticketId}/>}</Stack.Screen><Stack.Screen name="AnalysisHistory" options={{title:"Analiz Geçmişi"}}>{()=> <AnalysisHistory token={token}/>}</Stack.Screen><Stack.Screen name="Academic" options={{title:"Akademik AI"}}>{()=> <SessionScope scope={`${token}:${user.id}:academic`}>{renderKey=><NativeAcademic key={renderKey} token={token} userId={user.id}/>}</SessionScope>}</Stack.Screen><Stack.Screen name="FotoFikir" options={{title:"Foto Fikir — İçerik stüdyosu"}}>{()=> <SessionScope scope={`${token}:${user.id}:foto-fikir`}>{renderKey=><NativeFotoFikir key={renderKey} token={token}/>}</SessionScope>}</Stack.Screen><Stack.Screen name="VoiceExam" options={{title:"Sesli Muayene"}}>{({route}:any)=> <VoiceExamEntry token={token} userId={user.id} initialPatientId={route.params?.patientId}/>}</Stack.Screen><Stack.Screen name="ExpertDirectory" options={{title:"Uzmandan Destek Al"}}>{(p:any)=><ExpertDirectory token={token} navigation={p.navigation} patientId={p.route.params?.patientId}/>}</Stack.Screen><Stack.Screen name="NewConsultation" options={{title:"Yeni Danışmanlık"}}>{(p:any)=><NewConsultation key={user.id+":"+(p.route.params?.expert?.user_id||0)+":"+(p.route.params?.patientId||0)} token={token} userId={user.id} route={p.route} navigation={p.navigation}/>}</Stack.Screen><Stack.Screen name="Consultations" options={{title:"Danışmanlıklar"}}>{(p:any)=><Consultations token={token} userId={user.id} navigation={p.navigation}/>}</Stack.Screen><Stack.Screen name="ConsultationChat" options={{title:"Vaka Görüşmesi"}}>{(p:any)=><ConsultationChat token={token} route={p.route} userId={user.id}/>}</Stack.Screen><Stack.Screen name="MediaGallery" options={{title:"Hasta Medyası"}}>{(p:any)=>{const patientId=resolvePatientMediaRouteId(p.route.params?.patientId);return patientId===null?<View style={{flex:1,justifyContent:"center",padding:24}}><Text style={{color:C.red}}>Geçersiz hasta kimliği.</Text></View>:<SessionScope scope={`${token}:${user.id}:media:${patientId}`}>{renderKey=><NativePatientMedia key={renderKey} token={token} userId={user.id} patientId={patientId} onAnalysis={id=>p.navigation.navigate("AnalysisResult",{id})}/>}</SessionScope>}}</Stack.Screen></Stack.Navigator><NotificationPermissionIntro userId={user.id}/></NavigationContainer></RealtimeProvider>}
+function NotificationPermissionIntro({userId}:{userId:number}){
+ const [visible,setVisible]=useState(false),[working,setWorking]=useState(false);
+ useEffect(()=>{let mounted=true;void(async()=>{try{const flag=await SecureStore.getItemAsync("dai.notification.intro."+userId);if(mounted&&!flag)setVisible(true)}catch{}})();return()=>{mounted=false}},[userId]);
+ async function finish(){
+  if(working)return;setWorking(true);
+  try{await SecureStore.setItemAsync("dai.notification.intro."+userId,"seen");setVisible(false)}
+  catch{Alert.alert("Bildirim tercihi","Bilgilendirme kapatılamadı. Daha sonra tekrar deneyebilirsin.")}
+  finally{setWorking(false)}
+ }
+ if(!visible)return null;
+ return <View style={{position:"absolute",top:0,bottom:0,left:0,right:0,backgroundColor:"rgba(7,27,53,.72)",justifyContent:"center",padding:24,zIndex:1000}}>
+ <View style={{backgroundColor:"#FFF",borderRadius:24,padding:24}}>
+ <Text style={{fontSize:35,textAlign:"center"}}>🔔</Text>
+ <Text style={{fontSize:21,fontWeight:"900",color:C.navy,textAlign:"center",marginTop:12}}>Dental AI bildirimleri</Text>
+ <Text style={{color:C.muted,lineHeight:22,textAlign:"center",marginTop:12}}>Uygulama içi bildirimleri Bildirimler ekranında görebilirsiniz. Sistem bildirimlerini Profil {'>'} Cihaz Bildirimleri bölümünden isteğe bağlı açabilirsiniz.</Text>
+ <Text style={{color:C.muted,fontSize:12,lineHeight:18,marginTop:12}}>İşletim sistemi izni yalnızca {'Profil > Cihaz Bildirimleri'} bölümündeki açık tercihinizle istenir. Kilit ekranında hasta adı veya klinik ayrıntı gösterilmez.</Text>
+ <Pressable accessibilityRole="button" disabled={working} style={[s.primary,{marginTop:20}]} onPress={()=>void finish()}><Text style={s.primaryText}>Anladım</Text></Pressable>
+ </View></View>;
+}
 function AppContent(){
  const[session,setSession]=useState<{token:string;user:User}|null>(null),[boot,setBoot]=useState(true),[bootError,setBootError]=useState("");
+ useSessionHealth(session?.token);
+ useEffect(()=>{
+  if(!session)return;
+  return subscribeToNativePushResponses(navigateNativePushTarget);
+ },[session?.token,session?.user.id]);
+ useEffect(()=>{
+  if(!session)return;
+  let active=true;
+  const token=session.token,userId=session.user.id;
+  const refresh=()=>{if(active)void refreshNativePushRegistration(token,userId).catch(()=>{});};
+  const reconcile=async()=>{
+   try{await claimNativePushDeviceForSession(token,userId);}catch{}
+   if(active)refresh();
+  };
+  void reconcile();
+  const listener=AppState.addEventListener("change",state=>{if(state==="active")refresh()});
+  return()=>{active=false;listener.remove()};
+ },[session?.token,session?.user.id]);
  const restore=useCallback(async()=>{
   setBoot(true);setBootError("");
   try{setSession(await restoreStoredSession(SecureStore,getMe))}
@@ -79,18 +408,34 @@ function AppContent(){
   finally{setBoot(false)}
  },[]);
  useEffect(()=>{void restore()},[restore]);
- useEffect(()=>{if(!session)return;let active=true;const token=session.token;const stop=subscribeSessionExpiry(token,()=>{setBoot(true);void SecureStore.deleteItemAsync("dentalai_token").catch(()=>{}).finally(()=>{if(active){setSession(current=>current?.token===token?null:current);setBoot(false)}})});return()=>{active=false;stop()}},[session?.token]);
- async function signOut(){if(session)try{await logout(session.token)}catch{}await SecureStore.deleteItemAsync("dentalai_token");setSession(null)}
+ useEffect(()=>{if(!session)return;let active=true;const token=session.token,userId=session.user.id;const stop=subscribeSessionExpiry(token,()=>{void unregisterNativePushForLogout(token,userId).catch(()=>{});pendingNativeNotificationRoute=null;setBoot(true);void SecureStore.deleteItemAsync("dentalai_token").catch(()=>{}).finally(()=>{if(active){setSession(current=>current?.token===token?null:current);setBoot(false)}})});return()=>{active=false;stop()}},[session?.token,session?.user.id]);
+ async function finishSignOut(){
+  pendingNativeNotificationRoute=null;
+  if(session){try{await logout(session.token)}catch{}}
+  await SecureStore.deleteItemAsync("dentalai_token");setSession(null);
+ }
+ async function signOut(){
+  if(session){
+   try{await unregisterNativePushForLogout(session.token,session.user.id);}
+   catch{
+    Alert.alert("Cihaz bildirimi kaldırılamadı","Sunucuya ulaşılamadığı için bu cihazın bildirim kaydı doğrulanamadı. Yine de çıkış yaparsanız genel bildirimler bir süre daha gelebilir; klinik içerik gönderilmez.",[
+     {text:"Vazgeç",style:"cancel"},
+     {text:"Yine de çıkış yap",style:"destructive",onPress:()=>void finishSignOut()}
+    ]);
+    return;
+   }
+  }
+  await finishSignOut();
+ }
  if(boot)return <Splash/>;
  if(bootError)return <View style={s.splash}><Logo/><Text style={s.err}>{bootError}</Text><Pressable style={s.primary} onPress={()=>void restore()}><Text style={s.primaryText}>Tekrar Dene</Text></Pressable></View>;
- return session?<Main key={session.user.id} token={session.token} user={session.user} signOut={signOut}/>:<Login done={(token,user)=>setSession({token,user})}/>;
+ return session?<Main key={session.user.id} token={session.token} user={session.user} signOut={signOut} onUserChanged={user=>setSession(current=>current?.token===session.token?{...current,user}:current)}/>:<Login done={(token,user)=>setSession({token,user})}/>;
 }
 
-export default function App(){return <SafeAreaProvider><SafeAreaView edges={["top","left","right"]} style={{flex:1,backgroundColor:C.bg}}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==="ios"?"padding":"height"}><AppContent/></KeyboardAvoidingView></SafeAreaView></SafeAreaProvider>}
+export default function App(){return <SafeAreaProvider><StatusBar style="dark" backgroundColor="#F5F7FA"/><SafeAreaView edges={["top","left","right"]} style={{flex:1,backgroundColor:C.bg}}><KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==="ios"?"padding":"height"}><AppContent/></KeyboardAvoidingView></SafeAreaView></SafeAreaProvider>}
 
 const s=StyleSheet.create({
  splash:{flex:1,backgroundColor:C.navy,alignItems:"center",justifyContent:"center"},brand:{color:C.white,fontSize:25,fontWeight:"900",marginTop:14,letterSpacing:1},splashSub:{color:"#B9C7D8",marginTop:7},
  login:{flex:1,backgroundColor:C.bg},loginInner:{flexGrow:1,justifyContent:"center",padding:22},title:{fontSize:30,fontWeight:"900",color:C.navy,textAlign:"center",marginTop:15},sub:{color:C.muted,textAlign:"center",marginTop:5,marginBottom:25},form:{backgroundColor:C.white,borderRadius:24,padding:18,borderWidth:1,borderColor:C.line},label:{fontSize:12,fontWeight:"800",color:C.text,marginBottom:6},input:{height:52,borderWidth:1,borderColor:C.line,borderRadius:14,paddingHorizontal:14,color:C.text,marginBottom:12},primary:{height:52,borderRadius:15,backgroundColor:C.navy,alignItems:"center",justifyContent:"center",marginTop:6},primaryText:{color:C.white,fontWeight:"800",fontSize:15},err:{color:C.red,marginBottom:8},
  page:{flex:1,backgroundColor:C.bg},content:{padding:18,paddingBottom:110},top:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",marginBottom:16},muted:{color:C.muted,fontSize:14},userName:{fontSize:25,fontWeight:"900",color:C.navy,marginTop:2},logo:{backgroundColor:C.navy,alignItems:"center",justifyContent:"center"},hero:{backgroundColor:C.navy,borderRadius:24,padding:20,minHeight:150,flexDirection:"row",overflow:"hidden"},eyebrow:{color:"#A8BED4",fontSize:11,fontWeight:"900"},heroTitle:{color:C.white,fontSize:23,fontWeight:"900",marginTop:8,maxWidth:240},heroSub:{color:"#C6D2DE",fontSize:13,lineHeight:19,marginTop:8,maxWidth:250},heroTooth:{fontSize:55,alignSelf:"flex-end"},stats:{flexDirection:"row",gap:9,marginTop:11},stat:{flex:1,backgroundColor:C.white,borderRadius:17,padding:14,borderWidth:1,borderColor:C.line},statV:{fontSize:24,fontWeight:"900",color:C.navy},statL:{fontSize:12,color:C.muted,marginTop:3},section:{fontSize:17,fontWeight:"900",color:C.navy,marginTop:24,marginBottom:10},grid:{flexDirection:"row",flexWrap:"wrap",gap:9},quick:{width:"48%",backgroundColor:C.white,borderRadius:17,padding:14,borderWidth:1,borderColor:C.line},quickIcon:{width:38,height:38,borderRadius:12,backgroundColor:C.soft,alignItems:"center",justifyContent:"center"},cardTitle:{fontSize:15,fontWeight:"800",color:C.text},cardSub:{fontSize:13,color:C.muted,lineHeight:19,marginTop:3},icon:{fontSize:23,fontWeight:"700"},event:{backgroundColor:C.white,borderRadius:16,padding:13,flexDirection:"row",alignItems:"center",marginBottom:9,borderWidth:1,borderColor:C.line},eventIcon:{width:42,height:42,borderRadius:13,backgroundColor:C.soft,alignItems:"center",justifyContent:"center",marginRight:11},header:{flexDirection:"row",alignItems:"center",marginBottom:14},hTitle:{fontSize:28,fontWeight:"900",color:C.navy},hSub:{fontSize:12,color:C.muted,marginTop:2},add:{width:42,height:42,borderRadius:14,backgroundColor:C.white,alignItems:"center",justifyContent:"center",borderWidth:1,borderColor:C.line},search:{height:50,backgroundColor:C.white,borderRadius:15,borderWidth:1,borderColor:C.line,flexDirection:"row",alignItems:"center",paddingHorizontal:12},searchInput:{flex:1,height:48,paddingHorizontal:8,color:C.text},center:{flex:1,alignItems:"center",justifyContent:"center",backgroundColor:C.bg},patient:{backgroundColor:C.white,borderRadius:17,padding:12,marginBottom:9,flexDirection:"row",alignItems:"center",borderWidth:1,borderColor:C.line},avatar:{width:46,height:46,borderRadius:23,backgroundColor:C.soft,alignItems:"center",justifyContent:"center",marginRight:12},avatarT:{color:C.navy,fontWeight:"900"},pName:{fontSize:15,fontWeight:"800",color:C.text},patientHero:{backgroundColor:C.white,borderRadius:22,padding:20,alignItems:"center",borderWidth:1,borderColor:C.line},heroAvatar:{width:82,height:82,borderRadius:41,backgroundColor:C.navy,alignItems:"center",justifyContent:"center"},heroAvatarT:{color:C.white,fontSize:30,fontWeight:"900"},patientHeroName:{fontSize:23,fontWeight:"900",color:C.navy,marginTop:10},card:{backgroundColor:C.white,borderRadius:18,padding:16,borderWidth:1,borderColor:C.line,marginBottom:10},metrics:{flexDirection:"row",flexWrap:"wrap",gap:9},line:{flexDirection:"row",justifyContent:"space-between",paddingVertical:10,borderBottomWidth:1,borderBottomColor:C.line},badge:{fontSize:11,fontWeight:"800",color:C.navy,backgroundColor:C.soft,paddingHorizontal:9,paddingVertical:5,borderRadius:9},treat:{paddingVertical:10,borderBottomWidth:1,borderBottomColor:C.line},aiHero:{backgroundColor:C.navy,borderRadius:24,padding:22},aiStar:{color:"#BFD1E4",fontSize:25},aiTitle:{color:C.white,fontSize:24,fontWeight:"900",marginTop:7},aiSub:{color:"#C3D0DE",fontSize:13,lineHeight:20,marginTop:8,marginBottom:18},check:{flexDirection:"row",alignItems:"center",gap:10,backgroundColor:C.white,borderRadius:14,padding:14,marginBottom:8,borderWidth:1,borderColor:C.line},checkMark:{color:C.green,fontWeight:"900",fontSize:18},empty:{backgroundColor:C.white,borderRadius:22,padding:25,alignItems:"center",borderWidth:1,borderColor:C.line},emptyIcon:{fontSize:44,color:C.navy},emptyTitle:{fontSize:19,fontWeight:"900",color:C.navy},profile:{alignItems:"center",paddingVertical:10},profileAvatar:{width:96,height:96,borderRadius:48,backgroundColor:C.navy,alignItems:"center",justifyContent:"center"},profileAvatarT:{color:C.white,fontSize:38,fontWeight:"900"},profileName:{fontSize:23,fontWeight:"900",color:C.navy,marginTop:12},profileRole:{fontSize:13,color:C.muted,marginTop:3},value:{fontSize:14,fontWeight:"800",color:C.text,marginTop:3,marginBottom:13},logout:{height:52,borderRadius:15,borderWidth:1,borderColor:"#E2C9C9",alignItems:"center",justifyContent:"center",backgroundColor:C.white},logoutT:{color:C.red,fontWeight:"800"},patientChip:{paddingHorizontal:12,paddingVertical:9,borderRadius:12,backgroundColor:C.white,borderWidth:1,borderColor:C.line,marginRight:7},patientChipActive:{backgroundColor:C.navy,borderColor:C.navy},patientChipT:{fontSize:12,fontWeight:"700",color:C.text},patientChipActiveT:{color:C.white},tiny:{fontSize:11,color:C.muted,marginTop:5},back:{fontSize:14,fontWeight:"800",color:C.navy,marginBottom:8},chat:{backgroundColor:C.soft,borderRadius:16,padding:10,marginBottom:10},bubble:{backgroundColor:C.white,borderRadius:15,padding:10,marginBottom:7,maxWidth:"88%"},mine:{alignSelf:"flex-end",backgroundColor:"#DCE8F5"},bubbleText:{fontSize:13,color:C.text,lineHeight:19},secondary:{height:50,borderRadius:15,backgroundColor:C.white,borderWidth:1,borderColor:C.line,alignItems:"center",justifyContent:"center",marginTop:8},secondaryText:{color:C.navy,fontWeight:"800",fontSize:14},aiTab:{width:42,height:42,borderRadius:21,backgroundColor:C.navy,alignItems:"center",justifyContent:"center",marginBottom:12},aiTabT:{color:C.white,fontSize:21}
 });
-

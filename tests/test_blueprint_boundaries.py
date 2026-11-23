@@ -301,17 +301,54 @@ def test_realtime_listener_delivers_late_lower_id_and_resync(database, monkeypat
     assert seen[-1] == {'type': 'resync'}
 
 
-@pytest.mark.parametrize('guest', [False, True])
-def test_upload_queues_atomically_and_closes_db_for_storage(database, monkeypatch, tmp_path, guest):
-    from fastapi.testclient import TestClient
+def test_web_create_analysis_rejects_disallowed_extensions_with_422(database, monkeypatch, tmp_path):
+    # Web must mirror the mobile contract: a disallowed extension rejects the
+    # whole upload with the skipped filenames, instead of being silently dropped.
     engine, ids = database
     with Session(engine) as s:
         user = s.get(main.User, ids.user)
     monkeypatch.setattr(main, 'get_current_user', lambda request: user)
     monkeypatch.setattr(main, 'UPLOAD_DIR', tmp_path)
+    from fastapi.testclient import TestClient
+    client = TestClient(main.app)
+    response = client.post(
+        f'/analysis/new/{ids.patient}',
+        data={},
+        files={'images': ('klinik_notu.txt', b'not an image', 'text/plain')},
+        follow_redirects=False,
+    )
+    assert response.status_code == 422
+    detail = response.json()['detail']
+    assert 'Yalnızca JPEG, PNG veya WebP' in detail
+    assert 'klinik_notu.txt' in detail
+    with Session(engine) as s:
+        # The fixture itself creates one DRAFT Analysis; the rejected upload
+        # must not have created any additional row.
+        rows = s.exec(select(main.Analysis)).all()
+        assert [row.id for row in rows] == [ids.analysis]
+
+
+@pytest.mark.parametrize('guest', [False, True])
+def test_upload_queues_atomically_and_closes_db_for_storage(database, monkeypatch, tmp_path, guest):
+    import io
+    from fastapi.testclient import TestClient
+    from PIL import Image
+    engine, ids = database
+    with Session(engine) as s:
+        user = s.get(main.User, ids.user)
+    raw = io.BytesIO()
+    exif = Image.Exif()
+    exif[315] = 'Synthetic dental device'
+    Image.new('RGB', (8, 8), 'white').save(raw, format='JPEG', exif=exif)
+    image_bytes = raw.getvalue()
+    monkeypatch.setattr(main, 'get_current_user', lambda request: user)
+    monkeypatch.setattr(main, 'UPLOAD_DIR', tmp_path)
     def persist(path, **kwargs):
         assert engine.pool.checkedout() == 0
-        assert Path(path).read_bytes() == b'synthetic image'
+        with Image.open(path) as clean:
+            assert clean.format == 'JPEG'
+            assert clean.size == (8, 8)
+            assert not dict(clean.getexif())
         return str(path)
     monkeypatch.setattr(main, 'storage_persist_file', persist)
     def classify(path):
@@ -320,7 +357,13 @@ def test_upload_queues_atomically_and_closes_db_for_storage(database, monkeypatc
     monkeypatch.setattr(main, 'classify_dental_image', classify)
     client = TestClient(main.app)
     url = '/analysis/guest/new' if guest else f'/analysis/new/{ids.patient}'
-    response = client.post(url, files={'images': ('example.jpg', b'synthetic image', 'image/jpeg')}, follow_redirects=False)
+    # Guest analysis must carry the same explicit AI-processing consent as
+    # the real web form; the test must not bypass that privacy boundary.
+    form_data = {'ai_consent': 'on'} if guest else {}
+    response = client.post(
+        url, data=form_data, files={'images': ('example.jpg', image_bytes, 'image/jpeg')},
+        follow_redirects=False,
+    )
     assert response.status_code == 303
     with Session(engine) as s:
         jobs = s.exec(select(work_jobs.WorkJob)).all()

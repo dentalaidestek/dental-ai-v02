@@ -1,0 +1,713 @@
+{% extends "base.html" %}
+{% block content %}
+<main id="fotoFikir">
+<style>
+#fotoFikir{--ff-navy:var(--dai-button-navy,#0b2341);--ff-navy-hover:#071a31;--ff-line:#e1e7ef;--ff-muted:#63748a;--ff-ok:#16784b;--ff-warn:#9a6700;--ff-bad:#b42318;max-width:960px;margin:0 auto;padding:clamp(14px,3vw,28px);font-size:15px;color:#12233b}
+#fotoFikir .ff-hero{background:linear-gradient(135deg,#0b2341 0%,#18355b 78%,#24507f 100%);color:#fff;border-radius:18px;padding:clamp(18px,3vw,30px);margin-bottom:16px}
+#fotoFikir .ff-hero .ff-kicker{display:inline-block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#d9e4f2;border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:4px 12px;margin-bottom:12px}
+#fotoFikir .ff-hero h1{margin:0 0 8px;font-size:clamp(20px,3.4vw,27px);line-height:1.15;letter-spacing:-.02em}
+#fotoFikir .ff-hero p{margin:0;color:#dce6f2;max-width:62ch}
+#fotoFikir .ff-quota{display:inline-block;margin-top:14px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:6px 14px;font-size:13px;color:#fff}
+#fotoFikir .ff-steps{list-style:none;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:0;margin:0 0 16px}
+#fotoFikir .ff-steps li{background:#f2f6fb;border:1px solid var(--ff-line);border-radius:14px;padding:12px 14px;display:flex;gap:10px;align-items:flex-start}
+#fotoFikir .ff-steps b{display:block;font-size:14px;color:#0b2341}
+#fotoFikir .ff-steps span{font-size:12px;color:var(--ff-muted)}
+#fotoFikir .ff-step-num{flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:var(--ff-navy);color:#fff;font-size:13px;display:flex;align-items:center;justify-content:center}
+#fotoFikir .ff-alert{display:none;background:#eef4fb;border:1px solid #c9d8ea;color:#27425f;border-radius:12px;padding:10px 14px;font-size:14px;margin:0 0 14px}
+#fotoFikir .ff-alert.show{display:block}
+#fotoFikir .ff-alert.ff-alert-err{background:#fdeceb;border-color:#f2c1bd;color:#8f1f16}
+#fotoFikir .ff-alert.ff-alert-info{background:#eef4fb;border-color:#c9d8ea;color:#27425f}
+#fotoFikir .ff-panel{background:#fff;border:1px solid var(--ff-line);border-radius:16px;padding:clamp(14px,2.6vw,22px);margin-bottom:16px}
+#fotoFikir .ff-panel h2{margin:0 0 6px;font-size:17px;color:#0b2341}
+#fotoFikir .ff-panel>p{margin:0 0 12px;color:var(--ff-muted);font-size:13px}
+#fotoFikir .ff-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:11px;border:1px solid var(--ff-line);background:#fff;color:#12233b;padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s}
+#fotoFikir .ff-btn:hover{background:#f3f7fc}
+#fotoFikir .ff-btn.ff-btn-navy{background:var(--ff-navy);border-color:var(--ff-navy);color:#fff}
+#fotoFikir .ff-btn.ff-btn-navy:hover{background:var(--ff-navy-hover)}
+#fotoFikir .ff-btn.ff-btn-lg{width:100%;padding:12px 18px;font-size:15px}
+#fotoFikir .ff-btn[disabled]{opacity:.55;cursor:not-allowed}
+#fotoFikir .ff-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+#fotoFikir .ff-field{border:1px solid var(--ff-line);border-radius:11px;padding:9px 12px;font-size:14px;color:#12233b;background:#fff;min-width:0}
+#fotoFikir input.ff-field{flex:1 1 220px}
+#fotoFikir .ff-chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+#fotoFikir .ff-chip{border:1px solid var(--ff-line);background:#f7fafd;border-radius:999px;padding:7px 13px;font-size:13px;color:#27425f;cursor:pointer;max-width:100%;text-align:left}
+#fotoFikir .ff-chip:hover{border-color:#b9cbe0}
+#fotoFikir .ff-chip.active{background:var(--ff-navy);border-color:var(--ff-navy);color:#fff}
+#fotoFikir .ff-slide-list{display:flex;flex-direction:column;gap:12px;margin:0;padding:0;list-style:none}
+#fotoFikir .ff-slide{border:1px solid var(--ff-line);border-radius:13px;padding:12px 14px;background:#fbfdfe}
+#fotoFikir .ff-slide .ff-slide-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+#fotoFikir .ff-slide .ff-slide-head b{font-size:14px;color:#0b2341}
+#fotoFikir .ff-slide input,#fotoFikir .ff-slide textarea{width:100%;border:1px solid var(--ff-line);border-radius:10px;padding:8px 11px;font-size:14px;font-family:inherit;color:#12233b;background:#fff;resize:vertical}
+#fotoFikir .ff-slide textarea{min-height:64px}
+#fotoFikir .ff-slide .ff-char-count{display:block;text-align:right;font-size:11px;color:var(--ff-muted);margin-top:4px}
+#fotoFikir .ff-slide .ff-note{font-size:12px;color:var(--ff-muted);margin:8px 0 0}
+#fotoFikir .ff-badge{display:inline-block;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700;letter-spacing:.02em;background:#eef2f7;color:#5a6b80}
+#fotoFikir .ff-badge.ff-badge-ok{background:#e5f3ec;color:var(--ff-ok)}
+#fotoFikir .ff-badge.ff-badge-warn{background:#fbf1dc;color:var(--ff-warn)}
+#fotoFikir .ff-badge.ff-badge-bad{background:#fbe3e0;color:var(--ff-bad)}
+#fotoFikir .ff-badge.ff-badge-role{background:#e8eef9;color:#2b5cad}
+#fotoFikir .ff-audit{border:1px solid var(--ff-line);border-radius:13px;background:#f7fafd;padding:12px 14px;margin:14px 0 0}
+#fotoFikir .ff-audit[hidden]{display:none}
+#fotoFikir .ff-audit b{display:block;font-size:14px;color:#0b2341;margin-bottom:4px}
+#fotoFikir .ff-audit .ff-audit-score{font-size:13px;color:#27425f;margin:0 0 6px}
+#fotoFikir .ff-suggest{margin:10px 0 4px}
+#fotoFikir .ff-suggest .ff-chip{border-color:#2b5cad;background:#eef3fb;color:#1f3f76}
+#fotoFikir .ff-flag-reason{font-size:12px;color:#8f3b2c;margin:6px 0 0}
+#fotoFikir .ff-style-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:0 0 14px;padding:0;list-style:none}
+#fotoFikir .ff-style{border:1px solid var(--ff-line);border-radius:12px;background:#fbfdfe;padding:11px 12px;cursor:pointer;text-align:left}
+#fotoFikir .ff-style b{display:block;font-size:13px;color:#0b2341;margin-bottom:3px}
+#fotoFikir .ff-style small{font-size:11px;color:var(--ff-muted);line-height:1.35;display:block}
+#fotoFikir .ff-style.active{background:#eef3fa;border-color:var(--ff-navy);box-shadow:inset 0 0 0 1px var(--ff-navy)}
+#fotoFikir .ff-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin:12px 0 0;padding:0;list-style:none}
+#fotoFikir .ff-gallery figure{margin:0;border:1px solid var(--ff-line);border-radius:13px;overflow:hidden;background:#f7fafd}
+#fotoFikir .ff-gallery img{display:block;width:100%;height:auto}
+#fotoFikir .ff-gallery figcaption{font-size:12px;color:var(--ff-muted);padding:8px 10px}
+#fotoFikir .ff-table-wrap{overflow-x:auto;margin:0}
+#fotoFikir .ff-table{min-width:340px;width:100%;border-collapse:collapse;font-size:13px}
+#fotoFikir .ff-table th{text-align:left;color:var(--ff-muted);font-weight:600;border-bottom:1px solid var(--ff-line);padding:7px 10px;white-space:nowrap}
+#fotoFikir .ff-table td{border-bottom:1px solid #edf1f6;padding:8px 10px;color:#12233b;vertical-align:top}
+#fotoFikir .ff-note{font-size:13px;color:var(--ff-muted);margin:10px 0 0}
+#fotoFikir .ff-check{display:flex;align-items:center;gap:8px;font-size:14px;margin:0 0 12px;cursor:pointer}
+#fotoFikir .ff-check input{width:16px;height:16px}
+#fotoFikir .ff-disclaimer{font-size:12px;color:var(--ff-muted);margin:10px 0 0}
+#fotoFikir .ff-foot{font-size:12px;color:var(--ff-muted);text-align:center;margin:18px 0 8px}
+#fotoFikir .ff-tools-head{font-size:18px;color:#0b2341;margin:22px 0 4px}
+#fotoFikir .ff-tools-sub{font-size:13px;color:var(--ff-muted);margin:0 0 12px}
+#fotoFikir .ff-tool{border:1px solid var(--ff-line);border-radius:14px;background:#fff;margin-bottom:10px}
+#fotoFikir .ff-tool summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:14px 16px;font-weight:700;font-size:15px;color:#0b2341}
+#fotoFikir .ff-tool summary::-webkit-details-marker{display:none}
+#fotoFikir .ff-tool summary small{font-weight:400;font-size:12px;color:var(--ff-muted);margin-left:auto;text-align:right}
+#fotoFikir .ff-tool summary:after{content:"+";font-size:18px;color:var(--ff-muted);font-weight:400}
+#fotoFikir .ff-tool[open] summary:after{content:"–"}
+#fotoFikir .ff-tool-body{padding:2px 16px 16px}
+#fotoFikir .ff-list{margin:8px 0 0;padding-left:20px;font-size:13px;color:#27425f}
+#fotoFikir .ff-list li{margin-bottom:5px}
+@media(max-width:640px){
+#fotoFikir .ff-steps{grid-template-columns:1fr}
+#fotoFikir .ff-btn{width:100%}
+#fotoFikir .ff-btn.ff-btn-lg{width:100%}
+#fotoFikir .ff-row{flex-direction:column;align-items:stretch}
+#fotoFikir .ff-style-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+#fotoFikir .ff-gallery{grid-template-columns:1fr}
+#fotoFikir .ff-tool summary{flex-wrap:wrap}
+#fotoFikir .ff-tool summary small{margin-left:0;text-align:left;width:100%}
+}
+</style>
+
+<header class="ff-hero">
+  <span class="ff-kicker">İçerik Stüdyosu</span>
+  <h1>Foto Fikir — klinik içerik stüdyosu</h1>
+  <p>Konuyu yaz, slayt metinlerini onayla ve adınızı taşıyan karusel görselleri üretin. Mevzuat kontrolü metinlerinizi paylaşımdan önce tarar.</p>
+  <span class="ff-quota" id="ffQuota">Bu ay –/30 görsel</span>
+</header>
+
+<ol class="ff-steps">
+  <li><span class="ff-step-num">1</span><span><b>Konu</b><span>Fikir önerisi alın, konunuzu seçin</span></span></li>
+  <li><span class="ff-step-num">2</span><span><b>Metin onayı</b><span>Slayt metinlerini düzenleyip onaylayın</span></span></li>
+  <li><span class="ff-step-num">3</span><span><b>Görsel</b><span>Stil seçin, görselleri üretin</span></span></li>
+</ol>
+
+<div class="ff-alert" id="ffAlert" role="alert"></div>
+
+<section class="ff-panel" id="ffPanelKonu">
+  <h2>1. Konu</h2>
+  <p id="ffProfileLine">Hasta eğitimi için bir konu seçin; fikir önerisi isteyebilir veya doğrudan yazabilirsiniz.</p>
+  <div class="ff-chips" id="ffIdeas"></div>
+  <div class="ff-row">
+    <input class="ff-field" type="text" id="ffTopic" maxlength="200" placeholder="Örn. implant sonrası bakım" aria-label="Konu">
+    <button type="button" class="ff-btn" id="ffIdeasBtn">Fikir öner</button>
+    <button type="button" class="ff-btn ff-btn-navy" id="ffSlidesBtn">Slayt metinlerini hazırla</button>
+  </div>
+</section>
+
+<section class="ff-panel" id="ffPanelMetin">
+  <h2>2. Metin onayı</h2>
+  <p>Slayt sayısını ve tonu seçin; metinleri burada düzenleyip onaylayın. Görseller yalnızca onayladığınız metinlerden üretilir.</p>
+  <div class="ff-row" style="margin-bottom:12px">
+    <label for="ffSlideCount">Slayt sayısı
+      <select class="ff-field" id="ffSlideCount">
+        <option value="3">3</option><option value="4">4</option><option value="5" selected>5</option>
+        <option value="6">6</option><option value="7">7</option><option value="8">8</option>
+      </select>
+    </label>
+    <label for="ffTone">Ton
+      <select class="ff-field" id="ffTone">
+        <option value="bilgilendirici" selected>Bilgilendirici</option>
+        <option value="samimi">Samimi</option>
+        <option value="profesyonel">Profesyonel</option>
+        <option value="eğitici">Eğitici</option>
+      </select>
+    </label>
+    <button type="button" class="ff-btn" id="ffSlidesAgain">Metinleri yenile</button>
+  </div>
+  <div id="ffSlides"><p class="ff-note">Henüz slayt metni yok. Konu yazıp "Slayt metinlerini hazırla" düğmesini kullanın.</p></div>
+  <div class="ff-row" style="margin-top:12px">
+    <button type="button" class="ff-btn" id="ffMevzuatBtn">Mevzuat kontrolü yap</button>
+  </div>
+  <p class="ff-disclaimer">Kontrol yerel kural listesiyle yapılır ve rehberlik amaçlıdır; paylaşımdan önce hekim değerlendirmesi gerekir.</p>
+  <div class="ff-alert ff-alert-info" id="ffMevzuatSummary"></div>
+</section>
+
+<section class="ff-panel" id="ffPanelGorsel">
+  <h2>3. Görsel</h2>
+  <p>Stil kartlarından birini seçin ve görselleri üretin. Üretilen her görsel bu ayın kota hakkından düşer.</p>
+  <label class="ff-check" for="ffIncludeName">
+    <input type="checkbox" id="ffIncludeName" checked>
+    Görselin sağ alt köşesine adım yazılsın
+  </label>
+  <div class="ff-style-grid" id="ffStyles"></div>
+  <div class="ff-suggest" id="ffStyleSuggest"></div>
+  <div class="ff-row">
+    <button type="button" class="ff-btn ff-btn-navy ff-btn-lg" id="ffGenerateBtn">Görselleri üret</button>
+  </div>
+  <div class="ff-audit" id="ffAuditPanel" hidden></div>
+  <div class="ff-gallery" id="ffGallery"></div>
+</section>
+
+<h2 class="ff-tools-head">Araçlar</h2>
+<p class="ff-tools-sub">Ana akış yukarıdaki üç adımda tamamlanır; bu araçlar isteğe bağlıdır.</p>
+
+<details class="ff-tool" id="ffPanelMarka">
+  <summary>Marka Kiti <small>Kendi fotoğraflarınızdan klinik kareler</small></summary>
+  <div class="ff-tool-body">
+    <p class="ff-note" style="margin-top:12px">1-3 fotoğraf yükleyin (PNG veya JPG, her biri en fazla 8 MB). Üretimde sahne görselleri bu fotoğraflara referansla uydurulur.</p>
+    <input class="ff-field" type="file" id="ffBrandFiles" multiple accept="image/png,image/jpeg">
+    <div class="ff-row" style="margin-top:10px">
+      <button type="button" class="ff-btn" id="ffBrandUpload">Fotoğrafları kaydet</button>
+    </div>
+    <p class="ff-note" id="ffBrandState">Marka kiti henüz yüklenmedi.</p>
+    <div class="ff-chips" id="ffScenes" style="margin-top:12px"></div>
+    <div class="ff-row">
+      <button type="button" class="ff-btn ff-btn-navy" id="ffBrandGenerate">Sahne görseli üret</button>
+    </div>
+  </div>
+</details>
+
+<details class="ff-tool" id="ffPanelIg">
+  <summary>Instagram Profili <small>Bio, öne çıkanlar, 9 gönderilik ızgara</small></summary>
+  <div class="ff-tool-body">
+    <div class="ff-row" style="margin-top:12px">
+      <button type="button" class="ff-btn" id="ffIgBtn">Profil planı öner</button>
+    </div>
+    <div id="ffIgResult"></div>
+  </div>
+</details>
+
+<details class="ff-tool" id="ffPanelReels">
+  <summary>Reels Çekim Planı <small>Kancalar, saniyeli senaryo, kurgu adımları</small></summary>
+  <div class="ff-tool-body">
+    <div class="ff-row" style="margin-top:12px">
+      <input class="ff-field" type="text" id="ffReelsTopic" maxlength="200" placeholder="Reels konusu" aria-label="Reels konusu">
+      <button type="button" class="ff-btn" id="ffReelsBtn">Çekim planı hazırla</button>
+    </div>
+    <div id="ffReelsResult"></div>
+  </div>
+</details>
+
+<details class="ff-tool" id="ffPanelHistory">
+  <summary>Son İşlemler <small>Ürettiğiniz içeriklerin geçmişi</small></summary>
+  <div class="ff-tool-body">
+    <div class="ff-table-wrap">
+      <table class="ff-table">
+        <thead><tr><th>Tür</th><th>Konu</th><th>Tarih</th><th></th></tr></thead>
+        <tbody id="ffHistory"><tr><td colspan="4">Henüz işlem yok.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</details>
+
+<p class="ff-foot">Foto Fikir yalnızca onayladığınız metinlerle çalışır; mevzuat kontrolü rehberlik amaçlıdır ve paylaşımdan önce hekim değerlendirmesi gerekir.</p>
+
+<script>
+(function () {
+  "use strict";
+  var state = { styles: [], styleId: "", slides: [], scenes: [], scene: "" };
+
+  var ffAlert = document.getElementById("ffAlert");
+
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = text;
+    return node;
+  }
+
+  function alert(message, variant) {
+    if (!message) {
+      ffAlert.className = "ff-alert";
+      ffAlert.textContent = "";
+      return;
+    }
+    ffAlert.className = "ff-alert show" + (variant === "err" ? " ff-alert-err" : " ff-alert-info");
+    ffAlert.textContent = message;
+    if (variant === "err") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function call(url, options) {
+    options = options || {};
+    options.credentials = "same-origin";
+    options.cache = "no-store";
+    options.headers = options.headers || {};
+    return fetch(url, options).then(function (response) {
+      if (response.status === 401 || response.status === 403) {
+        window.location.assign("/login");
+        throw new Error("Oturum gerekli.");
+      }
+      return response.json().then(function (data) {
+        if (!response.ok) {
+          var detail = data && data.detail ? data.detail : "İşlem tamamlanamadı; biraz sonra tekrar deneyin.";
+          alert(detail, "err");
+          throw new Error(detail);
+        }
+        alert("", "info");
+        return data;
+      });
+    });
+  }
+
+  function post(url, body) {
+    return call(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+  }
+
+  function mockNote(payload) {
+    return payload && payload.mock ? " — örnek çıktı (mock)" : "";
+  }
+
+  function paintQuota(quota) {
+    var used = quota && typeof quota.used === "number" ? quota.used : null;
+    var limit = quota && quota.limit ? quota.limit : 30;
+    document.getElementById("ffQuota").textContent = used === null ? "Bu ay –/" + limit + " görsel" : "Bu ay " + used + "/" + limit + " görsel";
+  }
+
+  function renderIdeas(ideas) {
+    var box = document.getElementById("ffIdeas");
+    box.replaceChildren();
+    (ideas || []).forEach(function (idea) {
+      var chip = el("button", "ff-chip", idea.title + " — " + idea.angle);
+      chip.type = "button";
+      chip.title = idea.hook || "";
+      chip.addEventListener("click", function () {
+        document.getElementById("ffTopic").value = idea.title;
+        Array.prototype.forEach.call(box.children, function (child) { child.classList.remove("active"); });
+        chip.classList.add("active");
+      });
+      box.appendChild(chip);
+    });
+    if (!ideas || !ideas.length) box.appendChild(el("p", "ff-note", "Fikir önerisi almak için konu yazıp düğmeyi kullanın."));
+  }
+
+  function renderSlides(slides) {
+    state.slides = slides || [];
+    var box = document.getElementById("ffSlides");
+    box.replaceChildren();
+    if (!slides || !slides.length) {
+      box.appendChild(el("p", "ff-note", "Henüz slayt metni yok. Konu yazıp \"Slayt metinlerini hazırla\" düğmesini kullanın."));
+      return;
+    }
+    var list = el("ul", "ff-slide-list");
+    slides.forEach(function (slide, index) {
+      var number = index + 1;
+      var item = el("li", "ff-slide");
+      var head = el("div", "ff-slide-head");
+      head.appendChild(el("b", null, "Slayt " + number));
+      if (slide.role) head.appendChild(el("span", "ff-badge ff-badge-role", "Görev: " + slide.role));
+      var badge = el("span", "ff-badge ff-badge-ok", "OK");
+      badge.id = "ffFlag" + number;
+      head.appendChild(badge);
+      item.appendChild(head);
+      var headline = el("input");
+      headline.type = "text";
+      headline.maxLength = 120;
+      headline.value = slide.headline || "";
+      headline.setAttribute("aria-label", "Slayt " + number + " başlığı");
+      item.appendChild(headline);
+      var body = el("textarea");
+      body.maxLength = 220;
+      body.value = slide.body || "";
+      body.setAttribute("aria-label", "Slayt " + number + " metni");
+      item.appendChild(body);
+      var counter = el("span", "ff-char-count", body.value.length + "/220 karakter");
+      body.addEventListener("input", function () {
+        counter.textContent = body.value.length + "/220 karakter";
+      });
+      item.appendChild(counter);
+      if (slide.note) item.appendChild(el("p", "ff-note", slide.note));
+      var reason = el("p", "ff-flag-reason");
+      reason.id = "ffReason" + number;
+      item.appendChild(reason);
+      list.appendChild(item);
+    });
+    box.appendChild(list);
+  }
+
+  function paintFlags(results) {
+    var removeCount = 0, warnCount = 0;
+    (results || []).forEach(function (result) {
+      var number = (result.index || 0) + 1;
+      var badge = document.getElementById("ffFlag" + number);
+      var reason = document.getElementById("ffReason" + number);
+      if (badge) {
+        badge.textContent = result.level;
+        badge.className = "ff-badge " + (result.level === "KALDIR" ? "ff-badge-bad" : result.level === "DIKKAT" ? "ff-badge-warn" : "ff-badge-ok");
+      }
+      if (reason) {
+        reason.textContent = result.reason ? result.reason + (result.suggestion ? " " + result.suggestion : "") : "";
+      }
+      if (result.level === "KALDIR") removeCount += 1;
+      if (result.level === "DIKKAT") warnCount += 1;
+    });
+    var summary = document.getElementById("ffMevzuatSummary");
+    var parts = [];
+    if (removeCount) parts.push(removeCount + " metin kaldırılmalı");
+    if (warnCount) parts.push(warnCount + " metin dikkat gerektiriyor");
+    summary.textContent = parts.length
+      ? "Kontrol tamamlandı: " + parts.join(", ") + ". Liste tüm riskleri kapsamaz; paylaşımdan önce hekim değerlendirmesi gerekir."
+      : "Kontrol tamamlandı: sorun bulunmadı. Liste tüm riskleri kapsamaz; paylaşımdan önce hekim değerlendirmesi gerekir.";
+    summary.className = "ff-alert ff-alert-info show";
+  }
+
+  function renderStyles(styles) {
+    state.styles = styles || [];
+    var box = document.getElementById("ffStyles");
+    box.replaceChildren();
+    state.styles.forEach(function (style) {
+      var card = el("button", "ff-style");
+      card.type = "button";
+      card.appendChild(el("b", null, style.name));
+      card.appendChild(el("small", null, style.hint || ""));
+      card.addEventListener("click", function () {
+        state.styleId = style.id;
+        Array.prototype.forEach.call(box.children, function (child) { child.classList.remove("active"); });
+        card.classList.add("active");
+      });
+      box.appendChild(card);
+      if (!state.styleId && style.id === "sade-klinik") {
+        state.styleId = style.id;
+        card.classList.add("active");
+      }
+    });
+  }
+
+  function selectStyle(styleId) {
+    state.styleId = styleId;
+    Array.prototype.forEach.call(document.querySelectorAll("#ffStyles .ff-style"), function (card, index) {
+      card.classList.toggle("active", (state.styles[index] || {}).id === styleId);
+    });
+  }
+
+  function renderStyleSuggest(recommendation) {
+    var box = document.getElementById("ffStyleSuggest");
+    box.replaceChildren();
+    if (!recommendation || !recommendation.style_id || !recommendation.reason) return;
+    var style = state.styles.filter(function (item) { return item.id === recommendation.style_id; })[0];
+    var label = style ? style.name : recommendation.style_id;
+    var chip = el("button", "ff-chip", "Önerilen stil: " + label + " — " + recommendation.reason);
+    chip.type = "button";
+    chip.addEventListener("click", function () { selectStyle(recommendation.style_id); });
+    box.appendChild(chip);
+  }
+
+  function renderAudit(audit, tips, uretimMs) {
+    var box = document.getElementById("ffAuditPanel");
+    box.replaceChildren();
+    if (!audit || typeof audit.score !== "number") {
+      box.hidden = true;
+      return;
+    }
+    var title = el("b", null, "Yapı Puanı: " + audit.score + "/100" + (audit.level ? " — " + audit.level : ""));
+    box.appendChild(title);
+    var meta = [];
+    if (typeof uretimMs === "number") meta.push("Üretim süresi: " + uretimMs + " ms");
+    if (meta.length) box.appendChild(el("p", "ff-audit-score", meta.join(" · ")));
+    if (tips && tips.length) {
+      box.appendChild(el("b", null, "Geliştirme önerileri"));
+      var list = el("ul", "ff-list");
+      tips.forEach(function (tip) { list.appendChild(el("li", null, tip)); });
+      box.appendChild(list);
+    } else {
+      box.appendChild(el("p", "ff-audit-score", "Rubrik notlarında uygulanabilir öneri yok; yapı hazır."));
+    }
+    box.hidden = false;
+  }
+
+  function renderScenes(scenes) {
+    state.scenes = scenes || [];
+    var box = document.getElementById("ffScenes");
+    box.replaceChildren();
+    state.scenes.forEach(function (scene) {
+      var chip = el("button", "ff-chip", scene);
+      chip.type = "button";
+      chip.addEventListener("click", function () {
+        state.scene = scene;
+        Array.prototype.forEach.call(box.children, function (child) { child.classList.remove("active"); });
+        chip.classList.add("active");
+      });
+      box.appendChild(chip);
+    });
+  }
+
+  function galleryFigure(url, caption) {
+    var figure = el("figure");
+    var img = el("img");
+    img.src = url;
+    img.loading = "lazy";
+    img.alt = caption || "Üretilen görsel";
+    figure.appendChild(img);
+    figure.appendChild(el("figcaption", null, caption || ""));
+    return figure;
+  }
+
+  function renderHistory(jobs) {
+    var body = document.getElementById("ffHistory");
+    body.replaceChildren();
+    if (!jobs || !jobs.length) {
+      var empty = el("tr");
+      empty.appendChild(el("td", null, "Henüz işlem yok."));
+      empty.firstChild.colSpan = 4;
+      body.appendChild(empty);
+      return;
+    }
+    (jobs || []).forEach(function (job) {
+      var row = el("tr");
+      row.appendChild(el("td", null, job.label || job.kind));
+      row.appendChild(el("td", null, job.topic || ""));
+      row.appendChild(el("td", null, (job.created_at || "").slice(0, 16).replace("T", " ")));
+      var linkCell = el("td");
+      if (job.image_url) {
+        var link = el("a", null, "Görseli aç");
+        link.href = job.image_url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        linkCell.appendChild(link);
+      }
+      row.appendChild(linkCell);
+      body.appendChild(row);
+    });
+  }
+
+  function loadHistory() {
+    return call("/api/foto-fikir/history").then(function (data) {
+      renderHistory(data.jobs);
+    }).catch(function () { /* geçmiş hatası akışı bozmaz */ });
+  }
+
+  function collectSlides() {
+    var collected = [];
+    Array.prototype.forEach.call(document.querySelectorAll("#ffSlides .ff-slide"), function (node) {
+      var headline = node.querySelector("input").value.trim();
+      var body = node.querySelector("textarea").value.trim();
+      if (headline || body) collected.push({ headline: headline, body: body });
+    });
+    return collected;
+  }
+
+  function requestSlides() {
+    var topic = document.getElementById("ffTopic").value.trim();
+    if (!topic) {
+      alert("Önce konu yazın; fikir önerisinden de bir başlık seçebilirsiniz.", "err");
+      return Promise.resolve();
+    }
+    return post("/api/foto-fikir/slides", {
+      topic: topic,
+      slide_count: parseInt(document.getElementById("ffSlideCount").value, 10) || 5,
+      tone: document.getElementById("ffTone").value,
+    }).then(function (data) {
+      renderSlides(data.slides);
+      alert("Metinler hazırlandı. Düzenleyip mevzuat kontrolü yapabilir, ardından görsel üretebilirsiniz." + mockNote(data), "info");
+    });
+  }
+
+  document.getElementById("ffIdeasBtn").addEventListener("click", function () {
+    post("/api/foto-fikir/ideas", { topic_hint: document.getElementById("ffTopic").value.trim() }).then(function (data) {
+      renderIdeas(data.ideas);
+      alert("Fikirler hazırlandı; bir başlığı konu olarak kullanmak için tıklayın." + mockNote(data), "info");
+    }).catch(function () {});
+  });
+
+  document.getElementById("ffSlidesBtn").addEventListener("click", function () {
+    requestSlides().catch(function () {});
+  });
+
+  document.getElementById("ffSlidesAgain").addEventListener("click", function () {
+    requestSlides().catch(function () {});
+  });
+
+  document.getElementById("ffMevzuatBtn").addEventListener("click", function () {
+    var slides = collectSlides();
+    if (!slides.length) {
+      alert("Kontrol için en az bir slayt metni gerekli.", "err");
+      return;
+    }
+    post("/api/foto-fikir/mevzuat-check", {
+      texts: slides.map(function (slide) { return (slide.headline + " " + slide.body).trim(); }),
+    }).then(function (data) {
+      paintFlags(data.results);
+    }).catch(function () {});
+  });
+
+  document.getElementById("ffGenerateBtn").addEventListener("click", function () {
+    var topic = document.getElementById("ffTopic").value.trim();
+    var slides = collectSlides();
+    if (!topic && !slides.length) {
+      alert("Konu ve en az bir slayt metni gerekli.", "err");
+      return;
+    }
+    var button = this;
+    button.disabled = true;
+    post("/api/foto-fikir/generate-image", {
+      topic: topic,
+      style_id: state.styleId,
+      slides: slides,
+      include_name: document.getElementById("ffIncludeName").checked,
+    }).then(function (data) {
+      var gallery = document.getElementById("ffGallery");
+      (data.images || []).forEach(function (url, index) {
+        gallery.appendChild(galleryFigure(url, "Slayt " + (index + 1) + " — " + data.style));
+      });
+      paintQuota(data.quota);
+      renderAudit(data.creative_audit, data.tips, data.uretim_ms);
+      renderStyleSuggest(data.suggestion || data.style_recommendation);
+      alert("Görseller hazır; galeriye eklendiler." + mockNote(data) + (data.skipped ? " " + data.uyari : ""), "info");
+      loadHistory();
+    }).catch(function () {}).finally(function () {
+      button.disabled = false;
+    });
+  });
+
+  document.getElementById("ffBrandUpload").addEventListener("click", function () {
+    var input = document.getElementById("ffBrandFiles");
+    if (!input.files || !input.files.length) {
+      alert("Kaydetmek için en az bir fotoğraf seçin.", "err");
+      return;
+    }
+    var form = new FormData();
+    Array.prototype.forEach.call(input.files, function (file) { form.append("files", file); });
+    call("/api/foto-fikir/brand-kit", { method: "POST", body: form }).then(function (data) {
+      document.getElementById("ffBrandState").textContent = "Marka kiti kaydedildi: " + data.photos_count + " fotoğraf.";
+      alert("Marka kiti güncellendi." + mockNote(data), "info");
+    }).catch(function () {});
+  });
+
+  document.getElementById("ffBrandGenerate").addEventListener("click", function () {
+    if (!state.scene) {
+      alert("Önce bir sahne çipi seçin.", "err");
+      return;
+    }
+    var button = this;
+    button.disabled = true;
+    post("/api/foto-fikir/brand-kit/generate", { scene: state.scene }).then(function (data) {
+      document.getElementById("ffGallery").appendChild(galleryFigure(data.image_url, "Marka kiti — " + data.scene));
+      paintQuota(data.quota);
+      if (data.reason === "referanssız") {
+        alert("Kit fotoğrafları referans olarak kullanılamadı; stil uyumlu bir görsel üretildi." + mockNote(data), "info");
+      } else {
+        alert("Sahne görseli hazır." + mockNote(data), "info");
+      }
+      loadHistory();
+    }).catch(function () {}).finally(function () {
+      button.disabled = false;
+    });
+  });
+
+  document.getElementById("ffIgBtn").addEventListener("click", function () {
+    post("/api/foto-fikir/ig-profile", {}).then(function (data) {
+      var box = document.getElementById("ffIgResult");
+      box.replaceChildren();
+      var bio = el("p", "ff-note", "Bio: " + (data.bio || ""));
+      box.appendChild(bio);
+      var chips = el("div", "ff-chips");
+      (data.highlights || []).forEach(function (item) {
+        chips.appendChild(el("span", "ff-chip", item));
+      });
+      box.appendChild(chips);
+      var gridTitle = el("b", null, "9 gönderilik ızgara planı");
+      box.appendChild(gridTitle);
+      var list = el("ol", "ff-list");
+      (data.grid_plan || []).forEach(function (item) {
+        list.appendChild(el("li", null, (item.idea || "") + " (" + (item.format || "") + ")"));
+      });
+      box.appendChild(list);
+      if (data.mock) box.appendChild(el("p", "ff-note", "Bu plan örnek çıktıdır (mock)."));
+      alert("Profil planı hazır." + mockNote(data), "info");
+    }).catch(function () {});
+  });
+
+  document.getElementById("ffReelsBtn").addEventListener("click", function () {
+    var topic = document.getElementById("ffReelsTopic").value.trim();
+    if (!topic) {
+      alert("Reels konusu yazın.", "err");
+      return;
+    }
+    post("/api/foto-fikir/reels", { topic: topic }).then(function (data) {
+      var box = document.getElementById("ffReelsResult");
+      box.replaceChildren();
+      var chips = el("div", "ff-chips");
+      (data.hooks || []).forEach(function (hook) {
+        chips.appendChild(el("span", "ff-chip", hook));
+      });
+      box.appendChild(chips);
+      var tableTitle = el("b", null, "Saniyeli senaryo");
+      box.appendChild(tableTitle);
+      var table = el("table", "ff-table");
+      table.appendChild((function () {
+        var thead = el("thead");
+        var headRow = el("tr");
+        headRow.appendChild(el("th", null, "Aralık"));
+        headRow.appendChild(el("th", null, "Metin"));
+        thead.appendChild(headRow);
+        return thead;
+      })());
+      var tbody = el("tbody");
+      (data.senaryo || []).forEach(function (row) {
+        var tr = el("tr");
+        tr.appendChild(el("td", null, row.aralik || ""));
+        tr.appendChild(el("td", null, row.metin || ""));
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      var wrap = el("div", "ff-table-wrap");
+      wrap.appendChild(table);
+      box.appendChild(wrap);
+      box.appendChild(el("b", null, "Kurgu adımları"));
+      var list = el("ol", "ff-list");
+      (data.capcut_adimlari || []).forEach(function (step) {
+        list.appendChild(el("li", null, step));
+      });
+      box.appendChild(list);
+      if (data.mock) box.appendChild(el("p", "ff-note", "Bu plan örnek çıktıdır (mock)."));
+      alert("Çekim planı hazır." + mockNote(data), "info");
+      loadHistory();
+    }).catch(function () {});
+  });
+
+  function boot() {
+    renderScenes(["Loupe takarken", "Eldivenle kalp yaparken", "Ağız içi tarayıcıyla çalışırken", "Diş modeliyle anlatırken", "Hastayla konuşurken", "Resepsiyonda"]);
+    call("/api/foto-fikir/bootstrap").then(function (data) {
+      paintQuota(data.quota);
+      renderStyles(data.styles);
+      var profile = data.profile || {};
+      var parts = [];
+      if (profile.unvan) parts.push(profile.unvan);
+      if (profile.display_name) parts.push(profile.display_name);
+      if (profile.specialty) parts.push(profile.specialty);
+      var line = document.getElementById("ffProfileLine");
+      line.textContent = parts.length
+        ? parts.join(" · ") + " için hasta eğitimi içeriği hazırlayın; konu seçin, metinleri onaylayın."
+        : "Hasta eğitimi için bir konu seçin; fikir önerisi isteyebilir veya doğrudan yazabilirsiniz.";
+      var kit = data.brand_kit || {};
+      document.getElementById("ffBrandState").textContent = kit.exists
+        ? "Marka kiti yüklü: " + kit.photos_count + " fotoğraf. Yeni fotoğraf seçip kaydedebilirsiniz."
+        : "Marka kiti henüz yüklenmedi.";
+      renderHistory(data.recent);
+    }).catch(function () {});
+  }
+
+  boot();
+})();
+</script>
+</main>
+{% endblock %}

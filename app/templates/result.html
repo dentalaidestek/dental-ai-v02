@@ -352,8 +352,49 @@
 
     {% elif ai_result.status == "AI_ANALYZING" %}
 
+    {% set vision_failed = analysis.status == "VISION_ERROR" or (vision_job and vision_job.status in ("FAILED", "CANCELLED")) %}
+    {% set vision_running = vision_job and vision_job.status in ("QUEUED", "RUNNING") %}
+    {% set analysis_pending = analysis.status in ("ANALYZING", "VISION_PENDING", "AI_ANALYZING") %}
+
+    {% if analysis.status == "VISION_READY" %}
+
+    <div class="ai-card">
+        <h2>🦷 Görüntüler hazırlandı</h2>
+        <p>
+            Röntgen görüntüleriniz işlendi. Klinik AI değerlendirmesini başlatabilirsiniz.
+        </p>
+        <form method="post" action="/analysis/{{ analysis.id }}/viewer-analyze" style="margin-top:12px;">
+            <button type="submit" class="answer-btn" style="width:100%; padding:14px; font-size:16px;">
+                Klinik AI'yi Başlat
+            </button>
+        </form>
+    </div>
+
+    {% elif vision_failed %}
+
+    <div class="ai-card">
+        <h2>⚠️ Analiz başarısız oldu</h2>
+        <p>
+            Görüntü işleme adımı tamamlanamadı. Yeniden denemek için aşağıdaki butonu
+            kullanabilir veya analiz sayfasına dönebilirsiniz.
+        </p>
+        {% if vision_job %}
+        <form method="post" action="/jobs/{{ vision_job.id }}/retry" style="margin-top:12px;">
+            <button type="submit" class="answer-btn" style="width:100%; padding:14px; font-size:16px;">
+                Yeniden Dene
+            </button>
+        </form>
+        {% else %}
+        <p style="margin-top:12px;">
+            <a class="button" href="/analysis/new/{{ patient.id }}">Analiz sayfasına dön</a>
+        </p>
+        {% endif %}
+    </div>
+
+    {% elif vision_running or analysis_pending %}
+
     <div class="ai-card" id="aiWaiting">
-        <h2>🧠 AI analiz ediyor...</h2>
+        <h2>{% if vision_running %}🦷 Görüntüler işleniyor...{% else %}🧠 AI analiz ediyor...{% endif %}</h2>
         <p>
             Dental AI girilen bilgileri inceliyor. Bu işlem 2-3 dakika sürebilir, lütfen bekleyiniz.
             Bu ekran otomatik güncellenecek.
@@ -361,10 +402,30 @@
     </div>
 
     <script>
-    setTimeout(function() {
-        window.location.reload();
-    }, 2000);
+    (function () {
+        var KEY = "daiResultReloadDelay";
+        var delay = parseInt(sessionStorage.getItem(KEY) || "0", 10) || 4000;
+        if (delay > 10000) { delay = 10000; }
+        try { sessionStorage.setItem(KEY, String(Math.min(delay + 2000, 10000))); } catch (e) {}
+        var wait = delay + Math.floor(Math.random() * 500);
+        setTimeout(function () { window.location.reload(); }, wait);
+    })();
     </script>
+
+    {% else %}
+
+    <div class="ai-card">
+        <h2>⚠️ Analiz sonucu bulunamadı</h2>
+        <p>
+            Bu analiz için bekleyen bir işlem yok ve kayıtlı bir sonuç dosyası bulunamadı.
+            Yeniden denemek için analiz sayfasına dönün.
+        </p>
+        <p style="margin-top:12px;">
+            <a class="button" href="/analysis/new/{{ patient.id }}">Analiz sayfasına dön</a>
+        </p>
+    </div>
+
+    {% endif %}
 
 
     {% else %}
@@ -600,6 +661,14 @@ function submitReanalysis() {
 document.addEventListener("DOMContentLoaded", function() {
     checkAllAnswered();
 });
+</script>
+
+<script>
+(function () {
+    if (!document.getElementById("aiWaiting")) {
+        try { sessionStorage.removeItem("daiResultReloadDelay"); } catch (e) {}
+    }
+})();
 </script>
 
 {% endblock %}

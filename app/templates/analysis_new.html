@@ -10,18 +10,18 @@
         </div>
     </div>
 
-    <form method="post" enctype="multipart/form-data" class="card form analysis-compact-form">
+    <form method="post" enctype="multipart/form-data" class="card form analysis-compact-form" data-analysis-image-limit="{{ analysis_image_limit|default(4) }}" data-existing-image-count="{{ selected_media|length }}" data-analysis-max-image-bytes="{{ analysis_image_max_bytes|default(15728640) }}" data-analysis-max-batch-bytes="{{ analysis_batch_max_bytes|default(50331648) }}">
         {% if selected_media %}
         <input type="hidden" name="existing_media_ids" value="{{ selected_media_ids }}">
         <div class="analysis-selected-media analysis-selected-media-multi">
             <div class="analysis-selected-media-thumbs">
-                {% for media in selected_media[:4] %}
+                {% for media in selected_media[:analysis_image_limit] %}
                 <img src="/patients/{{ patient.id }}/media/{{ media.id }}/file" alt="Seçilen klinik görüntü">
                 {% endfor %}
-                {% if selected_media|length > 4 %}<span class="analysis-selected-media-more">+{{ selected_media|length - 4 }}</span>{% endif %}
+                {% if selected_media|length > (analysis_image_limit|default(4)) %}<span class="analysis-selected-media-more">+{{ selected_media|length - (analysis_image_limit|default(4)) }}</span>{% endif %}
             </div>
             <div>
-                <strong>{{ selected_media|length }} kayıtlı görüntü analiz için seçildi</strong>
+                <strong>{{ selected_media|length }} / {{ analysis_image_limit|default(4) }} görüntü analiz için seçildi</strong>
                 <span>Bu görüntüler analize dahil edilecek. Klinik bilgileri görüntü ekranındaki Klinik Bilgi sekmesinden ekleyebilirsiniz.</span>
             </div>
         </div>
@@ -44,20 +44,54 @@
                     Görüntü yükle
                     <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
                 </label>
-                <p class="muted analysis-field-help">Kayıtlı görüntüler dahil toplam en fazla 4 görüntü kullanılabilir. Tür otomatik belirlenir.</p>
+                <p class="muted analysis-field-help">Kayıtlı görüntüler dahil toplam en fazla {{ analysis_image_limit }} görüntü kullanılabilir. Yeni dosya başına 15 MiB, yeni dosyaların toplamı 48 MiB sınırı vardır.</p>
             </details>
             {% else %}
             <label>
                 Görüntü yükle
                 <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
             </label>
-            <p class="muted analysis-field-help">En fazla 4 görüntü yükleyebilirsiniz. Görüntü türü otomatik belirlenir.</p>
+            <p class="muted analysis-field-help">En fazla {{ analysis_image_limit }} görüntü yükleyebilirsiniz. Dosya başına 15 MiB, toplam yeni dosya boyutu 48 MiB ile sınırlıdır.</p>
             {% endif %}
         </div>
 
         <button type="submit" class="analysis-submit-button">🔬 Analizi Başlat</button>
     </form>
 
+    <script>
+    (function () {
+        const form = document.querySelector(".analysis-compact-form");
+        if (!form) return;
+        const limit = Number(form.dataset.analysisImageLimit);
+        const existingCount = Number(form.dataset.existingImageCount);
+        const maxFileBytes = Number(form.dataset.analysisMaxImageBytes);
+        const maxBatchBytes = Number(form.dataset.analysisMaxBatchBytes);
+        const fileInput = form.querySelector('input[name="images"]');
+        if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(existingCount) || existingCount < 0) return;
+        function totalSelected() {
+            return existingCount + (fileInput && fileInput.files ? fileInput.files.length : 0);
+        }
+        function rejectExcess() {
+            if (totalSelected() <= limit) return false;
+            if (fileInput) fileInput.value = "";
+            window.alert("Kayıtlı görüntüler dahil bir analizde en fazla " + limit + " görüntü kullanabilirsiniz.");
+            return true;
+        }
+        function rejectOversizedBytes() {
+            const files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
+            const oversized = files.some(function (file) { return !Number.isFinite(file.size) || file.size < 1 || file.size > maxFileBytes; });
+            const total = files.reduce(function (sum, file) { return sum + file.size; }, 0);
+            if (!oversized && total <= maxBatchBytes) return false;
+            if (fileInput) fileInput.value = "";
+            window.alert(oversized ? "Her yeni görüntü en fazla 15 MiB olabilir." : "Yeni görüntülerin toplamı en fazla 48 MiB olabilir.");
+            return true;
+        }
+        if (fileInput) fileInput.addEventListener("change", function () { rejectExcess(); rejectOversizedBytes(); });
+        form.addEventListener("submit", function (event) {
+            if (rejectExcess() || rejectOversizedBytes()) event.preventDefault();
+        });
+    })();
+    </script>
     <div class="analysis-safety-note">🤖 AI mevcut klinik bilgi ve görüntüyü birlikte değerlendirir; kritik bilgi eksikse yalnızca gerekli soruları gösterir.</div>
 </div>
 {% endblock %}

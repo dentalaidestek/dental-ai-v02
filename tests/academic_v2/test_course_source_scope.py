@@ -3,6 +3,7 @@ import re
 import unittest
 from pathlib import Path
 
+from app.academic_quick_actions import is_quick_action, quick_action_plan
 from app.academic_task_language import course_source_request
 from app.dental_query_intent import build_dental_requirement_plan, classify_academic_study_task
 
@@ -20,6 +21,10 @@ class CourseSourceScopeTests(unittest.TestCase):
         ]
         for query in requests:
             with self.subTest(query=query):
+                if is_quick_action(query):
+                    # 35c2397a: buton akışları quick-action planı ile kurs kapsamına girer.
+                    self.assertEqual(quick_action_plan(query).scope, 'course')
+                    continue
                 self.assertTrue(course_source_request(query))
                 requirement = build_dental_requirement_plan(query)
                 self.assertFalse(requirement.subject_terms)

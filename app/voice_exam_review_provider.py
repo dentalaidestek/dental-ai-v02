@@ -27,7 +27,7 @@ def _configuration():
     key = (os.getenv('ANTHROPIC_API_KEY') or '').strip()
     model = (os.getenv('VOICE_EXAM_CLAUDE_MODEL') or 'claude-haiku-5-5').strip()
     if not key or not re.fullmatch(r'claude-[A-Za-z0-9._-]{1,100}', model):
-        raise core.VoiceError('Son değerlendirme için Claude yapılandırması hazır değil.')
+        raise core.VoiceConfigurationError('Son değerlendirme için Claude yapılandırması hazır değil.')
     return key, model
 
 

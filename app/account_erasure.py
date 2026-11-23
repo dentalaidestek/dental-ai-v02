@@ -20,6 +20,107 @@ def utcnow_naive():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def erase_account_ai_data(session: Session, user_id: int) -> tuple[int, list[str]]:
+    """Erase guest analyses and scrub all queued AI payloads for this account.
+
+    Patient-linked Analysis/ImageAsset/PatientMedia and treatment/tooth records
+    are intentionally retained: they can contain third-party clinical records
+    subject to separate patient-care and legal-retention duties. Patient AI jobs
+    are cancelled and their transient payloads are cleared; published result
+    objects are preserved by the WorkGarbage reference check when still linked.
+    """
+    from app.main import GuestAnalysis, GuestImageAsset
+    from app.work_jobs import (
+        WorkJob,
+        enqueue_ai_result_cleanup,
+        enqueue_guest_analysis_cleanup,
+    )
+
+    dialect = session.get_bind().dialect.name
+    guests_query = select(GuestAnalysis).where(
+        GuestAnalysis.owner_user_id == user_id
+    ).order_by(GuestAnalysis.id)
+    if dialect == "postgresql":
+        guests_query = guests_query.with_for_update()
+    guests = session.exec(
+        guests_query.execution_options(populate_existing=True)
+    ).all()
+    guest_ids = [row.id for row in guests if row.id is not None]
+
+    assets = []
+    if guest_ids:
+        assets_query = select(GuestImageAsset).where(
+            GuestImageAsset.guest_analysis_id.in_(guest_ids)
+        ).order_by(GuestImageAsset.id)
+        if dialect == "postgresql":
+            assets_query = assets_query.with_for_update()
+        assets = session.exec(
+            assets_query.execution_options(populate_existing=True)
+        ).all()
+
+    jobs_query = select(WorkJob).where(
+        WorkJob.owner_user_id == user_id,
+    ).order_by(WorkJob.id)
+    if dialect == "postgresql":
+        jobs_query = jobs_query.with_for_update()
+    jobs = session.exec(
+        jobs_query.execution_options(populate_existing=True)
+    ).all()
+
+    guest_references = {
+        str(reference)
+        for reference in (
+            [row.file_path for row in assets]
+            + [row.result_path for row in guests]
+        )
+        if reference
+    }
+    queued_references: set[str] = set()
+    unqueued_references: list[str] = []
+    for reference in sorted(guest_references):
+        if enqueue_guest_analysis_cleanup(session, reference):
+            queued_references.add(reference)
+        elif enqueue_ai_result_cleanup(session, reference):
+            queued_references.add(reference)
+        else:
+            # Keep the existing caller fallback for legacy guest references;
+            # never broaden the worker's accepted object-key patterns.
+            unqueued_references.append(reference)
+
+    # Remove guest jobs entirely and scrub transient payloads from all other
+    # jobs. Re-arm result cleanup only for the private AI-result namespace;
+    # the collector preserves any result still referenced by a patient record.
+    for job in jobs:
+        reference = str(job.result_ref) if job.result_ref else None
+        if reference and reference not in queued_references:
+            if enqueue_ai_result_cleanup(session, reference):
+                queued_references.add(reference)
+
+        if job.resource_type == "GUEST":
+            if reference and reference not in queued_references:
+                unqueued_references.append(reference)
+            session.delete(job)
+            continue
+
+        if job.status in {"QUEUED", "RUNNING"}:
+            job.status = "CANCELLED"
+            job.error_code = "ACCOUNT_ERASED"
+            job.lease_token = None
+            job.lease_until = None
+        job.payload_json = "{}"
+        if reference and reference in queued_references:
+            job.result_ref = None
+        job.updated_at = utcnow_naive()
+        session.add(job)
+
+    for asset in assets:
+        session.delete(asset)
+    for guest in guests:
+        session.delete(guest)
+
+    return len(guests), sorted(set(unqueued_references))
+
+
 def begin_account_erasure(
     session: Session,
     *,
@@ -37,7 +138,7 @@ def begin_account_erasure(
     # Import here to avoid a module cycle while main.py still owns legacy models.
     from app.main import (
         AdminAuditLog, DeletedAccountEmail, ExpertDeviceChallenge,
-        ExpertProfile, ExpertTrustedDevice, PasswordResetToken,
+        ExpertProfile, ExpertTitleChange, ExpertTrustedDevice, PasswordResetToken,
         SessionToken, StudyChatMessage, StudyCourse, StudyMaterial, User, EmailVerificationChallenge, EmailChangeChallenge,
         WebPushDelivery, WebPushMessageDelivery, WebPushSubscription, RealtimeEvent, E2EEDeviceKey,
     )
@@ -52,6 +153,8 @@ def begin_account_erasure(
 
     from app.membership_verification import MembershipVerification
     extra_storage: list[str] = []
+    _, guest_storage_fallback = erase_account_ai_data(session, user_id)
+    extra_storage.extend(guest_storage_fallback)
     from app.expert_social_maintenance import erase_user_content
     erase_user_content(session, user_id)
     # Account erasure retains a pseudonymous User row, so its FK cascade does
@@ -82,6 +185,18 @@ def begin_account_erasure(
         profile.verified_at = None
         profile.updated_at = utcnow_naive()
         session.add(profile)
+
+    # Keep title-change audit rows, but remove their private source documents too.
+    title_changes = session.exec(
+        select(ExpertTitleChange).where(ExpertTitleChange.user_id == user_id)
+    ).all()
+    for change in title_changes:
+        if change.credential_document_path:
+            extra_storage.append(change.credential_document_path)
+        change.credential_document_path = None
+        change.credential_document_name = None
+        change.credential_document_mime = None
+        session.add(change)
 
     for model in (SessionToken, PasswordResetToken, ExpertTrustedDevice, ExpertDeviceChallenge, EmailVerificationChallenge, EmailChangeChallenge):
         for row in session.exec(select(model).where(model.user_id == user_id)).all():
@@ -171,6 +286,14 @@ def begin_account_erasure(
         target_user_id=user_id,
         detail=f"actor={actor}; registration_block={int(block_registration)}",
     ))
-    return extra_storage
+    # Queue only known server-generated profile/identity assets in the same
+    # transaction that clears their metadata. Keep unknown legacy references on
+    # the existing caller fallback; never broaden the worker's accepted paths.
+    from app.work_jobs import enqueue_account_asset_cleanup
+    fallback_storage = []
+    for reference in sorted({str(item) for item in extra_storage if item}):
+        if not enqueue_account_asset_cleanup(session, reference):
+            fallback_storage.append(reference)
+    return fallback_storage
 
 

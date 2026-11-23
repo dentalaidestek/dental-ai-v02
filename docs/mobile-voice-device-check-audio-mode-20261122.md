@@ -1,0 +1,160 @@
+# Native microphone preflight — audio-mode restoration safety
+
+Date: 2026-11-22  
+Branch: `feature/mobile-web-parity-20261110`  
+PR: #257 · Issue: #258
+
+## Web-first flow traced
+
+Before changing native behavior, re-read the canonical web preflight and live voice path:
+
+- `app/templates/voice_exam_panel.html` — the microphone check is separate from patient consent and the live examination.
+- `app/static/voice-exam-live.js` and `app/static/voice-pcm-worklet.js` — the browser owns a media stream and AudioContext; stopping the stream closes the browser capture resources.
+- `app/voice_exam.py` — live ASR is a separate consented server flow; the device check does not call it.
+- Native counterpart: `NativeVoiceDeviceCheck`, `voiceDeviceCheck`, `NativeVoiceRecorder` and `voiceRecorderLifecycle`.
+
+The web browser preflight does not change a process-wide Expo audio mode. Native Expo Audio does: setting `allowsRecording=true` changes app-wide routing, so a device check must explicitly restore `allowsRecording=false` after success, cancellation, backgrounding, navigation and start failure.
+
+## Newly found defect
+
+Native `NativeVoiceDeviceCheck.resetAudioMode()` swallowed `setAudioModeAsync({allowsRecording:false})` failures with `.catch(()=>{})`. The component then reported the microphone check solely from permission, duration, file size and meter values. A capture could therefore appear successful while the app-wide audio route remained in recording mode.
+
+This is separate from the previously fixed temporary-file cleanup check: a file can be deleted correctly while the global audio-mode reset still fails.
+
+## Changes
+
+- Added the explicit `audio_mode_restore_failed` outcome to the pure device-check classifier.
+- Kept backwards compatibility for callers that do not provide an audio-mode result.
+- Reused the existing `restoreVoiceAudioMode` helper so platform setter rejection becomes a boolean failure rather than a swallowed success.
+- The native preflight now records the restore result after normal finish, cancellation, stale-start cancellation and recorder-start failure.
+- A failed restore blocks another microphone preflight and presents an accessible warning.
+- The retry action re-attempts both outstanding cleanup and audio-mode restoration. It only unblocks the next test after the private file is absent and the app-wide audio mode has been restored.
+- Private audio remains local-only; no patient identifier, transcript, session token or audio bytes are sent or persisted by the device check.
+
+## Regression coverage
+
+- `mobile/tests/voiceDeviceCheck.cjs`: explicit audio-mode restore failure, success, backwards-compatible default and cleanup-warning precedence.
+- `mobile/tests/voiceDeviceCheckUI.cjs`: rejects the old swallowed-error implementation, requires the restore result to reach UI state, blocks another test after failure and requires an explicit retry action.
+- Existing `voiceWorkflow.cjs` already tests the shared `restoreVoiceAudioMode` helper's success/failure contract and the main recorder's rotation-failure/unmount recovery.
+
+## Verification boundary
+
+At the starting HEAD `313a44a483dbdcfb28c01922b754eaf1b0ebb704`:
+
+- Android typecheck completed successfully.
+- Session/auth, realtime/pagination and the full beta regression command completed successfully.
+- Android/iOS Expo bundle export completed successfully.
+- The internal Android APK job was still assembling.
+- Security Recovery was pending without job records at the last check.
+
+The five follow-up commits add code, helper tests, UI contract tests and this acceptance note. Their CI must complete on the resulting HEAD before these new regressions are claimed as passing. Physical Android/iOS checks remain required for Bluetooth routing, calls/notification interruptions, background/foreground and playback after microphone preflight. No physical device, patient data, production API, main merge or live deploy was used.
+
+
+## 2026-11-22 follow-up — route owner correction and prepared-recorder cleanup
+
+### Starting-head CI diagnosis
+
+Starting HEAD: `32a272c27867058a34e405071e80cf4dedc1acab`.
+
+- Android run [#44989322878](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44989322878) completed successfully: TypeScript typecheck, session/auth, realtime/pagination, 991 beta tests, Android+iOS bundle export and internal APK assembly all passed.
+- Security Recovery [#44989322945](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44989322945) completed with 618 passed / 1 failed. All six native security jobs passed. The Python suite's only failure was the clinical media route ownership regression.
+- Exact root cause: the test looked for GET `/patients/{patient_id}/media` in `app.mobile_api.router`, but the active canonical GET gallery is `app.mobile_modern_api_v3.mobile_patient_media`. The primary `app.mobile_api` router owns the receipt-aware POST upload and original-file GET. The v3 legacy POST is shadowed by method/path deduplication. Production route ownership and cache headers were already correct; the test expected the wrong source router.
+- Corrected the test to resolve GET from the v3 router, retain POST from the primary router, and assert the canonical GET handler is mounted exactly once with `private, no-store` headers. No production endpoint or authorization rule was weakened.
+
+### New native voice lifecycle findings
+
+Re-read the web flow first: `voice_exam_panel.html` → `voice-exam-live.js` → browser MediaStream/AudioWorklet stop on hidden/pagehide. Compared with `NativeVoiceRecorder.startChunk()`, `cut()`, `discardUnstartedSegment()`, AppState/focus handling and the Expo Audio preflight.
+
+1. Expo Audio `prepareToRecordAsync()` allocates a recorder file before `record()`. The native recorder previously left its `stopped` flag true during the asynchronous encrypted-draft persistence window. If the app backgrounded in that gap, the unstarted segment could be removed from the draft and its file deleted without first stopping the prepared recorder; audio-mode restoration could then be attempted while the recorder was still prepared.
+2. If the recorder returned a URI outside the app cache, the device-check component threw before storing that URI in its in-memory cleanup reference. The catch path then treated `null` as already clean and could allow another microphone check. It did not send the file anywhere, but the local cleanup state was falsely optimistic.
+3. A failed stop during interruption previously allowed a stale status snapshot to set `stopped=true`. That could permit audio-mode restoration and another start while the actual stop had not been verified.
+
+### Changes
+
+- Mark the Expo recorder as not-stopped immediately after successful prepare; keep that state through draft persistence and the record transition.
+- Stop the prepared recorder before deleting an unstarted segment, on start/persist failure, during background/blur and during unmount cleanup. A failed stop keeps the session blocked and retains an in-memory cleanup reference.
+- Add a strict direct-child app-cache cleanup helper. It may remove a malformed recorder artifact only if it is a single safe filename directly inside the app-private cache. Nested paths, traversal and any URI outside that cache are never passed to filesystem deletion.
+- The explicit device check now retains an unexpected returned URI before validating it. If the URI is outside cache or cleanup cannot be verified, the check stays blocked instead of reporting cleanup success.
+- Clearing a voice draft no longer clears the safety block when an untrusted or unremovable file remains.
+
+### New regression coverage
+
+- Backgrounding during the prepared-before-record draft-write window calls recorder.stop before deleting the unstarted file, removes the segment from the draft and restores playback mode only after stop.
+- An outside-cache recorder URI is never recorded, uploaded or deleted; it keeps the native voice UI blocked.
+- Direct-cache-child cleanup succeeds for malformed filenames while nested/traversal/outside paths are rejected.
+- Device-check tests assert the URI is retained before validation and that failed cleanup remains blocking.
+- The existing 15-second chunk, transcript checkpoint, consent, duplicate-ASR and explicit “Muayeneyi bitir” tests remain intact.
+
+### Commit set
+
+`b8cc63a`, `2249ffa`, `dd5943a`, `a017e02`, `98b8a23`, `7f8e76f`, `442b95c`, `e6c3539`, `cf88e8f`, `90b35d2`, `0b74ab9`.
+
+### Final-head verification boundary
+
+Final HEAD: `0b74ab96044f77d06555f6c29570116a0b311fd8`.
+
+- New Android run [#44992328767](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44992328767) is pending and has no job records at this check.
+- New Security Recovery run [#44992328784](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/44992328784) is pending and has no job records at this check.
+- Therefore the new prepared-recorder and unexpected-URI regressions are committed but not yet reported as passing on final HEAD.
+- The preceding Android run on `32a272c` proves the unchanged typecheck/beta/APK pipeline was healthy before this patch; it does not validate the new final-head code.
+
+No physical Android/iOS Bluetooth, call/notification interruption or background-resume test was possible in this GitHub-only pass. No patient/audio payload, production API, R2 object, database migration, main merge, live deploy or store release was touched.
+
+
+## 2026-11-22 follow-up — recorder stop must be verified before cleanup
+
+### Web-first comparison
+
+Re-traced the web live microphone lifecycle in `voice_exam_panel.html` and `voice-exam-live.js`: the browser stops the active MediaStream tracks and closes its AudioContext before the live session is treated as stopped. Re-read the native Expo preflight in `NativeVoiceDeviceCheck.tsx`, its file-safety helpers, and the main `NativeVoiceRecorder.tsx` interruption handling.
+
+### Newly found defect
+
+The preflight called `recorder.stop()` inside a catch that swallowed failures, then unconditionally cleared its `prepared` flag. The finish, cancel, and recorder-start-error paths could therefore delete the temporary file and restore app-wide playback mode without proving that Expo had stopped the recorder. This is distinct from file deletion verification and audio-mode restoration: all three conditions must be satisfied in order.
+
+### Fix
+
+- Added `stopVoiceDeviceRecorderVerified`: the stop promise must resolve and Expo's synchronous `getStatus().isRecording` must explicitly be `false`; rejected stop, missing status and a still-recording status are inconclusive/failure.
+- Centralized the preflight's prepared-recorder transition so its prepared flag is cleared only after that verified stop.
+- Finish, cancellation, and start-failure recovery now retain the recorder reference and temporary URI, avoid file deletion and avoid changing audio mode when stop cannot be verified.
+- The preflight enters an explicit stop-pending state, keeps conflicting voice actions blocked, and exposes a retry control that remains usable even while the parent screen is locked.
+- The retry must verify stop first, then verify private-cache cleanup, then restore playback audio mode. A failed stage leaves only the remaining recovery work pending.
+- No audio, transcript, patient ID, token or clinical data is sent or persisted by this local device check.
+
+### Regression coverage
+
+- `mobile/tests/voiceDeviceCheck.cjs`: resolved stop + inactive status, rejected stop, still-recording status, missing status and status-read exception.
+- `mobile/tests/voiceDeviceCheckUI.cjs`: stop-before-delete ordering in finish/cancel/retry, no unconditional prepared-state reset, retry remains accessible while conflicting actions are locked.
+- Both files are already included in `npm run test:beta` through the existing Mobile Android CI typecheck job.
+
+### Validation boundary
+
+The code and regression tests are committed on `feature/mobile-web-parity-20261110`. The new branch-head Android and Security Recovery runs must complete before these new tests are reported as passing. Physical Android/iOS validation is still required for actual microphone release, Bluetooth route recovery, call/notification interruptions and playback after the preflight. No main merge, production deploy, database migration, patient data or real audio payload was used.
+
+
+## 2026-11-22 — final-head CI failure diagnosis and recovery
+
+### Exact starting-head evidence
+
+Starting branch HEAD: \`642d587437128bf3b7c3edd9406246176cf4618c\`.
+
+- Android run [#45025585789](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/45025585789): the runner executed the workflow. TypeScript failed in \`NativeVoiceDeviceCheck.tsx\` because the UI's \`recorder_stop_failed\` message key was not part of the pure classifier's \`VoiceDeviceCheckOutcome\` union. The beta suite ran and reported 1,022/1,024 passing; two failures were stale UI-source assertions.
+- Security Recovery [#45025585772](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/45025585772): Python security, PostgreSQL migration/concurrency, browser checks, Academic, Support, Program, Clinical and Social native jobs passed. The native voice job repeated the same two UI assertion failures (88/90 passed).
+- The APK assembly job succeeded, but the overall Android run is not green because typecheck and beta tests failed. Its artifact must not be treated as a fully accepted build.
+
+### Root causes and changes
+
+1. \`recorder_stop_failed\` is a lifecycle/UI recovery state, not an output of \`evaluateVoiceDeviceCheck\`. The component now uses a separate \`VoiceDeviceCheckUiOutcome\` union so the pure classifier remains limited to actual capture outcomes.
+2. The old UI regression expected \`recorder.stop()\` directly in the React component. Stop ownership was intentionally moved to \`stopVoiceDeviceRecorderVerified\`; the regression now asserts the helper owns stop + explicit inactive Expo status, and that the component calls the helper instead of bypassing it.
+3. The retry-button assertion omitted the newer \`stopPending\` state. It now requires the recovery action to be visible for stop, cleanup and audio-mode recovery failures.
+4. A further safety issue was found while tracing \`VoiceExamEntry\`: \`onBusyChange\` controls the parent screen's clinical recorder and navigation locks. The device-check component previously called \`notifyBusy(false)\` even when \`allowsRecording=false\` restoration failed. It now keeps the parent lock active on every failed restore path, including finish, cancel, retry, start-error and stale-start cancellation; a successful retry releases the lock.
+
+### New regression
+
+The UI test now checks all four terminal audio-mode restoration paths and the stale-start path for parent-lock propagation. The complete Android and Security Recovery runs on the new HEAD are required before claiming these changes passed CI. Physical Android/iOS microphone, Bluetooth, call/notification interruption and background/foreground acceptance is still required.
+
+No patient/audio payload, database migration, main merge or live deploy was used.
+
+
+### Follow-up regression-run finding
+
+Security Recovery run [#45031337939](https://github.com/dentalaidestek/dental-ai-v02/actions/runs/45031337939), on intermediate HEAD \`34c3186\`, confirmed the new native-clinical profile suite passed. The native voice suite found one test-only false negative: the parent-lock assertion inspected only 150 characters after the retry path's audio-mode result, while the corresponding \`notifyBusy(!audioModeRestored)\` call occurs after the cleanup/result branches. The production code already propagated the failed restore correctly. The assertion now checks that the matching notification occurs before the next audio-mode recovery block, rather than relying on a fragile fixed character window. The new HEAD must rerun both Android and Security Recovery before the fix is accepted.

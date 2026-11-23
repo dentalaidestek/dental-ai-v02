@@ -25,6 +25,9 @@ def quiz():
     return {'questions': [dict(stem='Risk ilişkisi hakkında hangileri doğrudur?\nI. Birinci öncül\nII. İkinci öncül\nIII. Üçüncü öncül',
         options=['Yalnız I', 'Yalnız II', 'I ve II', 'II ve III', 'I, II ve III'],
         correct='C', rationale='Kaynakla doğrulanan gerekçe', fact='Risk ilişkisi',
+        topic='Risk ilişkisi', asked_truth=True,
+        statements=[{'number': 1, 'true': True}, {'number': 2, 'true': True}, {'number': 3, 'true': False}],
+        option_combinations=[[1], [2], [1, 2], [2, 3], [1, 2, 3]],
         source='Not.pdf, sayfa 2', material_id=1, page=2)]}
 
 

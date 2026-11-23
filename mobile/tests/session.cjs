@@ -73,7 +73,7 @@ test('academic request uses the authoritative JSON contract',async()=>{
 test('media URL remains on the authenticated native endpoint',async()=>{
  const original=global.fetch;
  try{
-  global.fetch=async()=>new Response(JSON.stringify({items:[{id:3,original_filename:'scan.png',url:'https://untrusted.invalid/file'}]}));
+  global.fetch=async()=>new Response(JSON.stringify({items:[{id:3,original_filename:'scan.png',media_type:'PHOTO',url:'https://untrusted.invalid/file'}],next_before:null}));
   const result=await modernApi.getMedia('token',7);
   assert.equal(result.items[0].filename,'scan.png');
   assert.equal(result.items[0].url,'https://dentalai.tr/api/mobile/v1/patients/7/media/3/file');
@@ -88,19 +88,58 @@ test('message retries retain the server idempotency identity',async()=>{
   assert.deepEqual(ids,['stable-client-message-id','stable-client-message-id']);
  }finally{global.fetch=original;}
 });
-test('patient photo upload uses image field and lets transport set multipart boundary',async()=>{
- const originalFetch=global.fetch,originalForm=global.FormData;
- const fields=[];
+test('patient media upload sends a stable receipt key and reports real multipart byte progress',async()=>{
+ const originalXHR=global.XMLHttpRequest,originalForm=global.FormData;
+ const fields=[],progress=[];let request;
  try{
   global.FormData=class {append(name,value){fields.push([name,value]);}};
-  global.fetch=async(url,init)=>{
-   assert.equal(url,'https://dentalai.tr/api/mobile/v1/patients/7/media');
-   assert.equal(init.headers.Authorization,'Bearer token');
-   assert.equal(init.headers['Content-Type'],undefined);
-   return new Response(JSON.stringify({media:{id:3}}));
+  global.XMLHttpRequest=class{
+   constructor(){this.upload={onprogress:null};this.headers={};request=this;}
+   open(method,url){this.method=method;this.url=url;}
+   setRequestHeader(name,value){this.headers[name]=value;}
+   send(body){this.body=body;this.upload.onprogress?.({loaded:50,total:100,lengthComputable:true});this.status=200;this.responseText=JSON.stringify({media:{id:3,original_filename:'scan.png',media_type:'RADIOGRAPH'},replayed:false});this.onload();}
   };
   const {uploadPatientMedia}=require('../src/api.ts');
-  await uploadPatientMedia('token',7,{uri:'file:///synthetic.png',name:'scan.png',type:'image/png'});
-  assert.equal(fields[0][0],'image');
- }finally{global.fetch=originalFetch;global.FormData=originalForm;}
+  const result=await uploadPatientMedia('token',7,{uri:'file:///synthetic.png',name:'scan.png',type:'image/png'},'36','RADIOGRAPH','stable-media-request-key-0001','stable-media-batch-id-0001',value=>progress.push(value),'Periapikal kontrol');
+  assert.equal(result.media.id,3);
+  assert.equal(request.method,'POST');
+  assert.equal(request.url,'https://dentalai.tr/api/mobile/v1/patients/7/media');
+  assert.equal(request.headers.Authorization,'Bearer token');
+  assert.equal(request.headers['Content-Type'],undefined);
+  assert.equal(request.withCredentials,false);
+  assert.deepEqual(fields.map(([name])=>name),['media_type','request_key','batch_id','file','tooth_number','note']);
+  assert.equal(fields[0][1],'RADIOGRAPH');
+  assert.equal(fields[1][1],'stable-media-request-key-0001');
+  assert.equal(fields[2][1],'stable-media-batch-id-0001');
+  assert.deepEqual(fields[3][1],{uri:'file:///synthetic.png',name:'scan.png',type:'image/png'} );
+  assert.equal(fields[4][1],'36');
+  assert.equal(fields[5][1],'Periapikal kontrol');
+  assert.deepEqual(progress,[{loaded:50,total:100,lengthComputable:true}]);
+ }finally{global.XMLHttpRequest=originalXHR;global.FormData=originalForm;}
+});
+
+test('patient media receipt lookup is authenticated, patient-scoped and validates its response',async()=>{
+ const original=global.fetch;let url,init;
+ try{
+  global.fetch=async(value,options)=>{url=value;init=options;return new Response(JSON.stringify({found:true,media:{id:3,original_filename:'scan.png',media_type:'PHOTO'}}));};
+  const {getPatientMediaUpload}=require('../src/api.ts');
+  const result=await getPatientMediaUpload('token',7,'stable-media-request-key-0001');
+  assert.equal(result.found,true);
+  assert.equal(result.media.id,3);
+  assert.equal(url,'https://dentalai.tr/api/mobile/v1/patients/7/media/uploads/stable-media-request-key-0001');
+  assert.equal(init.headers.Authorization,'Bearer token');
+ }finally{global.fetch=original;}
+});
+
+test('invalid patient media request keys are rejected before network or upload',async()=>{
+ const original=global.fetch,originalXHR=global.XMLHttpRequest;let calls=0;
+ try{
+  global.fetch=async()=>{calls++;return new Response('{}')};
+  global.XMLHttpRequest=class{open(){calls++}};
+  const {getPatientMediaUpload,uploadPatientMedia}=require('../src/api.ts');
+  await assert.rejects(()=>getPatientMediaUpload('token',7,'bad-key'));
+  await assert.rejects(()=>uploadPatientMedia('token',7,{uri:'file:///x',name:'x.png',type:'image/png'},undefined,'PHOTO','bad-key','stable-media-batch-id-0001'));
+  await assert.rejects(()=>uploadPatientMedia('token',7,{uri:'file:///x',name:'x.png',type:'image/png'},undefined,'PHOTO','stable-media-request-key-0001','bad-batch'));
+  assert.equal(calls,0);
+ }finally{global.fetch=original;global.XMLHttpRequest=originalXHR;}
 });

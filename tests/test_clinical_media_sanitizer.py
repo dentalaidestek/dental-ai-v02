@@ -1,0 +1,173 @@
+from pathlib import Path
+import io
+
+import pytest
+from PIL import Image
+
+from app.clinical_media import sanitize_clinical_media_image
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_jpeg_orientation_is_applied_and_identifying_exif_is_removed(tmp_path):
+    path = tmp_path / "clinical.jpg"
+    exif = Image.Exif()
+    exif[274] = 6  # Rotate 90 degrees clockwise.
+    exif[315] = "Synthetic dental device"
+    Image.new("RGB", (20, 10), "white").save(path, format="JPEG", exif=exif)
+
+    sanitize_clinical_media_image(path, ".jpg", max_pixels=1_000)
+
+    with Image.open(path) as clean:
+        assert clean.format == "JPEG"
+        assert clean.size == (10, 20)
+        assert not dict(clean.getexif())
+        assert "exif" not in clean.info
+    assert not path.with_name(path.name + ".sanitized").exists()
+
+
+def test_png_text_metadata_is_not_carried_into_persisted_clinical_image(tmp_path):
+    from PIL.PngImagePlugin import PngInfo
+
+    path = tmp_path / "clinical.png"
+    metadata = PngInfo()
+    metadata.add_text("Author", "Synthetic device owner")
+    Image.new("RGBA", (12, 8), (20, 80, 120, 128)).save(path, pnginfo=metadata)
+
+    sanitize_clinical_media_image(path, ".png", max_pixels=1_000)
+
+    with Image.open(path) as clean:
+        assert clean.format == "PNG"
+        assert clean.mode == "RGBA"
+        assert "Author" not in clean.info
+
+
+def test_webp_is_reencoded_losslessly(tmp_path):
+    path = tmp_path / "clinical.webp"
+    original = Image.new("RGB", (16, 12), (17, 91, 203))
+    original.save(path, format="WEBP", lossless=True)
+
+    sanitize_clinical_media_image(path, ".webp", max_pixels=1_000)
+
+    with Image.open(path) as clean:
+        assert clean.format == "WEBP"
+        assert clean.size == (16, 12)
+        assert clean.convert("RGB").getpixel((0, 0)) == (17, 91, 203)
+
+
+def test_sanitizer_rejects_extension_mismatch_and_corrupt_image(tmp_path):
+    mismatch = tmp_path / "wrong-extension.jpg"
+    Image.new("RGB", (8, 8), "white").save(mismatch, format="PNG")
+    with pytest.raises(ValueError, match="uzantısı"):
+        sanitize_clinical_media_image(mismatch, ".jpg", max_pixels=1_000)
+    assert not mismatch.exists(), "rejected staged files must not remain on disk"
+
+    corrupt = tmp_path / "corrupt.jpg"
+    corrupt.write_bytes(b"\\xff\\xd8\\xffnot-a-real-jpeg")
+    with pytest.raises(ValueError, match="Geçersiz veya bozuk"):
+        sanitize_clinical_media_image(corrupt, ".jpg", max_pixels=1_000)
+    assert not corrupt.exists(), "corrupt PHI-bearing staging files must be removed"
+
+
+def test_sanitizer_rejects_oversized_and_animated_clinical_images(tmp_path):
+    oversized = tmp_path / "large.png"
+    Image.new("RGB", (20, 10), "white").save(oversized, format="PNG")
+    with pytest.raises(ValueError, match="çözünürlüğü"):
+        sanitize_clinical_media_image(oversized, ".png", max_pixels=100)
+    assert not oversized.exists()
+
+    animated = tmp_path / "animated.webp"
+    first = Image.new("RGB", (8, 8), "white")
+    second = Image.new("RGB", (8, 8), "black")
+    first.save(animated, format="WEBP", save_all=True, append_images=[second], duration=100, loop=0)
+    with pytest.raises(ValueError, match="Hareketli"):
+        sanitize_clinical_media_image(animated, ".webp", max_pixels=1_000)
+    assert not animated.exists()
+
+
+def test_web_and_native_upload_routes_use_the_same_sanitizer_before_persistence():
+    main_source = (ROOT / "app/main.py").read_text(encoding="utf-8")
+    web_upload = main_source.split("def upload_patient_media", 1)[1].split(
+        '@app.get("/patients/{patient_id}/media/{media_id}/file")', 1
+    )[0]
+    assert "sanitize_clinical_media_image(destination, extension" in web_upload
+    assert web_upload.index("sanitize_clinical_media_image(") < web_upload.index("storage_persist_file(")
+
+    guest_analysis = main_source.split("def create_guest_analysis", 1)[1].split(
+        '@app.post("/analysis/new/{patient_id}")', 1
+    )[0]
+    patient_analysis = main_source.split("def create_analysis", 1)[1].split(
+        "ADMIN_CENTER_PATH", 1
+    )[0]
+    assert "sanitize_clinical_media_image(destination, extension" in guest_analysis
+    assert "sanitize_clinical_media_image(destination, source_ext" in patient_analysis
+    saved_copy_block = patient_analysis.split(
+        "for selected_media, selected_media_path in selected_media_items:", 1
+    )[1].split("for image in images:", 1)[0]
+    new_upload_block = patient_analysis.split("for image in images:", 1)[1].split(
+        "live_user = s.get", 1
+    )[0]
+    assert saved_copy_block.index("sanitize_clinical_media_image(destination, source_ext") < saved_copy_block.index("storage_persist_file(destination)")
+    assert new_upload_block.index("sanitize_clinical_media_image(destination, extension") < new_upload_block.index("storage_persist_file(destination)")
+
+    mobile_source = (ROOT / "app/mobile_api.py").read_text(encoding="utf-8")
+    copy_block = mobile_source.split("def _copy_validated_image", 1)[1].split(
+        "class LoginRequest", 1
+    )[0]
+    assert "sanitize_clinical_media_image(" in copy_block
+    upload_block = mobile_source.split('async def mobile_patient_media_upload', 1)[1].split(
+        'def _mobile_access_token', 1
+    )[0]
+    # Clinical archive uploads share the web 12 MiB limit, not the AI-analysis limit.
+    assert "_copy_validated_image(image, destination, MOBILE_MAX_PATIENT_MEDIA_BYTES)" in upload_block
+
+
+def test_native_new_analysis_upload_is_sanitized_before_inference(tmp_path):
+    from app.mobile_analysis_api import _copy_validated_analysis_image
+
+    raw = io.BytesIO()
+    exif = Image.Exif()
+    exif[315] = "Synthetic clinical device"
+    Image.new("RGB", (18, 9), "white").save(raw, format="JPEG", exif=exif)
+    upload = __import__("fastapi").UploadFile(filename="clinical.jpg", file=io.BytesIO(raw.getvalue()))
+    destination = tmp_path / "analysis.jpg"
+
+    _copy_validated_analysis_image(upload, destination)
+
+    with Image.open(destination) as clean:
+        assert clean.size == (18, 9)
+        assert not dict(clean.getexif())
+
+
+def test_native_analysis_of_legacy_gallery_media_sanitizes_only_the_copy(tmp_path):
+    from app.mobile_analysis_api import _copy_validated_existing_analysis_image
+
+    source = tmp_path / "legacy.jpg"
+    exif = Image.Exif()
+    exif[315] = "Legacy synthetic device"
+    Image.new("RGB", (18, 9), "white").save(source, format="JPEG", exif=exif)
+    destination = tmp_path / "analysis-copy.jpg"
+
+    _copy_validated_existing_analysis_image(source, destination)
+
+    with Image.open(source) as archived:
+        assert archived.getexif().get(315) == "Legacy synthetic device"
+    with Image.open(destination) as analyzed:
+        assert not dict(analyzed.getexif())
+
+
+def test_palette_png_transparency_is_preserved_when_metadata_is_removed(tmp_path):
+    path = tmp_path / "transparent.png"
+    image = Image.new("P", (2, 1))
+    image.putpalette([255, 0, 0, 0, 255, 0] + [0, 0, 0] * 254)
+    image.putdata([0, 1])
+    image.info["transparency"] = 0
+    image.save(path, format="PNG")
+
+    sanitize_clinical_media_image(path, ".png", max_pixels=1_000)
+
+    with Image.open(path) as clean:
+        assert clean.mode == "RGBA"
+        assert clean.getpixel((0, 0))[3] == 0
+        assert clean.getpixel((1, 0))[3] == 255

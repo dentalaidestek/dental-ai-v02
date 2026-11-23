@@ -555,7 +555,58 @@ body.study-chat-active #studyChat .study-answer-actions svg{display:block!import
         } catch (_) {learningText('studyProgressState','Bağlantı bekleniyor');learningText('studyLearningUpdated','Kayıtlar güncellenemedi. Güncelle düğmesiyle tekrar deneyebilirsin.');}
         finally{learningBusy=false;if(learningQueued){learningQueued=false;refreshLearning();}}
     }
+    function finishCancelledRun(pending) {
+        clearTimeout(runTimer);
+        const thinking=pending.querySelector('.study-thinking');
+        if(thinking)thinking.textContent='İşlem iptal edildi.';
+        const partial=pending.querySelector('.study-run-partial');
+        if(partial)partial.remove();
+        pending.classList.remove('pending');
+        const cancel=pending.querySelector('.study-cancel-run');
+        if(cancel)cancel.remove();
+        activeRun=null;setWorking(false);
+        status.textContent='Yalnızca bu çalışma iptal edildi.';
+        refreshLearning();refreshQuizzes();
+    }
+    function addRunCancel(id,pending,userMessage) {
+        if(pending.querySelector('.study-cancel-run'))return;
+        const button=document.createElement('button');
+        button.type='button';button.className='study-cancel-run';
+        button.setAttribute('aria-label','Yalnızca bu çalışmayı durdur');
+        button.textContent='Bu işlemi durdur';
+        button.style.cssText='margin-top:10px;padding:7px 12px;border:1px solid currentColor;border-radius:8px;background:transparent;color:inherit;cursor:pointer';
+        button.addEventListener('click',async()=>{
+            if(button.disabled)return;
+            button.disabled=true;button.textContent='Durduruluyor...';
+            const statusPath='/notes/courses/'+courseId+'/ai/runs/'+id;
+            try {
+                const response=await fetch(statusPath+'/cancel',{method:'POST',credentials:'same-origin',cache:'no-store'});
+                const data=await response.json();
+                if(!response.ok||!data.ok||!data.run)throw new Error('İşlem durdurulamadı.');
+                if(data.run.status==='CANCELLED'){finishCancelledRun(pending);return;}
+                button.remove();activeRun=id;setWorking(true);
+                followRun(id,pending,userMessage);
+            } catch(error) {
+                // A lost cancel response is reconciled against the owned run receipt.
+                try {
+                    const latestResponse=await fetch(statusPath,{credentials:'same-origin',cache:'no-store'});
+                    const latest=await latestResponse.json();
+                    if(latestResponse.ok&&latest.ok&&latest.run?.status==='CANCELLED'){
+                        finishCancelledRun(pending);return;
+                    }
+                    if(latestResponse.ok&&latest.ok&&latest.run&&['QUEUED','RUNNING','DONE','FAILED','INTERRUPTED'].includes(latest.run.status)){
+                        button.remove();activeRun=id;setWorking(true);
+                        followRun(id,pending,userMessage);return;
+                    }
+                } catch (_) {}
+                button.disabled=false;button.textContent='Bu işlemi durdur';
+                status.textContent=error.message||'İşlem durdurulamadı. Durumu yenileyebilirsin.';
+            }
+        });
+        pending.appendChild(button);
+    }
     async function followRun(id,pending,userMessage) {
+        addRunCancel(id,pending,userMessage);
         try {
             const response=await fetch('/notes/courses/'+courseId+'/ai/runs/'+id,{credentials:'same-origin'});
             const data=await response.json();
@@ -572,6 +623,7 @@ body.study-chat-active #studyChat .study-answer-actions svg{display:block!import
                 partial.innerHTML=safeMarkdown(run.partial);
             }
             if (run.status==='DONE') {
+                const cancel=pending.querySelector('.study-cancel-run');if(cancel)cancel.remove();
                 pending.dataset.messageId=run.message_id;
                 pending.classList.remove('pending');
                 if(run.quiz) renderInteractiveQuiz(run.quiz);
@@ -582,6 +634,7 @@ body.study-chat-active #studyChat .study-answer-actions svg{display:block!import
                 scrollChatBottom();return;
             }
             if (!['QUEUED','RUNNING'].includes(run.status)) {
+                const cancel=pending.querySelector('.study-cancel-run');if(cancel)cancel.remove();
                 pending.remove();userMessage.remove();
                 if (!input.value.trim()) input.value=run.question || '';
                 status.textContent=run.error || 'Çalışma tamamlanamadı.';

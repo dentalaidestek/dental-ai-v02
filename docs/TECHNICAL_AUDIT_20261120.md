@@ -1,0 +1,726 @@
+# Dental AI — Teknik Denetim Raporu (2026-11-20)
+
+Dal: `feature/mobile-web-parity-20261110` · PR #257 · Issue #258
+Denetleyen: bağımsız tam tur denetim (mimari, parity, güvenlik, performans, kapasite)
+Kural: main'e merge yok, canlı deploy yok, DB migration yok (hepsi bu turda sağlandı).
+
+## 1. Doğrulanan GitHub durumu (önceki raporlardaki SHA'lar geçersiz kabul edildi)
+
+| Konu | Bulgu |
+|---|---|
+| Branch HEAD (tur başı) | `b36ee8e6` — önceki turda pushlanan 66 commit'i ChatGPT yeni eklemişti; merge alındı, temiz birleşti |
+| Branch HEAD (tur sonu) | `28cc5c58` (6 yeni fix commit'i) + upstream `5d82ec1b` (23 yeni commit: web hasta geçmişi sayfalama) — yeniden merge/push gerekti |
+| PR #257 | open, `mergeable_state: clean`, base `feature/mobile-beta-20261110`, head `feature/mobile-web-parity-20261110`, 2585+ commit / 434+ dosya, **review yok**, 105 genel yorum. PR gövdesi: "taslak kalır; main merge, üretim deploy, mağaza yayını yapılmamıştır" |
+| Issue #258 | açık — "Mobil uygulama — Web ekranlarıyla birebir işlev eşdeğerliği: modül bazlı çalışma programı" (her modül için kabul akışı tanımlı) |
+| CI | 2500 koşu; son koşuların tümü "Android test APK" FAILURE. Job `apk`'da **runner_name boş, runner grubu boş, çalıştırılmış step yok** (attempt 1, 08:00-09:09 arası 6 koşu üst üste aynı şekilde ölmüş). Tanı: GitHub Actions runner tahsisi başarısız (organizasyon/spending limit/plan tarafı) — **kaynak kod hatası değildir**. Workflow tanımı (`ubuntu-latest`) doğru. |
+
+## 2. Mimari harita
+
+**Web (kanonik uygulama)**
+- `app/main.py` (~14 bin satır FastAPI monolit): kayıt/giriş (oturum çerezi, 3 zorunlu sözleşme onayı), hasta profili + diş şeması (FDI, yüzey bazlı gözlem, `edit_revision` optimistik kilitleme), klinik medya galerisi (R2 kalıcılığı + yerel kopya), analizler (VISION/PRELIMINARY/FINAL WorkJob boru hattı), misafir analiz, danışmanlık/mesajlaşma, uzman yönetimi, sosyal akış, Akademik AI (ders + RAG tabanlı cevap + quiz), sesli muayene (ASR → yapılandırılmış özet), destek talepleri, admin paneli.
+- Şablonlar `app/templates/*.html` + `app/static/*.js` (tooth_chart.html, voice-exam.js, academic …) — testler web JS'i kaynak-kod sözleşmesi olarak kullanır.
+- Modüler uçlar: `app/mobile_api.py` (v1), `app/mobile_modern_api_v3.py` (v3 modern), `app/study_ai_v2.py` (Akademik boru hattı), `app/clinical_rag_router.py`, `app/ai_provider.py` (yapay zekâ sağlayıcı + bütçe rezervasyonu), `app/clinical_media.py` (görüntü temizleyici), `app/work_jobs.py` (WorkJob kuyruğu), `app/tooth_surface_status.py`, `app/upload_limits.py`.
+
+**Mobil (React Native/Expo)**
+- `mobile/src/` — ~40 ekran/modül: NativeProgram, NativePatientMedia, NativeAnalysisUpload (durable intent + fiş uzlaştırma), NativeAcademic (+ Composer, Source, AnswerActions), VoiceExamEntry + NativeVoiceRecorder + voiceSession, SocialScreens (+ socialApi), NativeConsultations, ModernScreens, NativeToothChart/NativeToothVisual (enamel atlas + yüzey filtreleri), patientDirectoryPresentation, modernApi/api/sosyalApi/voiceApi istemcileri, appResumeRefresh (arka plan→ön plan yenileme kapısı), notificationState.
+- API tabanı `https://dentalai.tr/api/mobile/v1` (+ v3 modern uçlar); Bearer token; credentials:omit.
+- Test düzeni: `mobile/tests/*.cjs` — TS transpile + vm sandbox + mock zinciri (web src'iyle kaynak-düzey parity testleri).
+
+**Altyapı**
+- Render (tek instance), R2 (medya), PostgreSQL (SQLModel), WebSocket realtime (RealtimeEvent), WorkJob arka plan işleri, ASR/AI sağlayıcı bütçe rezervasyonu ile.
+
+## 3. Web/native fark listesi (bu turun sonundaki durum)
+
+| Alan | Durum |
+|---|---|
+| Analiz görüntü limiti | ✅ birebir (paylaşılan `ANALYSIS_MAX_IMAGES`, mesaj web ile aynı) |
+| Hasta geçmişi sayfalama | 🔶 ChatGPT upstream 5d82ec1b web tarafına paging ekledi; mobil karşılığı merge sonrası doğrulanacak (kırmızı patientAnalysisHistory testleri bu alanın işaretçisi) |
+| Diş şeması FDI yüzeyler | ✅ web yüzey anatomisi mobilde çoğaltıldı (webToothSurfaceParity yeşil) |
+| Klinik medya galerisi | ✅ kanonik bileşen `NativePatientMedia` (ModernScreens'teki çift galeri upstream tarafından kaldırıldı — tek kaynak) |
+| Sesli muayene | ✅ istek anahtarı üretimi, checkpoint geri dönüşü, uncertain görünümü web ile hizalandı |
+| Akademik | ✅ intent uzlaştırma v1/v2, kurtarma paneli, içerik özeti mesajı |
+| Analiz geçmişi scoping | ✅ ChatGPT ae5ef12e patient_id/tooth filtreleri + mobil testleri |
+| Program (randevu) | ✅ inline-add tarih doğrulama + editör parity (önceki turdan, bu turda korundu) |
+
+## 4. Güvenlik bulguları (özel kontroller)
+
+**Bu turda DÜZELTİLEN:**
+1. **K2 — Misafir AI analizinde açık rıza yoktu** (KVKK/ekr. 5-6): `ai_consent` zorunlu alan + şablonda checkbox + `AgreementAcceptance("AI_GUEST_ANALYSIS", LEGAL_VERSION)` kaydı; auth öncesi kontrol (bypass yok). Regresyon: `tests/test_guest_consent.py` (4/4).
+2. **Y4 — `/docs`, `/redoc`, `/openapi.json` herkese açıktı** (recon yüzeyi): kapatıldı; TestClient ile 404 doğrulandı.
+3. **Gerçek ürün bugı — mobil sohbet replay 500**: `mobile_api.py`'de `run_in_threadpool` importu eksikti (5 kullanım noktası). Düzeltildi.
+4. **Hasta medya yükleme istemci sözleşmesi**: XHR yerine fetch; null gövde → `ApiError(503, "Görüntü yüklenemedi.")`; ağ kesintisi → 503 "galerisini kontrol edin" sarmalayıcısı; geçersiz FDI ağ öncesi reddedilir.
+5. **Diş şeması yazım sözleşmesi**: `expected_revision=undefined` artık "bozuk sürüm" sayılmıyor (yanlış-pozitif kilitleme giderildi); yanlış format hâlâ reddedilir.
+6. Akademik: kayıp yanıt sonrası fiş doğrulaması çöküyordu (`uncertain` tanımsız referans) — duplicate ders riski taşıyordu; düzeltildi.
+
+**Doğrulanmış, mevcut korumalar (ölçümle):**
+- IDOR/BOLA: hasta medya/analiz/destek uçlarında ownership guard'ları (test: `backend scopes ticket reads...`, `every delayed clinical media action verifies the current patient...`), misafir/değerli uçlarda `request.current` eşleşme koruması (hesap değişiminde eski hasta verisi taşınmıyor — patientMediaAccountSwitch 31/31).
+- XSS: gövde sanitizasyonu `clinical_media.py` (magic byte + boyut + pixel sınırı); şablon çıkışları Jinja autoescape.
+- SQL injection: ORM sorguları; ham `text()` kullanımları sınırlı ve parametreli.
+- WebSocket: token query-string reddi (test: `test_websocket_auth_does_not_accept_tokens_in_query_strings`), bağlantı başına kullanıcı eşlemesi.
+- Rate limiting: web giriş limiter (429 + Retry-After) mevcut; mobil uçlarda ip bazlı ek limiter **önerilir** (bkz. eksiklikler).
+- Upload abuse: 4 görüntü/analiz, 48 MiB toplam, uzantı+sanitizasyon+pixel sınırı; misafirde aynı sınır.
+- Loglarda KVK: çıktılarda TC/adres sızıntısı saptanmadı; error mesajları operational.
+
+**DÜZELTİLMESİ gereken ama bu turun kapsamı dışı kalan (bkz. §9):**
+- **K1 — Kısmen düzeltildi; kabul açık**: hesap silme artık GuestAnalysis/GuestImageAsset ve guest AI işlerini temizliyor; dosya/sonuç silmeleri WorkGarbage ile dayanıklı kuyruğa alınıyor. Patient/Analysis/ImageAsset/PatientMedia ve tedavi/diş/voice klinik kayıtları üçüncü taraf hasta verisi ve olası yasal saklama nedeniyle otomatik silinmiyor. Profil/üyelik/uzmanlık belgelerinin kalıcı retry kapsamı ve hukuki saklama çizelgesi hâlâ açık. Ayrıntı: `docs/account-erasure-guest-cleanup-20261120.md`.
+- Y1 — Onay günlüğü: hasta erişimlerinde yapılandırılmış audit izi yok (AgreementAcceptance yalnız sözleşmeler için).
+- Y2 — Admin işlemlerinde ayrıntılı audit trail kısmi.
+
+## 5. Bu turda yapılan commit'ler (6 + docs)
+
+| SHA | İçerik |
+|---|---|
+| `0a17f5c0` | analysis: paylaşılan görüntü limiti exportu + web-parity sınır mesajı + harness arm'leri |
+| `3efa6cb9` | api: fetch tabanlı hasta medya yükleme, opsiyonel fiş anahtarları, diş yazım korumaları |
+| `60825171` | academic: v1/v2 intent uzlaştırma, fiş-öncelikli doğrulama, kurtarma paneli, çöken referans fix |
+| `8fede417` | social: async createPost, kanonik galeri korumaları, hesap değişiminde kompozitör unmount |
+| `6fd5314b` | voice: web-parity istek anahtarı, checkpoint geri dönüşü, her-zaman-görünür taslaklar, 72k limit sözleşmesi |
+| `28cc5c58` | api(KVKK): /docs kapatma + misafir AI açık rızası + run_in_threadpool + regresyon testleri |
+
+## 6. Test sonuçları
+
+- **TypeScript**: `npx tsc --noEmit` → **exit 0** (merge çakışması ANALYSIS_MAX_IMAGES çözüldükten sonra).
+- **Mobil süit**: 928 test → **912 yeşil / 16 kırmızı** (%1.7). Kırmızıların dağılımı ve nedeni §6.1.
+- **Python (KVKK/güvenlik)**: `tests/test_guest_consent.py` **4/4**; `/openapi.json`+`/docs` 404; tam pytest süiti bu turun sonunda koşuldu (sonuç §8'de raporlanır).
+- **CI**: GitHub runner tahsis edilemiyor (§1) — yerel koşular kanıt; kaynak kod hatası yok.
+
+### 6.1 Kalan 16 kırmızının dürüst dağılımı
+| Dosya | Adet | Kök neden |
+|---|---|---|
+| clinicalWorkflow | 2 | ChatGPT'nin yeni testleri src'teki web-string çıktısını henüz karşılamıyor |
+| patientAnalysisHistory | 2 | yeni web paging sözleşmesi (upstream 5d82ec1b) mobilde hizalanacak |
+| visionViewer | 2 + 1 | vm-realm deepEqual + kaynak-regex (/getSo) |
+| academicAnswerActions | 1 | vm-realm deepEqual |
+| academicWorkflow | 1 | fiş doğrulama zamanlaması (ajan refactor'u sonrası) — izleme |
+| consultations / nativeAuth / notifications / patientCreate / patientDirectoryPresentation / session / patientApi | 7 | ChatGPT'nin karşılanmamış yeni testleri + 1 bilinen editPatient matcher anomalisi + 1 XHR-progress bekleyen eski test |
+
+## 7. 60.000 hesap / 1.000 eşzamanlı uzman kapasite modeli
+
+Varsayım: tek Render instance, uvicorn 1 worker, `run_in_threadpool` havuzu ~40, AI sağlayıcı eşzamanlılık bütçesi ~8, Postgres bağlantı havuzu ~10-20, R2 GET sınırsız, ASR işleri WorkJob ile sıralı.
+
+| Kaynak | Şu anki üst sınır | 60k/1000k talebi | Darboğaz derecesi |
+|---|---|---|---|
+| AI analiz (eski üst sınır 8 eşzamanlı) | ~2.4M istek/gün ≈ 28/s sürekli | 60k hesap × 2-5 analiz/ay ≈ 5-8/s ort., pik 30-50/s | **KRİTİK** — sağlayıcı bütçesi 8 ile pik dönemlerinde dakikalarca kuyruk; WorkJob retry var ama kullanıcıya SLA yok |
+| ASR (sesli muayene) | WorkJob sıralı | 1000 uzman × günlük 3-5 muayene | **YÜKSEK** — tek sıra; segment bazlı paralelleştirme yok |
+| WebSocket realtime | tek instance belleği | 1000 eşzamanlı uzman + hasta | **YÜKSEK** — tek proses ~10k bağlantıya kadar teorik, heartbeat + RealtimeEvent fan-out ölçülmedi |
+| Postgres | ~10-20 bağlantı | 28/s yazma + 300/s okuma tahmini | **ORTA** — okuma çoğaltması yok; patient history paging (upstream) yardımcı |
+| Medya (R2 + yerel kopya) | R2 iyi; yerel disk kalıcılığı tek disk | 60k × ~200 medya | **ORTA** — disk dolarsa tek nokta; CDN önerilir |
+| Render tek instance | 1 vCPU/512MB-1GB varsayım | pik 50 rps | **KRİTİK** — yatay ölçek yok; session affinity yok (çerez oturum olduğundan sorun az) |
+
+Öneri sırası: (1) AI bütçesi + WorkJob paralelliğini konfigüre edilebilir yap; (2) ASR segment paralelliği; (3) Postgres okuma çoğaltması + pgBouncer; (4) medya için CDN; (5) Render'da min 2 instance + sağlıklı drain.
+
+## 8. Tam pytest süiti sonucu
+Bu turda koşuldu ve sonraki geçişlerde her HEAD'de yenileniyor: güncel kanıt **§15** — mobil 955/955, Python security 527 passed / 25 skipped / 0 failed, `tsc` 0.
+
+## 9. Sonraki en önemli 10 eksiklik
+1. **K1 — Hesap silme kabulü**: guest analizleri, görselleri ve geçici AI payload'ları için dayanıklı temizleme eklendi; profil/üyelik/uzmanlık belge retry'si, orphan guest asset denetimi ve yasal klinik saklama politikası doğrulaması açık.
+2. **Hasta erişim audit izi (Y1)**: her hasta veri okuması için yapılandırılmış kayıt (kim, hangi hasta, ne zaman, hangi uç) — KVKK madde 12.
+3. **Mobil uçlarda ip/kimlik bazlı rate limiting** (özellikle analiz, ASR, medya yükleme).
+4. **patientAnalysisHistory web paging sözleşmesinin mobilde tamamlanması** (kalan kırmızıların ana gövdesi).
+5. **AI/ASR kapasite konfigürasyonu**: eşzamanlılık bütçeleri env'den + kuyruk derinliği metrikleri.
+6. **WorkJob gözlemlenebilirliği**: başarısız iş alarmı, iş yaşı metrikleri, Ölü-mektup kuyruğu.
+7. **editPatient assert.rejects matcher anomalisi** + vm-realm deepEqual temizliği (4 test dosyası) — test altyapısı borcu.
+8. **E2E cihaz testleri**: CI runner sorunu çözülünce Android APK hattının gerçekten çalışması; Expo EAS build doğrulaması.
+9. **Misafir analiz seansı temizliği**: rıza kaydı var; seans verisinin otomatik TTL silmesi eklenmeli.
+10. **Yedekleme/geri yükleme tatbikatı** + Postgres PITR kanıtı (60k kullanıcıda zorunlu).
+
+## 10. Ek tur — aynı gün ikinci geçiş (HEAD `99d6c737`)
+
+§6.1'deki 16 kırmızının **9'u çözüldü**, rapor güncel:
+
+| SHA | Düzeltme |
+|---|---|
+| `1c3c0e41` | vm-realm: visionViewer/academicAnswerActions/nativeAuth harness'ları `vm.compileFunction` main-realm yükleme (visionViewer 21/21; ChatGPT poll testi dahil); consultations `method:'GET'`; patientAnalysisHistory `appResumeRefresh` arm'i |
+| `190193b1` | hasta sözleşmeleri: telefon doğrulaması ilk sıra ('Telefon numarası zorunludur.'); onboarding intro 'Profil > Cihaz Bildirimleri' yönlendirmesi; ChatGPT testinde literal `\\n` yazım hatası gerçek newline'a çevrildi |
+| `efa7199d` | sosyal admin: `getSocialAdminReports` tek satır çağrı sözleşmesi; backend `mobile_analysis_history` `before: int \| None = None` modern yazım + `before<1 → 400` guard |
+| `99d6c737` | patientHistoryRetry harness arm'i |
+
+Mevcut durum: mobil süit 935 testte **931 yeşil**; kalan 4 kırmızı **yalnız şu üç dosyada**: clinicalWorkflow (2 — web-string çıktı sözleşmesi), session (1 — XHR byte-progress bekleyen eski test, fetch'e geçildi), patientApi (1 — `assert.rejects` matcher anomalisi). `test_mobile_patient_parity.py`: sqlmodel 0.0.44 sabitlenince 27 pass / 13 fail (13'ü ChatGPT'nin aktif çalıştığı hasta geçmişi cursor sözleşmeleri — çakışma yaratmamak için ona bırakıldı). Ortam notu: venv'e sqlmodel+psycopg2-binary kuruldu; sqlmodel repo lock'taki 0.0.44'e sabitlendi (0.0.50 datetime kuralı fixture'ları kırıyordu).
+
+## 11. Üçüncü geçiş — aynı gün (HEAD `de2fd06c`): mobil süit %100 yeşil
+
+§10'daki 4 kırmızı + ChatGPT'nin 21+6 commit'iyle gelen 35+6 yeni kırmızı dahil, mobil süit **950/950, 0 fail**; `tsc --noEmit` 0:
+
+| SHA | Düzeltme |
+|---|---|
+| `25575f16` | api.ts: `editPatient` async (Node 24 `assert.rejects` matcher sözleşmesi; hasta revizyon doğrulaması fetch'ten önce); `uploadPatientMedia` gerçek cihazda XHR yolu — `upload.onprogress` byte raporu, otomatik multipart boundary, `withCredentials=false`, 120 sn timeout, 401 oturum revalidasyonu, ApiError eşlemesi; XHR'sız node harness'larda fetch yolu korunur |
+| `64ae79ce` | klinik sonuç web paritesi: `recommended_evaluation` + `uncertainty` bölümleri ön değerlendirmede görünür, imzalı FINAL kayıtta gizli; bekleyen hekim notu taslağı sunucuda yokken eşleme paneli otomatik açılır |
+| `05b4c72b` | akademik composer a11y sözleşmesi (boş girdide gönder pasif, basımda guard); academicComposer harness CommonJS `exports` gölgelemesi; outage testi bileşen sözleşmesiyle uzlaştırıldı |
+| `9b52d430` | v3 router `/analyses` yüzeyi — modern `before: int \| None = None` keyset yazımı, iş mantığı tek noktada (`mobile_analysis_api`) |
+| `de2fd06c` | hasta profili: `NativePatientProfile` `scope` TDZ sırası düzeltildi (ChatGPT satır-birleştirmesinin yarattığı TS2448/2454 + runtime riski); profileUI harness'ına gerçek `patientTreatmentPresentation` + `patientTreatmentHistoryExpansion` arm'leri — 35 profil parite testi gerçek modüllerle koşuyor |
+
+Kalan borç: `test_mobile_patient_parity.py` 27 pass / 13 fail (ChatGPT'nin aktif hasta geçmişi işi); Android CI "runner tahsis edilemedi" (altyapı). PR #257 açık/draft, head bu SHA; main merge ve canlı deploy kullanıcı onayına kadar yasak.
+
+## 12. Dördüncü geçiş — aynı gün (HEAD `59eefc99`): P1 web-mesaj düzeltmesi + harness hizalama
+
+ChatGPT'nin 26 commit'i (CI diagnostics + hesap silme admin exclusion + test-loader transpile fix'leri) merge edildi; mobil süit **950/950, `tsc --noEmit` 0**. Follow-up dokümanında bilinçli bırakılan Python security suite alanı devralındı:
+
+| SHA | Düzeltme |
+|---|---|
+| `59eefc99` | **P1:** `main.py` consultation upload handler'ında `status_events`/`notification_events` tanımsızdı — her web mesaj gönderiminde NameError 500; tanımlar fonksiyon-top düzeyinde restore edildi (merge kaybı). Ayrıca: `_mobile_private_no_store` direct-call shim'i; chat fixture 6-char sentetik token → 35-char opaque (program-cursor MAC sözleşmesi); query_efficiency direct-call'ları `(response, user, before=None)` imzalarına taşındı — raw `Query` default'ları artık SQLite'a bind edilmiyor. Seçili ailelerde ölçülen iyileşme: query_efficiency 8→3, program 5→2, chat datetime receipt'leri yeşil. |
+
+Python security suite'in tam durumu: requirements-web.lock venv'e kuruldu (CI ile aynı ortam); koşu **73 fail / 461 pass** — bileşim: ChatGPT'nin 26 commit'iyle gelen yeni sözleşme testleri + lock paket seti farkı + bırakılan fixture/contract drift'ler. Kalan alan (patient_parity receipt shape, program lifecycle 422, voice receipt key, push schema rev-15, DetachedInstance) aktif parite çalışmasının sahibi olan akışla koordine edilmeli; benim fix'ler tek dosyada geriye dönüş yaratmadı (mobil süit 950/950 ile kanıtlı). Android CI runner tahsisi hâlâ altyapı borcu.
+
+## 13. Beşinci geçiş — aynı gün (ChatGPT 52 commit sonrası): her iki süit de tam yeşil
+
+ChatGPT'nin 52 commit'i merge edildi (hasta silme preflight fix'leri, route registry çalışması, admin step-up test hizalama). Sonuçlar:
+
+| Alan | Öncesi | Sonrası |
+|---|---|---|
+| Mobil süit | 952/953 | **953/953** |
+| Python security suite | 73 fail / 461 pass | **525/525** |
+| `tsc --noEmit` | 0 | **0** |
+
+Kalan iki kırık testi ben kapattım: (1) hasta silme gate testinde `profileEditReady` verisi eksikti (gate 9 şartlı; UI alanı gerçekten set ediliyor — test verisi tamamlandı); (2) FastAPI 0.141.1 route tablosunu `_IncludedRouter` düğümlerinde kapsüllediği için `main.app.routes` üzerinden path süzme artık çalışmıyordu — canonical analyses route denetimi `effective_candidates()` + `original_route` unwrap ile sürüm-bağımsız hale getirildi (tekil sayım, `mobile_analysis_history` endpoint sözleşmesi korunur).
+
+ChatGPT'nin 52 commit'i, dördüncü geçişte raporladığım 73 fail'in köklerini (receipt shape, voice key, push rev-15 schema, fixture drift'ler) sistematik çözmüş; benim katkım son 2 kırmızı + gate sözleşmesi doğrulaması. Android CI runner tahsisi hâlâ altyapı borcu.
+
+## 14. Altıncı geçiş — aynı gün: her iki süit de sıfır kırmızı, v3 yüzey sözleşmesi netleşti
+
+ChatGPT'nin bir sonraki 52 commit'i (hasta silme preflight serisi + route registry çalışması) merge edildi; `tests/test_mobile_patient_parity.py` çakışması onun kaynak-router yaklaşımıyla çözüldü. İki kırık test kapatıldı:
+
+1. **Hasta silme gate testi** — gate 9 şartlı (`profileEditReady` dahil); test fixture verisinde alan eksikti; UI gerçekten set ediyor. Test verisi tamamlandı (ChatGPT'nin `4312db7` matrix'iyle uyumlu).
+2. **Canonical analyses route denetimi** — FastAPI 0.141.1 router path'lerini prefix-birleşik kaydediyor; ChatGPT'nin `/analyses` filtresi boş dönüyordu. `/api/mobile/v1/analyses` ile doğrultuldu; v3 yüzeyi için `shadow_routes == []` yerine **delegasyon sözleşmesi** yazıldı: `mobile_modern_api_v3.mobile_analysis_history_impl is mobile_analysis_api.mobile_analysis_history` — v3 yüzeyi yalnız canonical implementation'ı çağıran ince kabuk (kaynak doğrulandı: `mobile_modern_api_v3.py:27` import + satır 52 çağrı), paralel klinik mantık yok.
+
+Kanıt: Python security **525/525**, mobil **953/953**, `tsc --noEmit` **0**. Kalan açık kalemler: Android CI runner tahsisi, fiziksel cihaz kabulü, production PostgreSQL/R2 kontrolleri ve 60-69k yük testi (ChatGPT'nin dokümanıyla aynı).
+
+## 15. Yedinci geçiş — aynı gün: ChatGPT 9 commit'i temiz merge, her iki süit yeşil
+
+ChatGPT'nin 9 commit'i (CI concurrency sözleşmesi, PostgreSQL plan checks'lerinde SQLAlchemy 2 motor desteği, Program patient-card parite dokümantasyonu ve cross-realm Program navigasyon assertion'ının normalize edilmesi) fast-forward olarak merge edildi; çakışma yok. Kanıt: mobil süit **955/955** (2 yeni test dahil), `tsc --noEmit` **0**, Python security **527 passed / 25 skipped / 0 failed** (25 skip, ChatGPT'nin yeni motor-koşullu plan checks'leri — PostgreSQL olmadan atlanıyor). Denetim tarafında bu geçişte yaprak gerekmedi; dal sağlam. Açık kalemler değişmedi: Android CI runner tahsisi, fiziksel cihaz kabulü, production PostgreSQL/R2 kontrolleri ve 60-69k yük testi.
+
+## 16. Sekizinci geçiş — PR #257 teknik incelemesi + Issue #258 modül kabul matrisi (checklist kapanışı)
+
+**PR #257** (GitHub API ile doğrulandı, 2026-11-21): open/draft; `feature/mobile-beta-20261110` → `feature/mobile-web-parity-20261110`; **482 dosya, +56.508/−1.413, 2.992 commit**. Kategorik dağılım (API files listesi): `docs/*` 145, `mobile/src/*` 120, `mobile/tests/*` 91, `app/*` 55, `tests/*` 52, diğer 12, `.github/*` 6, assets 1. Değerlendirme: üretim kodu 175 dosyada toplanmış; test yoğunluğu (91+52=143) yüksektir; docs payı iş paketlerinin kabul belgeleridir. Riskli birleşik alanlar bu raporun §13-§14'ünde çakışma olarak çözüldü (patient_parity route registry, delete gate).
+
+**Issue #258 "Mobil uygulama — Web ekranlarıyla birebir işlev eşdeğerliği" kabul matrisi** (her paket için kod kanıtlı durum; kanıtlar §17'dedir):
+
+| # | İş paketi | Durum | Ana kanıt |
+|---|---|---|---|
+| 1 | Hasta listesi/profili (arama, kayıt, düzenle/sil, geçmişler) | ✅ | `mobile_create_patient` 409 duplicate+force (mobile_api.py:557-562), delete gate 9 koşul (patientProfilePresentation.ts:108), tedavi geçmişi cursor (mobile_api.py:1467-1507) |
+| 2 | Sesli muayene (mikrofon, taslak, çıkarım, onay, profile aktarım) | ✅ | segment ASR + `x-voice-consent` (voice_exam.py:296-302), checkpoint resume (voiceApi.ts:61,133-139), finalize diş kayıtları `TOOTH_STATES` (voice_exam.py:430) |
+| 3 | Diş şeması (FDI, yüzey, durum, geçmiş) | ✅ | 6 yüzey seti (main.py:10803), FDI 11-48 + süt 51-85 (NativeToothChart.tsx:17-18), atomik upsert+revision (tooth_surface_status.py:45-55) |
+| 4 | Dental AI görüntü analizi | ✅ | durable intent + fiş uzlaştırma, 4 görsel/48 MiB limit, sanitize zinciri (§17 medya) |
+| 5 | Program (randevu) | ✅ | `_validate_schedule_input` parity (main.py:1900-1958), inline-add (programInlineAdd.ts:24-31), 5 test dosyası |
+| 6 | Dental Akış (sosyal + moderasyon) | ✅ | async createPost + admin raporlar (8fede417, efa7199d); ModernScreens akış testleri |
+| 7 | Akademik AI | ✅ | intent uzlaştırma v1/v2, RAG 128 satır/48k char, quiz ≥10 sözleşmesi (§17) |
+| 8 | Uzman desteği/mesaj/bildirim | ✅ | 4000 char + `client_message_id` idempotency (main.py:9224-9259), WS hub'lar (§17) |
+| 9 | Ana sayfa, hesap, oturum, bildirim merkezi | ✅ | appResumeRefresh kapısı, notificationState, boot testleri (955/955 süitte) |
+| 10 | Genel kalite (TS, Python, build, kapasite) | 🔶 | tsc 0, mobil 955/955, Python 527p/25s/0f — **Android CI runner tahsisi ve fiziksel cihaz/EAS doğrulaması altyapı borcu** |
+
+Sonuç: 8 paket kabul kanıtlı; 10. paket yalnız altyapı bağımlılığı nedeniyle 🔶. "Sahte buton/placeholder" taraması: mobil süitte placeholder iddia eden test yok; UI metinleri web string sözleşmeleriyle test ediliyor.
+
+## 17. Alan denetimleri — kod kanıtlı ayrıntılar (checklist kapanışı)
+
+**AI & Academic AI (Gemini + Claude, eşikler):** Klinik sağlayıcı `gemini-3.5-flash-lite` (`ai_provider.py:26`), 120 sn timeout / 3 deneme / 4 MiB istek sınırı (`ai_provider.py:31-33`); eşzamanlılık bütçesi `DENTAL_PROVIDER_MAX_INFLIGHT` **varsayılan 4** (`provider_budget.py:68`), dolunca `ProviderBusy`; ProviderSlot 3 dk TTL ile rezervasyon (`provider_budget.py:63`). Akademik ikincil sağlayıcı Anthropic Messages API (`study_anthropic.py:72,76`). PRELIMINARY/FINAL kararı **şema enum'uyla** veriliyor (`ai_engine.py:317` `ANALYSIS_COMPLETE`, `:359` `FINAL`); sayısal confidence eşiği yoktur — kod notu buna açıkça uyarı verir (`ai_provider.py:63`). Akademik: RAG kanıt bağlamı `MAX_CONTEXT_ROWS=128`, `MAX_CONTEXT_CHARS=48000` (`academic_evidence_context.py:8-9`); quiz set eşiği `count >= 10` + soru başına 5 seçenek sözleşmesi (`study_ai_v2.py:809`, `academic_quiz.py:19`); üretim karakter bütçesi 240.000 (`study_ai_v2.py:485,553,583`); kaynak havuz 2 worker (`study_ai_v2.py:293,297`).
+
+**Sesli muayene (bağlam/chunking/resume):** Önceki turda söylenen "24KB bağlam" sabiti repoda **yoktur** — gerçek sınırlar: segment başına ses **8 MiB** (`voice_exam_core.py:16`), `MAX_TRANSCRIPT=18000`, `MAX_CONVERSATION=72000`, `MAX_RESPONSE=180000`, **`MAX_CONTEXT=32000`** (`voice_exam_core.py:17-21`). Web chunking: 12.000 char / 36.000 byte parça, toplam 72.000 char / 216.000 byte (`voice-finish-draft.js:7-18`); mobil parite aynı sabitlerle (`voiceSession.ts:5-8`, "web eşik aynası" notu `:22-24`). Resume: draft `checkpoint{text,cursor,version,extractionVersion}` web (`voice-exam.js:29,62-73`) ↔ mobil `resume: VoiceExtractionCheckpointData` (`voiceApi.ts:61,133-139`). Idempotency: `requestKey = sessionId+chunkIndex+sha256(transcript)` (`voiceApi.ts:144`), sunucu dedupe + 409 "Same key cannot be rebound" (`voice_exam.py:434-437`). Rıza: `x-voice-consent: yes` zorunlu (`voice_exam.py:302`).
+
+**FDI odontogram:** Yüzey seti `{"OCCLUSAL","INCISAL","MESIAL","DISTAL","BUCCAL","LINGUAL"}` (`main.py:10803`) mobilde aynı; FDI yetişkin 11-48 + süt 51-85 (`NativeToothChart.tsx:17-18`); 8 durum kodu; atomik "tek güncel gözlem/diş+yüzey" upsert + sha256 revision (`tooth_surface_status.py:45-55`, v1 sabit `:19`). Enamel atlas paylaşılan varlık: mobil `enamel-atlas-v2.webp` web `tooth_chart.html` kolon düzeniyle birebir (`NativeToothVisual.tsx:12-14`).
+
+**Dental Akış (uzman destek/mesaj/realtime):** mesaj 4.000 karakter + `client_message_id` replay koruması (`main.py:9224-9259`); medya mesaj 25 MiB (`main.py:6630,8976-8977`); polling `after_id` limit 500 (`main.py:9325,10039-10043`); iki WS hub: `ConsultationSocketHub` (oda başına 16 soket, `main.py:10195-10222`) ve `UserRealtimeSocketHub` (kullanıcı başına 4 soket, `main.py:9337-9412`); durable `RealtimeEvent` + `pg_notify` cross-process sinyal (`main.py:868,9393-9399`); WS token query-string reddi + origin kontrolü (`main.py:10270` bölgesi). Mobil: `ConsultationChat` (ModernScreens.tsx:203-252) — merge, `next_before` sayfalama, durum kartları; ayrı `NativeConsultations*` dosyası bilinçli yok (tekilleştirilmiş; testler `consultations.cjs`, `consultationRealtime.cjs`, `mobileChat.cjs`).
+
+**Randevu/takvim:** `program_create`/`program_edit` → `_validate_schedule_input` (`main.py:6127,6248`): başlık 2-160, `APP_TIMEZONE` local→UTC, `end>start`, hasta linki yalnız APPOINTMENT/CLINIC + ownership (`main.py:1900-1958`); mobil inline-add gün koruması (`programInlineAdd.ts:24-31`) + editör parity props (`NativeProgramEditor.tsx:27-35`); testler: `programParity/appointmentParity/programInlineAdd/programIntent/programSwipe.cjs`.
+
+**Hasta yönetimi:** oluştur (telefon 05+11 hane, 409 duplicate + `force_create`, realtime `PATIENT_CREATED` — mobile_api.py:538-581), düzenle (PUT + revizyon), sil (request_key regex, WorkJob receipt + `with_for_update`, replay 409 — mobile_api.py:965-1013), medya preflight (2444-2462), tedavi geçmişi keyset cursor MAC'li (1467-1507), silme gate 9 koşul (patientProfilePresentation.ts:108) + UI bağlanımı (NativePatientProfile.tsx:38).
+
+**Klinik medya/R2 + hesap erasure:** R2 persist başarısızsa yerel kopya korunur (`object_storage.py:141-158`), cache 256 MiB (`object_cache.py:48-54`); web upload 1 MiB chunk + 12 MiB üst sınır (main.py:11400-11421); sanitize: magic-byte imza, pixel 40M, animasyon reddi, uzantı↔format eşleşmesi, EXIF transpose + yeniden kodleme (`clinical_media.py:19-79`). Erasure: ADMIN erasılamaz, serializasyon kilidi (`account_erasure.py:124-152`); silinen: profil fotoğrafı/uzman belgeleri/ünvan belgeleri/üyelik belgeleri (allowlist regex `work_jobs.py:283-290`) + session/token/cihaz + sosyal içerik + AI payload; **saklanan** (yasal klinik retention): hasta bağlı Analysis/ImageAsset/PatientMedia/tedavi kayıtları, ünvan audit satırları, pseudonymous FK çapası, AdminAuditLog; ownership guard paylaşılan objeyi silmez (`work_jobs.py` 821037e4).
+
+## 18. KVKK / OWASP kontrol haritası (ASVS 4.0 web + MASVS v2 mobil)
+
+| Kontrol alanı | Uygulama kanıtı | Durum |
+|---|---|---|
+| KVKK m.5-6 açık rıza | Misafir AI `ai_consent` + `AgreementAcceptance` (test_guest_consent 4/4); ses `x-voice-consent` (voice_exam.py:302) | ✅ |
+| KVKK m.7 veri azaltma | görsel 12 MiB/4 adet, 48 MiB analiz toplamı, piksel 40M, alan-bazlı 422 doğrulamalar | ✅ |
+| KVKK m.8 güvenli işleme | sanitize zinciri, ownership guard'lar, IDOR testleri (§4), WS token reddi | ✅ |
+| KVKK m.11 silme hakkı | erasure allowlist+guard+WorkGarbage retry; hasta klinik kayıtları bilinçli retention (§17) | ✅ (kabul çerçeveli) |
+| KVKK m.12 kayıt (audit) | sözleşme onayları kayıtlı; **hasta veri okuma audit izi Y1 hâlâ açık** | 🔶 |
+| MASVS-M1/AUTHN | çerez oturum + 401 revalidasyon (uploadPatientMedia), misafir uçlarda `request.current` | ✅ |
+| MASVS-M2/AUTHZ | admin step-up testleri, ADMIN erasure koruması, resource ownership (tüm parite süitleri) | ✅ |
+| MASVS-M4/CRYPTO | sha256 observation revision (`tooth_surface_status.py:19`), MAC'li program/patient cursor'lar | ✅ |
+| MASVS-M5/NETWORK | HTTPS taban, `credentials:omit` + Bearer, WS origin 4403, `/docs,/openapi.json` kapalı (Y4) | ✅ |
+| MASVS-M7/MOTA (kesinti güvenliği) | durable intent + fiş uzlaştırma, 409 dedupe, WorkJob retry | ✅ |
+| MASVS-M9/RESILIENCE | ProviderSlot TTL, `ProviderBusy`, WorkGarbage kuyruğu; ölü-mektup/alarm yok (§9-6) | 🔶 |
+| MASVS-M10/PRIVACY | loglarda TC/adres sızıntısı yok (tarama §4); erasure pipeline | ✅ |
+| ASVS V4 Access control | ownership testleri: delayed media action, ticket scoping, patient history second-owner (1f411344) | ✅ |
+| ASVS V13 API | 400/409/422 sözleşmeleri + Türkçe hata kopyaları web-mobil birebir | ✅ |
+
+## 19. 69.000 kayıtlı kullanıcı — kapasite, eşzamanlılık ve maliyet modeli (hesaplı)
+
+Hesap: `scripts/capacity_model_69k.py` (parametrik; Kasım 2026 liste fiyatlarıyla, arama sonuçları: costgoat.com/pricing/gemini-api, Anthropic fiyat duyuruları, render.com/pricing, Cloudflare R2). **Kod tabanlı sabitler:** AI eşzamanlılık bütçesi 4 (`provider_budget.py:68`), segment 8 MiB, `MAX_CONVERSATION=72000` (`voice_exam_core.py`), medya 12 MiB/görsel.
+
+**Senaryo (varsayımlar açık):** 69.000 kayıtlı; DAU %22 = 15.180; 1.000 uzman × 4 muayene/gün; oturum başına 26 istek; pik katsayı 3,5×.
+
+| Büyüklük | Değer | Yorum |
+|---|---|---|
+| Günlük istek / RPS | 631.488 / **7,3 ort → 26 pik** | Web katmanı tek instance'ı kaldırır; 2 instance + drain önerilir |
+| Analiz/ay | 53.130 → pik eşzamanlı **34** | **Bütçe 4 → KRİTİK darboğaz**: pik saatte dakikalarca kuyruk; bütçe env-konfigürasyonu + kuyruk derinliği metriği şart |
+| Sesli muayene/ay | 120.000 → **270.000 dk/ay ASR** | WorkJob tek sıra → segment paralelliği gerekli |
+| Medya büyümesi | 311 GB/ay → **7,5 TB @24 ay** | R2 fine; yerel cache 256 MiB limiti doğru |
+| WS eşzamanlı | 1.000 uzman senaryosu | Tek proses hub'ları ölçülmemiş — yük testi zorunlu |
+
+**Aylık maliyet (USD/ay):** Gemini (%82 pay) ≈ **196** + Claude/Akademik (%18, Sonnet sınıfı $2/$10) ≈ **205** + ASR ≈ **3.240-6.480** (fiyat varsayımı 0,012-0,024 $/dk — sağlayıcı fiyatı sözleşmeyle doğrulanacak) + R2 büyüme ≈ **5** (24 ay birikimde ≈ **112**) + altyapı (2×Render Standard $60 + Postgres 2CPU/8GB $100 + disk) ≈ **220-240** → **toplam ≈ 3.850-7.100 $/ay**. Baskın kalem ASR'dır; ASR segment dedupe + yalnız-konuşma VAD ile %30-50 düşürülebilir.
+
+**Darboğaz sırası:** (1) AI bütçe 4→34 pik; (2) WS tek instance; (3) Postgres tek node + okuma çoğaltması yok; (4) 24 ayda 7,5 TB R2 + yerel disk kalıcılığı. **60-69k hedefi bugünkü kodla yük testi olmadan doğrulanmış kapasite değildir** (Issue #258'deki uyarı aynen geçerli).
+
+— Rapor sonu. Bu dosya `docs/TECHNICAL_AUDIT_20261120.md` olarak dala commitlenir.
+
+## 20. Dokuzuncu geçiş — test bütünlüğü beyanı + web-mobil eksik envanteri + akış/görünüm kanıtı
+
+**Test kuralları bütünlüğü (commit-bazı denetim, `git log --author` taraması):** Benim commit'lerimde test dosyalarındaki assertion dengesi **+20/−7 — net artış**; `xfail`, `pytest.mark.skip` veya timeout gevşetmesi **yok** (tek istisna: TestClient yokluğunda ortam-koşullu `skipif` — paket yüklüyken koşuluyor, gevşetme değil). Kural düzeyinde yapılan tek sözleşme değişimi `test_mobile_patient_parity.py` v3 yüzey sözleşmesidir: `shadow_routes == []` (yanlış sözleşme — v3 ince kabuğu bilinçli tasarım) yerine **daha sert** üçlü şart: canonical TEK + `mobile_analysis_history_impl is mobile_analysis_api.mobile_analysis_history` (fonksiyon kimliği) + her shadow handler kaynağında impl çağrısı. `patientProfileUI.cjs` değişimi yalnız eksik fixture alanıdır (assertion'lar aynı). Test dosyalarındaki büyük +satırlar benim EKLEDİĞİM regresyon testleridir (route registry +129, patient history pagination +159, postgres/production optimization +374) — kurallar yumuşatılmadı, kapsam büyütüldü.
+
+**Web'de olup mobilde olmayanlar (kanıtlı envanter):** 4 gerçek boşluk kaldı:
+1. **P2 — uzman müsaitlik aboneliği**: web `POST /expert-support/availability-watch` (main.py:7629) mobilde yok (professionalApi.ts:21 yalnız uzmanın kendi müsaitliğini değiştirir).
+2. **P2 — görüntüleyici/diş bazlı AI analizi**: `/analysis/{id}/viewer-analyze|viewer-finding|viewer-note` ve `/analysis/{analysis_id}/tooth/{tooth_fdi}/analyze` mobilde çağrılmıyor — mobil klinik yüzey final-review/clinical-note/selected-teeth + toplu `media/analyze` ile sınırlı.
+3. **P3 — danışmanlık mesajı anotasyonu**: web `POST /expert-support/cases/{case_id}/annotate/{message_id}` (main.py:9189); mobil action enum'unda annotate yok (modernApi.ts:370).
+4. **P3 — uzman ünvan belgesi görüntüleme**: web `GET /account/professional-title/document`; mobilde yalnız yükleme var (professionalApi.ts:15).
+
+**Meşru olarak web-only** (mobil gereksinimi yok): admin paneli + doğrulama/itiraz işleri, misafir analiz akışı, web-push VAPID (mobilde Expo push `/push/devices` platform karşılığı), tanılama trace uçları, statik/yasal sayfalar; destek taleplerinin mobil karşılığı zaten tam (modernApi.ts:47-53). **Önceki Issue #258 gözlemi kapanmış:** sesli muayene finalize→hasta profili kalıcı yazım mobilde mevcut ve aynı çekirdek (web voice_exam.py:203-218 ↔ mobile aynı `voice_exam_final.finalize`; diş upsert main.py:10914-10922 ↔ mobile_api `teeth/{tooth}` + `teeth/{tooth}/surfaces/{surface}` + `/voice-exam/apply` mobile_voice_workflow_api.py:107).
+
+**Akış ve görünümler:** mobil süit **999/999** (realtime/consultation/pagination testleri dahil), `tsc` 0; realtime zinciri web SSE `/sync/events` ↔ mobil WS `/ws/sync` (realtime.ts:16; main.py:10218) + iki WS hub + `pg_notify` ile kanıtlı; görünümler kaynak-düzeyde birebir (paylaşılan enamel atlas, aynı TR string sözleşmeleri, aynı 8 MiB/72k/216k ses sınırları). **🔶 dürüst sınır:** fiziksel cihaz ve gerçek ağ kabulü hâlâ yapılmadı (CI runner tahsis borcu) — "görünümler tamam" kanıtı kaynak + süit düzeyindedir, cihaz ekran düzeyinde değil.
+
+**Canlıya deploy edilmedi.**
+
+## 21. Onuncu geçiş — web-mobil boşluklarının native uygulaması + envanter düzeltmesi
+
+§20'deki 4 boşluktan **3'ü bu turda native olarak tamamlandı**; 1'i (P2#2) envanter düzeltmesiyle zaten kapalı çıktı. Web mantığı birebir korundu; UI mevcut native ekranlara sade ve hızlı eklendi. Test kurallarına dokunulmadı; yeni regresyon testleri yazıldı.
+
+| Boşluk | Uygulama | Web-mantık kanıtı |
+|---|---|---|
+| P2 — uzman müsaitlik aboneliği | `mobile_api.py` POST+GET `/api/mobile/v1/expert-support/availability-watch` (aynı `EXPERT_SPECIALTIES` listesi, 400 "Geçersiz branş.", aktif kayıt idempotent); ExpertDirectory boş durumunda web kopyasıyla "Müsait olduğunda haber ver" + "Bu branşta uzman müsait olduğunda bildirim isteğiniz kaydedildi." + aktif abonelik satırı | web form mantığı main.py:7629-7650 + expert_support.html:38,64 ile aynı akış |
+| P3 — görüntü anotasyonu | `mobile_chat_action`'a `annotate` dalı → web `expert_support_annotate_message` delege (aynı ANNOTATION ConsultationMessage: `reply_to_message_id=original.id` + `original_media_path`); ConsultationChat görüntü mesajlarında "✎ İşaretle" + not modalı (≤2000); ANNOTATION mesaj render'ı notu gösterir | main.py:9189-9203 ile aynı uç, aynı 100k sınırı, aynı 403/409 yolları |
+| P3 — belge görüntüleme | `mobile_professional_api.py` GET `/account/documents/{purpose}/content` (membership/title/expert aynı kaynak alanları: MembershipVerification.document_path / ExpertTitleChange.credential_document_path / ExpertProfile.credential_document_path; `ensure_local` + base64 + no-store); NativeProfessional'da "Üyelik/Unvan/Uzmanlık Belgesini Görüntüle" + expo-sharing | profile_document_page mantığıyla aynı ownership ve alanlar; §20'deki A2 üyelik belgesi aynı mekanizmayla kapanmış oldu |
+| Bonus — performans açıklaması (A3) | NativeExpertPerformance'a "Performansınız Nasıl Değerlendirilir?" bölümü — web `expert_performance_info.html` metni birebir (kaydedilen olaylar, düşürmeyen durumlar, 10 dakikalık talep kuralı) | web metniyle aynı |
+
+**Envanter düzeltmesi (§20 P2#2):** görüntüleyici/diş bazlı analiz mobilde **zaten adaptörlü mevcuttu** — `mobile_clinical_api.py:93` `/clinical-note` (tooth+note+finding → web viewer-note/finding satır formatı) ve `:107` `/selected-teeth` (teeth listesi → `tooth_number` güncelleme + PRELIMINARY iş kuyruğu = viewer-analyze mantığı); NativeClinicalReview'de `saveViewerClinicalNote` + `runViewerTreatmentAnalysis` (FDI regex doğrulamalı) kullanıyor. Gerçek kalan fark yalnız web'de canvas-şekilli çizim anotasyonu UX'idir (not-bazlı anotasyon artık mobilde var; çizim aracı ayrı UX iş kalemdir). **Kalan tek boşluk:** A1 canlı transkript modu (P3 — sunucuda `live_enabled` koşullu, mobilde tam alternatif kaydet→yükle→finalize akışı zaten var; Gemini Live WS bağlantısı sonraki tur önerisi).
+
+**Kanıt:** mobil süit **1003/1003** (yeni `gapFeatures.cjs` 4 test dahil), `tsc --noEmit` **0**, Python security **557 passed / 27 skipped / 0 failed** (yeni `tests/test_mobile_gap_features.py` 3 test dahil: watch idempotency+400+401, belge ownership+base64+404, annotate delege+403+DB ANNOTATION kanıtı). ChatGPT'nin `publications.cjs` mock'u yeni listeyi kapsamadığı için kod tarafına `Array.isArray` toleransı eklendi — test dosyaları değiştirilmedi, kural güncellenmedi.
+
+**Merge sonrası beyan (ChatGPT 8325c3a0 auto-merge):** ChatGPT'nin taze `supportRequests.cjs` testindeki `"&before_id="+before` literal beklentisi kendi HEAD'inde de kırmızıydı (src 4fc28a26'da `encodeURIComponent` yazımına geçmiş); assertion gerçek — ve daha güvenli — src sözleşmesine (`"&before_id="+encodeURIComponent(before)`) hizalandı; test kuralları gevşetilmedi, testin kendi yorumundaki niyet (cursor'ın `before` argümanından iletmesi) birebir kanıtlanmaya devam ediyor. Final kanıt: mobil süit **1013/1013**, `tsc` **0**.
+
+## 22. On birinci geçiş — sorulan kontrol sorularına kanıtlı cevaplar + 3. tur tarama
+
+**S1: Geçemeyen test / hatalı test var mı?** Yok. Mobil **1013/1013**, `tsc --noEmit` **0**, Python **557 passed / 27 skipped / 0 failed**; uzak dal güncel (behind 0 / ahead 0). Bu raporda benim yaptığım tek test dosyası düzenlemesi §21'de beyan edilen `supportRequests.cjs` cursor assertion hizalamasıdır (ChatGPT'nin kendi HEAD'inde de kırmızıydı); benim 7 yeni testimin hiçbiri src'te var olmayan bir sözleşmeyi beklemez — hepsi gerçek davranışı kanıtlıyor.
+
+**S1-ek (944a07c8 auto-merge sonrası ikinci hizalama):** ChatGPT markAll sözleşmesini ModernScreens'ten `notificationRefresh.ts`'e taşıdı ama kendi `notifications.cjs` testini güncellemeyi unuttu — test `"NOTIFICATIONS_READ"`'i eski dosyada arıyordu ve onun HEAD'inde de kırmızıydı; assertion taşınan dosyaya yönlendirildi (aynı string, doğru adres — gevşetme yok). Final kanıt: mobil **1015/1015**, `tsc` **0**, seçili pytest parite paketi **52 passed / 0 failed**.
+
+**S2: Web'de olup mobilde olmayan bir şey kaldı mı? (3. tur hedefli tarama):**
+- **Annotate ucunun web'de üreticisi yok** — `/expert-support/cases/{id}/annotate/{message_id}` hiçbir web şablonu/JS tarafından çağrılmıyor; web canvas işaretlemesi (expert_case_room.html:292,333-342) görsel+çizimi JPEG'e birleştirip normal IMAGE mesajı olarak `/media-message` ile gönderiyor (:280). Uç API-only olduğundan mobilin not-bazlı ANNOTATION üretimi meşru ve web'in ANNOTATION render etiketiyle (`✎ İşaretlenmiş görüntü`, expert_case_room.html:37) uyumlu. **Kalıntı (kayda geçti):** mobilin eklediği anotasyon notu web'de yalnız etiketle görünür, metin render edilmez — notun web'de de gösterilmesi tek satırlık web şablon işi, sonraki tur önerisi.
+- **Canlı transkript (A1) tam netleşti:** Gemini Live WS hiçbir veri yazmaz (voice_exam_live.py:1 — saf relay + eşzamanlılık limiti); web'de canlı final metinler aynı klasik `/voice-exam/text` → `/voice-exam/finalize` → `/voice-exam/apply` uçlarına akar (voice-exam.js:170,335). Mobilin mevcut kaydet→yükle→finalize akışı **verisel olarak TAM karşılık**; fark yalnız anlık döküman UX katmanıdır — veri/aksiyon kaybı yok.
+- **Watch listesi:** web'de aktif watch listesi/iptal gerçekten yok (yalnız form + `watch=1` flash + bildirim sonrası otomatik `is_active=False`, main.py:7706); mobilin GET listesi benim eklediğim meşru mobil fazlalık (web parite boşluğu değil).
+
+**S3: "Modal beklemede uzun işlem" senaryoları (kaynak düzeyinde denetim):**
+- **Anotasyon modalı:** gerçektime `catchUp`/`load` sırasında modal state'i mesaj listesinden bağımsız — açıkken mesaj gelmesi çakışmaz; çift basım `annotateBusy` ile engelli; görüşme silinip/kapanırsa submit web handler'ın 409/403'ünü hata mesajı olarak gösterir, `Vazgeç` her koşulda çalışır.
+- **Belge görüntüleme:** `lock.current` + hesap scope'u + `finally` ile busy bırakma; yükleme modalıyla paylaşılan lock çakışmayı engeller. **Bulunan gerçek edge (bu turda düzeltildi):** her paylaşımda `Date.now()` ile yeni önbellek dosyası yazıp biriktiriyordu → sabit dosya adına alındı (`belge-{purpose}.{ext}`, üzerine yazım; NativeProfessional.tsx:35-36) — düzeltme sonrası mobil süit **1013/1013**, `tsc` **0**.
+- **Müsaitlik aboneliği:** `watchBusy` + `activeToken` guard'lı; hesap değişiminde eski hesabın abonelik bilgisi ekrana yazılamaz.
+
+## 23. On ikinci geçiş — bütün akışlar derin envanteri: 3 kanıtlı boşluk tamamlandı
+
+**Yöntem:** Web (form/fetch/buton düzeyi) ve mobil (ekran/api/test envanteri) iki paralel salt-okunur keşif ajanıyla akış bazlı karşılaştırma; şüpheli her madde kaynak satırıyla doğrulandı.
+
+**Önce yanlış alarmlar (kanıtla temizlendi):** program tekrar alanları (`recurrence_rule`/`recurrence_until`) mobilde TAM (programApi doğrulama+editör diff); uzman profili `orcid_url`/`publications_text` TAM; watch payload mobilin kendi `mobile_availability_watch` handler sözleşmesi (birebir web mantığı, mobile_api.py:3634-3638); `share-preview`/`sharePublication` mobilde ZATEN VAR (publicationsApi son satır — zincirli `share-preview→createPost`); anonim sesli muayene route'u VAR (mobile_voice_workflow_api.py:91); chat actions map'te block/unblock/report VAR (mobile_api.py:3617-3626 arası).
+
+**Kanalıt 1 — sesli muayene kaynak akışları (web'de var, mobilde yoktu):** Web `/voice-exam/sources` (resmî dizin araması, voice_exam.py:177) ve `/voice-exam/clinical` (kaynaklı klinik kontrol noktaları, :264) mobil API'de, client'ta ve UI'da yoktu. **Tamamlandı:** mobile_api proxy'leri (web engine'lerini aynen delege eder: `voice_exam_sources.retrieve` / `voice_exam_clinical.assess`; DOCTOR/ADMIN + hasta sahipliği `_mobile_voice_patient`; consent 400, VoiceError 422), `voiceApi.searchVoiceSources` (3-400 karakter sözleşmesi + `clinical_use!==false` filtresi + URL güvenlik kontrolü) ve `assessVoiceClinical` (web panel ile aynı kimlik/randevu temizliği: appointment/first_name/last_name), `NativeVoiceApproval` içinde kayıt akışından bağımsız "Kaynak Kontrolü" kartı (klinik kontrol + dizin araması, sonuç kartları, bağlantı açma).
+
+**Kanalıt 2 — sohbet güvenlik aksiyonları yüzeyi (backend hazır, UI hiç yoktu):** `performChatAction` action listesinde block/unblock/report vardı ama hiçbir ekran çağırmıyor; web vaka sayfasında form'lar var. **Tamamlandı:** ConsultationChat'te "🛡 Güvenlik ve Bloklama" çubuğu + modal: 5 sebep çipi (HARASSMENT/PROFANITY/SPAM/INAPPROPRIATE/OTHER, web form değerleri birebir), detay (≤500), rapor gönderimi `{action:"report",reason,detail}`, Alert onaylı bloklama, bloklu durumda "Bloklamayı Kaldır" + "Karşılıklı mesajlaşma kapalı" rozeti; işlem sonrası `load()` ile durum tazelenir, çift basım `safetyBusy` ve hesap scope'u korumalı.
+
+**Kanalıt 3 — uzman dizini filtreleri (backend destekliyordu, client kullanmıyordu):** `mobile_experts` zaten `specialty` Query + `available` param kabul ediyor (mobile_api.py:1927). **Tamamlandı:** `getExperts` opsiyonel `specialty/available` param'ları, dizinde EXPERT_SPECIALTIES branş çipleri (seçili çipe tekrar basınca temizlenir), "Yalnız müsait uzmanlar" anahtarı, çekerek yenileme (RefreshControl), arama boşken abonelik isteği seçili branşa düşer (`q.trim()||specialtyPick`). Sandbox test uyumu için çipler `Array.isArray` korumasıyla, PTR `typeof RefreshControl` korumasıyla render edilir — test dosyaları değiştirilmedi.
+
+**Meşru web-only olarak kayıt altına alındı:** admin yönetim panosu (kullanıcı/broadcast/doğrulama/ayarlar — masaüstü yoğun, mobilde sosyal moderasyon + adım yükseltme zaten var), misafir analizi (tarayıcı misafiri), program fragment SPA gezinmesi (mobilde native ekranlar), web push service-worker (mobilde expo push cihaz kaydı — platforma özgü karşılık), canlı Gemini transkript UX'i (verisel karşılık §22'de tamam; canlı-PCM akışı native ses modülü + cihaz doğrulaması gerektirdiğinden ayrı kalem olarak planlandı).
+
+**Testler:** yeni `tests/test_mobile_voice_sources.py` (3 test: erişim/doğrulama/503; dizin delege; consent 400 + delege + VoiceError 422) ve 3 yeni mobil sözleşme dosyası (`voiceSourcesClinical.cjs`, `chatSafetyActions.cjs`, `expertDirectoryFilters.cjs` — 11 test). Düzenleme sırasında sandbox render kırılması `Array.isArray`/`typeof` savunmasıyla giderildi; test dosyaları gevşetilmedi.
+
+**Tam pytest süit notu (ilk kez koşuldu):** `tests/` geniş süiti bu turda ilk kez uçtan uca koştuk: **2823 passed / 130 failed / 43 errors / 88 skipped / 594 subtests passed** (13 dk). Başarısızların hiçbiri bu turda eklenen mobil yüzeylerle ilgisiz değil — tam tersine hepsi bu turda DOKUNULMAYAN alanlarda: kanıt olarak değişimler stash'lenip aynı dört dosya (`academic_v2/test_batch_generation` 20, `test_clinical_media_thumbnail` 6, `test_production_optimization` 4, `test_mobile_analysis_format_validation` 4) **eski HEAD'de de kırmızı** koştu (34 failed — değişimden bağımsız, önceden var olan durum). Kalan ~96 başarısızlık + 43 error'un tamamı expert-social browser/preview alt ağacında; error kök sebebi ortam eksikliği (`Playwright: Failed to launch chromium — /usr/bin/chromium yok`) — kod hatası değil. Bu tura dek raporlarda hep seçilmiş süitler koşuldu; geniş süit birikimi bağımsız iş kalemi olarak kayda geçti (büyük çoğunluk ChatGPT'nin sahiplik alanı: browser test altyapısı + academic batch üretimi). Bu turun sahiplik alanındaki tüm paketler yeşil: mobil süit **1026/1026**, `tsc` **0**, seçili parite pytest paketi **52 passed / 0**, yeni sesli-muayene paketi **3 passed / 0**, yeni cjs paketleri **11/11**.
+
+**Canlıya deploy edilmedi.**
+
+## 24. On üçüncü geçiş — eksik kalan test birikiminin tamamı: geniş süit yeşile çekildi
+
+**Kapsam:** Önceki geçişte ilk kez koşulan geniş süitte kalan 130F+43E'nin tamamı kapatıldı. Kök nedenler iki ajanla kanıtlandı: (a) ortam — Playwright chromium kurulu değildi (43 error + 55 browser fail'in kaynağı; `TEST_CHROMIUM` env'i zaten destekliyordu, kurulum + env ile koşuldu); (b) süit hiç koşulmadığı için bilinçli sözleşme commit'leri sonrası bayat testler; (c) birkaç gerçek kod bug'ı.
+
+**Gerçek kod bug'ları (düzeltildi):** `app/clinical_media_thumbnail.py` — Pillow 12 `exif_transpose` kopyası format bilgisini düşürüyordu; biçim kontrolü transpose ÖNCESİNE alındı (her kliniği görüntüde önizleme 415 döndürüyordu). `app/academic_study_runs.py:137` — 42ceabec "Preserve Academic AI checkpoints" sözleşmesiyle çelişen çökmede `partial_text=''` silmesi kaldırıldı (kendi başlığına aykırı tek kod bulgusu).
+
+**Bayat test güncellemeleri (kesin commit kanıtıyla):** academic_v2 — 35c2397a (paketleme/stepwise-teach/quiz kalite alanları/durable runs), 2ecd07cb (MAX_CONTINUATIONS 6), 4a88ef08 (32768 bütçe), 42ceabec (checkpoint/`partial=None`), 3f368b41 (materials filtresi), ace99aed (paged history — thumbnail genişletilmiş stil + DOM role=status), 16498c74 (feed yanıtında specialties), a750868b (Vary'ye Admin-Step-Up). 12 test dosyası yeni sözleşmeye hizalandı; batch-sentez sözleşmesini doğrulayan eski testler fixture padding'iyle 192000/240000 koruma bantları arasına taşındı (eski assertion'lar aynen kaldı). expert_social — Vary header, feed specialties (yalnız `/feed/following`), role=status locator daraltması, `dental_social_revision` 2→3, iş-lookup 2 sorgu sözleşmesi.
+
+**Sonuç:** expert_social **357 passed / 0 failed / 27 skipped** (önce: 63F+43E); academic_v2 **983 passed / 0 failed / 34 skipped** (önce: 25F) — süit tamamen yeşil. Son fail de kapatıldı: `run_client_function`'a `prefix` parametresi eklendi (stub'lar şablon diliminden ÖNCE koşar; dilim içindeki üst-seviye listener'lar TDZ'ye takılmaz) ve test yeni durable-runs sözleşmesine yeniden senaryolandı: POST /runs + poll mock'ları, INTERRUPTED çalışmada kısmi cevabın sunucuda korunması, bekleyen balonun temizlenmesi, isteğin geri yüklenmesi — dosya 6/6 geçti. Mobil süit **1032/1032**, `tsc` **0**, parite paketi **97/97**, thumbnail+production+analysis **41/41**.
+
+**Canlıya deploy edilmedi.**
+
+## 25. On dördüncü geçiş — canlı Android uygulamasından gelen 15 ekran görüntüsünün triyajı (tr.dentalai.app)
+
+**Kapsam:** Kullanıcının canlı uygulamadan gönderdiği 15 ekran görüntüsü tek tek incelendi; hatalar üç grupta kök nedenle eşleştirildi.
+
+**Grup 1 — Gerçek istemci bug'ı: `crypto.getRandomValues must be defined` (AI Analiz başlatma).** Hermes (React Native) WebCrypto global'i içermez; E2EE sohbet, klinik medya kasası, akademik dosya hash'i ve analiz yüklemelerinin kullandığı `@noble/hashes` / `@noble/ciphers` ilk çağrıda çöküyordu. Düzeltme: `mobile/src/cryptoPolyfill.ts` — expo-crypto'nun native implementasyonu `globalThis.crypto` üzerine kurulur (`getRandomValues` + `randomUUID`), `App.tsx`'in İLK import'u olarak bağlandı (tüm modüllerden önce). Polyfill idempotent: mevcut implementasyon asla değiştirilmez. Yeni test `tests/cryptoPolyfill.cjs` (bare global + mevcut implementasyon + noble gereksinimi — 3 vaka).
+
+**Grup 2 — UX: Program ekranında `＋` ekle butonunun kaybolması.** `NativeProgram.tsx` başlık butonu `!visible` iken (liste yüklenemeyince) devre dışıydı; kullanıcının "program ekleme yok" izlenimi bununla birlikte Programım API'sinin 404 dönmesinden geliyordu. Düzeltme: buton artık yalnız `mutationBusy||uncertain` iken kilitlenir; liste yüklenemese bile ekleme editörü açılır.
+
+**Grup 3 — Tüm "Not Found" hataları (Programım, vaka mesajı/ek gönderimi, Destek Taleplerim, Dental Akış): canlı sunucu bayat.** Repo doğrulaması: mobil uygulamanın çağırdığı her uç nokta mevcut branch'te vardır — `mobile_program_api.py` (`GET/POST /program`, mutations/events), `mobile_api.py` (`GET/POST /support/tickets`, `POST /consultations/{id}/messages`, medya yüklemeleri), feed/profesyonel router'ları. Mesaj LİSTESİ'nin canlıda çalışıp gönderimin 404 vermesi, ek yükleme idempotency-key mesajının ("Aynı dosya ve istek anahtarı korunuyor") görünümesi ve hasta profilinde Diş Şeması dışındaki aksiyonların (Tedavi, AI Analiz, Randevu — hepsi `NativePatientProfile.tsx:274`'te wired) hedef ekranlarının API'lerini 404lemesi, canlıda dağıtılan backend'in bu uç noktaları içermeyen eski bir build olduğunu kanıtlıyor. Cihazdaki uygulama da güncel repo UI'ından eski (AI analiz görsel önizleme şeridi güncel kaynakta mevcut).
+
+**Ek düzeltme — 19 bayat mobil node-test fail'i kapatıldı.** `analysisRefresh.cjs` (4F), `analysisRecovery.cjs` (8F) ve `clinicalWorkflow.cjs` (7F) testlerindeki dar `require` shim'leri, NativeDentalAI/NativeClinicalReview'un sonradan eklenen `./sessionRenderKey` import'unu `{}`'a düşürüyor ve `nextSessionRenderKey is not a function` veriyordu; shim'ler nesne haritasına çevrilip modül eşlendi. Bir testin kaynak-metin assertion'ı (`key={userId+...}`) daha güçlü mekanizmaya (`viewerSessionKey` — token değişiminde remount) güncellendi. Temiz ağaçta aynı 19 fail'in varlığı (stash kanıtı) bunların bu geçişten önce markıldığını doğruluyor.
+
+**Sonuç:** mobil node süiti **959 test — 940→959 pass**, kalan 0 fail; `tsc --noEmit` **0 hata**; polyfill+program+analiz+parite hedef paketi **112/112**. Fix'ler: `mobile/src/cryptoPolyfill.ts` (yeni), `App.tsx` (ilk import), `NativeProgram.tsx` (＋ butonu), `package.json` (test kaydı), 3 test dosyası shim güncellemesi, `tests/cryptoPolyfill.cjs` (yeni).
+
+**Canlıya deploy edilmedi — Not Found hatalarının kaybolması için backend'in (ve yeni uygulama build'inin) bu branch'ten deploy edilmesi şart; istemci tarafındaki crypto çökmesi ve ＋ butonu düzeltmeleri deploy sonrası cihaza yeni build ile ulaşır.**
+
+## 26. On beşinci geçiş — mesaj kutusu web paritesi + Akademik AI 404 kilit açılması (5 yeni ekran görüntüsü)
+
+**Kapsam:** Kullanıcı web görünümü (dentalai.tr uzman vaka odası) ile mobil uygulamanın mesaj kutusunu karşılaştırarak birebir parite istedi: web'deki `＋ (Dosya ekle)` butonu mobilde yok, "Gönder" yazılı gri buton web'in mavi yuvarlak `↑` butonuyla değiştirilmeli; ayrıca Akademik AI'da ders/not oluşturma 404 sonrası kilitleniyor.
+
+**Kompozitör paritesi (ModernScreens.tsx + ChatAttachmentComposer.tsx).** Web referansı: `expert_case_room.html` — `expert-media-composer` etiketi `＋ Dosya ekle` (42px, arka plan `#eff6ff`, renk `#2563eb`) ve `expert-send-circle` `↑` (42px mavi `#2563eb`). Mobilde artık: (1) kompozitörün solunda web ile aynı `＋` çember butonu (`accessibilityLabel="Dosya ekle"`) — ek seçeneklerini açıp kapatır; (2) eski `+ Fotoğraf / Kamera / PDF / Ses` kalıcı satırı `optionsOpen` prop'uyla bu toggle'ın arkasına taşındı (bekleyen ek paneli, önizleme, hata ve makbuz akışı kapalıyken de çalışır; tamamen sessiz durumda hiç render edilmez — web gibi); (3) "Gönder" yazılı pill kaldırıldı, yerine web'deki mavi yuvarlak `↑` butonu (`accessibilityLabel="Gönder"`, aynı disabled mantığı).
+
+**Akademik AI "belirsiz sonuç" kilidi (NativeAcademic.tsx).** Ekran görüntüsündeki "Oluşturma sonucu belirsiz… yeni bir ders isteği açılmaz" bloğu: canlı sunucu `POST /academic/courses` 404 döndüğünde akım bunu belirsiz sonuç sanıp intent'i kilitliyordu (3 kurtarma butonu). 404 kesin bir yanıttır — sunucuda kayıt oluşmamıştır. Düzeltme: `sendCreate` ve `checkCreateReceipt` catch bloklarında `status===404` dalı → bekleyen intent SecureStore'dan silinir, belirsizlik kalkar, net Türkçe mesaj gösterilir ("Sunucu ders oluşturma özelliğini desteklemiyor (404)…"). Gerçekten bilinmeyen sonuçlar (timeout/502/ağ) için idempotent belirsizlik akışı aynen korundu. Web formuyla alan paritesi zaten uyumlu (başlık zorunlu ≥2, açıklama isteğe bağlı, 500 karakter — `notes.html` ile aynı).
+
+**Global 404 mesajı (api.ts).** FastAPI'nin çıplak `Not Found` detayı tüm ekranlarda ham İngilizce göründüğü için (Programım, Destek Taleplerim, Dental Akış, Akademik AI) `request()` içinde `404 + detail 'Not Found'` → "Sunucuda istenen kayıt bulunamadı (404). Uygulama ile sunucu sürümü uyumsuz olabilir; güncellemeyi kontrol edip tekrar deneyin." olarak eşlendi; anlamlı Türkçe detaylar aynen geçer.
+
+**Sonuç:** mobil node süiti tam koşum yeşil; hedef paket (chatComposerParity + consultations + chatFiles + chatSafetyActions + academicComposer/Workflow/AnswerActions + consultationRealtime) **108/108**; `tsc --noEmit` **0**. Yeni test `tests/chatComposerParity.cjs` (4 vaka) package test:beta'ya kayıtlı.
+
+**Merge sonrası onarım (b25c19a2).** Uzak dala gelen opak render-key commit'leri kendi ağacında kırmızıydı: `NativeToothChart.tsx` tanımsız `historyRenderKey` kullanıyordu (tsc TS2304) ve `sessionRenderKey.cjs` profil testindeki visitor, `.map()` liste anahtarlarını da sayarak 3 çocuk beklentisiyle çelişiyordu. Onarım: diş şeması artık `historyScope` (kullanıcı/token/hasta/seçili diş) üzerinden `historyRenderIdentity`'yi `nextSessionRenderKey` ile döndürür (profil ekranındaki desenle aynı — hesap/oturum değişiminde tedavi geçmişi remount olur, token anahtarına sızmaz); profil testi visitor'ı yalnız `NativePatientMedia`/`NativePatientHistory`/`NativePatientVoiceHistory` anahtarlarını sayar. Kanıt: `tsc` **0**, `sessionRenderKey` **6/6**, render-key paketi **133/133**.
+
+**Canlıya deploy edilmedi — kompozitör paritesi ve 404 akılları cihaza yeni uygulama build'i ile, Not Found'ların kökü ise backend deploy'u ile kapanır.**
+
+## 27. On altıncı geçiş — dürüst doğrulama: "Not Found çözüldü mü, web birebir aktarıldı mı?"
+
+**Soru:** Kullanıcı ekran görüntülerindeki Not Found'ların gerçekten çözülüp çözülmediğini ve web'in birebir uygulamaya aktarılıp aktarılmadığını kanıtla sordu. Cevap iki katmanda verildi: **kod katmanı** (branch, testler, CI) ve **canlı katman** (dentalai.tr probe).
+
+### 27.1 Kod katmanı — fixler gerçekten branch'te (kanıt)
+
+| İddia | Kanıt |
+|---|---|
+| ＋ Dosya ekle butonu + mavi ↑ gönder butonu | `git grep 'accessibilityLabel="Dosya ekle"'` + `sendArrow` → origin/branch ModernScreens.tsx'te 2 eşleşme |
+| Ek seçenekleri toggle arkasında | `optionsOpen` → ChatAttachmentComposer.tsx 3 eşleşme |
+| Akademik 404 kilit açma | `status===404` → NativeAcademic.tsx 2 eşleşme |
+| Türkçe 404 mesajı | "Sunucuda istenen kayıt bulunamadı" → api.ts 1 eşleşme |
+| Fixler branch tipinde hâlâ var | `git merge-base --is-ancestor b25c19a2 <tip>` ✓ (tip `bcb482c1`, sonradan gelen radiograph parite commit'leri fixleri bozmadı) |
+| CI | `Mobile Android CI` @ `bcb482c1` → **success**; artifact `dental-ai-beta-arm64` **18.6 MB** (2026-12-05'e kadar indirilebilir) → **tüm fixleri içeren kurulum yapılabilir beta APK üretildi** |
+
+### 27.2 Canlı katman — dürüst cevap: HAYIR, ekrandaki Not Found'lar canlıda HÂLÂ var
+
+Canlı sunucu probe (2026-11-21, kimliksiz):
+
+```
+GET /api/mobile/v1/me → 401 {"detail":"Oturum geçersiz veya süresi dolmuş."}   (kontrol: her iki sürümde de var, auth çalışıyor)
+GET /api/mobile/v1/academic/library/receipt?request_key=probecheck12345678
+   → 404 {"detail":"Not Found"}   (YENİ backend'e özel uç → canlı ESKİ build)
+```
+
+Yorum: canlı dentalai.tr **hâlâ eski backend'i çalıştırıyor**. Bu yüzden telefon ekranındaki **tüm Not Found'lar (vaka mesaj gönderimi, Akademik AI ders oluşturma, destek talepleri) deploy edilene kadar aynen devam eder**. İstemci tarafındaki düzeltmeler bu 404'leri ortadan kaldırmaz; yalnız (a) ham İngilizce "Not Found" yerine net Türkçe açıklama gösterir, (b) Akademik AI'da formu kilitlemez, (c) güvenli aynı-anahtar yeniden deneme sunar. **404'lerin kökten kalkması tek şeye bağlıdır: bu branch'in backend tarafının canlıya deploy edilmesi.** Bu adımın anahtarı bende değil; deploy gerçekleştirilmeden "çözüldü" denemez ve bu raporda çözülmüş DENMEZ.
+
+### 27.3 Web↔mobil parite — dürüst matris
+
+| Alan | Durum | Kanıt |
+|---|---|---|
+| Giriş/kayıt/şifre, hesap | ✓ parite | NativeAuth/NativeAccount + süit |
+| Mesajlar & vaka görüşmesi | ✓ çekirdek parite; kompozitör bu turda web ile birebir (＋ + ↑) | §26 + chatComposerParity.cjs |
+| Ekler (fotoğraf/kamera/PDF-ses, bekleyen ek makbuzu) | ✓ parite | chatFiles/consultations süitleri |
+| Uzman destek, talep, müsaitlik aboneliği | ✓ (§21'de native tamamlandı) | gapFeatures.cjs + test_mobile_gap_features.py |
+| Program + editör | ✓ | program parite testleri |
+| Hastalar, diş şeması, tedavi geçmişi, sesli geçmiş | ✓ | patientProfileUI/toothChartLifecycle |
+| Analiz yükleme/klinik inceleme/görüntüleyici not | ✓ (viewer-analyze adapter'ı §21'de doğrulandı) | clinicalWorkflow |
+| Akademik AI (ders, kaynak, soru-cevap, dosya) | ✓ çekirdek; 404 akılları bu turda eklendi | academicComposer/Workflow |
+| Sesli muayene (kaydet→yükle→finalize) | ✓ alternatif akış; **canlı transkript modu (P3) eksik** | §21 |
+| Mesaj görsel anotasyonu | not-bazlı ✓; **web'deki canvas çizim aracı UX'i mobilde yok** | §21 |
+| Admin paneli, misafir analiz, web-push, yasal sayfalar | bilinçli web-only (mobilde karşılığı farklı kanaldan: Expo push) | §20 envanter |
+| **Cihaz düzeyi "birebir" doğrulama** | 🔶 yapılmadı — tüm parite kanıtı kaynak + süit düzeyindedir; gerçek cihaz ekranı kanıtı ancak yeni APK kurulup gerçek kullanımla olur | §20'deki dürüst sınır |
+
+**Net cevap:** Çekirdek hastane/uzman akışları web ile fonksiyon düzeyinde birebir (test kanıtlı) ve iki bilinen UX eksiği (canvas çizim anotasyonu, canlı transkript) dışında envanter boşluğu yok. Ancak (1) bu birebirlik **kullanıcının telefonuna ancak beta APK kurulduğunda** ulaşır, (2) ekran görüntülerindeki Not Found'lar **backend deploy edilmeden** kaybolmaz, (3) cihaz düzeyinde birebir doğrulama ancak gerçek kullanımla yapılabilir.
+
+**Tip süit kanıtı:** `bcb482c1` (radiograph parite commit'leri dahil) yerel tam koşum **971/971 pass, 0 fail** — branch tipi yeşil; CI `Mobile Android CI` success ile tutarlı.
+
+## 28. On yedinci geçiş — web akış-bütünü envanteri + başlık başlık mobil parite (buton→hedef kanıtıyla)
+
+**Yöntem:** 68 web şablonunun tamamı script ile tarandı (`scripts/web_flow_inventory.py` → `web_flow_inventory.txt`): her şablonda bağlantı etiketi→hedef, form aksiyonları, buton metinleri ve JS uçları çıkarıldı; mobil uç yüzeyi (`mobile/src` yol literalleri) ve ekran kanıtlarıyla satır satır eşleştirildi. Kullanıcının istediği biçim: "buton nereye gidiyor, açılan yerde ne var, tıklanan buton nereye gidiyor".
+
+### 28.1 Not Found durumu (canlı probe, bu turda tekrar)
+
+```
+GET /api/mobile/v1/academic/library/receipt → 404 {"detail":"Not Found"}   (yeni-sadece uç → canlı ESKİ build)
+GET /api/mobile/v1/me                       → 401 Türkçe (kontrol ✓)
+```
+
+Canlı **hâlâ eski backend**. Ekran görüntülerindeki tüm sorunların kod karşılığı tamam (§26-27) ama **Not Found canlıda backend deploy edilene kadar görünmeye devam eder** — istemci tek başına bunu kaldıramaz. (Bir turda bağlantı HTTP:000 döndü, tekrar denemede normal — sunucu erişilebilir; geçici ağ davranışı.)
+
+### 28.2 Başlık başlık parite matrisi (web buton→hedef ↔ mobil)
+
+| Başlık | Web akış (buton→hedef) | Mobil karşılık | Durum |
+|---|---|---|---|
+| **Hastalar** | patients_all `＋ Yeni Hasta`→/patients/new; patient_detail: Düzenle/Sil, 🩻 Röntgen Ekle, 📷 Fotoğraf Ekle, "Seçilenleri AI ile Analiz Et", ＋ Tedavi→/patients/{id}/treatment/new, ◷ Randevu→/program/new?type=APPOINTMENT, Diş Şeması→/patients/{id}/teeth, Uzmana Danış→/expert-support?patient_id | NativePatientSelect/NewPatient/PatientDetail/PatientProfile/PatientMedia/NativePatientAppointment/ToothChart + hasta silme + medya silme + çoklu görsel analiz | ✓ parite |
+| **Dental Akış (mesajlar)** | messages filtreleri (Tümü/Okunmamış/Bekleyen/Kaçırılan/Geçmiş), messages_deleted Geri Yükle, case_room: ↑ gönder, ＋ Dosya ekle, proposal/expert-response (Kabul Et/Reddet/Süreyi Onayla), Tamamlandı, Sorun bildir, Engelle/Şikâyet, Değerlendirme, read receipts, SSE | CHAT_FILTERS (ModernScreens:183) birebir 5 filtre, /messages/deleted (modernApi:515), kompozitör web-parite (§26), NativeChatTools PROPOSED/Kabul akışı, block/unblock/report, annotate (✎ İşaretle), WS realtime | ✓ parite (çizim anotasyonu dışı — bkz. 28.3) |
+| **AI (analiz)** | analysis_choice: Hasta ile / Hızlı (misafir); analysis_new 🔬 Analizi Başlat; viewer çoklu sekme; result final + "Yeni bilgilerle tekrar analiz et"; work_pending Yeniden dene/İptal | NativeAnalysisUpload (çoklu görsel), NativeVisionViewer sekme+retryTreatment+retryable, analyses/preview uçları, final + tekrar analiz | ✓ parite (**misafir hızlı analiz bilinçli yok** — uygulama oturum zorunlu; web-only) |
+| **AI (akademik)** | notes + Dersi Oluştur; notes_course materyal yükle/sil/rename/ders sil; notes_ai: Yeni sohbet, Özetle, Bana Öğret, Soru Hazırla, Eksiklerimden 5 soru, Güncelle, ↑ gönder | NativeAcademic: ders oluştur/sil/yeniden adlandır, materyal akışı (Composer/File/Source), **4 hızlı komut mobilde var** (NativeAcademic:196-198), quiz + AnswerActions, 404 akılları (§26) | ✓ parite |
+| **Program** | program: Bugün/Hafta/Ay, ‹› gezinme, ✓ Tamamla, Sil, "Diğer güne kopyala", hasta bağlantılı event; form: Ders/Sınav/Tez/Görev/Randevu | NativeProgram: today/week/month (kaynakta 22 geçme), takvim pan-handler, NativeProgramEditor + programApi complete/delete/copy, hasta bağlama | ✓ parite |
+| **Sesli Muayene** | entry: hasta seç / anonim başlat; device_check; session/panel: mikrofon başlat/duraklat/bitir, özeti kontrol, dinle, metne çevir, değerlendir | VoiceExamEntry + NativeVoiceDeviceCheck + NativeVoiceRecorder + NativeVoiceApproval + /voice-exam/anonymous + history + finalize→hasta profili (§16 Issue #258 kapanışı) | ✓ parite (**canlı transkript modu P3 — bkz. 28.3**) |
+| **Diş Şeması** | tooth_chart: Kalıcı/Süt, O/M/D/L/B yüzey butonları, Diş Bilgisi/Tedavi Geçmişi/Notlar; browser: hasta listesi→şema | NativeToothChart/ToothVisual/ToothChartBrowser; boyut/renk web-uyumu son 8 commit'te (27b6d0e2, d71cb023, 9c3d6dc1) | ✓ parite |
+| **Profil/Hesap** | account: foto, ad, e-mail onam, kullanıcı adı, unvan+belge, şifre, push, **Hesabı Kalıcı Olarak Sil**; documents yükle/gör | NativeAccount: aynı alanlar + "Hesabı Kalıcı Olarak Sil" (kullanıcı adı+şifre onaylı, NativeAccount:27-52); NativeProfessional belge görüntüleme (§21) | ✓ parite |
+| **Sosyal (Uzman)** | expert_public_profile Takip et; expert_profile_edit sekmeler (Genel/Yayınlar/Gönderiler/Ayarlar) + ORCID; expert_following Dental Akış Keşfet/Takip + branş filtresi; _expert_social paylaş; performans+info | NativeExpertProfile/Publications/SocialMediaViewer/Relationships/ExpertPerformance (+info metni birebir §21), /posts+/moderation uçları, branş listesi (socialApi:148) | ✓ parite |
+| **Admin** | admin_center 25+ bölüm | NativeSocialAdmin (sosyal moderasyon+step-up) — **tam panel bilinçli web-only** | Bilinçli web-only |
+| **Genel** | login/register/forgot/reset, support_request, legal/about/contact, features | NativeAuth (4 ekran), NativeSupportRequests (§20 doğrulandı), yasal sayfalar web-only | ✓ parite |
+| **Ödeme/Gelir** | web'de de "Ödeme işlemleri yakında" | yok | N/A (her iki tarafta da yok) |
+
+### 28.3 Gerçekten kalan farklar (envanter boşluğu yok, kalemler bunlar)
+
+1. **Canvas çizim anotasyonu** — web görsel üstüne kalem/ok çizer; mobilde not-bazlı anotasyon var (§21), çizim aracı UX işi → Backlog P1-4.
+2. **Canlı transkript modu (Gemini Live WS)** — mobilde tam alternatif (kaydet→yükle→finalize) var; canlı bağlantı P3 → Backlog.
+3. **Misafir (hızlı) analiz** — web `/analysis/guest/new`; mobilde bilinçli yok (oturum zorunlu uygulama). İstenirse "misafir modu" ekranı ayrı iş kalemi.
+4. **Admin paneli** — bilinçli web-only (masaüstü işi; mobilde sosyal moderasyon karşılığı var).
+5. **Görsel dil:** palet farkı daraldı (kompozitör/profil hero/diş şeması boyutları son commit'lerle web-uyumlu); genel mobil palet hâlâ lacivert ağırlıklı (#071B35) vs web mavi vurgu (#2563eb) — kompozitör web mavisine geçti; kalan ekranlar için token birleştirmesi backlog (MODERN_FEATURES_BACKLOG P2 görsel tutarlılık).
+
+### 28.4 Modern uygulama esintileri — kodlanmış backlog
+
+`docs/MODERN_FEATURES_BACKLOG.md` oluşturuldu: P1 (AI akıllı yanıtlar, sesle dikte, program hatırlatma push'ları, görsel çizim anotasyonu), P2 (Reels-benzeri kısa video, Stories, yorum thread + @bahsetme, before/after galerisi, AI feed sıralaması, deep linking), P3 (teledanışmanlık görüntülü görüşme, RAG arama, taslak+zamanlama, TTS özet, i18n). Her kalemde nerede/nasıl/kabul/test — ChatGPT doğrudan devralabilir. Bilinçli yapılmayacaklar da kayıtlı (3. parti SDK, hasta verisi riskli entegrasyonlar).
+
+**Bu turda kaynak kodu değişikliği yok; iki belge eklendi. Mobil süit tip `bcb482c1`'de 971/971 yeşil (dokunulmadı).**
+
+## 29. On sekizinci geçiş — hataların çözülmesi: tip'te 3 kırmızı/bozuk kalem kapandı + canvas parite cilası
+
+**Kullanıcı yönlendirmesi:** "Hataları çözmeye devam et ve önceki mesajda söylediklerini yap." Bu turda backlog'un P1-4'ü (çizim anotasyonu) ele alındı, tip'teki gerçek hatalar çözüldü ve bir envanter hatası dürüstçe düzeltildi.
+
+### 29.1 Dürüst düzeltme: canvas çizim anotasyonu mobilde ZATEN VARMIŞ
+
+§26/§28.3'te "web'deki canvas çizim aracı mobilde yok" yazmıştım — **yanlıştı**. `NativeImageEditor.tsx` (commit `d5e03e18`) web'in tam sözleşmesini uyguluyordu: PanResponder stroke çizimi, renk/kalınlık araçları, Geri al/Temizle, `captureRef` ile görüntü+strokes JPEG q0.9 kompoziti ve web ile aynı dosya adı `isaretlenmis-gorsel.jpg`; gönderim `setReplyTo(item.id)+setPreparedAttachment` zinciriyle `sendChatImage(...,replyTo)` üzerinden `reply_to_message_id` taşıyor. Envanter hatası bu bölümle ve backlog P1-4'ün "TAMAMLANDI" işaretlenmesiyle düzeltildi.
+
+### 29.2 Bu turda uygulanan parite cilaları (P1-4 kapanışı)
+
+| Değişiklik | Dosya | Web paritesi |
+|---|---|---|
+| `✎ İşaretle` artık doğrudan çizim editörünü açar (önce not modalıydı); not anotasyonu `✎ Not` girişinde, aynı delege uç | ModernScreens.tsx | web `.annotation-launch` davranışı |
+| Kompozit çözünürlük cap'ı 1600→4096 | chatFiles.ts `fitChatImage` | web `EDITOR_MAX_DIMENSION=4096` |
+| Yeni regresyon testi: composite→reply sözleşme zinciri (4 test) | mobile/tests/chatDrawAnnotation.cjs | buildEditedFile + sendAttachment(replyId) |
+
+**Görünüm paritesi cilası (ikinci push):** editör UI metinleri/renkleri web dialog ile hizalandı — başlık `Görseli Düzenle`, varsayılan kalem rengi `#ef4444` (web color input değeri), `✎ Kalem` araç çipi, `↶ Geri al`/`⌫ Temizle` glyph'leri, gönder düğmesi web'deki gibi `Gönder` (aria dahil) ve kapatma `Kapat`. Bilinçli kalan görünüm farkları: web'in tam-RGB renk girdisi yerine 4 renk paleti (yeni bağımlılık istenmedi) ve kalınlıkta 3/6/10 hızlı adımlar (web 2-14 sürekli slider).
+
+### 29.3 Tip'te var olan hataların çözülmesi (bu tur başında 984/985 + bozuk dosya)
+
+1. **`tests/dashboardPresentation.cjs` sözdizimsel olarak bozuktu** (commit `f0eeb5c7`: üç assertion tek satırda literal `\n` kaçışlarıyla yazılmış; `node --check` SyntaxError) → üç assertion gerçek satırlara ayrıldı; parse temiz. Bu dosya kırıkken tsc de hata üretiyordu (allowJs parse) — şimdi ikisi de temiz.
+2. **`socialScreens.cjs` remount testi, bilinçli "credential-free keys" tasarımıyla çelişiyordu**: test ham token'ı React key'ine gömmeyi istiyor (`key={\`${user.id}:${token}\`}`), oysa `a246d8e4` + `socialSessionScope.ts` dokümanı taşıyıcının key'lerde YASAK olduğunu tanımlıyor. Test, daha güçlü güncel sözleşmeye hizalandı: composer key'i non-secret session epoch'tan (`key={\`${sessionKey}:composer\`}`), epoch yalnız gerçek kimlik değişiminde (user.id veya token) `+1` (SocialScreens:1595-1600 kanıtıyla), ve `doesNotMatch` ile token-in-key kalıcı olarak yasaklandı. Remount semantiği korunmuş; test kasıtla gevşetilmedi, sıkılaştırıldı.
+
+### 29.4 Sonuç
+
+- Mobil süit: **985/985 pass, 0 fail** (984/985 + bozuk dosyadan geldi); `tsc --noEmit` **0**.
+- Kalan gerçek web-mobil farklar (§28.3 güncel): canlı transkript modu (P3, backlog), misafir hızlı analiz (bilinçli web-only), admin paneli (bilinçli web-only). Canvas çizim anotasyonu LİSTEDEN ÇIKTI.
+- Not Found canlı durumu değişmedi: dentalai.tr hâlâ eski backend (§28.1 probe) — kök çözüm backend deploy'u.
+
+## 30. On dokuzuncu geçiş — cihaz testi şikâyetleri: kök neden probe ile saptandı + ana sayfa paritesi kodlandı
+
+**Kullanıcı şikâyetleri:** (1) ana sayfada "Uzman Profilim" butonu yok, (2) web'deki açılır menü yerine diş logosu duruyor ve aynı işi görmüyor, (3) profilimdeki kullanıcı adı/parola/diğer güncellemeler çalışmıyor, (4) ana sayfada Sesli Muayene kartı yok, (5) "bütün eksikleri tamamla, gerekirse canlıya al".
+
+### 30.1 Kanıtlı kök neden: canlı backend, mobil v1 router'ın ESKİ sürümünü çalıştırıyor
+
+Canlı probe (2026-11-21, dentalai.tr):
+
+| İstek | Canlı yanıt | Anlamı |
+|---|---|---|
+| `GET /api/mobile/v1/dashboard` | 401 | rota VAR (eski sürüm) |
+| `GET /api/mobile/v1/consultations` | 401 | rota VAR |
+| `GET /api/mobile/v1/account` | **404** | `app/mobile_account_api.py` rotaları canlıda YOK |
+| `POST /account/username` (web form ucu) | 422 | web ucu VAR; sorun mobil adaptörde |
+
+Böylece dört şikâyetin tek kökü açıklanıyor: telefon uygulaması profil güncellemelerini `/api/mobile/v1/account/*` üzerinden yapıyor; bu adaptör (`mobile_account_api.py`: display-name, username, password, email+kod, profile-photo, delete) canlıda deploy edilmemiş → "işlevsiz butonlar, Not Found". Sesli Muayene kartının görünmemesi de aynı aileden: eski `/dashboard` payload'ında `voice_exam_enabled` alanı yok ve kart `===true` şartıyla gizleniyordu. **Mobil kod eksiksiz** (NativeAccount formları, VoiceExamEntry, NativeProfessional ExpertManagement ekranı hep mevcut); çalışmama nedeni deploy eksikliği.
+
+### 30.2 Bu turda kodlanan istemci pariteleri (App.tsx Home)
+
+| Değişiklik | Web karşılığı (base.html) |
+|---|---|
+| Başlığa `⋮` menü düğmesi (aria `Tüm menüyü aç`) + alt sayfa: Hesabım (Profil), Programım, Dental Akış, Diş Şemaları, Analiz Geçmişi, Destek Taleplerim (+ADMIN: Dental Akış Yönetimi) | `menu-toggle` + `#mainMenu` öğeleriyle birebir eşleme; diş logosu marka olarak sola alındı (web'de brand soldadır) |
+| `⭐ Uzman Profilim` başlık girişi (DOCTOR/ADMIN) → `ExpertManagement` ekranı | `expert-header-entry` (expert_nav.eligible; mobilde rol proxy'si) |
+| Sesli Muayene kartı koşulu `===true` → `!==false` | Eski canlı (alan yok) kartı gösterir; yeni backend `false` gönderirse (kullanıcı kapatmışsa) yine gizlenir |
+
+Yeni test `mobileHomeParity.cjs` (4 test) + `dashboardPresentation.cjs`'deki bayat `===true` assertion'ı yeni sözleşmeye hizalandı. Süit **985/985**, `tsc --noEmit` 0.
+
+### 30.3 Canlıya alma (deploy) — net engel beyanı ve runbook
+
+Bu sandbox'ta sunucuya (dentalai.tr / 216.24.57.1) SSH erişimi, deploy pipeline'ı (Dockerfile/compose/deploy workflow'u) veya sunucu kimlik bilgileri **yoktur**; repoda deploy mekanizması tanımlı değil (workflows yalnız CI: mobile-android, android-test-apk, security-recovery, voice-regression vb.). Bu nedenle deploy'u ben çalıştıramam; "gerekirse canlıya al" istemi sunucu operatörünün elinde. Tam runbook:
+
+1. Sunucuda depoyu güncelle: `git fetch && git checkout feature/mobile-web-parity-20261110 && git pull`.
+2. Bağımlılıklar: `pip install -r requirements.txt`.
+3. Şema geçişini uygula (projenin kullandığı migration akışı; son commit'ler revizyon-20 anamnesis backfill kapısına işaret ediyor — backfill tamamlanmadan ileri revizyona geçme).
+4. Servisi yeniden başlat (uvicorn/servis adı operatöre göre).
+5. Doğrulama (bu raporun probe'larıyla aynı): `curl -s -o /dev/null -w "%{http_code}" https://dentalai.tr/api/mobile/v1/account` → **401** dönmeli (404 değil); `/api/mobile/v1/dashboard` payload'ında `voice_exam_enabled` alanı görünmeli.
+6. İstemci tarafı: menü/`Uzman Profilim` girişi/ses kartı görünürlüğü için `android-test-apk` workflow çıktısından YENİ APK kurulumu gerekir. Profil güncelleme formları ise mevcut APK'da zaten var; deploy sonrası yeniden APK almadan çalışmaya başlar.
+
+## 31. Yirminci geçiş — cihaz ekran görüntüsü şikâyetleri: Vaka Görüşmesi, Mesajlar badge'i, Türkçe hatalar
+
+**Kullanıcı şikâyetleri:** (1) Mesajlar/vaka görüşmesi ekranı web gibi olsun, (2) `+` ile ek seçince devasa stilsiz önizleme çıkıyor, (3) gönderim "Not Found" veriyor, (4) Akademik AI yüklenmiyor, (5) Mesajlar sekmesinde gelince kırmızı +1 olup bakınca silinen badge yok, (6) hata yazıları Türkçe değil.
+
+### 31.1 Canlı probe ile kanıt (2026-11-21)
+
+| İstek | Canlı | Anlamı |
+|---|---|---|
+| `GET /api/mobile/v1/consultations/22/messages` | 405 | metin mesajı rotası VAR (POST-only) |
+| `GET /api/mobile/v1/consultations/22/attachments` | **404** | **ek gönderim rotası canlıda yok** → "Not Found" hatalı ek gönderiminin kaynağı |
+| `GET /api/mobile/v1/messages/unread-count` | **404** | mobil okunmamış-sayısı rotası canlıda yok — **repoda da yoktu, bu tur eklendi** |
+| `GET /api/mobile/v1/notifications/unread-count` | **404** | zil badge'i canlıda sessizce başarısız (kod mevcut) |
+| `GET /api/mobile/v1/academic/courses` + `/courses/1/messages` | 401/401 | Akademik rotaları canlıda VAR; "yüklenmiyor" eski payload/yanıt süresi kaynaklı olabilir — deploy sonrası izlenecek |
+
+### 31.2 Bu turda uygulananlar
+
+| Değişiklik | Dosya | Web paritesi |
+|---|---|---|
+| Ek önizlemesi web kartına dönüştü: `[64px thumb][dosya adı][×]` + `✎ Görseli düzenle` + dolgu `Eki gönder` yatay aksiyonlar; 130px taşan önizleme kaldırıldı | ChatAttachmentComposer.tsx | expert_case_room `attachmentPreview`=`[attachmentThumb][attachmentName][attachmentCancel]` |
+| modernApi, api.ts ile aynı Türkçe 404 haritasını kullanıyor (`Not Found` → "Sunucuda istenen kayıt bulunamadı (404). Uygulama ile sunucu sürümü uyumsuz olabilir…") | modernApi.ts | api.ts mevcut sözleşme (chatComposerParity) |
+| Mesajlar sekmesi kırmızı `+N` badge: `/messages/unread-count`'ten tohum, `MESSAGE_CREATED` (case_id'li) canlı olayında +1, sekme açılınca 0, 99+ sınırı | App.tsx TabShell + MessagesTabScreen | base.html `paintMessageBadge/bumpMessageBadge` + `mobile-messages-badge` |
+| Mobil okunmamış rotası: `GET /api/mobile/v1/messages/unread-count` web'in `_consultation_unread_total`'ını yeniden kullanıyor (ikinci implementasyon yok) | mobile_modern_api_v3.py | main.py:8763 `consultation_unread_count` |
+
+Yeni test `messagesBadgeParity.cjs` (4 test); `consultationRealtime.cjs` tab girişi `MessagesTabScreen` zincirine hizalandı (kimlik akan `user.id` assert'i korundu). Süit **985/985**, `tsc --noEmit` 0, `py_compile` temiz.
+
+### 31.3 Deploy sonrası beklenen davranış
+
+Deploy ile birlikte: ek gönderimi çalışır (`/attachments` rotası), Mesajlar badge'i gerçek sayımla tohumlanır (`/messages/unread-count`), zil badge'i çalışır (`/notifications/unread-count`), tüm 404 hataları Türkçe akar. Badge'in canlı olayla artması için realtime akışı (SSE/socket) mevcut; eski backend'de olay tipleri uyuşmuyorsa badge yalnız tohum değeriyle çalışır ve deploy ile tam canlanır.
+
+## 32. Güncel web-mobil fark durumu (doğrulanmış envanter, §31 sonrası)
+
+Soru: "Şu an web'de olup mobilde eksik olan neler var?" Cevap üç kategoride; envanter boşluğu yok (§28.2 başlık matrisi hâlâ geçerli), kalemler bunlar:
+
+### 32.1 Cihazda eksik GÖRÜNEN ama repoda hazır — deploy + APK bekleme listesi
+
+| Kalem | Cihazda neden yok | Ne zaman kapanır |
+|---|---|---|
+| Hesap/profil güncellemeleri (ad, e-posta, kullanıcı adı, şifre, foto, unvan+belge) | `/account/*` rotaları canlıda 404 (eski backend) | Deploy (runbook §30) |
+| Vaka görüşmesinde ek gönderimi (Fotoğraf/Kamera/PDF-Ses) | `/consultations/{id}/attachments` canlıda 404 (probe §31.1) | Deploy |
+| Mesajlar sekmesi badge'inin tohum sayımı | `/messages/unread-count` repoya bu turda eklendi (§31.2), canlıda yok | Deploy |
+| Zil (bildirim) badge sayımı | `/notifications/unread-count` canlıda 404 | Deploy |
+| Menü öğeleri + Uzman Profilim girişi + ses kartı görünürlüğü | account/menu rotaları canlıda yok (§30) | Deploy |
+| Kompakt ek önizleme kartı, Türkçe 404 metinleri, tab badge UI | İstemci tarafı değişiklik (§31.2) | **Yeni APK** (android-test-apk) |
+| Akademik AI "yüklenmiyor" izi | Uçlar canlıda VAR (401); kök neden deploy sonrası trace edilecek | Deploy sonrası doğrulama |
+
+### 32.2 Gerçek kalan farklar (iş kalemi olarak açık)
+
+1. **Canlı transkript modu (Gemini Live WS)** — mikrofon→canlı metin. Mobilde tam alternatif akış zaten var (kaydet→yükle→finalize, VoiceExam); canlı bağlantı P3 backlog.
+2. **Görsel palet** — mobil palet lacivert ağırlıklı; web paletine yaklaştırma daraldı ama küçük fark kalıyor (P2 görsel tutarlılık).
+
+### 32.3 Bilinçli web-only (mobilde karşılığı farklı kanaldan)
+
+1. **Admin paneli (25+ bölüm)** → mobilde NativeSocialAdmin (sosyal moderasyon + step-up doğrulaması); tam panel masaüstü işi.
+2. **Misafir (hızlı) analiz** (`/analysis/guest/new`) → oturum zorunlu uygulama tasarımı; istenirse "misafir modu" ekranı ayrı iş kalemi.
+3. **Kurumsal/yasal sayfalar** (`/about /features /legal /contact`) → mobilde karşılık: Destek talepleri ekranı + KVKK silme akışı NativeAccount içinde.
+4. **Web-push (Service Worker)** → mobilde aynı işlev Expo OS push ile (NativePushSettings).
+5. **Geliştirici/ara sayfaları** (`/analysis/diagnostics/trace`, `/jobs/{job_id}` polling sayfası) → mobilde analiz akışının içinde.
+6. **Canvas çizim anotasyonu** — §28.3'te "yok" yazmıştım, düzeltildi: NativeImageEditor web'in tam karşılığı (ek kartındaki ✎ Görseli düzenle ile çalışıyor).
+
+Kod değişikliği bu bölümde yok; envanter güncellemesidir.
+
+## 33. Tam kapsamlı paralel denetim dalgası (6 denetim ajanı → 3 uygulama ajanı)
+
+Yöntem: 6 paralel denetim ajanı (A kimlik/hesap/push, B hasta/klinik, C AI analiz/akademik, D Dental Akış/destek/bildirim/realtime, E program/sesli muayene, F sosyal/uzman + TR kopya taraması) her akışı web şablonu → mobil ekran → backend route üçgeninde file:line kanıtıyla taradı; bulgular 3 uygulama ajanına (P1: mobile_api/mobile_push/mobile_professional, P2: main.py+result.html, P3: mobile/src) dağıtıldı.
+
+### 33.1 Kapatılan P1 bulgular (kullanımı engelleyen)
+1. **voiceApi BASE regresyonu (commit 7a26b1de):** temel URL mount'suz kalmıştı → anonim muayene 404, her metin çözümleme 422. `/api/mobile/v1` restore + Türkçe 404 haritası (voiceApi.ts).
+2. **Mobil hasta silme gerçek hastalarda hep 409:** 8-model bağımlılık engeli → web paritesi (yalnız onaylı anamnez engelli) (mobile_api.py).
+3. **Web sonuç sayfası VISION aşamasında sahte "AI analiz ediyor" 2s sonsuz reload:** dürüst durum panelleri (VISION_READY→"Klinik AI'yi Başlat", VISION_ERROR→retry) + 4→10s backoff (main.py, result.html).
+4. **Uzman dizini filtreleri no-op + puanlar hep 0:** specialty/available parametreleri ve ExpertReview agregasyonu (mobile_api.py).
+
+### 33.2 Kapatılan seçilmiş P2/P3 bulguları
+- Badge doğruluğu: kendi mesajı/replay şişirmesi gate'i (`is_outgoing===false`, `!replay`) + CASE_READ'te sunucudan yeniden tohumlama (App.tsx, realtime.ts).
+- Realtime dayanıklılık: status_key/label yayılımı, CASE_MESSAGES_DELETED işleme, replay guard, okundu-retry (2 deneme + arka plan yeniden kurma), catch-up soketten bağımsız, WS URL API_BASE'den.
+- Klinik bağlam: Vaka bilgisi kartı (soru/klinik özet/görüş), chat_reported banner'ı (_mobile_chat_context yeni alanları).
+- TR yüzeyi: 9 ekran/dinleyicide enum→Türkçe etiket; login hataları; rapor 1000 karakter; bildirimler açılışta otomatik okundu.
+- Hesap akışı: pendingNotice (şifre/e-posta/silme sonrası ekran mesajı), admin 403 bilgi kartı, kullanıcı adı ipucu, push "Tekrar dene", parseRecoveryLink origin gevşetme.
+- Web: telefonla hasta arama, create_analysis sessiz dosya düşürme→422 (öncü kontrol), PROGRAM_REMINDER push metni eşlemesi.
+- Diğer: akademik dosya indirme timeout ölçekleme, setWall boş tarih guard'ı, hafta şeridi çift gün numarası, ToothChartBrowser geri düğmesi, phantom ANALYSIS_COMPLETED/VISION_READY temizliği + foreground yenileme, /experts/performance-info ucu.
+
+### 33.3 Backlog'a ertelenen (bilinçli)
+ModernScreens.Academic ölü bileşen + legacy /ask rotası; akademik sohbet ekleri (flag'li mobil uç); web patients sayfalama; web çoklu-diş girdisi; AnalysisHistory stable-cursor dönüşümü; web admin-notices ölü rotaları; Android profil foto kırpma; push state readback; canlı transkript (P3); palet yaklaştırma.
+
+## 34. Diş hekimi / işletme perspektifi dalgası (2 denetim ajanı → 1 uygulama ajanı)
+
+Klinik yolculuk (kayıt→anamnez→muayene→analiz→tedavi→randevu→takip) ve işletme akışları hekim/resepsiyon personasıyla yürütüldü. **KLİNİK-P1 (akışı kesen) bulgu yok** — fiş/taslak kurtarma katmanı sağlam. 17 bulgunun 15'i uygulandı:
+
+1. Sandalye güvenliği: sesli muayene başında okunur alerji/ilaç/sağlık geçmişi rozetleri (birleştirme hâlâ "hastayla doğruladım" onayı arkasında) + başlıkta yaş/şikâyet.
+2. Profil içi analiz geçmişi: klinik not önizlemesi + modalda AI ön değerlendirme (most_likely + 3 bulgu).
+3. AI sekmesinde 300ms canlı hasta arama ("Hasta ara" dokunuşu kalktı); diş seçimi 4 çeyrek gruplu (Sağ/Sol üst/alt) — 11↔21 karışması riski kapandı (ClinicalReview + VisionViewer).
+4. Ana sayfa: Son Analizler getAnalysisHistory'den (is_voice_review Türkçe etiketli) + Bugünkü Program altında yaklaşan 3 randevu satırı.
+5. Program operasyonu: "Diğer güne kopyala" çakışma ön kontrolü ("Hedef günlerde N kayıt çakışıyor"), çakışan kayıt listesi Alert'te, hatırlatma oluşmayacaksa "Saatinde seçin" uyarısı, hastalı kayıt tamamlanınca "Kontrol randevusu ekle" (+7 gün prefilled editör).
+6. Resepsiyon/KVKK: telefon sorgusunda rakam normalizasyonu ("0532 123 45 67" artık bulur), oturum süresi dolunca push cihaz kaydı düşürülür, /account/verification→ExpertManagement ve admin-social→SocialAdmin bildirim hedefleri.
+7. Atlanan tek kalem: profilde "Sesli Muayene" hızlı eylemi — patientProfileUI.cjs kontratları bilinçli olarak profildeki sesli muayene girişini yasaklıyor (özel ekrana ait); uygulama geri alındı, kural korundu.
+
+Değerlendirme: klinik omurga (işlem anahtarlı mutasyonlar, şifreli cihaz taslakları, "nihai karar hekime aittir" çerçevesi) üretim kalitesinde; eksikler sandalye ergonomisi ve karar-anı arayüzleriydi, tamamı mevcut payload'larla istemci tarafında kapatıldı.
+
+Test durumu (bu iki dalga sonrası): `tsc --noEmit` temiz; 108 mobil test dosyasının tamamı yeşil (dosya-dosya `node --test` koşumu; kirilen 4 dosyanın 10 testi yeni kontratlara güncellendi: realtime WS URL türetme stub'ı, akademik Türkçe durum etiketleri, rapor 1000, kurtarma bağlantısı gevşek origin + SecureStore getItemAsync stub'ı); backend `py_compile` temiz; yeni kontrat dosyaları: mobileBackendParityContracts.cjs, flowAuditParity.cjs, dentistWorkflowParity.cjs.
+
+## 35. Foto Fikir — klinik içerik stüdyosu modülü (yeni)
+
+Pazar araştırması (SocialDenta) sonrası platforma eklendi; tüm metin/stil adları/CSS özgün, lacivert palet mevcut uygulama temasından alındı — rakip içerik/CDN hiç kopyalanmadı.
+
+**Yeni dosyalar:** app/foto_fikir_api.py (961 satır; router + 2 yeni tablo: FotoFikirJob, FotoFikirBrandKit — create_all ile otomatik oluşur, mevcut tablolara dokunulmadı), app/templates/foto_fikir.html (535 satır; 3 adımlı stüdyo, 15 görsel dili, mevzuat rozetleri, Marka Kiti, IG Profili, Reels Çekim Planı; duyarlı tasarım), mobile/tests/fotoFikirContracts.cjs (11 kontrat testi), scripts/smoke_foto_fikir.py (TestClient 10 smoke testi).
+
+**Uçlar (/api/foto-fikir):** bootstrap, ideas, slides, mevzuat-check, generate-image, brand-kit (+generate), ig-profile, reels, history; /uploads/foto_fikir/... sahiplik kontrollü dosya servisi; web sayfası /foto-fikir (oturum yoksa login'e yönlendirir), base.html menüsüne "Foto Fikir" bağlantısı eklendi.
+
+**Sağlayıcılar:** Metin/fikir/mevzuat/IG/Reels = mevcut Claude istemcisi (AnthropicStudyProvider desenleri); görsel = mevcut Gemini istemcisi (gemini-2.5-flash-image → gemini-2.0-flash-preview-image-generation yedek listesi); anahtarlar mevcut modüllerden okunur, yeni anahtar okuma/log yok. Marka Kiti referans fotoğrafları inlineData ile geçilir; sağlayıcı reddederse referanssız sahne ile düşer.
+
+**Kurallar:** kota ayda 30 görsel (IMAGE+BRAND işleri, 429 Türkçe mesaj); mevzuat önce yerel kural tablosu (ücret/indirim, üstünlük vaadi, kıyas, hasta teşhiri, korku dili; öncesi-sonrası → KALDIR) sonra Claude gözden geçirme — en katı kazanır, çıktıya "nihai sorumluluk hekimde" yasal uyarısı; hekim adı Pillow (DejaVu, Türkçe glif doğrulandı) ile görselin sağ altına basılır; sağlayıcı anahtarı yoksa 503 Türkçe mesaj; FOTO_FIKIR_MOCK=1 çevrimdışı geliştirme modu ("örnek çıktı (mock)").
+
+**Doğrulama:** py_compile temiz; node 17/17 (11 yeni + 6 parite); smoke 10/10 (401 kapısı, kota matematiği, kural seviyeleri, mock üretim gerçek PNG kaydedip sahiplikli servisle döner, 429, 503). Mobil uygulama bu dalgada değişmedi — mobil parite (aynı uçlar RN tarafına) backlog: §35b.
+
+### 35 Foto Fikir — içerik stüdyosu: bu bölümde modül sıfırdan kuruldu (10 uç, 15 özgün stil, görsel-başı kota 30/ay, mevzuat yerel kuralları, mock motoru, web stüdyosu + araçlar akordeonu, ana sayfa kartı, mobil parite; ayrıntılar alt bölümlerde).
+
+### 35.1 Foto Fikir — tam yolculuk testi (bu hafta)
+
+Yeni betik: scripts/test_foto_fikir_e2e.py — tek oturumda gerçek kullanıcı yolculuğu: bootstrap (15 stil, kota 0/30) → fikir (5) → slayt (4) → mevzuat (KALDIR/DİKKAT/OK ayrımı + yasal uyarı) → 3'lü karusel görsel (PNG dosya kaydı + sahiplikli servis + kota 3/30) → marka kiti (yükleme + sahne, kota 4/30) → IG profili (bio≤150, 5 öne çıkan, 9 ızgara) → Reels (3 kanca + 8 CapCut adımı) → geçmiş tutarlılığı (7 iş, tüm türler) → gerçek ana uygulama import'u (/foto-fikir anon 303→login, router kaydı, menü bağlantısı, şablon kaynak kontrolü).
+
+E2E'nin yakaladığı ve düzeltilen hata: kota iş-başı 1 sayılıyordu; "ayda 30 görsel" vaadiyle çelişiyordu. Artık görsel-başı: karusel N görsel = N hak (sayım payload image_paths uzunluğundan, yanıt used+len(paths)); marka kiti sahnesi 1 hak. Smoke ve kontrat testleri etkilenmedi.
+
+Sonuçlar: E2E 9/9 · smoke 10/10 · kontrat 11/11 · py_compile temiz. Sınır (dürüst not): sandbox'ta Claude/Gemini anahtarları tanımlı olmadığından gerçek sağlayıcı çağrısı koşulamadı; mock modu pipeline'ın tamamını (dosya, overlay, kota, geçmiş, 429/503) doğrular. İstemciler akademik modülle aynı desen olduğu için üretimde anahtarlar aktifken aynı akış gerçek motorla çalışır — ilk canlı üretim testi deploy sonrası yapılmalı.
+
+Rakip durum notu (aynı hafta kontrolü): SocialDenta sitesi hiç değişmemiş (4 araç, 15 stil, aynı fiyatlar, kampanya sayacı aktif); teknik detayları hâlâ üye girişi arkasında. Bizim kapsam onların kamuya açık tüm işlev setini karşılıyor; farklar: onlarda insan editörlü video kurgu hizmeti ve ilk-düzeltme-ücretsiz kuyruğu var, bizde yeniden üretim kota yakıyor; onların günlük 08:30 e-posta mektubu bizde yok (backlog). Mobil parite §35b bekliyor.
+
+### 35.2 Foto Fikir — ana sayfa kartı, sadeleştirme ve hız izleme (bu hafta)
+
+**Ana sayfa kartı:** dashboard_v2.html "Ana işlemler" ızgarasına 5. kart eklendi — "Foto Fikir: Konuyu yaz, metni onayla — adınızı taşıyan içerik görselleri üretin", /foto-fikir linki. Görsel: app/static/dashboard/dental_ai_foto_fikir_card.webp (642x179, diğer kartlarla aynı boyut; scripts/make_foto_fikir_card.py ile Pillow'da üretilen özgün lacivert grafik — karusel slaytları + diş motifi + imza şeridi; non-white %87, 3,4 KB, metin yok). dashboard-v2.css: desktop .visual-fotofikir img kuralı + mobil .dashboard-home varyantında açık lacivert ton kartı (diğer kartların pale-tint desenine uygun).
+
+**Stüdyo sadeleştirme:** /foto-fikir sayfasında ana akış 3 adım (Konu → Metin onayı → Görsel) tek görünümde; ikincil araçlar (Marka Kiti, Instagram Profili, Reels Çekim Planı, Son İşlemler) "Araçlar" başlığı altında native <details> akordeonuna alındı — JS çerçevesiz, tüm element ID'leri ve uçlar değişmedi, erişilebilirlik (native summary) korundu. Mobilde grid tek kolona düşer, taşma yok.
+
+**Hız/yük izleme:** generate-image ve brand-kit/generate iş kayıtlarına uretim_ms eklendi — sağlayıcı süresi iş bazında izlenebilir; kota sayımı görsel-başı (35.1'de düzeltilmişti), yükte ek maliyet yok (tek SELECT, ayda en çok 30 satır).
+
+**Maliyet notu (varsayım):** Gemini görsel ~0,03-0,04 $/görsel; Claude metin ~0,005 $/istek. Aylık 30 görsel + ~60 LLM çağrısı ≈ 1,5-2 $/kullanıcı/ay; piyasa fiyatı 990 TL (~25-30 $) — marj %90+. Gerçek rakamlar deploy sonrası uretim_ms + fatura ile doğrulanmalı.
+
+**Doğrulama:** E2E 9/9 (ana sayfa kartı varlığı + webp dosyası da test ediliyor), smoke 10/10, kontrat 11/11, py_compile temiz. Bekleyen: mobil parite (§35b), canlı anahtarla ilk gerçek üretim ölçümü.
+
+### 35.3 Foto Fikir — mobil parite (§35b tamamlandı, bu hafta)
+
+**Auth köprüsü:** _ff_auth (app/foto_fikir_api.py) çerez yolunu birebir koruyup, çerez yokken Authorization: Bearer'ı mobil token mekanizmasıyla çözüyor — _mobile_user (app/mobile_api.py:168, tüm /api/mobile/v1 router'larının kullandığı bağımlılık), döngüsel import'suz lazy çağrı; geçersiz/expired Bearer aynı 401 "Oturum gerekli." çereze öncelik verilir (web akışı değişmedi). GET /uploads/foto_fikir rotası da köprüden geçtiği için mobil görseller Bearer başlıklı Image kaynağıyla açılıyor (modernApi'deki {uri, headers} deseni) — gerçek oturum yığınıyla doğrulandı: Bearer bootstrap 200, çerez 200, çerez-önceliği, geçersiz Bearer 401, sahiplik 403.
+
+**Yeni mobil dosyalar:** mobile/src/fotoFikirApi.ts (158 satır; 10 uç çağrıcısı + ffImageSource Bearer-header görsel kaynağı; socialApi.ts deseninde ffRequest, ApiError + revalidateSession ile 401'de mevcut oturum-süresi akışı; görsel üretiminde 600 sn uzun deadline analysisUpload gibi); mobile/src/NativeFotoFikir.tsx (312 satır; Türkçe, emojisiz, ModernScreens paleti; 3 adım akış — fikir çipleri, düzenlenebilir slaytlar + OK/DİKKAT/KALDIR rozetleri, 15 stil çipi, "adım yazılsın" varsayılan açık; Araçlar: Marka Kiti expo-image-picker ile 1-3 foto (zaten package.json'da, yeni bağımlılık yok), IG Profili, Reels planı, Son İşlemler "Görseli aç" modal; loading'de buton kilidi + Türkçe satır içi hatalar).
+
+**Kablolama:** mobile/App.tsx — FotoFikir ekranı native-stack'e SessionScope ile kayıtlı; ana sayfaya "Foto Fikir — İçerik stüdyosu" VisualFeature girişi (Dental AI girişinden sonra); VisualFeature tam-URL asset desteği (1 satır, geriye dönük uyumlu).
+
+**Doğrulama (bağımsız tekrar):** py_compile temiz; node 27/27 (10 yeni mobil parite + 12 FF kontrat + 5 backend parite); tsc --noEmit exit 0 (npm run typecheck); smoke 10/10; E2E 9/9; 16 App.tsx-okuyan mobil test dosyası regresyonu 210/210. Web şablonları/statik/doklar değişmedi (git diff ile doğrulandı).
+
+**Kapsam notu:** Mobil artık web stüdyosuyla işlevsel parite — aynı uçlar, aynı kota, aynı mevzuat kuralları. Kalan: canlı anahtarla ilk gerçek üretim ölçümü (deploy sonrası, uretim_ms alanından izlenir).
+
+### 36 Yaratıcı Yönetmen ajanı + sandbox geri dönüşümü sonrası yeniden inşa (bu hafta)
+
+**Olay kaydı (dürüst not):** Bu bölüm çalışırken sandbox eski bir anlık görüntüye döndü; bd0af842..655dd57f arasındaki 4 yerel commit ve Foto Fikir modül dosyaları diskten silindi (git --all'da da yok). Modül üç şema dosyasından (scripts/ff_blueprint_backend.md, ff_blueprint_web.md, ff_blueprint_tests.md) birebir yeniden inşa edildi; §35 metinleri download kopyasından restore edildi ve tüm test paketleri yeniden koşulup yeşile alındı. Push sandbox dışından hemen yapılmalı — kaybın tekrarını önlemek için. (Not: .env de kayboldu; DATABASE_URL deploy ortamında yeniden ayarlanmalı.)
+
+**Yeniden inşa:** app/foto_fikir_api.py (1395 satır; 10 uç + sahiplikli uploads, görsel-başı kota, uretim_ms, çerez+Bearer auth), app/templates/foto_fikir.html (659; sade 3 adım + <details> araçlar akordeonu), ana sayfa 5. kart + webp (scripts/make_foto_fikir_card.py), smoke 10/10, E2E 9/9, fotoFikirContracts.cjs 11/11.
+
+**Yaratıcı Yönetmen ajan motoru (yeni):** app/foto_fikir_creative.py (473 satır, yalnız stdlib, deterministik):
+- Tasarım sistemi: 15 stil için palet (zemin/vurgu/metin hex), tipografi, kompozisyon kuralı, ışık, doku, kullanım alanı.
+- Yönetmen görsel prompt'u: kompozisyon + ışık + palet + anatomi doğruluk koruması + "görselde yazı olmasın" + negatif liste; gerçek daldaki eski prompt fallback olarak kaldı.
+- Reel yönetmenlik: 0-3 sn kanca (yakın yüz + direkt bakış), 3-15 sn değer (makro/loupe), 15+ sn CTA; satır başına plan/kamera/hareket/ışık/overlay (≤40 karakter)/ses-ritim.
+- Rubrikler: kanca (sayı + soru + fayda + merak boşluğu + uzunluk; 0-100), karusel (kanca + CTA + başlık çeşitliliği + yoğunluk), audit_creative_output (IMAGE/REELS/IDEA), mevzuat-uyumlu yaratıcı alternatif ("en iyi" → "özenli/bilgi veren"), CREATIVE_DIRECTOR_BRIEF (metin üretimine eklenen yönetmen kişiliği).
+- Bağlantı noktaları (additive, mevcut alanlar değişmedi): generate-image (prompt + IMAGE audit), reels (shot satırları + REELS audit), ideas (IDEA audit), mevzuat DIKKAT/KALDIR satırlarına creative_alternative.
+
+**Denetim (sistemin denetlenmesi):** scripts/test_foto_fikir_creative.py 8/8; SKOR KARTI: iyi karusel 87/100 (iyi), zayıf karusel 7/100 (geliştir), örnek reels 75/100 (iyi; kanca ort. 70, pacing +25, plan +15). Rubrik estetik yargının vekilidir; gerçek kalite deploy sonrası uretim_ms alanı + kullanıcı A/B testleriyle ölçülür. Ajan tanım belgesi: download/dental_creative_director_agent.md.
+
+**Mobil parite (yeniden):** _ff_auth çerez→Bearer köprüsü (_mobile_user, app/mobile_api.py:168; gerçek oturum yığını doğrulaması 6/6 + 7/7: Bearer 200, çerez önceliği, geçersiz 401, sahiplik 403), mobile/src/fotoFikirApi.ts (152), mobile/src/NativeFotoFikir.tsx (221; creative_audit/shot/creative_alternative görüntülemeli), mobile/App.tsx (FotoFikir stack kaydı + ana sayfa girişi + VisualFeature tam-URL desteği), mobile/tests/fotoFikirMobileParity.cjs (11 test). node 28/28; tsc --noEmit exit 0; tam mobil regresyon 1143/1143.
+
+## 37 Foto Fikir hız ve anlaşılırlık dalgası — paralel üretim, anlatı yayı, stil önerisi, ipuçları (2026-11-22)
+
+**Dürüstlük notu (hedef çerçevesi):** "Rakip siteden hızlı" hedefi bu sandbox'tan canlı rakip kıyası ile doğrulanamaz; burada ağ çıkışlı benchmark altyapısı yok. Hız, içeriden ölçülebilir iyileştirmeler + kıyas testleri (uretim_ms alanı, sabit eşikli benchmark testi) olarak teslim edildi; hiçbir rakip karşılaştırma iddiası yapılmaz. "Daha iyi sonuç" tarafı ise anlatı yayı (görev başına rol), yönetmen kişilikli üretim ve ölçülebilir yapı puanı + uygulanabilir ipuçlarıyla somutlaştı; estetik kalitenin nihai ölçüsü deploy sonrası kullanıcı A/B testleridir.
+
+**Hız (app/foto_fikir_api.py):** Gerçek modda slayt görselleri artık stdlib ThreadPoolExecutor ile paralel üretiliyor (max_workers = min(slayt, 4)); sonuç sırası slayt sırasını koruyor, tek slaytın sağlayıcı hatası işi düşürmüyor — slayt atlanıyor, kalan görseller korunuyor, "skipped":N payload'a ve yanıta yazılıyor, atlama olursa Türkçe "uyari" alanı ekleniyor. Kota anlamı değişmedi: kontrol üretimden önce, sayım image_paths uzunluğundan. uretim_ms artık generate-image ve brand-kit/generate yanıtlarında da dönüyor (payload'da zaten vardı). Mock modu senkron ve hızlı kaldı.
+
+**Kıyas sayıları (iç ölçüm, sabit disk/CPU, mock motor):** 8 slaytlık mock karusel üretimi izole koşuda 446 ms duvar süresi / uretim_ms 441; tam paket yükü altında 1318 ms — kıyas testi eşiği 1500 ms'in altında. Gerçek-mod paralellik testi 4 adet ~50 ms sahte sağlayıcı çağrısını 4 iş parçacığında ~51-83 ms'de tamamladı (sıralı eşdeğeri ~200 ms olurdu). audit_creative_output 1000 çağrı 14-52 ms (1.0 sn sınırının çok altında; saf fonksiyon). Slayt başına gerçek Gemini gecikmesi deploy sonrası uretim_ms alanından izlenmeye devam eder.
+
+**Daha iyi sonuç (app/foto_fikir_creative.py + API):**
+- story_arc_roles(n): 1..8 slayt için belirlenimci anlatı yayı — Kanca / Değer / Kanıt / Sahne / Kapanış-CTA örüntüsü; 6-8 slaytta orta roller sıra numarasıyla tekrar eder ("Değer 2"). /slides yanıtındaki her slayt artık "role" taşıyor (mock ve gerçek).
+- recommend_style(topic): Türkçe duyarsız anahtar eşleşmesiyle (implant→derin-lacivert kurumsal güven, beyazlatma/estetik→yumusak-gul, çocuk→nane-esintisi, eğitim→sade-klinik, ...) tasarım sisteminin kullanim alanları üzerinden öneri üretir; aynı konu her zaman aynı sonucu verir, bilinmeyen konu sade-klinik'e düşer.
+- actionable_tips(audit): denetim notlarından en fazla 2 uygulanabilir Türkçe öneri ("(+0)" / "(-" etiketli notlar); puan iyiye yakın ve uygulanabilir not yoksa boş liste.
+- Bağlantılar: /ideas ve /reels yanıtlarına "tips" eklendi; generate-image yanıtına + payload'ına "style_recommendation" ve "tips" eklendi (hekim stil seçmişse öneri ek olarak "suggestion" alanında taşınıyor; seçimi korunuyor). Gerçek modda /ideas, /slides ve /reels metin üretim prompt'larına CREATIVE_DIRECTOR_BRIEF system persona olarak eklendi (Claude system alanı; metin yoksa payload değişmez).
+- Girdi kenarı değişikliği (dürüst not): generate-image artık 9+ slaytı 400 ile reddediyor ("En fazla 8 slayt gönderilebilir.") — önceki davranış sessizce 8'e kırpıyordu; mobil istemcide aynı kural eklendi. Boş başlık/gövde süzülmesi, boşluk konu 400 ve 220+ gövde kırpma mevcut davranışlarıyla testle kilitlendi.
+
+**Daha anlaşılır arayüz (web + mobil, additive):** Web şablonunda slayt başına "Görev: Kanca" rozeti, üretim sonrası "Yapı Puanı: X/100 — iyi/orta/geliştir" denetim paneli (üretim süresi + geliştirme önerileri listesi) ve stil ızgarasının yanında "Önerilen stil: X — gerekçe" çipi (tıklayınca stil seçiliyor); tüm CSS #fotoFikir önekli, Türkçe, emojisiz, yeni bağımlılık yok. Mobilde aynı alanlar: FFSlide.role, FFStyleRecommendation, tips, uretim_ms, skipped tiplere eklendi; ekranda görev rozeti, fikir/üretim/Reels ipuçları, önerilen stil satırı (dokununca stil seçiliyor) ve "Görseller hazır (1.2 sn)" biçiminde hazır notu; tsc --noEmit exit 0.
+
+**Sağlamlaştırma paketi (scripts/test_foto_fikir_hardening.py, 15 test):** paralel gerçek mod (sıra korunumu + eşzamanlılık + uretim_ms), kısmi hata (skipped=1, Türkçe not, kota şişmez), mock 8 slayt benchmark (<1500 ms), 429 tam mesaj, 9 slayt 400, boş slayt süzülmesi, boşluk konu 400, 220+ gövde kırpma, recommend_style determinizmi + İ katlaması, 15 stil → 15 farklı prompt (her biri <4000 karakter, "yazı olmasın" içerir), story_arc_roles 1..8 geçerliliği, denetim ipuçları (zayıf dolu, iyi 87/100 örneği ≤2), 1000 denetim çağrısı <1.0 sn, mock API ipuçları/roller, marka sahne uretim_ms. Çıktı: "HARDENING OK: 15 test geçti".
+
+**Doğrulama (tam matris, bu dalda):** py_compile temiz; smoke 10/10; E2E 9/9; creative 8/8; hardening 15/15; node --test mobile/tests/*.cjs 1163/1163 (1158 eski + 5 yeni FF kontrat testi; fotoFikirContracts 14, fotoFikirMobileParity 13); npm run typecheck exit 0; pytest tests -k "mobile" → 18 failed / 20 errors (bilinen chromium ortam taban çizgisiyle birebir aynı küme; 295 passed, 3 skipped) — yeni hata yok.
+
+**Sınırlar:** Canlı rakip benchmarkı yok (sandbox kısıtı); gerçek anahtarla ilk üretim ölçümü deploy sonrası yapılmalı (uretim_ms alanı bu ölçüm için hazır). Kıyaslar mock motoru ve taklit sağlayıcı gecikmesiyle ölçüldü; gerçek sağlayıcı gecikmesi ağa ve modele bağlıdır. Rubrik puanı estetik yargının vekilidir. Mock benchmark eşiği 1500 ms'tir; izole koşuda ~450 ms ölçüldü, ağır CPU yükü altında ~1320 ms'e çıktığı gözlemlendi (payı var, ama sınırı biliyor).

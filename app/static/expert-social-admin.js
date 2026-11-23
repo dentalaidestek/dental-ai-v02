@@ -6,7 +6,9 @@
     $ = (q) => root.querySelector(q),
     list = $("[data-admin-list]");
   let cursor = null,
-    mode = "queue",loading=false;
+    mode = "queue",
+    loading = false,
+    loadGeneration = 0;
   const waitLabels={HUMAN_REVIEW:'Yönetici incelemesi',OWNER_CHANGES:'Uzmandan düzenleme bekleniyor',RETRY:'Otomatik kontrol yeniden denenecek',RETRY_EXHAUSTED:'Otomatik kontrol için müdahale gerekiyor'};
   function elapsed(seconds){return seconds>=86400?Math.floor(seconds/86400)+' gün':seconds>=3600?Math.floor(seconds/3600)+' saat':Math.floor(seconds/60)+' dk';}
   const explain = (m) => {
@@ -110,18 +112,31 @@
     return card;
   }
   async function load(reset = true) {
-    if(loading)return;loading=true;
+    // A filter/mode change may supersede an in-flight request. Pagination
+    // remains single-flight, while a new reset is allowed to start immediately.
+    if (loading && !reset) return;
+    const generation = ++loadGeneration;
+    const requestMode = mode;
+    const requestKind = $("[data-kind]").value;
+    const requestStatus = $("[data-status]").value;
+    const requestCursor = reset ? null : cursor;
     if (reset) {
       cursor = null;
       list.replaceChildren();
     }
     const more = $("[data-admin-more]");
     more.disabled = true;
+    loading = true;
     try {
-      if (mode === "reports") {
+      if (requestMode === "reports") {
         const data = await api(
-          "/reports" + (cursor ? "?before=" + cursor : ""),
+          "/reports" +
+            (requestCursor ? "?before=" + encodeURIComponent(String(requestCursor)) : ""),
         );
+        if (generation !== loadGeneration) return;
+        if (!data || !Array.isArray(data.items) || data.items.length > 30) {
+          throw new Error("Şikâyet listesi yanıtı doğrulanamadı.");
+        }
         for (const report of data.items) {
           const item = el("article", "ds-card");
           item.append(
@@ -146,28 +161,36 @@
         }
         cursor = data.next_cursor;
       } else {
-        const kind = $("[data-kind]").value,
-          status = $("[data-status]").value,
-          data = await api(
-            "/moderation?kind=" +
-              kind +
-              "&status=" +
-              status +
-              (cursor ? "&before=" + cursor : ""),
-          );
-        for (const p of data.items) list.append(render(p, kind));
+        const data = await api(
+          "/moderation?kind=" +
+            encodeURIComponent(requestKind) +
+            "&status=" +
+            encodeURIComponent(requestStatus) +
+            (requestCursor ? "&before=" + encodeURIComponent(String(requestCursor)) : ""),
+        );
+        if (generation !== loadGeneration) return;
+        if (!data || !Array.isArray(data.items) || data.items.length > 30) {
+          throw new Error("İnceleme kuyruğu yanıtı doğrulanamadı.");
+        }
+        for (const p of data.items) list.append(render(p, requestKind));
         cursor = data.next_cursor;
-        const aging=$('[data-queue-aging]');
-        if(aging&&data.aging){aging.hidden=false;aging.textContent=`Yönetici bekleyen: ${data.aging.waiting_human} · Düzenleme bekleyen: ${data.aging.waiting_owner} · İşlem hatası: ${data.aging.failed} · 1 saati aşan: ${data.aging.over_1h} · 24 saati aşan: ${data.aging.over_24h}`;}
+        const aging = $("[data-queue-aging]");
+        if (aging && data.aging) {
+          aging.hidden = false;
+          aging.textContent = `Yönetici bekleyen: ${data.aging.waiting_human} · Düzenleme bekleyen: ${data.aging.waiting_owner} · İşlem hatası: ${data.aging.failed} · 1 saati aşan: ${data.aging.over_1h} · 24 saati aşan: ${data.aging.over_24h}`;
+        }
       }
+      if (generation !== loadGeneration) return;
       more.hidden = !cursor;
       if (!list.children.length)
         list.append(el("p", "ds-empty", "Bu listede kayıt yok."));
     } catch (e) {
-      explain(e.message);
+      if (generation === loadGeneration) explain(e.message);
     } finally {
-      loading=false;
-      more.disabled = false;
+      if (generation === loadGeneration) {
+        loading = false;
+        more.disabled = false;
+      }
     }
   }
   $("[data-queue]").addEventListener("click", () => {

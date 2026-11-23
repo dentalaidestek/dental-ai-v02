@@ -1,0 +1,87 @@
+{% for analysis in analyses %}
+{% set is_voice_review = analysis.id in (voice_review_ids | default([])) %}
+<div class="patient-history-row analysis-history-item">
+    <div class="patient-history-main">
+        <div class="patient-history-title">{% if is_voice_review %}Sesli muayene{% else %}Analiz{% endif %} #{{ analysis.id }}</div>
+        <div class="patient-history-meta">
+            {% if not is_voice_review %}<span>Diş {{ analysis.tooth_number or "-" }}</span>{% endif %}
+            <span>{{ analysis.created_at.strftime("%d.%m.%Y %H:%M") }}</span>
+            {% if is_voice_review %}
+                <span class="analysis-status success">Kaydedildi</span>
+            {% elif analysis.status in ["AI_ANALYZED", "FINAL", "ANALYSIS_COMPLETE"] %}
+                <span class="analysis-status success">Başarılı</span>
+            {% elif analysis.status in ["AI_ERROR", "FAILED", "ERROR"] %}
+                <span class="analysis-status failed">Başarısız</span>
+            {% else %}
+                <span class="analysis-status partial">Yarım kaldı</span>
+            {% endif %}
+        </div>
+    </div>
+    <button type="button" class="analysis-detail-button" onclick="openAnalysisModal({{ analysis.id }})">Detay</button>
+</div>
+
+<div id="analysisModal-{{ analysis.id }}" class="analysis-modal" onclick="if(event.target === this) closeAnalysisModal({{ analysis.id }})">
+    <div class="analysis-modal-content">
+        <button type="button" class="analysis-modal-close" onclick="closeAnalysisModal({{ analysis.id }})" aria-label="Kapat">×</button>
+        <h2>{% if is_voice_review %}Sesli muayene{% else %}Analiz{% endif %} #{{ analysis.id }}</h2>
+
+        <div class="analysis-modal-meta">
+            {% if not is_voice_review %}<div><strong>Diş:</strong> {{ analysis.tooth_number or "-" }}</div>{% endif %}
+            <div>
+                <strong>Durum:</strong>
+                {% if is_voice_review %}
+                    Kaydedildi
+                {% elif analysis.status in ["AI_ANALYZED", "FINAL", "ANALYSIS_COMPLETE"] %}
+                    Başarılı
+                {% elif analysis.status in ["AI_ERROR", "FAILED", "ERROR"] %}
+                    Başarısız
+                {% else %}
+                    Yarım kaldı
+                {% endif %}
+            </div>
+            <div><strong>Tarih:</strong> {{ analysis.created_at.strftime("%d.%m.%Y %H:%M") }}</div>
+        </div>
+
+        <h3>Yüklenen görüntüler</h3>
+        {% set assets = analysis_assets.get(analysis.id, []) %}
+        {% set image_assets = assets | selectattr("image_type", "ne", "RADIOGRAPH") | list %}
+        {% set radiograph_assets = assets | selectattr("image_type", "equalto", "RADIOGRAPH") | list %}
+
+        {% if image_assets %}
+        <div class="analysis-image-grid">
+            {% for asset in image_assets %}
+            <div class="analysis-image-card">
+                <img src="/{{ asset.file_path }}" alt="Analiz görüntüsü" loading="lazy">
+                <div>{{ asset.original_filename }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="analysis-muted">Yüklenmiş klinik görüntü bulunmuyor.</p>
+        {% endif %}
+
+        <h3>Radyografiler</h3>
+        {% if radiograph_assets %}
+        <div class="analysis-image-grid">
+            {% for asset in radiograph_assets %}
+            <div class="analysis-image-card">
+                <img src="/{{ asset.file_path }}" alt="Radyografik görüntü" loading="lazy">
+                <div>{{ asset.original_filename }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% elif analysis.radiograph_path %}
+        <div class="analysis-image-card">
+            <img src="/{{ analysis.radiograph_path }}" alt="Radyografik görüntü">
+        </div>
+        {% else %}
+        <p class="analysis-muted">Radyografik görüntü bulunmuyor.</p>
+        {% endif %}
+
+        <h3>Tedavi önerisi</h3>
+        <div class="analysis-treatment-box">
+            <a class="btn" href="/analysis/{{ analysis.id }}" target="_blank" rel="noopener">Analiz sonucunu aç</a>
+        </div>
+    </div>
+</div>
+{% endfor %}

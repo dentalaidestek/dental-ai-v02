@@ -285,13 +285,15 @@ def register_relationships(
                         author_support_available=(ident != viewer.id and profile.availability == "AVAILABLE"
                             and ident not in blocked and capacity.get(ident, 0) < main.consultation_capacity_limit(profile)),
                     )
-            return JSONResponse(
-                {
-                    "items": items,
-                    "next_cursor": rows[-1][0].id if has_more else None,
-                },
-                headers=headers,
-            )
+            payload = {
+                "items": items,
+                "next_cursor": rows[-1][0].id if has_more else None,
+            }
+            # Native clients need the same taxonomy as the web filter chips.
+            # Keep it off subsequent pages to avoid repeating static metadata.
+            if before is None:
+                payload["specialties"] = list(main.EXPERT_SPECIALTIES)
+            return JSONResponse(payload, headers=headers)
 
     @router.get("/feed/discover")
     def discovered_experts_feed(

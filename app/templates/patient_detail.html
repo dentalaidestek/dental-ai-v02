@@ -57,6 +57,7 @@
             <span class="patient-details-arrow" aria-hidden="true">⌄</span>
         </summary>
         <form class="patient-info-edit-form" method="post" action="/patients/{{ patient.id }}/edit">
+            <input type="hidden" name="expected_revision" value="{{ patient_edit_revision }}">
             <div class="patient-info-grid">
                 <label class="patient-info-item">
                     <span>Ad</span>
@@ -124,13 +125,20 @@
             </div>
         </div>
 
-        <form class="patient-media-upload patient-media-upload-compact" method="post" action="/patients/{{ patient.id }}/media" enctype="multipart/form-data">
+        <form class="patient-media-upload patient-media-upload-compact" method="post" action="/patients/{{ patient.id }}/media" enctype="multipart/form-data" data-max-file-bytes="{{ patient_media_max_file_bytes|default(12582912) }}" data-max-batch-bytes="{{ patient_media_max_batch_bytes|default(100663296) }}">
             <input type="hidden" name="media_type" id="patientMediaType" value="PHOTO">
             <input type="file" id="patientMediaFiles" name="files" accept="image/jpeg,image/png,image/webp" multiple hidden required>
             <div class="patient-media-type-actions">
                 <button type="button" class="patient-media-pick patient-media-radiograph" data-media-type="RADIOGRAPH">🩻 <span>Röntgen Ekle</span></button>
                 <button type="button" class="patient-media-pick patient-media-photo" data-media-type="PHOTO">📷 <span>Fotoğraf Ekle</span></button>
             </div>
+            <div class="patient-media-metadata-fields">
+                <label for="patientMediaToothNumber">FDI diş numarası (isteğe bağlı)</label>
+                <input type="text" id="patientMediaToothNumber" name="tooth_number" inputmode="numeric" pattern="(1[1-8]|2[1-8]|3[1-8]|4[1-8])" maxlength="2" placeholder="Örn: 36">
+                <label for="patientMediaNote">Klinik not (isteğe bağlı)</label>
+                <textarea id="patientMediaNote" name="note" maxlength="2000" rows="2" placeholder="Görüntüye ait kısa klinik not"></textarea>
+            </div>
+            <p class="muted">Klinik arşive tek seferde en fazla {{ patient_media_upload_limit|default(12) }} görüntü ekleyebilirsiniz. Bir AI analizinde kayıtlı ve yeni görüntülerin toplamı en fazla {{ analysis_image_limit }} olabilir.</p>
             <div class="patient-media-pending" id="patientMediaPending" hidden>
                 <span id="patientMediaSelected">Henüz görüntü seçilmedi.</span>
                 <button type="submit" class="patient-media-save" id="patientMediaSave" disabled>Kaydet</button>
@@ -140,9 +148,9 @@
         {% if patient_media %}
         <div class="patient-media-profile-preview" onclick="openPatientMediaGallery()" role="button" tabindex="0" aria-label="Klinik görselleri aç">
             {% for media in patient_media[:3] %}
-            <img src="/patients/{{ patient.id }}/media/{{ media.id }}/file" alt="{{ 'Röntgen' if media.media_type == 'RADIOGRAPH' else 'Klinik fotoğraf' }}" loading="lazy">
+            <img src="/patients/{{ patient.id }}/media/{{ media.id }}/thumbnail" alt="{{ 'Röntgen' if media.media_type == 'RADIOGRAPH' else 'Klinik fotoğraf' }}" loading="lazy">
             {% endfor %}
-            {% if patient_media|length > 3 %}<span class="patient-media-preview-more">+{{ patient_media|length - 3 }}</span>{% endif %}
+            {% if patient_media|length > 3 %}<span class="patient-media-preview-more">+{{ patient_media_total - 3 }}</span>{% endif %}
         </div>
 
         <div id="patientMediaGalleryModal" class="patient-media-gallery-modal" aria-hidden="true" onclick="if(event.target === this) closePatientMediaGallery()">
@@ -150,7 +158,7 @@
                 <div class="patient-media-gallery-head">
                     <div>
                         <strong>Klinik Görseller</strong>
-                        <span>{{ patient_media|length }} kayıt</span>
+                        <span>{{ patient_media_total }} kayıt</span>
                     </div>
                     <button type="button" onclick="closePatientMediaGallery()" aria-label="Kapat">×</button>
                 </div>
@@ -158,7 +166,7 @@
                 <div class="patient-media-toolbar patient-media-toolbar-modal">
                     <div class="patient-media-selection-status">
                         <strong id="patientMediaSelectedCount">0 seçili</strong>
-                        <button type="button" id="patientMediaSelectAll" class="patient-media-link-button">Tümünü Seç</button>
+                        <button type="button" id="patientMediaSelectAll" class="patient-media-link-button">İlk {{ analysis_image_limit }} Görseli Seç</button>
                     </div>
                     <div class="patient-media-toolbar-actions">
                         <button type="button" id="patientMediaAnalyzeSelected" class="patient-media-batch-analyze" disabled>Seçilenleri AI ile Analiz Et</button>
@@ -189,12 +197,21 @@
                             data-note="{{ (media.note or '')|e }}"
                             data-delete-url="/patients/{{ patient.id }}/media/{{ media.id }}/delete"
                         >
-                            <img src="/patients/{{ patient.id }}/media/{{ media.id }}/file" alt="{{ 'Röntgen' if media.media_type == 'RADIOGRAPH' else 'Klinik fotoğraf' }}" loading="lazy">
+                            <img src="/patients/{{ patient.id }}/media/{{ media.id }}/thumbnail" alt="{{ 'Röntgen' if media.media_type == 'RADIOGRAPH' else 'Klinik fotoğraf' }}" loading="lazy">
                             <span class="patient-media-badge">{{ 'Röntgen' if media.media_type == 'RADIOGRAPH' else 'Fotoğraf' }}</span>
                         </button>
                     </article>
                     {% endfor %}
                 </div>
+                <button
+                    type="button"
+                    id="patientMediaLoadMore"
+                    class="patient-media-load-more"
+                    data-url="/patients/{{ patient.id }}/media/page"
+                    data-next-before="{{ patient_media_next_before or '' }}"
+                    {% if not patient_media_has_more %}hidden{% endif %}
+                >Daha fazla görsel yükle</button>
+                <p id="patientMediaLoadStatus" class="patient-media-load-status" role="status" aria-live="polite"></p>
             </div>
         </div>
 
@@ -230,99 +247,52 @@
         </div>
 
         {% if analyses %}
-        <div class="patient-history-list">
-            {% for analysis in analyses %}
-            {% set is_voice_review = analysis.id in (voice_review_ids | default([])) %}
-            <div class="patient-history-row analysis-history-item">
-                <div class="patient-history-main">
-                    <div class="patient-history-title">{% if is_voice_review %}Sesli muayene{% else %}Analiz{% endif %} #{{ analysis.id }}</div>
-                    <div class="patient-history-meta">
-                        {% if not is_voice_review %}<span>Diş {{ analysis.tooth_number or "-" }}</span>{% endif %}
-                        <span>{{ analysis.created_at.strftime("%d.%m.%Y %H:%M") }}</span>
-                        {% if is_voice_review %}
-                            <span class="analysis-status success">Kaydedildi</span>
-                        {% elif analysis.status in ["AI_ANALYZED", "FINAL", "ANALYSIS_COMPLETE"] %}
-                            <span class="analysis-status success">Başarılı</span>
-                        {% elif analysis.status in ["AI_ERROR", "FAILED", "ERROR"] %}
-                            <span class="analysis-status failed">Başarısız</span>
-                        {% else %}
-                            <span class="analysis-status partial">Yarım kaldı</span>
-                        {% endif %}
-                    </div>
-                </div>
-                <button type="button" class="analysis-detail-button" onclick="openAnalysisModal({{ analysis.id }})">Detay</button>
-            </div>
-
-            <div id="analysisModal-{{ analysis.id }}" class="analysis-modal" onclick="if(event.target === this) closeAnalysisModal({{ analysis.id }})">
-                <div class="analysis-modal-content">
-                    <button type="button" class="analysis-modal-close" onclick="closeAnalysisModal({{ analysis.id }})" aria-label="Kapat">×</button>
-                    <h2>{% if is_voice_review %}Sesli muayene{% else %}Analiz{% endif %} #{{ analysis.id }}</h2>
-
-                    <div class="analysis-modal-meta">
-                        {% if not is_voice_review %}<div><strong>Diş:</strong> {{ analysis.tooth_number or "-" }}</div>{% endif %}
-                        <div>
-                            <strong>Durum:</strong>
-                            {% if is_voice_review %}
-                                Kaydedildi
-                            {% elif analysis.status in ["AI_ANALYZED", "FINAL", "ANALYSIS_COMPLETE"] %}
-                                Başarılı
-                            {% elif analysis.status in ["AI_ERROR", "FAILED", "ERROR"] %}
-                                Başarısız
-                            {% else %}
-                                Yarım kaldı
-                            {% endif %}
-                        </div>
-                        <div><strong>Tarih:</strong> {{ analysis.created_at.strftime("%d.%m.%Y %H:%M") }}</div>
-                    </div>
-
-                    <h3>Yüklenen görüntüler</h3>
-                    {% set assets = analysis_assets.get(analysis.id, []) %}
-                    {% set image_assets = assets | selectattr("image_type", "ne", "RADIOGRAPH") | list %}
-                    {% set radiograph_assets = assets | selectattr("image_type", "equalto", "RADIOGRAPH") | list %}
-
-                    {% if image_assets %}
-                    <div class="analysis-image-grid">
-                        {% for asset in image_assets %}
-                        <div class="analysis-image-card">
-                            <img src="/{{ asset.file_path }}" alt="Analiz görüntüsü" loading="lazy">
-                            <div>{{ asset.original_filename }}</div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% else %}
-                    <p class="analysis-muted">Yüklenmiş klinik görüntü bulunmuyor.</p>
-                    {% endif %}
-
-                    <h3>Radyografiler</h3>
-                    {% if radiograph_assets %}
-                    <div class="analysis-image-grid">
-                        {% for asset in radiograph_assets %}
-                        <div class="analysis-image-card">
-                            <img src="/{{ asset.file_path }}" alt="Radyografik görüntü" loading="lazy">
-                            <div>{{ asset.original_filename }}</div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% elif analysis.radiograph_path %}
-                    <div class="analysis-image-card">
-                        <img src="/{{ analysis.radiograph_path }}" alt="Radyografik görüntü">
-                    </div>
-                    {% else %}
-                    <p class="analysis-muted">Radyografik görüntü bulunmuyor.</p>
-                    {% endif %}
-
-                    <h3>Tedavi önerisi</h3>
-                    <div class="analysis-treatment-box">
-                        <a class="btn" href="/analysis/{{ analysis.id }}" target="_blank" rel="noopener">Analiz sonucunu aç</a>
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
+        <div class="patient-history-list" id="patientAnalysisHistoryList">
+            {% include "patient_analysis_history_items.html" %}
         </div>
+        <button type="button" id="loadMoreAnalyses" class="patient-media-load-more"
+                data-url="/patients/{{ patient.id }}/history/analyses/page"
+                data-next-cursor="{{ analyses_next_cursor or '' }}"
+                onclick="loadPatientHistoryPage('analyses')"
+                {% if not analyses_has_more %}hidden{% endif %}>Daha fazla analiz yükle</button>
+        <p id="analysisHistoryLoadStatus" class="patient-media-load-status" role="status" aria-live="polite"></p>
         {% else %}
         <div class="patient-empty-state">Henüz analiz bulunmuyor.</div>
         {% endif %}
     </section>
+
+    {% if voice_history and voice_history.fields %}
+    <section class="card patient-section-card patient-voice-history-card">
+        <div class="patient-section-heading">
+            <div>
+                <div class="workspace-section-kicker">Sesli Muayene</div>
+                <h2>Hekim Onaylı Anamnez</h2>
+                <p>Yalnızca hekim tarafından seçilip kaydedilen hasta beyanları.</p>
+            </div>
+        </div>
+        {% for key, label in [
+            ("medical_history", "Sistemik hastalıklar / sağlık geçmişi"),
+            ("medications", "İlaç beyanları"),
+            ("allergies", "Alerji beyanları"),
+            ("family_history", "Aile sağlık öyküsü"),
+            ("dental_history", "Önceki diş tedavileri"),
+            ("oral_habits", "Ağız bakımı ve alışkanlıklar"),
+            ("materials", "Konuşulan materyaller")
+        ] %}
+        {% set field = voice_history.fields.get(key) %}
+        {% if field %}
+        <article class="patient-history-row">
+            <div class="patient-history-main">
+                <div class="patient-history-title">{{ label }}</div>
+                <p class="analysis-muted">{{ field.value }}</p>
+                <div class="patient-history-meta"><span>Sesli muayene #{{ field.analysis_id }}</span></div>
+            </div>
+        </article>
+        {% endif %}
+        {% endfor %}
+        <p class="analysis-muted">{{ voice_history.notice }}</p>
+    </section>
+    {% endif %}
 
     <section class="card patient-section-card">
         <div class="patient-section-heading">
@@ -334,26 +304,20 @@
         </div>
 
         {% if treatments %}
-        <div class="patient-history-list">
-            {% for treatment in treatments %}
-            <div class="patient-history-row treatment-item" style="{% if loop.index > 3 %}display:none;{% endif %}">
-                <div class="patient-history-main">
-                    <div class="patient-history-title">{{ treatment.treatment_name }}</div>
-                    <div class="patient-history-meta">
-                        <span>Diş {{ treatment.tooth_number or "-" }}</span>
-                        <span>{{ treatment.treatment_date or "-" }}</span>
-                        {% if treatment.material %}<span>{{ treatment.material }}</span>{% endif %}
-                    </div>
-                    {% if treatment.result %}<p class="patient-history-note"><strong>Sonuç:</strong> {{ treatment.result }}</p>{% endif %}
-                    {% if treatment.doctor_note %}<p class="patient-history-note"><strong>Doktor Notu:</strong> {{ treatment.doctor_note }}</p>{% endif %}
-                </div>
-            </div>
-            {% endfor %}
+        <div class="patient-history-list" id="patientTreatmentHistoryList" data-expanded="false">
+            {% set expanded = false %}
+            {% set first_page = true %}
+            {% include "patient_treatment_history_items.html" %}
         </div>
-
-        {% if treatments|length > 3 %}
+        {% if treatments|length > 3 or treatments_has_more %}
         <button type="button" class="patient-show-more" id="showMoreTreatments" onclick="toggleTreatments()">Diğer tedavileri göster</button>
         {% endif %}
+        <button type="button" id="loadMoreTreatments" class="patient-media-load-more"
+                data-url="/patients/{{ patient.id }}/history/treatments/page"
+                data-next-cursor="{{ treatments_next_cursor or '' }}"
+                onclick="loadPatientHistoryPage('treatments')"
+                {% if not treatments_has_more %}hidden{% endif %}>Daha fazla tedavi yükle</button>
+        <p id="treatmentHistoryLoadStatus" class="patient-media-load-status" role="status" aria-live="polite"></p>
         {% else %}
         <div class="patient-empty-state">Henüz tedavi kaydı bulunmuyor.</div>
         {% endif %}
@@ -362,27 +326,65 @@
 
 <script>
 function toggleTreatments() {
-    const items = document.querySelectorAll(".treatment-item");
+    const list = document.getElementById("patientTreatmentHistoryList");
     const button = document.getElementById("showMoreTreatments");
+    if (!list || !button) return;
 
-    if (!button) return;
-
-    const hidden = Array.from(items).filter(function(item) {
-        return item.style.display === "none";
+    const expanded = list.dataset.expanded === "true";
+    const nextExpanded = !expanded;
+    list.querySelectorAll(".treatment-item").forEach(function(item) {
+        const initiallyVisible = item.dataset.initialVisible === "true";
+        item.style.display = nextExpanded || initiallyVisible ? "block" : "none";
     });
+    list.dataset.expanded = nextExpanded ? "true" : "false";
+    button.textContent = nextExpanded ? "Tedavileri gizle" : "Diğer tedavileri göster";
+}
 
-    if (hidden.length > 0) {
-        hidden.forEach(function(item) {
-            item.style.display = "block";
+async function loadPatientHistoryPage(kind) {
+    const isAnalysis = kind === "analyses";
+    const button = document.getElementById(isAnalysis ? "loadMoreAnalyses" : "loadMoreTreatments");
+    const list = document.getElementById(isAnalysis ? "patientAnalysisHistoryList" : "patientTreatmentHistoryList");
+    const status = document.getElementById(isAnalysis ? "analysisHistoryLoadStatus" : "treatmentHistoryLoadStatus");
+    if (!button || !list || button.disabled || button.hidden) return;
+
+    const cursor = button.dataset.nextCursor || "";
+    if (!cursor) {
+        button.hidden = true;
+        if (status) status.textContent = "Geçmiş imleci bulunamadı. Sayfayı yenileyin.";
+        return;
+    }
+
+    button.disabled = true;
+    if (status) status.textContent = "Kayıtlar yükleniyor…";
+    try {
+        const params = new URLSearchParams({before: cursor});
+        if (!isAnalysis) params.set("expanded", list.dataset.expanded === "true" ? "true" : "false");
+        const response = await fetch(button.dataset.url + "?" + params.toString(), {
+            credentials: "same-origin",
+            headers: {Accept: "application/json"}
         });
+        const payload = await response.json().catch(function() { return null; });
+        if (!response.ok || !payload || payload.ok !== true ||
+            typeof payload.html !== "string" ||
+            (payload.next_cursor !== null && typeof payload.next_cursor !== "string") ||
+            typeof payload.has_more !== "boolean") {
+            const message = response.status === 401
+                ? "Oturumunuz sona erdi. Sayfayı yenileyin."
+                : response.status === 403 || response.status === 404
+                    ? "Bu hasta geçmişine erişilemiyor."
+                    : "Geçmiş yüklenemedi. Yeniden deneyebilirsiniz.";
+            throw new Error(message);
+        }
 
-        button.textContent = "Tedavileri gizle";
-    } else {
-        items.forEach(function(item, index) {
-            item.style.display = index < 3 ? "block" : "none";
-        });
-
-        button.textContent = "Diğer tedavileri göster";
+        // HTML is rendered by the authenticated same-origin Jinja partial with autoescaping.
+        list.insertAdjacentHTML("beforeend", payload.html);
+        button.dataset.nextCursor = payload.next_cursor || "";
+        if (!payload.has_more || !payload.next_cursor) button.hidden = true;
+        if (status) status.textContent = payload.has_more ? "Daha fazla kayıt var." : "Tüm kayıtlar yüklendi.";
+    } catch (error) {
+        if (status) status.textContent = error && error.message ? error.message : "Geçmiş yüklenemedi.";
+    } finally {
+        if (!button.hidden) button.disabled = false;
     }
 }
 </script>
@@ -423,6 +425,10 @@ document.addEventListener("keydown", function(event) {
     const save = document.getElementById("patientMediaSave");
     const pending = document.getElementById("patientMediaPending");
     const pickButtons = document.querySelectorAll(".patient-media-pick");
+    const maxPatientMediaUploadFiles = {{ patient_media_upload_limit|default(12) }};
+    const uploadForm = fileInput && fileInput.form;
+    const maxPatientMediaFileBytes = Number(uploadForm && uploadForm.dataset.maxFileBytes || 12582912);
+    const maxPatientMediaBatchBytes = Number(uploadForm && uploadForm.dataset.maxBatchBytes || 100663296);
     if (!fileInput || !typeInput || !selected || !save) return;
 
     pickButtons.forEach(function (button) {
@@ -440,6 +446,25 @@ document.addEventListener("keydown", function(event) {
 
     fileInput.addEventListener("change", function () {
         const count = fileInput.files ? fileInput.files.length : 0;
+        if (count > maxPatientMediaUploadFiles) {
+            fileInput.value = "";
+            selected.textContent = "En fazla " + maxPatientMediaUploadFiles + " görüntü seçebilirsiniz.";
+            save.disabled = true;
+            if (pending) pending.hidden = true;
+            window.alert("Klinik arşive tek seferde en fazla " + maxPatientMediaUploadFiles + " görüntü ekleyebilirsiniz.");
+            return;
+        }
+        const files = Array.from(fileInput.files || []);
+        const oversized = files.some(function (file) { return !Number.isFinite(file.size) || file.size < 1 || file.size > maxPatientMediaFileBytes; });
+        const totalBytes = files.reduce(function (sum, file) { return sum + file.size; }, 0);
+        if (oversized || totalBytes > maxPatientMediaBatchBytes) {
+            fileInput.value = "";
+            selected.textContent = oversized ? "Her klinik görüntü en fazla 12 MiB olabilir." : "Toplam klinik arşiv yüklemesi en fazla 96 MiB olabilir.";
+            save.disabled = true;
+            if (pending) pending.hidden = true;
+            window.alert(oversized ? "Her klinik görüntü en fazla 12 MiB olabilir." : "Tek klinik arşiv yüklemesinde toplam boyut en fazla 96 MiB olabilir.");
+            return;
+        }
         if (!count) {
             selected.textContent = "Henüz görüntü seçilmedi.";
             save.disabled = true;
@@ -452,52 +477,162 @@ document.addEventListener("keydown", function(event) {
 })();
 
 (function () {
-    const checkboxes = Array.from(document.querySelectorAll(".patient-media-checkbox"));
+    const grid = document.getElementById("patientMediaGrid");
     const countLabel = document.getElementById("patientMediaSelectedCount");
     const analyzeButton = document.getElementById("patientMediaAnalyzeSelected");
     const selectAllButton = document.getElementById("patientMediaSelectAll");
-    if (!checkboxes.length) return;
+    const loadMoreButton = document.getElementById("patientMediaLoadMore");
+    const loadStatus = document.getElementById("patientMediaLoadStatus");
+    const maxAnalysisImages = {{ analysis_image_limit }};
+    const patientId = {{ patient.id }};
+    const selected = new Set();
+    if (!grid) return;
 
-    function selectedIds() {
-        return checkboxes.filter(function (box) { return box.checked; }).map(function (box) { return box.value; });
+    function boxes() {
+        return Array.from(grid.querySelectorAll(".patient-media-checkbox"));
     }
 
     function updateSelectionUI() {
-        const ids = selectedIds();
-        if (countLabel) countLabel.textContent = ids.length + " seçili" + (checkboxes.length > 12 ? " · en fazla 12" : "");
+        const ids = Array.from(selected);
+        if (countLabel) countLabel.textContent = ids.length + " seçili · analiz sınırı " + maxAnalysisImages;
         if (analyzeButton) analyzeButton.disabled = ids.length === 0;
-        const selectedTarget = Math.min(checkboxes.length, 12);
-        if (selectAllButton) selectAllButton.textContent = ids.length === selectedTarget && selectedTarget ? "Seçimi Kaldır" : "Tümünü Seç";
+        const firstIds = boxes().slice(0, maxAnalysisImages).map(function (box) { return box.value; });
+        const firstSelected = firstIds.length > 0 && firstIds.every(function (id) { return selected.has(id); });
+        if (selectAllButton) {
+            selectAllButton.textContent = firstSelected
+                ? "İlk " + maxAnalysisImages + " Görselin Seçimini Kaldır"
+                : "İlk " + maxAnalysisImages + " Görseli Seç";
+        }
     }
 
-    checkboxes.forEach(function (box) {
-        box.addEventListener("change", function () {
-            if (box.checked && selectedIds().length > 12) {
+    function createMediaCard(item) {
+        const id = Number(item && item.id);
+        if (!Number.isSafeInteger(id) || id < 1) return null;
+        const base = "/patients/" + patientId + "/media/" + id;
+        if (item.url !== base + "/file" || item.thumbnail_url !== base + "/thumbnail" || item.delete_url !== base + "/delete") return null;
+        const type = item.media_type === "RADIOGRAPH" ? "Röntgen" : item.media_type === "PHOTO" ? "Fotoğraf" : "";
+        if (!type) return null;
+
+        const article = document.createElement("article");
+        article.className = "patient-media-card";
+        const label = document.createElement("label");
+        label.className = "patient-media-select-control";
+        label.title = "Analiz için seç";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.className = "patient-media-checkbox";
+        checkbox.value = String(id);
+        checkbox.setAttribute("aria-label", type + " seç");
+        const checkmark = document.createElement("span");
+        checkmark.textContent = "✓";
+        label.appendChild(checkbox);
+        label.appendChild(checkmark);
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "patient-media-thumb";
+        button.dataset.src = item.url;
+        button.dataset.type = type;
+        button.dataset.date = typeof item.uploaded_at === "string" ? item.uploaded_at : "";
+        button.dataset.tooth = typeof item.tooth_number === "string" ? item.tooth_number : "";
+        button.dataset.note = typeof item.note === "string" ? item.note : "";
+        button.dataset.deleteUrl = item.delete_url;
+        const image = document.createElement("img");
+        image.src = item.thumbnail_url;
+        image.alt = type === "Röntgen" ? "Röntgen" : "Klinik fotoğraf";
+        image.loading = "lazy";
+        const badge = document.createElement("span");
+        badge.className = "patient-media-badge";
+        badge.textContent = type;
+        button.appendChild(image);
+        button.appendChild(badge);
+        button.addEventListener("click", function () { openPatientMediaPreview(button); });
+        article.appendChild(label);
+        article.appendChild(button);
+        return article;
+    }
+
+    grid.addEventListener("change", function (event) {
+        const box = event.target;
+        if (!box || !box.matches || !box.matches(".patient-media-checkbox")) return;
+        const id = String(box.value);
+        if (box.checked) {
+            if (selected.size >= maxAnalysisImages) {
                 box.checked = false;
-                window.alert("Tek analiz için en fazla 12 görüntü seçebilirsiniz.");
+                window.alert("Tek analizde en fazla " + maxAnalysisImages + " görüntü seçebilirsiniz.");
+                return;
             }
-            updateSelectionUI();
-        });
+            selected.add(id);
+        } else {
+            selected.delete(id);
+        }
+        updateSelectionUI();
     });
 
     if (selectAllButton) {
         selectAllButton.addEventListener("click", function () {
-            const selectedIdsNow = selectedIds();
-            const targetCount = Math.min(checkboxes.length, 12);
-            const shouldSelect = selectedIdsNow.length !== targetCount;
-            checkboxes.forEach(function (box, index) { box.checked = shouldSelect && index < 12; });
+            const firstIds = boxes().slice(0, maxAnalysisImages).map(function (box) { return box.value; });
+            const allSelected = firstIds.length > 0 && firstIds.every(function (id) { return selected.has(id); });
+            selected.clear();
+            if (!allSelected) firstIds.forEach(function (id) { selected.add(id); });
+            boxes().forEach(function (box) { box.checked = selected.has(box.value); });
             updateSelectionUI();
         });
     }
 
     if (analyzeButton) {
         analyzeButton.addEventListener("click", function () {
-            const ids = selectedIds();
-            if (!ids.length) return;
+            const ids = Array.from(selected);
+            if (!ids.length || ids.length > maxAnalysisImages) return;
             window.location.href = "/analysis/new/{{ patient.id }}?media_ids=" + encodeURIComponent(ids.join(","));
         });
     }
 
+    async function loadNextPage() {
+        if (!loadMoreButton || loadMoreButton.disabled || !loadMoreButton.dataset.nextBefore) return;
+        const cursor = Number(loadMoreButton.dataset.nextBefore);
+        if (!Number.isSafeInteger(cursor) || cursor < 1) {
+            if (loadStatus) loadStatus.textContent = "Galeri imleci doğrulanamadı. Sayfayı yenileyin.";
+            loadMoreButton.hidden = true;
+            return;
+        }
+        loadMoreButton.disabled = true;
+        if (loadStatus) loadStatus.textContent = "Görseller yükleniyor…";
+        try {
+            const response = await fetch(loadMoreButton.dataset.url + "?before=" + encodeURIComponent(String(cursor)), {
+                method: "GET",
+                credentials: "same-origin",
+                headers: { "Accept": "application/json" }
+            });
+            if (!response.ok) throw new Error("Klinik görseller yüklenemedi.");
+            const payload = await response.json();
+            if (!payload || !Array.isArray(payload.items) || payload.items.length > 40) throw new Error("Galeri yanıtı doğrulanamadı.");
+            let previousId = cursor;
+            const cards = [];
+            payload.items.forEach(function (item) {
+                const id = Number(item && item.id);
+                if (!Number.isSafeInteger(id) || id < 1 || id >= previousId) throw new Error("Galeri sıralaması doğrulanamadı.");
+                const card = createMediaCard(item);
+                if (!card) throw new Error("Klinik görsel kaydı doğrulanamadı.");
+                cards.push(card);
+                previousId = id;
+            });
+            const next = payload.next_before;
+            if (next !== null && (!Number.isSafeInteger(next) || next < 1 || !cards.length || next !== previousId)) {
+                throw new Error("Galeri devam imleci doğrulanamadı.");
+            }
+            cards.forEach(function (card) { grid.appendChild(card); });
+            loadMoreButton.dataset.nextBefore = next === null ? "" : String(next);
+            loadMoreButton.hidden = next === null;
+            if (loadStatus) loadStatus.textContent = cards.length ? cards.length + " yeni görüntü yüklendi." : "Başka görüntü bulunamadı.";
+        } catch (error) {
+            if (loadStatus) loadStatus.textContent = error instanceof Error ? error.message : "Görseller yüklenemedi. Yeniden deneyin.";
+        } finally {
+            loadMoreButton.disabled = false;
+        }
+    }
+
+    if (loadMoreButton) loadMoreButton.addEventListener("click", loadNextPage);
     updateSelectionUI();
 })();
 
@@ -622,6 +757,10 @@ document.addEventListener("keydown", function (event) {
 @media(max-width:390px){
   .patient-info-actions{grid-template-columns:1fr}
 }
+.patient-media-load-more{display:block;min-height:40px;margin:14px auto 0;padding:8px 16px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#1e3a8a;font:inherit;font-weight:700;cursor:pointer}
+.patient-media-load-more:disabled{opacity:.6;cursor:wait}
+.patient-media-load-more[hidden]{display:none}
+.patient-media-load-status{min-height:18px;margin:6px 0 0;text-align:center;color:#64748b;font-size:12px}
 </style>
 {% endblock %}
 

@@ -1,8 +1,9 @@
+import hashlib
 import json
 import sys
 from contextlib import nullcontext
 from types import SimpleNamespace, ModuleType
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi import FastAPI
@@ -13,6 +14,7 @@ from sqlmodel import SQLModel, Field, Session, create_engine, select
 
 from app import voice_exam_core as core
 from app import voice_exam as voice
+from app.approved_anamnesis import ApprovedAnamnesis
 from app.work_jobs import WorkJob as ProductionWorkJob
 
 
@@ -37,6 +39,20 @@ class User(VoiceTestModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     role: str = 'DOCTOR'
     is_active: bool = True
+    email: str | None = None
+    # Match the production User model: an omitted verification timestamp is unverified.
+    email_verified_at: datetime | None = None
+
+
+class SessionToken(VoiceTestModel, table=True):
+    token_hash: str = Field(primary_key=True)
+    user_id: int
+    expires_at: datetime
+
+
+class AdminVerifiedSession(VoiceTestModel, table=True):
+    token_hash: str = Field(primary_key=True)
+    user_id: int
 
 
 class Patient(VoiceTestModel, table=True):
@@ -84,11 +100,13 @@ class StudyCourse(VoiceTestModel, table=True):
 def app_client(monkeypatch):
     monkeypatch.setenv('VOICE_EXAM_ENABLED', '1')
     engine = create_engine('sqlite://', poolclass=StaticPool, connect_args={'check_same_thread': False})
+    ApprovedAnamnesis.__table__.to_metadata(VoiceTestModel.metadata)
     VoiceTestModel.metadata.create_all(engine)
     monkeypatch.setattr("app.work_jobs.WorkJob", WorkJob)
     main = ModuleType('app.main');main.engine = engine
     main._user_schedule_occurrences = lambda *args: []
-    for model in (User, Patient, Analysis, ToothStatus, ScheduleEvent, StudyCourse):setattr(main, model.__name__, model)
+    for model in (User, SessionToken, AdminVerifiedSession, Patient, Analysis, ToothStatus, ScheduleEvent, StudyCourse):setattr(main, model.__name__, model)
+    main.hash_session_token = lambda token: hashlib.sha256(token.encode('utf-8')).hexdigest()
     main.get_current_user = lambda request: (SimpleNamespace(id=1, role=request.headers.get('x-role', 'DOCTOR'), is_active=True)
         if request.headers.get('x-login', '1') == '1' else None)
     main._record_patient_realtime_events = lambda *a: []
@@ -107,7 +125,7 @@ def app_client(monkeypatch):
     import app
     monkeypatch.setattr(app, 'main', main, raising=False)
     with Session(engine) as session:
-        session.add_all([User(id=1), User(id=2), Patient(id=1, owner_user_id=1, first_name='Mevcut', age=40,
+        session.add_all([User(id=1, email_verified_at=datetime.utcnow()), User(id=2, email_verified_at=datetime.utcnow()), Patient(id=1, owner_user_id=1, first_name='Mevcut', age=40,
             chief_complaint='Eski şikâyet'), Patient(id=2, owner_user_id=2),
             StudyCourse(id=1, owner_user_id=1, title='Notlarım'), StudyCourse(id=2, owner_user_id=2, title='Yabancı ders')])
         session.commit()
@@ -122,6 +140,100 @@ def payload(engine, **updates):
         revision = voice._fingerprint(session, sys.modules['app.main'], session.get(Patient, 1))
     return {'request_key': 'a' * 32, 'revision': revision, 'confirmed': True,
             'fields': {'clinical_findings': 'Hekim gözlemi'}, **updates}
+
+
+def _bearer_headers(engine, token='native-voice-token', user_id=1, expires_at=None):
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    with Session(engine) as session:
+        session.add(SessionToken(token_hash=token_hash, user_id=user_id,
+            expires_at=expires_at or datetime.utcnow() + timedelta(days=1)))
+        session.commit()
+    # The x-login=0 test switch proves that the request succeeds without a web cookie.
+    return {'authorization': f'Bearer {token}', 'x-login': '0'}, token_hash
+
+
+def test_native_bearer_session_can_apply_and_read_only_its_own_approved_anamnesis(app_client):
+    client, engine = app_client
+    headers, _ = _bearer_headers(engine)
+    saved = client.post('/patients/1/voice-exam/apply', headers=headers,
+        json=payload(engine, fields={'medical_history': 'Astım beyanı',
+                                     'medications': 'Metformin kullandığını belirtti',
+                                     'allergies': 'Penisilin alerjisi olmadığını belirtti'}))
+    assert saved.status_code == 200
+    history = client.get('/patients/1/voice-exam/history', headers=headers)
+    assert history.status_code == 200
+    assert 'no-store' in history.headers.get('cache-control', '').lower()
+    assert set(history.json()['fields']) == {'medical_history', 'medications', 'allergies'}
+    assert history.json()['fields']['medical_history']['quote'] == ''
+    assert client.get('/patients/2/voice-exam/history', headers=headers).status_code == 404
+
+
+def test_bearer_voice_identity_never_falls_back_to_a_different_cookie_user(app_client):
+    client, engine = app_client
+    with Session(engine) as session:
+        session.add(User(id=3, role='PATIENT', email_verified_at=datetime.utcnow()))
+        session.commit()
+    headers, _ = _bearer_headers(engine, 'patient-token', user_id=3)
+    # Simulate a browser cookie resolving to doctor #1 while the Authorization
+    # header identifies a different, non-clinician account. Bearer must win.
+    headers['x-login'] = '1'
+    response = client.get('/patients/1/voice-exam/history', headers=headers)
+    assert response.status_code == 401, response.text
+
+
+def test_native_bearer_voice_auth_rejects_unverified_expired_and_non_doctor_sessions(app_client, monkeypatch):
+    client, engine = app_client
+    main = sys.modules['app.main']
+    # Make this an explicitly Bearer-only integration test. A cookie/session
+    # stub must not mask which persisted token identity the route evaluates.
+    monkeypatch.setattr(main, 'get_current_user', lambda request: None)
+    with Session(engine) as session:
+        session.add(User(id=3, role='PATIENT', email_verified_at=datetime.utcnow()))
+        session.add(User(id=4, role='DOCTOR', email_verified_at=None))
+        session.commit()
+        assert session.get(User, 3).role == 'PATIENT'
+        assert session.get(User, 4).email_verified_at is None
+    patient_headers, _ = _bearer_headers(engine, 'patient-token', user_id=3)
+    unverified_headers, _ = _bearer_headers(engine, 'unverified-token', user_id=4)
+    expired_headers, expired_hash = _bearer_headers(engine, 'expired-token', expires_at=datetime.utcnow()-timedelta(seconds=1))
+    for headers in (patient_headers, unverified_headers, expired_headers):
+        assert voice._user(SimpleNamespace(method='GET', headers=headers)) is None
+        response = client.get('/patients/1/voice-exam/history', headers=headers)
+        assert response.status_code == 401, response.text
+    with Session(engine) as session:
+        assert session.get(SessionToken, expired_hash) is None
+
+
+def test_native_bearer_session_revocation_takes_effect_without_a_cookie(app_client):
+    client, engine = app_client
+    headers, token_hash = _bearer_headers(engine, 'revoked-token')
+    with Session(engine) as session:
+        session.delete(session.get(SessionToken, token_hash))
+        session.commit()
+    assert client.get('/patients/1/voice-exam/history', headers=headers).status_code == 401
+
+
+def test_native_bearer_admin_requires_the_existing_second_factor_marker(app_client):
+    client, engine = app_client
+    with Session(engine) as session:
+        session.add(User(id=5, role='ADMIN', email='dentalaidestek@gmail.com',
+                         email_verified_at=datetime.utcnow()))
+        session.add(Patient(id=3, owner_user_id=5))
+        session.commit()
+    headers, token_hash = _bearer_headers(engine, 'admin-token', user_id=5)
+    assert client.get('/patients/3/voice-exam/history', headers=headers).status_code == 401
+    with Session(engine) as session:
+        session.add(AdminVerifiedSession(token_hash=token_hash, user_id=5))
+        session.commit()
+    assert client.get('/patients/3/voice-exam/history', headers=headers).status_code == 200
+
+
+def test_native_bearer_voice_mutations_keep_cross_site_origin_protection(app_client):
+    client, engine = app_client
+    headers, _ = _bearer_headers(engine)
+    headers = {**headers, 'origin': 'https://foreign.example'}
+    assert client.post('/patients/1/voice-exam/apply', headers=headers,
+                       json=payload(engine)).status_code == 401
 
 
 def test_review_changes_only_selected_fields_and_is_idempotent(app_client):
@@ -139,6 +251,127 @@ def test_review_changes_only_selected_fields_and_is_idempotent(app_client):
         assert len(notes) == 1 and 'hasta beyanı' in notes[0].clinical_notes
         assert len(session.exec(select(WorkJob)).all()) == 1
         assert session.exec(select(WorkJob)).one().payload_json == '{}'
+
+def test_reviewed_voice_history_reads_only_explicitly_saved_anamnesis(app_client):
+    client, engine = app_client
+    approved = {
+        'medical_history': 'Olumsuz beyan: sistemik rahatsızlık yok; geçmişte anjiyo öyküsü',
+        'medications': 'Metformin kullandığını belirtti; doz doğrulanmadı',
+        'allergies': 'Olmadığı belirtildi: Penisilin alerjisi',
+        'family_history': 'Annesinde diyabet öyküsü olduğunu belirtti',
+    }
+    saved = client.post('/patients/1/voice-exam/apply', json=payload(engine, fields=approved))
+    assert saved.status_code == 200
+    analysis_id = saved.json()['analysis_id']
+
+    history = client.get('/patients/1/voice-exam/history')
+    assert history.status_code == 200
+    body = history.json()
+    assert set(body['fields']) == set(approved)
+    for name, value in approved.items():
+        assert body['fields'][name]['value'] == value
+        assert body['fields'][name]['quote'] == ''
+        assert body['fields'][name]['analysis_id'] == analysis_id
+    assert 'Güncel kullanım' in body['notice']
+    assert client.get('/patients/2/voice-exam/history').status_code == 404
+    with Session(engine) as session:
+        rows = session.execute(select(ApprovedAnamnesis.__table__)).mappings().all()
+        assert len(rows) == len(approved) == 4
+        assert {(row['field_key'], row['value']) for row in rows} == set(approved.items())
+        assert all(row['owner_user_id'] == 1 and row['patient_id'] == 1 for row in rows)
+        assert all(row['analysis_id'] == saved.json()['analysis_id'] for row in rows)
+
+
+def test_reviewed_history_keeps_old_field_after_more_than_twelve_newer_reviews(app_client):
+    client, engine = app_client
+    old_value = 'Penisilin alerjisi olduğunu belirtti'
+    first = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='b' * 32, fields={'allergies': old_value}))
+    assert first.status_code == 200
+    old_analysis_id = first.json()['analysis_id']
+
+    for index in range(12):
+        result = client.post('/patients/1/voice-exam/apply', json=payload(
+            engine, request_key=f'{index + 1:032x}',
+            fields={'medical_history': f'Sistemik öykü güncellemesi {index + 1}'}))
+        assert result.status_code == 200
+
+    history = client.get('/patients/1/voice-exam/history')
+    assert history.status_code == 200
+    fields = history.json()['fields']
+    assert fields['allergies']['value'] == old_value
+    assert fields['allergies']['analysis_id'] == old_analysis_id
+    assert fields['medical_history']['value'] == 'Sistemik öykü güncellemesi 12'
+    with Session(engine) as session:
+        rows = session.execute(select(ApprovedAnamnesis.__table__)).mappings().all()
+        assert len(rows) == 13
+
+
+def test_reapproving_field_preserves_prior_provenance_and_returns_latest_value(app_client):
+    client, engine = app_client
+    first = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='c' * 32, fields={'medications': 'İlaç A kullandığını belirtti'}))
+    second = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='d' * 32, fields={'medications': 'İlaç B kullandığını belirtti'}))
+    assert first.status_code == second.status_code == 200
+    history = client.get('/patients/1/voice-exam/history').json()['fields']['medications']
+    assert history['value'] == 'İlaç B kullandığını belirtti'
+    assert history['analysis_id'] == second.json()['analysis_id']
+    with Session(engine) as session:
+        rows = session.execute(
+            select(ApprovedAnamnesis.__table__).where(
+                ApprovedAnamnesis.__table__.c.field_key == 'medications'
+            ).order_by(ApprovedAnamnesis.__table__.c.id)
+        ).mappings().all()
+        assert [row['analysis_id'] for row in rows] == [
+            first.json()['analysis_id'], second.json()['analysis_id']
+        ]
+
+
+def test_history_uses_source_analysis_order_when_backfill_inserts_older_row_later(app_client):
+    client, engine = app_client
+    with Session(engine) as session:
+        # The newer approval is already in the ledger. A later legacy backfill
+        # inserts the older source analysis afterward and therefore gets a
+        # larger ledger row ID; source Analysis chronology must still win.
+        session.add_all([
+            ApprovedAnamnesis(
+                owner_user_id=1, patient_id=1, field_key='allergies',
+                value='Yeni alerji beyanı', analysis_id=900,
+            ),
+            ApprovedAnamnesis(
+                owner_user_id=1, patient_id=1, field_key='allergies',
+                value='Eski alerji beyanı', analysis_id=100,
+            ),
+        ])
+        session.commit()
+
+    history = client.get('/patients/1/voice-exam/history')
+    assert history.status_code == 200, history.text
+    field = history.json()['fields']['allergies']
+    assert field['value'] == 'Yeni alerji beyanı'
+    assert field['analysis_id'] == 900
+    with Session(engine) as session:
+        rows = session.execute(
+            select(ApprovedAnamnesis.__table__.c.id, ApprovedAnamnesis.__table__.c.analysis_id)
+            .where(ApprovedAnamnesis.__table__.c.field_key == 'allergies')
+            .order_by(ApprovedAnamnesis.__table__.c.id)
+        ).all()
+        assert rows[0][1] == 900 and rows[1][1] == 100
+        assert rows[0][0] < rows[1][0]
+
+
+def test_idempotent_review_does_not_duplicate_approved_anamnesis_rows(app_client):
+    client, engine = app_client
+    data = payload(engine, request_key='e' * 32, fields={'allergies': 'Alerji yok beyanı'})
+    first = client.post('/patients/1/voice-exam/apply', json=data)
+    second = client.post('/patients/1/voice-exam/apply', json=data)
+    assert first.status_code == second.status_code == 200
+    assert second.json()['already_saved'] is True
+    with Session(engine) as session:
+        rows = session.execute(select(ApprovedAnamnesis.__table__)).mappings().all()
+        assert len(rows) == 1
+
 
 
 @pytest.mark.parametrize('path', ['audio', 'text', 'apply'])
@@ -533,3 +766,142 @@ def test_confirmation_response_does_not_wait_for_realtime_delivery(app_client,mo
     response=client.post('/patients/1/voice-exam/apply',json=payload(engine))
     assert response.status_code==200
     with Session(engine) as s:assert s.get(Analysis,response.json()['analysis_id']) is not None
+
+def test_web_and_native_history_share_the_same_approved_record_contract(app_client):
+    client, engine = app_client
+    saved = client.post(
+        "/patients/1/voice-exam/apply",
+        json=payload(engine, request_key="f" * 32, fields={
+            "medical_history": "Astım beyanı",
+            "medications": "Metformin kullandığını belirtti",
+            "allergies": "Penisilin alerjisi olmadığını belirtti",
+        }),
+    )
+    assert saved.status_code == 200
+
+    web_response = client.get("/patients/1/voice-exam/history")
+    native_headers, _ = _bearer_headers(engine, token="web-native-parity-token")
+    native_response = client.get("/patients/1/voice-exam/history", headers=native_headers)
+
+    assert web_response.status_code == native_response.status_code == 200
+    assert native_response.json()["fields"] == web_response.json()["fields"]
+    assert native_response.json()["fields"]["medical_history"]["analysis_id"] == saved.json()["analysis_id"]
+    assert "no-store" in native_response.headers.get("cache-control", "").lower()
+
+
+def test_stale_second_approval_cannot_append_over_a_newer_patient_revision(app_client):
+    client, engine = app_client
+    original = payload(engine, request_key="1" * 32, fields={
+        "allergies": "Penisilin alerjisi olduğunu belirtti",
+    })
+    first = client.post("/patients/1/voice-exam/apply", json=original)
+    assert first.status_code == 200
+
+    stale = {
+        **original,
+        "request_key": "2" * 32,
+        "fields": {"allergies": "Alerji yok beyanı"},
+    }
+    second = client.post("/patients/1/voice-exam/apply", json=stale)
+    assert second.status_code == 409
+
+    history = client.get("/patients/1/voice-exam/history")
+    assert history.status_code == 200
+    assert history.json()["fields"]["allergies"]["value"] == "Penisilin alerjisi olduğunu belirtti"
+    with Session(engine) as session:
+        rows = session.execute(
+            select(ApprovedAnamnesis.__table__).where(
+                ApprovedAnamnesis.__table__.c.patient_id == 1,
+                ApprovedAnamnesis.__table__.c.field_key == "allergies",
+            )
+        ).mappings().all()
+        assert len(rows) == 1
+        assert rows[0]["analysis_id"] == first.json()["analysis_id"]
+
+
+def test_history_rejects_ledger_rows_with_a_different_owner_id(app_client):
+    client, engine = app_client
+    with Session(engine) as session:
+        session.execute(ApprovedAnamnesis.__table__.insert().values(
+            owner_user_id=2,
+            patient_id=1,
+            field_key="allergies",
+            value="Başka hekime ait beyan",
+            analysis_id=987654,
+        ))
+        session.commit()
+
+    history = client.get("/patients/1/voice-exam/history")
+    assert history.status_code == 200
+    assert history.json()["fields"] == {}
+
+
+def test_partial_reapproval_preserves_unmentioned_approved_fields_and_source_identity(app_client):
+    client, engine = app_client
+    first = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='f' * 32,
+        fields={
+            'allergies': 'Penisilin alerjisi olduğunu belirtti',
+            'medications': 'Metformin kullandığını belirtti',
+        },
+    ))
+    assert first.status_code == 200
+    second = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='1' * 32,
+        fields={'medications': 'Metformin kullanımını bıraktığını belirtti'},
+    ))
+    assert second.status_code == 200
+
+    fields = client.get('/patients/1/voice-exam/history').json()['fields']
+    assert fields['allergies'] == {
+        'value': 'Penisilin alerjisi olduğunu belirtti',
+        'quote': '',
+        'analysis_id': first.json()['analysis_id'],
+    }
+    assert fields['medications'] == {
+        'value': 'Metformin kullanımını bıraktığını belirtti',
+        'quote': '',
+        'analysis_id': second.json()['analysis_id'],
+    }
+    with Session(engine) as session:
+        rows = session.execute(
+            select(ApprovedAnamnesis.__table__.c.field_key,
+                   ApprovedAnamnesis.__table__.c.value,
+                   ApprovedAnamnesis.__table__.c.analysis_id)
+            .order_by(ApprovedAnamnesis.__table__.c.analysis_id)
+        ).all()
+        assert rows == [
+            ('allergies', 'Penisilin alerjisi olduğunu belirtti', first.json()['analysis_id']),
+            ('medications', 'Metformin kullandığını belirtti', first.json()['analysis_id']),
+            ('medications', 'Metformin kullanımını bıraktığını belirtti', second.json()['analysis_id']),
+        ]
+
+
+def test_stale_revision_cannot_replace_existing_approved_anamnesis(app_client):
+    client, engine = app_client
+    first = client.post('/patients/1/voice-exam/apply', json=payload(
+        engine, request_key='2' * 32,
+        fields={'allergies': 'Penisilin alerjisi olduğunu belirtti'},
+    ))
+    assert first.status_code == 200
+
+    stale = payload(
+        engine, request_key='3' * 32,
+        fields={'allergies': 'Penisilin alerjisi olmadığını belirtti'},
+    )
+    with Session(engine) as session:
+        patient = session.get(Patient, 1)
+        patient.age = 42
+        session.add(patient)
+        session.commit()
+
+    rejected = client.post('/patients/1/voice-exam/apply', json=stale)
+    assert rejected.status_code == 409
+    history = client.get('/patients/1/voice-exam/history')
+    assert history.status_code == 200
+    assert history.json()['fields']['allergies']['value'] == 'Penisilin alerjisi olduğunu belirtti'
+    assert history.json()['fields']['allergies']['analysis_id'] == first.json()['analysis_id']
+    with Session(engine) as session:
+        rows = session.execute(select(ApprovedAnamnesis.__table__)).mappings().all()
+        assert len(rows) == 1
+        assert rows[0]['analysis_id'] == first.json()['analysis_id']

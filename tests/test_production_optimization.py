@@ -221,9 +221,12 @@ def test_study_generation_releases_db_connection_and_rechecks_course(tmp_path, m
     from app import academic_request_understanding as gateway
     from app.study_retrieval_v2 import RetrievalResult
     def understand(*args, source_outline=None):
-        assert source_outline == {'sections': [], 'complete': False}
+        # 35c2397a sonrası planlayıcı çıktısı pdf_files/learning ile zenginleşir;
+        # boş kurs için çekirdek şekil korunur, DB bağlantısı yine serbesttir.
+        assert source_outline.get('sections') == []
+        assert source_outline.get('complete') is False
         assert engine.pool.checkedout() == 0
-        return object()
+        return SimpleNamespace(plan=None)
     monkeypatch.setattr(gateway, 'understand_study_request', understand)
     with Session(engine) as session:
         session.add(main.User(id=1, username='synthetic', role='DOCTOR', display_name='Synthetic'))
@@ -245,7 +248,7 @@ def test_study_generation_releases_db_connection_and_rechecks_course(tmp_path, m
         return 'Synthetic answer'
     monkeypatch.setattr(main, 'ask_study_ai_v2', generate)
     try:
-        response = main.study_ai_ask(None, 1, BackgroundTasks(), message='Angle sınıf II?')
+        response = main.study_ai_ask(SimpleNamespace(state=SimpleNamespace()), 1, BackgroundTasks(), message='Angle sınıf II?')
         assert response.status_code == (409 if delete_during_generation else 200)
         with Session(engine) as session:
             messages = session.exec(select(main.StudyChatMessage)).all()
@@ -279,6 +282,10 @@ def test_patient_media_upload_releases_db_during_storage(tmp_path, monkeypatch):
         return str(path)
 
     monkeypatch.setattr(main, 'storage_persist_file', persist)
+    from PIL import Image
+    jpeg = io.BytesIO()
+    Image.new('RGB', (4, 4)).save(jpeg, format='JPEG')
+    jpeg.seek(0)
     try:
         response = asyncio.run(main.upload_patient_media(
             None,
@@ -286,7 +293,7 @@ def test_patient_media_upload_releases_db_during_storage(tmp_path, monkeypatch):
             media_type='PHOTO',
             tooth_number=None,
             note=None,
-            files=[UploadFile(file=io.BytesIO(b'\xff\xd8\xffsynthetic'), filename='photo.jpg')],
+            files=[UploadFile(file=jpeg, filename='photo.jpg')],
         ))
         assert response.status_code == 303
         with Session(engine) as session:
@@ -429,3 +436,235 @@ def test_postgres_notice_channels_do_not_wake_unrelated_workers():
     reconnect, channels = main._postgres_notice_state([None])
     assert reconnect
     assert channels == set()
+
+
+def test_mobile_patient_media_upload_releases_db_before_r2_persist(tmp_path, monkeypatch):
+    from sqlmodel import Session, SQLModel, create_engine, select
+    from starlette.datastructures import UploadFile
+    from app import main, mobile_api
+    from app import patient_media_receipts
+
+    engine = create_engine(f'sqlite:///{tmp_path / "mobile-patient-media.db"}')
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(mobile_api, 'engine', engine)
+    with Session(engine, expire_on_commit=False) as session:
+        user = main.User(username='mobile-media-owner', role='DOCTOR', display_name='Mobile Media Owner')
+        session.add(user); session.commit()
+        patient = main.Patient(anonymous_id='mobile-media-patient', owner_user_id=user.id)
+        session.add(patient); session.commit()
+        user_id, patient_id = user.id, patient.id
+
+    monkeypatch.setattr(patient_media_receipts, 'encryption_key', lambda: b'k' * 32)
+    monkeypatch.setattr(mobile_api, '_copy_validated_image',
+        lambda upload, destination, maximum: (destination.write_bytes(b'\xff\xd8\xffsynthetic') or 13))
+    monkeypatch.setattr(mobile_api, '_lock_patient_media_receipt', lambda *args: None)
+    monkeypatch.setattr(mobile_api, '_find_patient_media_receipt', lambda *args, **kwargs: None)
+    monkeypatch.setattr(mobile_api, '_patient_media_batch_usage', lambda *args: (0, 0))
+    monkeypatch.setattr(mobile_api, '_store_patient_media_receipt', lambda *args: None)
+    monkeypatch.setattr(mobile_api, '_record_realtime_event', lambda *args: None)
+    async def publish(_event):
+        return None
+    monkeypatch.setattr(mobile_api, '_publish_realtime_event', publish)
+
+    loop_thread = threading.get_ident()
+    storage_threads = []
+    def persist(path, **kwargs):
+        assert engine.pool.checkedout() == 0, 'R2 persistence must not hold a SQL connection'
+        assert path.exists()
+        storage_threads.append(threading.get_ident())
+        return str(path)
+    monkeypatch.setattr(mobile_api, 'storage_persist_file', persist)
+
+    from PIL import Image
+    jpeg = io.BytesIO()
+    Image.new('RGB', (4, 4)).save(jpeg, format='JPEG')
+    jpeg.seek(0)
+    try:
+        response = asyncio.run(mobile_api.mobile_patient_media_upload(
+            patient_id,
+            image=UploadFile(file=jpeg, filename='clinical.jpg'),
+            media_type='PHOTO',
+            tooth_number=None,
+            note=None,
+            request_key='mobile-media-key-0001',
+            batch_id='mobile-media-batch-0001',
+            user=user,
+        ))
+        assert response.status_code == 200
+        assert storage_threads and storage_threads[0] != loop_thread
+        with Session(engine) as session:
+            rows = session.exec(select(main.PatientMedia).where(
+                main.PatientMedia.patient_id == patient_id,
+                main.PatientMedia.owner_user_id == user_id,
+            )).all()
+            assert len(rows) == 1
+    finally:
+        engine.dispose()
+
+
+def test_mobile_patient_media_download_hydrates_r2_after_db_session_closes(tmp_path, monkeypatch):
+    from sqlmodel import Session, SQLModel, create_engine
+    from app import main, mobile_api
+
+    engine = create_engine(f'sqlite:///{tmp_path / "mobile-media-download.db"}')
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(mobile_api, 'engine', engine)
+    with Session(engine, expire_on_commit=False) as session:
+        user = main.User(username='mobile-media-reader', role='DOCTOR', display_name='Media Reader')
+        session.add(user); session.commit()
+        patient = main.Patient(anonymous_id='mobile-media-download-patient', owner_user_id=user.id)
+        session.add(patient); session.commit()
+        media = main.PatientMedia(
+            patient_id=patient.id,
+            owner_user_id=user.id,
+            original_filename='radiograph.jpg',
+            stored_filename='stored-radiograph.jpg',
+            file_path='r2://clinical/radiograph.jpg',
+            media_type='RADIOGRAPH',
+        )
+        session.add(media); session.commit()
+        user_id, patient_id, media_id = user.id, patient.id, media.id
+
+    target = tmp_path / 'hydrated-radiograph.jpg'
+    target.write_bytes(b'\xff\xd8\xffsynthetic')
+    loop_thread = threading.get_ident()
+    storage_threads = []
+    def hydrate(reference):
+        assert reference == 'r2://clinical/radiograph.jpg'
+        assert engine.pool.checkedout() == 0, 'R2 hydration must not hold a SQL connection'
+        storage_threads.append(threading.get_ident())
+        return target
+    monkeypatch.setattr(mobile_api, 'storage_ensure_local', hydrate)
+
+    try:
+        response = asyncio.run(mobile_api.mobile_patient_media_file(patient_id, media_id, user))
+        assert response.status_code == 200
+        assert response.media_type == 'image/jpeg'
+        assert 'radiograph.jpg' in response.headers.get('content-disposition', '')
+        assert response.headers.get('cache-control') == 'private, no-store'
+        assert storage_threads and storage_threads[0] != loop_thread
+    finally:
+        engine.dispose()
+
+
+def _create_mobile_analysis_download_records(tmp_path, monkeypatch, db_name):
+    from sqlmodel import Session, SQLModel, create_engine
+    from app import main, mobile_analysis_api
+
+    engine = create_engine(f'sqlite:///{tmp_path / db_name}')
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(mobile_analysis_api, 'engine', engine)
+    with Session(engine, expire_on_commit=False) as session:
+        user = main.User(
+            username=f'{db_name}-owner',
+            role='DOCTOR',
+            display_name='Analysis Reader',
+        )
+        session.add(user); session.commit()
+        patient = main.Patient(
+            anonymous_id=f'{db_name}-patient',
+            owner_user_id=user.id,
+        )
+        session.add(patient); session.commit()
+        analysis = main.Analysis(
+            patient_id=patient.id,
+            status='VISION_READY',
+            radiograph_path='r2://clinical/legacy-radiograph.jpg',
+        )
+        session.add(analysis); session.commit()
+        asset = main.ImageAsset(
+            analysis_id=analysis.id,
+            original_filename='panoramic.jpg',
+            stored_filename='analysis-panoramic.jpg',
+            file_path='r2://clinical/analysis-panoramic.jpg',
+            image_type='PANORAMIC',
+        )
+        session.add(asset); session.commit()
+        return engine, user, analysis.id, asset.id
+
+
+def test_mobile_analysis_image_hydrates_r2_after_authorization_session_closes(tmp_path, monkeypatch):
+    from app import mobile_analysis_api
+
+    engine, user, analysis_id, asset_id = _create_mobile_analysis_download_records(
+        tmp_path, monkeypatch, 'mobile-analysis-asset-download.db'
+    )
+    target = tmp_path / 'hydrated-analysis.jpg'
+    target.write_bytes(bytes([255, 216, 255]) + b'synthetic')
+    loop_thread = threading.get_ident()
+    storage_threads = []
+
+    def hydrate(reference):
+        assert reference == 'r2://clinical/analysis-panoramic.jpg'
+        assert engine.pool.checkedout() == 0, 'analysis R2 hydration must not hold a SQL connection'
+        storage_threads.append(threading.get_ident())
+        return target
+
+    monkeypatch.setattr(mobile_analysis_api, 'storage_ensure_local', hydrate)
+    try:
+        response = asyncio.run(mobile_analysis_api.mobile_analysis_image(analysis_id, asset_id, user))
+        assert response.status_code == 200
+        assert response.media_type == 'image/jpeg'
+        assert 'panoramic.jpg' in response.headers.get('content-disposition', '')
+        assert response.headers.get('cache-control') == 'private, no-store'
+        assert response.headers.get('pragma') == 'no-cache'
+        assert 'authorization' in response.headers.get('vary', '').lower()
+        assert storage_threads and storage_threads[0] != loop_thread
+    finally:
+        engine.dispose()
+
+
+def test_mobile_legacy_radiograph_hydrates_r2_after_authorization_session_closes(tmp_path, monkeypatch):
+    from app import mobile_analysis_api
+
+    engine, user, analysis_id, _ = _create_mobile_analysis_download_records(
+        tmp_path, monkeypatch, 'mobile-analysis-legacy-download.db'
+    )
+    target = tmp_path / 'hydrated-legacy-radiograph.jpg'
+    target.write_bytes(bytes([255, 216, 255]) + b'synthetic')
+    loop_thread = threading.get_ident()
+    storage_threads = []
+
+    def hydrate(reference):
+        assert reference == 'r2://clinical/legacy-radiograph.jpg'
+        assert engine.pool.checkedout() == 0, 'legacy R2 hydration must not hold a SQL connection'
+        storage_threads.append(threading.get_ident())
+        return target
+
+    monkeypatch.setattr(mobile_analysis_api, 'storage_ensure_local', hydrate)
+    try:
+        response = asyncio.run(mobile_analysis_api.mobile_legacy_analysis_radiograph(analysis_id, user))
+        assert response.status_code == 200
+        assert response.media_type == 'image/jpeg'
+        assert response.headers.get('cache-control') == 'private, no-store'
+        assert response.headers.get('pragma') == 'no-cache'
+        assert 'authorization' in response.headers.get('vary', '').lower()
+        assert storage_threads and storage_threads[0] != loop_thread
+    finally:
+        engine.dispose()
+
+
+def test_mobile_analysis_asset_denies_another_owner_before_storage_hydration(tmp_path, monkeypatch):
+    from fastapi import HTTPException
+    from sqlmodel import Session
+    from app import main, mobile_analysis_api
+
+    engine, owner, analysis_id, asset_id = _create_mobile_analysis_download_records(
+        tmp_path, monkeypatch, 'mobile-analysis-owner-boundary.db'
+    )
+    with Session(engine, expire_on_commit=False) as session:
+        stranger = main.User(
+            username='mobile-analysis-stranger',
+            role='DOCTOR',
+            display_name='Unrelated Clinician',
+        )
+        session.add(stranger); session.commit()
+    calls = []
+    monkeypatch.setattr(mobile_analysis_api, 'storage_ensure_local', lambda path: calls.append(path))
+    try:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(mobile_analysis_api.mobile_analysis_image(analysis_id, asset_id, stranger))
+        assert error.value.status_code == 404
+        assert calls == [], 'unauthorized analysis access must not trigger R2 hydration'
+    finally:
+        engine.dispose()

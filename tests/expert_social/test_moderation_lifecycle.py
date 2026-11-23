@@ -486,7 +486,7 @@ def test_additive_task_migration_preserves_baseline_and_social_revisions(env):
     require_schema(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT version FROM dental_schema_revision")).scalar_one() == 12
-        assert connection.execute(text("SELECT version FROM dental_social_revision")).scalar_one() == 2
+        assert connection.execute(text("SELECT version FROM dental_social_revision")).scalar_one() == 3
 
 
 def test_human_decision_creates_one_private_generic_notification(env):

@@ -12,7 +12,6 @@
       "allowBackup": false,
       "usesCleartextTraffic": false,
       "blockedPermissions": [
-        "android.permission.RECORD_AUDIO",
         "android.permission.READ_MEDIA_AUDIO",
         "android.permission.READ_MEDIA_VIDEO"
       ]
@@ -26,7 +25,15 @@
           "cameraPermission": "Hasta görüntüsünü çekmek için kamera erişimi kullanılır.",
           "microphonePermission": false
         }
-      ]
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Dental AI sesli muayenede yalnızca izninizle mikrofonu kullanır.",
+          "recordAudioAndroid": true
+        }
+      ],
+      "expo-notifications"
     ],
     "ios": {
       "bundleIdentifier": "tr.dentalai.app",
@@ -34,6 +41,11 @@
       "supportsTablet": false,
       "config": {
         "usesNonExemptEncryption": true
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f19bc199-7b6a-46e5-affd-13154392ae8b"
       }
     }
   }

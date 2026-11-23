@@ -281,7 +281,41 @@ class SocialModerationEvent(SQLModel, table=True):
     created_at: datetime = Field(default_factory=now)
 
 
+class SocialAdminStepUpChallenge(SQLModel, table=True):
+    """One short-lived OTP challenge per native administrator session."""
+
+    __table_args__ = (
+        CheckConstraint("attempts >= 0 AND attempts <= 5"),
+        Index("ix_socialadminstepupchallenge_user_expiry", "user_id", "expires_at"),
+    )
+    session_hash: str = Field(primary_key=True)
+    user_id: int = Field(foreign_key="user.id", ondelete="CASCADE")
+    code_hash: str
+    created_at: datetime = Field(default_factory=now)
+    expires_at: datetime
+    attempts: int = 0
+    used_at: Optional[datetime] = None
+
+
+class SocialAdminStepUpSession(SQLModel, table=True):
+    """Five-minute, session-bound authorization limited to Dental Flow moderation."""
+
+    __table_args__ = (
+        CheckConstraint("scope = 'SOCIAL_MODERATION'"),
+        Index("ix_socialadminstepupsession_session_expiry", "session_hash", "expires_at"),
+        Index("ix_socialadminstepupsession_user_expiry", "user_id", "expires_at"),
+    )
+    token_hash: str = Field(primary_key=True)
+    user_id: int = Field(foreign_key="user.id", ondelete="CASCADE")
+    session_hash: str
+    scope: str = "SOCIAL_MODERATION"
+    expires_at: datetime
+    revoked_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=now)
+
+
 SOCIAL_MODELS = (
     *SOCIAL_MODELS, SocialModerationTask, SocialModerationEvent,
+    SocialAdminStepUpChallenge, SocialAdminStepUpSession,
     ConsultationRequestReceipt,
 )

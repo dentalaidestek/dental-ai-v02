@@ -1,0 +1,60 @@
+name: Android test APK
+on:
+  # Manual trigger + auto-build when this workflow file changes on the feature branch.
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/mobile-web-parity-20261110
+    paths:
+      - ".github/workflows/android-test-apk.yml"
+permissions:
+  contents: read
+concurrency:
+  group: android-test-apk-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Cache Gradle distribution and dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+      # android-actions/setup-android removed: it forces `sdkmanager install tools`,
+      # a package removed from the SDK ('Failed to find package tools', exit 1).
+      # ubuntu-latest runners already ship a working ANDROID_HOME SDK.
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Validate TypeScript and tests
+        run: npm test
+      - name: Generate Android native project
+        run: npx expo prebuild --platform android --non-interactive --no-install
+      - name: Build standalone release APK (JS bundle embedded; debug APK needs Metro)
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease --no-daemon
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dental-ai-android-apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14

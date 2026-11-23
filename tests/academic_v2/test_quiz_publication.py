@@ -32,4 +32,4 @@ def test_quiz_text_not_published_as_partial_before_controls(monkeypatch):
     clock=iter([0,3,4]);monkeypatch.setattr(runs.time,'monotonic',lambda:next(clock))
     answer='### Soru 1\nSoru metni\n\nA) Seçenek'
     assert ''.join(runs.generation(None,1,iter([answer])))==answer
-    assert snapshots[-1]['partial']==''
+    assert snapshots[-1]['partial'] is None

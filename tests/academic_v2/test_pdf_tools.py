@@ -45,7 +45,8 @@ def owned(tmp_path):
             mode='RAG_V2_PDF',content='FOREIGN SECRET'))
         session.add(main.StudyMaterial(id=20,owner_user_id=1,course_id=6,
             original_filename='original.pdf',display_name='Original',stored_filename='original.pdf',
-            file_path=str(path),material_type='PDF',mime_type='application/pdf',size_bytes=path.stat().st_size))
+            file_path=str(path),material_type='PDF',mime_type='application/pdf',size_bytes=path.stat().st_size,
+            index_status='READY',active_index_version='published-v1'))
         session.commit()
         yield session,main,path
     engine.dispose()
