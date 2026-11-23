@@ -15,7 +15,7 @@ import uuid
 from collections import deque
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlmodel import Session, func, select
@@ -48,7 +48,7 @@ from app.main import (
     _run_preliminary_ai,
     classify_dental_image,
     AdminNotice, StudyCourse, StudyMaterial, StudyChatMessage,
-    ConsultationCase, ConsultationMessage, ExpertProfile, E2EEDeviceKey,
+    ConsultationCase, ConsultationMessage, ConsultationInboxState, ExpertProfile, E2EEDeviceKey,
     expert_support_request_create, expert_support_message, study_ai_ask,
     SESSION_COOKIE, storage_persist_file, storage_ensure_local, _record_patient_realtime_events,
     _record_realtime_event, _publish_realtime_event, on_loop,
@@ -430,7 +430,7 @@ def mobile_patients(
     user: User = Depends(_mobile_user),
     q: str = Query(default="", max_length=100),
     limit: int = Query(default=30, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=10000),
 ):
     search = " ".join(q.strip().split())
     with Session(engine, expire_on_commit=False) as session:
@@ -513,7 +513,7 @@ def mobile_create_patient(payload: MobilePatientCreate, user: User = Depends(_mo
         try:
             birth = datetime.strptime(payload.birth_date, "%Y-%m-%d").date()
             today = datetime.utcnow().date()
-            calculated_age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
+            calculated_age = today.year - birth.year - ((today.month, birth.day) < (birth.month, birth.day))
         except ValueError:
             raise HTTPException(status_code=422, detail="Doğum tarihi geçersiz.")
 
@@ -707,15 +707,11 @@ def mobile_patient_detail(
                 {
                     "id": t.id,
                     "tooth_number": t.tooth_number,
-                    "treatment_name": t.treatment_name,
-                    "treatment_date": t.treatment_date,
-                    "material": t.material,
-                    "doctor_note": t.doctor_note,
-                    "result": t.result,
-                    "analysis_id": t.analysis_id,
-                    "created_at": t.created_at,
+                    "status": t.status,
+                    "note": t.note,
+                    "updated_at": t.updated_at,
                 }
-                for t in treatments
+                for t in teeth
             ],
             "media": [
                 {
@@ -748,6 +744,25 @@ def _response_json(response):
         except Exception:
             return {"ok": False, "error": "Sunucu yanıtı okunamadı."}
     return response
+
+_PRIVATE_MOBILE_RESPONSE_HEADERS = {
+    "Cache-Control": "private, no-store",
+    "Pragma": "no-cache",
+    "Vary": "Authorization",
+}
+
+
+def _mobile_private_no_store(response: Response) -> None:
+    """Prevent shared or persistent caching of participant-scoped clinical data."""
+    if response is None or not hasattr(response, "headers"):
+        return  # legacy direct-call harness: header shaping only applies to real HTTP responses
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Pragma"] = "no-cache"
+    vary = [part.strip() for part in response.headers.get("Vary", "").split(",") if part.strip()]
+    if not any(part.lower() == "authorization" for part in vary):
+        vary.append("Authorization")
+    response.headers["Vary"] = ", ".join(vary)
+
 
 @router.get("/notifications")
 def mobile_notifications(user: User = Depends(_mobile_user)):
@@ -999,3 +1014,154 @@ def mobile_patient_media_file(patient_id:int,media_id:int,user:User=Depends(_mob
         mime={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png","webp":"image/webp"}.get(path.suffix.lower().lstrip("."),"application/octet-stream")
         return FileResponse(path,media_type=mime,filename=media.original_filename,headers={"Cache-Control":"private, no-store"})
 
+
+# Chat upload/download adapters delegate to the shared web handlers and unwrap
+# their HTML/JSON responses into the native contract (401 revalidation, typed
+# status codes, replayed receipts). File bodies stream through FileResponse;
+# blocking handler work runs in the threadpool, exactly like the parity branch.
+from fastapi.responses import FileResponse as _ChatFileResponse
+from starlette.concurrency import run_in_threadpool as _chat_offload
+import inspect as _chat_inspect
+
+
+async def _mobile_chat_dispatch(handler, request, *args):
+    response = await handler(request, *args) if _chat_inspect.iscoroutinefunction(handler) else await _chat_offload(handler, request, *args)
+    status = getattr(response, "status_code", 200)
+    location = getattr(response, "headers", {}).get("location", "")
+    if location.startswith("/login"):
+        raise _unauthorized()
+    data = _response_json(response)
+    if status >= 400:
+        message = data.get("error") or data.get("detail") if isinstance(data, dict) else None
+        if not isinstance(message, str):
+            raw = getattr(response, "body", b"").decode("utf-8", errors="replace")
+            message = raw[:300] if "<" not in raw else "Görüşme işlemi tamamlanamadı."
+        raise HTTPException(status_code=status, detail=message)
+    if isinstance(data, dict):
+        if data.get("ok") is False:
+            raise HTTPException(status_code=409, detail=data.get("error") or "İşlem doğrulanamadı.")
+        return data
+    if 300 <= status < 400:
+        return {"ok": True}
+    raise HTTPException(status_code=502, detail="İşlem sonucu doğrulanamadı; görüşmeyi yenileyin.")
+
+
+@router.get("/notifications/unread-count")
+def mobile_notification_unread_count(
+    response: Response,
+    user: User = Depends(_mobile_user),
+):
+    """Return only the signed-in user's unread badge count; never load notice bodies."""
+    response.headers.update(_PRIVATE_MOBILE_RESPONSE_HEADERS)
+    with Session(engine, expire_on_commit=False) as session:
+        unread_count = int(session.exec(select(func.count(AdminNotice.id)).where(
+            AdminNotice.user_id == user.id,
+            AdminNotice.status == "ACTIVE",
+            AdminNotice.is_read == False,
+        )).one() or 0)
+    return {"unread_count": unread_count}
+
+
+@router.get("/consultations/{case_id}/message-receipt")
+def mobile_consultation_message_receipt(
+    case_id: int, response: Response,
+    client_message_id: str = Query(..., min_length=16, max_length=96),
+    user: User = Depends(_mobile_user),
+):
+    from app import main as web
+    try:
+        key = web._normalize_consultation_client_message_id(client_message_id)
+    except HTTPException:
+        raise
+    with Session(engine, expire_on_commit=False) as session:
+        case = session.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id}:
+            raise HTTPException(status_code=404, detail="Görüşme bulunamadı.")
+        _mobile_private_no_store(response)
+        if case.messages_deleted_at:
+            return {"message": None, "deleted": True}
+        receipt = session.exec(select(web.ConsultationMessageReceipt).where(
+            web.ConsultationMessageReceipt.case_id == case.id,
+            web.ConsultationMessageReceipt.sender_user_id == user.id,
+            web.ConsultationMessageReceipt.client_message_id == key,
+        )).first()
+        if not receipt:
+            return {"message": None, "deleted": False}
+        message = session.get(ConsultationMessage, receipt.message_id)
+        if not message or message.case_id != case.id or message.sender_user_id != user.id:
+            return {"message": None, "deleted": True}
+        return {"message": {
+            "id": message.id,
+            "sender_user_id": message.sender_user_id,
+            "message_type": message.message_type,
+            "content": message.content,
+            "reply_to_message_id": message.reply_to_message_id,
+            "created_at": message.created_at.isoformat(),
+            "has_media": bool(message.media_path),
+        }, "deleted": False}
+
+
+@router.get("/consultations/{case_id}/attachments/{message_id}")
+def mobile_chat_attachment(case_id: int, message_id: int, user: User = Depends(_mobile_user)):
+    with Session(engine, expire_on_commit=False) as session:
+        case = session.get(ConsultationCase, case_id)
+        message = session.get(ConsultationMessage, message_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at or not message or message.case_id != case_id or not message.media_path:
+            raise HTTPException(status_code=404, detail="Ek bulunamadı.")
+        state = session.exec(select(ConsultationInboxState).where(
+            ConsultationInboxState.case_id == case_id, ConsultationInboxState.user_id == user.id)).first()
+        if state and state.deleted_at:
+            raise HTTPException(status_code=404, detail="Önce görüşmeyi geri yükleyin.")
+        reference = message.media_path
+    try:
+        path = storage_ensure_local(reference)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Ek bulunamadı.")
+    return _ChatFileResponse(path, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@router.post("/consultations/{case_id}/attachments")
+async def mobile_chat_upload(case_id: int, file: UploadFile = File(...),
+                             reply_to_message_id: Optional[int] = Form(None),
+                             client_message_id: str = Form(""),
+                             token: str = Depends(_mobile_access_token),
+                             user: User = Depends(_mobile_user)):
+    from app import main as web
+    # Authorize before touching the payload, then let the existing web handler
+    # recheck state/participant permissions under its normal case lock.
+    with Session(engine, expire_on_commit=False) as session:
+        case = session.get(ConsultationCase, case_id)
+        if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at:
+            raise HTTPException(status_code=404, detail="Görüşme bulunamadı.")
+        if web._users_blocked(session, user.id, case.expert_user_id if user.id == case.requester_user_id else case.requester_user_id):
+            raise HTTPException(status_code=403, detail="Engellenen görüşmeye ek gönderilemez.")
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".pdf", ".m4a", ".mp3", ".wav", ".ogg"}:
+        raise HTTPException(status_code=415, detail="Desteklenmeyen ek türü.")
+    import tempfile
+    from io import BytesIO
+    if suffix in {".jpg", ".jpeg", ".png", ".webp"}:
+        with tempfile.TemporaryDirectory(prefix="dai-chat-") as directory:
+            destination = Path(directory) / ("image" + suffix)
+            await _chat_offload(_copy_validated_image, file, destination, min(MOBILE_MAX_IMAGE_BYTES, web.CONSULTATION_UPLOAD_MAX_BYTES))
+            raw = await _chat_offload(destination.read_bytes)
+    else:
+        raw = await _chat_offload(file.file.read, web.CONSULTATION_UPLOAD_MAX_BYTES + 1)
+        if not raw or len(raw) > web.CONSULTATION_UPLOAD_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Ek boş veya 25 MB sınırını aşıyor.")
+        signatures = {
+            ".pdf": raw.startswith(b"%PDF-"),
+            ".wav": raw.startswith(b"RIFF") and raw[8:12] == b"WAVE",
+            ".ogg": raw.startswith(b"OggS"),
+            ".m4a": len(raw) >= 12 and raw[4:8] == b"ftyp",
+            ".mp3": raw.startswith(b"ID3") or (len(raw) >= 2 and raw[0] == 255 and raw[1] & 224 == 224),
+        }
+        if not signatures[suffix]:
+            raise HTTPException(status_code=422, detail="Dosya içeriği seçilen ek türüyle eşleşmiyor.")
+    clean = UploadFile(filename=Path(file.filename or ("attachment" + suffix)).name,
+                       file=BytesIO(raw), headers=file.headers)
+    try:
+        return await _mobile_chat_dispatch(web.expert_support_media_message,
+            _mobile_request(token), case_id, clean, reply_to_message_id, client_message_id)
+    finally:
+        await clean.close()

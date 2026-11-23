@@ -1,7 +1,7 @@
 """Explicit, serialized release migration: python -m app.migrate.
 
 The existing idempotent baseline DDL is retained; revision 2 adds durable work, provider reservations and immutable analysis-result pointers;
-revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata; revision 5 adds lazy visual page artifacts; revision 6 adds one-time email verification state; revision 9 adds shared authentication admission counters; revision 10 adds isolated email-change challenges; revision 11 adds consultation chat retention and a committed media-deletion outbox. revision 12 adds private membership-verification records. Web/workers only
+revision 3 adds isolated expert professional-title change reviews; revision 4 adds durable dental semantic chunk metadata; revision 5 adds lazy visual page artifacts; revision 6 adds one-time email verification state; revision 9 adds shared authentication admission counters; revision 10 adds isolated email-change challenges; revision 11 adds consultation chat retention and a committed media-deletion outbox. revision 12 adds private membership-verification records; revision 13 adds consultation chat idempotency receipts. Web/workers only
 check the revision in production, avoiding repeated boot-time DDL/backfills.
 """
 import logging
@@ -9,7 +9,11 @@ from sqlalchemy import text, inspect
 
 logger = logging.getLogger(__name__)
 
-REVISION = 12
+# Ported from the mobile-parity branch ladder: consultation chat idempotency
+# receipts are revision 13 there. The full-parity merge later expects exactly
+# this ladder (its revision-14 support-receipt step accepts 12/13 sources).
+CONSULTATION_RECEIPT_REVISION = 13
+REVISION = CONSULTATION_RECEIPT_REVISION
 
 
 def require_schema(engine,*,require_study=False):
@@ -61,6 +65,40 @@ def _upgrade_learning_schema(main):
     return True
 
 
+def _upgrade_consultation_receipts_schema(main):
+    """Add the durable per-sender consultation chat idempotency receipts (12 -> 13).
+
+    Modeled on the mobile-parity branch's revision-14 step, scoped to the
+    consultation receipt table this branch introduces.
+    """
+    if main.engine.dialect.name != 'postgresql':
+        return False
+    with main.engine.begin() as connection:
+        connection.execute(text("SET LOCAL lock_timeout = '5s'"))
+        connection.execute(text("SET LOCAL statement_timeout = '60s'"))
+        if not inspect(connection).has_table('dental_schema_revision'):
+            return False
+        revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
+        if revision == CONSULTATION_RECEIPT_REVISION:
+            return True
+        if revision != CONSULTATION_RECEIPT_REVISION - 1:
+            return False
+        logger.warning('migration.consultation_receipts begin=transaction_lock')
+        connection.execute(text('SELECT pg_advisory_xact_lock(71048233)'))
+        revision = connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar()
+        if revision == CONSULTATION_RECEIPT_REVISION:
+            return True
+        if revision != CONSULTATION_RECEIPT_REVISION - 1:
+            raise RuntimeError('Schema changed during consultation receipt migration')
+        main.ConsultationMessageReceipt.__table__.create(connection, checkfirst=True)
+        # Legacy revision-12 databases may still lag on the study tables the
+        # learning step would otherwise create; keep them idempotent here.
+        _create_study_tables(connection)
+        connection.execute(text('UPDATE dental_schema_revision SET version=:version WHERE id=1'), {'version': CONSULTATION_RECEIPT_REVISION})
+    logger.warning('migration.consultation_receipts complete revision=%s', CONSULTATION_RECEIPT_REVISION)
+    return True
+
+
 def _upgrade_recent_schema(main):
     """Upgrade 10/11 without replaying historical DDL on busy production tables.
 
@@ -98,16 +136,22 @@ def _upgrade_recent_schema(main):
         _create_study_tables(connection)
         logger.warning('migration.recent begin=retention_backfill')
         main._backfill_legacy_deadline_jobs_if_needed(bind=connection)
-        connection.execute(text('UPDATE dental_schema_revision SET version=:version WHERE id=1'), {'version': REVISION})
-    logger.warning('migration.recent complete revision=%s', REVISION)
+        # This step only owns 10/11 -> 12; the consultation receipt step below
+        # owns 12 -> 13 so the receipt table is never skipped.
+        connection.execute(text('UPDATE dental_schema_revision SET version=:version WHERE id=1'), {'version': 12})
+    logger.warning('migration.recent complete revision=12')
     return True
 
 
 def _apply_baseline():
     from app import main
+    if _upgrade_consultation_receipts_schema(main):
+        return
     if _upgrade_learning_schema(main):
         return
     if _upgrade_recent_schema(main):
+        # 10/11 databases are now at revision 12; finish the receipt ladder.
+        _upgrade_consultation_receipts_schema(main)
         return
     # A dedicated migration process owns the advisory lock through all of the
     # historical DDL transactions. It is released even on migration failure.
@@ -188,5 +232,3 @@ def apply():
 
 if __name__ == '__main__':
     apply()
-
-
