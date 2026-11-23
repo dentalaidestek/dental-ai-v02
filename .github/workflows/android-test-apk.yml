@@ -39,7 +39,9 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json') }}
           restore-keys: |
             gradle-${{ runner.os }}-
-      - uses: android-actions/setup-android@v3
+      # android-actions/setup-android removed: it forces `sdkmanager install tools`,
+      # a package removed from the SDK ('Failed to find package tools', exit 1).
+      # ubuntu-latest runners already ship a working ANDROID_HOME SDK.
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
       - name: Validate TypeScript and tests
