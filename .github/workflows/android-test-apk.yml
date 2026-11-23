@@ -1,8 +1,12 @@
 name: Android test APK
 on:
-  # Manual-only until hosted runner allocation is healthy.
-  # The push trigger ran once per mobile commit and failed before step 1.
+  # Manual trigger + auto-build when this workflow file changes on the feature branch.
   workflow_dispatch:
+  push:
+    branches:
+      - feature/mobile-web-parity-20261110
+    paths:
+      - ".github/workflows/android-test-apk.yml"
 permissions:
   contents: read
 concurrency:
