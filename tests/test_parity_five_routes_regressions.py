@@ -27,12 +27,12 @@ _SESSION_TOKEN={1:"parity1-"+"A"*28,2:"parity2-"+"A"*28,3:"parity3-"+"A"*28,4:"p
 
 @pytest.fixture
 def parity(monkeypatch,tmp_path):
-    engine=create_engine("sqlite:///+str(tmp_path)+"/parity.db",connect_args={"check_same_thread":False})
+    engine=create_engine("sqlite:///"+str(tmp_path/"parity.db"),connect_args={"check_same_thread":False})
     SQLModel.metadata.create_all(engine)
     monkeypatch.setattr(main,"engine",engine)
     monkeypatch.setattr(mobile_api,"engine",engine)
     monkeypatch.setattr(mobile_modern_api_v3,"engine",engine)
-    monkeypatch.setattr(main,"UPLOAD_DIR",tmp_path+"/uploads")
+    monkeypatch.setattr(main,"UPLOAD_DIR",tmp_path/"uploads")
     monkeypatch.setattr(main,"storage_write_bytes",lambda path,raw,**kwargs:path.write_bytes(raw))
     monkeypatch.setattr(main,"storage_ensure_local",lambda path:__import__("pathlib").Path(path))
     monkeypatch.setattr(mobile_api,"storage_ensure_local",lambda path:__import__("pathlib").Path(path))
