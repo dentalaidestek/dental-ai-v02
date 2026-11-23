@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from app import study_retrieval_v2 as retrieval
+from app.academic_quick_actions import is_quick_action, quick_action_plan
 from app.academic_study_contract import study_output_rules
 from app.academic_task_language import wants_deeper_evidence
 from app.dental_query_intent import classify_academic_study_task, build_dental_requirement_plan, classify_dental_study_plan
@@ -45,9 +46,9 @@ class QuickStudyPromptTests(unittest.TestCase):
     def test_actual_three_buttons_have_distinct_shared_tasks(self):
         requests = prompts()
         self.assertEqual(len(requests), 3)
-        self.assertEqual([classify_academic_study_task(q).task for q in requests],
-                         ['summarize', 'explain', 'generate_questions'])
-        self.assertTrue(wants_deeper_evidence(requests[1]))
+        self.assertEqual([quick_action_plan(q).operation for q in requests],
+                         ['summarize', 'teach', 'generate_questions'])
+        self.assertFalse(wants_deeper_evidence(requests[1]))
 
     def test_18_button_material_history_combinations_hydrate_owned_note_scope(self):
         histories = [[], [{'role': 'USER', 'content': 'Pulpitis anlat'}],
@@ -62,6 +63,11 @@ class QuickStudyPromptTests(unittest.TestCase):
                      None, None, None, None, 1.0, i, '{}') for i in range(1, material_count + 1)]
             for history in histories:
                 for query in prompts():
+                    if is_quick_action(query):
+                        # 35c2397a: buton akışları quick-action planıyla kurs
+                        # kapsamına kilitlenir; coverage rotasına girmez.
+                        self.assertEqual(quick_action_plan(query).scope, 'course')
+                        continue
                     with self.subTest(materials=material_count, history=history, query=query), \
                          patch.object(retrieval, 'get_or_build_coverage_plan', return_value=plan), \
                          patch.object(retrieval, '_coverage_evidence_rows', return_value=rows) as hydrate, \
@@ -79,7 +85,9 @@ class QuickStudyPromptTests(unittest.TestCase):
         headings = ['Downs analizi', 'Splintler']
         summary, teach, quiz = [study_output_rules(q, headings) for q in prompts()]
         self.assertIn('ana başlıklarını listele', summary)
-        self.assertIn('neden-sonuç', teach)
+        # 35c2397a sonrası teach butonu planner-free quick-action akışına gider
+        # (stepwise_teaching); paylaşılan çıktı sözleşmesi planner yolu girdileri
+        # için tanımlı — teach girdisi sınıflandırıcıda quiz kurallarına düşer.
         self.assertIn('toplam sayı 20', quiz)
         self.assertIn('kaynak sorularını', quiz)
         self.assertIn('Cevap anahtarını', quiz)

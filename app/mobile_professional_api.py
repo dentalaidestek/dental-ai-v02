@@ -1,0 +1,221 @@
+"""Native profile/document adapters. Web handlers own review and permission rules."""
+from typing import Literal, Optional
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Response
+from pydantic import BaseModel, Field
+from sqlmodel import Session, select
+from starlette.concurrency import run_in_threadpool
+from app.mobile_api import _mobile_access_token, _mobile_request
+from app.mobile_account_api import _account_user, _invoke
+from app.membership_verification import DOCUMENT_TYPES, MembershipVerification, state, validate_document
+from app.profile_hub import EXPERT_TITLES
+
+router=APIRouter(tags=['mobile-professional'])
+
+
+def _web_handler(path):
+    from app import main as web
+    return next(route.endpoint for route in web.app.routes if getattr(route,'path',None)==path and 'POST' in getattr(route,'methods',set()))
+
+
+@router.get('/account/professional')
+def professional(token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    from app import main as web
+    with Session(web.engine,expire_on_commit=False) as s:
+        live=s.get(web.User,user.id)
+        meta=s.exec(select(web.UserAccountMeta).where(web.UserAccountMeta.user_id==user.id)).first()
+        title=meta.professional_title if meta else ''
+        profile=s.exec(select(web.ExpertProfile).where(web.ExpertProfile.user_id==user.id)).first()
+        pending=s.exec(select(web.ExpertTitleChange).where(web.ExpertTitleChange.user_id==user.id,web.ExpertTitleChange.status.in_(['AWAITING_DOCUMENT','PENDING_REVIEW','REJECTED'])).order_by(web.ExpertTitleChange.created_at.desc()).limit(1)).first()
+        expert=None if not profile else {key:getattr(profile,key) for key in ('specialty','phone','phone_verified','institution','bio','orcid_url','publications_text','consultation_price','availability','application_status','verification_status','specialty_verified','academic_title_verified','credential_document_name')}
+        return {'current_title':title or '', 'titles':sorted(web.PROFESSIONAL_TITLES), 'eligible':title in EXPERT_TITLES,
+                'membership':state(s,live),'document_types':[{'key':key,'label':value[0],'description':value[1]} for key,value in DOCUMENT_TYPES.items()],
+                'title_change':None if not pending else {'requested_title':pending.requested_title,'status':pending.status,'reason':pending.rejection_reason,'document_name':pending.credential_document_name},
+                'expert':expert,'specialties':list(web.EXPERT_SPECIALTIES),'minimum_price':web._expert_minimum_price(title),
+                'has_photo':bool(live.profile_photo_path),'sms_enabled':web._sms_provider_enabled()}
+
+
+class TitleChange(BaseModel):
+    professional_title:str=Field(max_length=80)
+    confirm_change:bool=False
+
+
+@router.post('/account/professional-title')
+async def title_change(payload:TitleChange,token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    from app import main as web
+    await _invoke(web.change_professional_title,_mobile_request(token),payload.professional_title,'yes' if payload.confirm_change else '')
+    return {'ok':True,'professional':await run_in_threadpool(professional,token,user)}
+
+
+async def _check_file(file:UploadFile,max_bytes:int):
+    raw=await file.read(max_bytes+1)
+    try:await run_in_threadpool(validate_document,file.filename or '',raw,max_bytes=max_bytes)
+    except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc))
+    await file.seek(0)
+
+
+@router.post('/account/documents/{purpose}')
+async def document_upload(purpose:Literal['membership','title','expert'],file:UploadFile=File(...),document_type:str=Form(''),consent:str=Form(''),token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    from app import main as web
+    await _check_file(file,(5 if purpose=='membership' else 10)*1024*1024)
+    if purpose=='membership':
+        await _invoke(_web_handler('/account/verification'),_mobile_request(token),document_type,consent,file)
+    elif purpose=='title':
+        await _invoke(web.professional_title_document_upload,_mobile_request(token),file)
+    else:
+        await _invoke(_web_handler('/account/documents/expert'),_mobile_request(token),file)
+    return {'ok':True,'professional':await run_in_threadpool(professional,token,user)}
+
+
+@router.post('/account/expert-profile')
+async def expert_save(specialty:str=Form(...),phone:str=Form(...),consultation_price:int=Form(...),institution:str=Form(''),bio:str=Form(''),orcid_url:str=Form(''),publications_text:str=Form(''),file:Optional[UploadFile]=File(None),token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    from app import main as web
+    # Reject eligibility before processing a potentially large credential.
+    current=await run_in_threadpool(professional,token,user)
+    if not current['eligible']:raise HTTPException(status_code=403,detail='Bu mesleki unvan uzman danışman başvurusu yapamaz.')
+    if file:await _check_file(file,10*1024*1024)
+    await _invoke(web.expert_support_profile_save,_mobile_request(token),specialty,phone,institution,bio,orcid_url,publications_text,consultation_price,'PASSIVE','',file)
+    return {'ok':True,'professional':await run_in_threadpool(professional,token,user)}
+
+
+@router.get('/account/expert-rules')
+def expert_rules(token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    import re
+    from app import main as web
+    from app.mobile_account_api import PlainLegal
+    source=web.templates.env.loader.get_source(web.templates.env,'expert_rules.html')[0]
+    parts=re.findall(r'<section class="expert-rule-card">(.*?)</section>',source,re.S)
+    if not parts:raise HTTPException(status_code=503,detail='Güncel vaka kuralları alınamadı.')
+    plain=PlainLegal();plain.feed('\n'.join(parts))
+    with Session(web.engine) as s:
+        policy=s.exec(select(web.ExpertPolicyState).where(web.ExpertPolicyState.expert_user_id==user.id)).first()
+        return {'version':web.EXPERT_RULES_VERSION,'text':plain.text(),'accepted':bool(policy and policy.rules_version==web.EXPERT_RULES_VERSION and policy.rules_accepted_at),'blocked_until':policy.new_case_blocked_until if policy else None}
+
+
+class RulesAcceptance(BaseModel):
+    version:str=Field(max_length=80)
+    accepted:bool=False
+
+
+@router.post('/account/expert-rules')
+async def accept_rules(payload:RulesAcceptance,token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    from app import main as web
+    if not payload.accepted:raise HTTPException(status_code=400,detail='Güncel kuralları okuyup onaylayın.')
+    await _invoke(web.expert_support_rules_accept,_mobile_request(token),payload.version,'/expert-support/profile')
+    return {'ok':True}
+
+
+@router.get('/experts/performance-info')
+def performance_info(token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    """Web /expert-support/performance-info metninin mobil karşılığı; uzman kurallarıyla aynı okuma/temizleme deseni.
+
+    Native client (professionalApi.ts ExpertPerformanceInfo) reads title/body/sections;
+    content stays for clients released before the parity fix.
+    """
+    import re
+    from app import main as web
+    from app.mobile_account_api import PlainLegal
+    source=web.templates.env.loader.get_source(web.templates.env,'expert_performance_info.html')[0]
+    heading=re.search(r'<h1>(.*?)</h1>',source,re.S)
+    parts=re.findall(r'<section class="expert-rule-card">(.*?)</section>',source,re.S)
+    if not heading or not parts:raise HTTPException(status_code=503,detail='Performans açıklaması alınamadı.')
+    title_parser=PlainLegal();title_parser.feed(heading.group(1))
+    plain=PlainLegal();plain.feed('\n'.join(parts))
+    sections=[]
+    for part in parts:
+        section_title=re.search(r'<h2>(.*?)</h2>',part,re.S)
+        section_body=re.sub(r'<h2>.*?</h2>','',part,flags=re.S)
+        title_text=PlainLegal();body_text=PlainLegal()
+        if section_title:title_text.feed(section_title.group(1))
+        body_text.feed(section_body)
+        sections.append({'title':title_text.text(),'body':body_text.text()})
+    return {'ok':True,'title':title_parser.text(),'body':plain.text(),'sections':sections,'content':plain.text()}
+
+
+class Availability(BaseModel):
+    availability:Literal['AVAILABLE','BUSY']
+
+
+@router.post('/account/expert-availability')
+async def availability(payload:Availability,token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    import json
+    from app import main as web
+    from starlette.concurrency import run_in_threadpool
+    # Canonical handler reads JSON on the event loop inside its offloaded worker.
+    request=_mobile_request(token);request._json={'availability':payload.availability}
+    handler=web.expert_support_availability_update
+    import inspect
+    response=await handler(request) if inspect.iscoroutinefunction(handler) else await run_in_threadpool(handler,request)
+    result=json.loads(response.body)
+    if response.status_code>=400 or result.get('ok') is not True:raise HTTPException(status_code=response.status_code if response.status_code>=400 else 502,detail=result.get('detail','Müsaitlik güncellenemedi.'))
+    return {'ok':True,'professional':await run_in_threadpool(professional,token,user)}
+
+
+@router.get('/experts/{expert_id}')
+def public_expert(expert_id:int,response:Response,token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    response.headers['Cache-Control']='private, no-store'
+    response.headers['Vary']='Authorization'
+    from app import main as web
+    with Session(web.engine,expire_on_commit=False) as s:
+        profile=s.exec(select(web.ExpertProfile).where(web.ExpertProfile.user_id==expert_id)).first()
+        owner=s.get(web.User,expert_id)
+        if not web.consultation_expert_is_verified(owner,profile) or (user.id!=expert_id and web._users_blocked(s,user.id,expert_id)):
+            raise HTTPException(status_code=404,detail='Doğrulanmış uzman profili bulunamadı.')
+        policy=s.exec(select(web.ExpertPolicyState).where(web.ExpertPolicyState.expert_user_id==expert_id)).first()
+        blocked=bool(policy and web._expert_is_blocked(policy))
+        performance=web._expert_performance(s,expert_id)
+        owned=user.id==expert_id
+        return {'user_id':expert_id,'display_name':web.expert_display_name(profile,owner.display_name),'raw_name':owner.display_name,
+                'photo_url':web._profile_photo_url(owner),'specialty':profile.specialty,'institution':profile.institution,'bio':profile.bio,
+                'orcid_url':profile.orcid_url,'publications_text':profile.publications_text,'academic_title_verified':bool(profile.academic_title_verified),
+                'consultation_price':profile.consultation_price,'availability':profile.availability,'performance':performance,'owned':owned,
+                'support_available':bool(not owned and profile.availability=='AVAILABLE' and not blocked and web._expert_open_case_count(s,expert_id)<web.consultation_capacity_limit(profile)),
+                'can_publish':bool(owned and profile.availability!='PASSIVE' and not blocked)}
+
+@router.get('/account/expert-performance')
+def expert_performance(response:Response,user=Depends(_account_user)):
+    from app import main as web
+    response.headers.update({'Cache-Control':'private, no-store','Vary':'Authorization'})
+    with Session(web.engine,expire_on_commit=False) as s:
+        profile=s.exec(select(web.ExpertProfile).where(web.ExpertProfile.user_id==user.id)).first()
+        if not profile:raise HTTPException(404,'Uzman profili bulunamadı.')
+        # Same expiration, aggregate and policy helpers as the owned web page.
+        web._expire_pending_expert_requests(s,user.id)
+        performance=web._expert_performance(s,user.id)
+        policy=web._expert_policy_state(s,user.id)
+        events=s.exec(select(web.ConsultationEvent).where(web.ConsultationEvent.actor_user_id==user.id,web.ConsultationEvent.event_type.in_(['EXPERT_TIMEOUT','MISSED_REQUEST_COUNTED','NEW_CASE_BLOCKED_24H','START_DEADLINE_MISSED'])).order_by(web.ConsultationEvent.created_at.desc(),web.ConsultationEvent.id.desc()).limit(30)).all()
+        result={'availability':profile.availability,'capacity':web.consultation_capacity_limit(profile),'open_cases':web._expert_open_case_count(s,user.id),'performance':performance,'policy':{'blocked':web._expert_is_blocked(policy),'blocked_until':policy.new_case_blocked_until,'reason':policy.block_reason,'rules_accepted':bool(policy.rules_version==web.EXPERT_RULES_VERSION and policy.rules_accepted_at)},'events':[{'id':e.id,'event_type':e.event_type,'created_at':e.created_at} for e in events]}
+        s.commit()
+        return result
+
+
+@router.get('/account/documents/{purpose}/content')
+def document_content(purpose:Literal['membership','title','expert'],response:Response,token:str=Depends(_mobile_access_token),user=Depends(_account_user)):
+    """Web profile_document_page mantığının mobil karşılığı: yalnız sahibin kendi
+    yüklediği belge, aynı kaynak alanları (membership/title/expert)."""
+    import base64
+    from pathlib import Path
+    from app import main as web
+    from app.object_storage import ensure_local
+    response.headers['Cache-Control']='private, no-store'
+    response.headers['Vary']='Authorization'
+    with Session(web.engine,expire_on_commit=False) as s:
+        if purpose=='membership':
+            row=s.exec(select(MembershipVerification).where(MembershipVerification.user_id==user.id).order_by(MembershipVerification.id.desc())).first()
+            path=row.document_path if row else None
+        elif purpose=='title':
+            row=s.exec(select(web.ExpertTitleChange).where(web.ExpertTitleChange.user_id==user.id,web.ExpertTitleChange.credential_document_path.is_not(None)).order_by(web.ExpertTitleChange.id.desc())).first()
+            path=row.credential_document_path if row else None
+        else:
+            row=s.exec(select(web.ExpertProfile).where(web.ExpertProfile.user_id==user.id)).first()
+            path=row.credential_document_path if row else None
+        if not path:
+            raise HTTPException(status_code=404,detail='Görüntülenecek belge bulunamadı.')
+        media_type={'.pdf':'application/pdf','.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png'}.get(Path(path).suffix.lower())
+        if not media_type:
+            raise HTTPException(status_code=404,detail='Belge formatı görüntülenemiyor.')
+        try:
+            local=ensure_local(path)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404,detail='Belge dosyası bulunamadı.') from exc
+    return {'ok':True,'purpose':purpose,'media_type':media_type,'filename':Path(local).name,
+            'data_base64':base64.b64encode(Path(local).read_bytes()).decode('ascii')}

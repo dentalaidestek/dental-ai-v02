@@ -5,8 +5,15 @@ from app.study_retrieval_v2 import RetrievalResult
 from app.study_ai_v2 import ask_rag_v2
 
 
+# 35c2397a sonrası küçük salt-metin paketler tek direkt çağrıyla işleniyor
+# (app/study_ai_v2.py: toplam ≤192000 karakterde direkt paketleme; sentez aşaması
+# 240000'i aşan birleşik bağlamı reddeder). Bu dosya eski batch-sentez sözleşmesini
+# doğrular; çocuklar 192000'i aşacak ama 240000'i aşmayacak büyüklükte taşınır.
+BATCH_PAD='derin içerik satırı '*5100
+
 def parent(operation, count=None):
-    children = [RetrievalResult(note_context=[text], evidence_sufficient=True,
+    children = [RetrievalResult(note_context=[(text + ' ' + BATCH_PAD)],
+        evidence_sufficient=True,
         study_task={'operation':operation,'scope':'course','count':count})
         for text in ('First source definition','Second source definition')]
     return RetrievalResult(source_batches=children, evidence_sufficient=True,
@@ -52,8 +59,8 @@ def test_question_count_applies_once_after_all_sections_are_read(monkeypatch):
 
 
 @pytest.mark.parametrize('vendor,operation,count,partial,expected', [
-    ('anthropic','summarize',None,True,16000),
-    ('anthropic','generate_questions',20,False,16000),
+    ('anthropic','summarize',None,True,32768),
+    ('anthropic','generate_questions',20,False,32768),
     ('anthropic','generate_questions',5,False,7000),
     ('anthropic','answer',None,False,7000),
     ('gemini','summarize',None,True,7000),
@@ -113,12 +120,13 @@ def test_question_transcription_is_not_forced_to_solve_or_create_questions(monke
 
 
 def test_token_limited_answer_is_never_reported_as_complete(monkeypatch):
-    value=provider(monkeypatch,['Yarım bölüm '+str(i) for i in range(4)])
+    # 2ecd07cb: MAX_CONTINUATIONS 3→6; ilk çağrı + 6 devam = 7 çağrı.
+    value=provider(monkeypatch,['Yarım bölüm '+str(i) for i in range(7)])
     value.last_finish_reason='MAX_TOKENS'
     result=RetrievalResult(note_context=['Source'],evidence_sufficient=True)
     with pytest.raises(StudyAIError,match='uzunluk sınırına'):
         ask_rag_v2('Course','Hepsini anlat',[],result)
-    assert value.generate_stream.call_count == 4
+    assert value.generate_stream.call_count == 7
 
 
 def test_token_limited_prose_completes_before_pdf_is_offered(monkeypatch):
@@ -221,7 +229,7 @@ def test_parallel_question_sections_overlap_but_synthesize_in_source_order(monke
             with lock:active-=1
     monkeypatch.setattr(module,'stream_rag_v2',generate)
     assert ''.join(module._stream_source_batches('Course','20 questions',[],result))=='20 balanced questions'
-    assert peak==2 and sorted(calls)==sorted(['First source definition','Second source definition','Third source'])
+    assert peak==2 and sorted(calls)==sorted([t+' '+BATCH_PAD for t in ('First source definition','Second source definition')]+['Third source'])
     assert all(not child.attachments for child in result.source_batches)
 
 
@@ -317,7 +325,7 @@ def test_slow_first_section_does_not_stop_later_section_work(monkeypatch):
     result.source_batches.append(RetrievalResult(note_context=['Third source'],evidence_sufficient=True))
     third_started=threading.Event()
     def extract(course,question,history,parent,child,*args):
-        name=child.note_context[0]
+        name=child.note_context[0].split(' derin içerik satırı',1)[0]
         if name.startswith('First'):
             assert third_started.wait(3), 'A finished second worker was left idle behind the first section'
         if name=='Third source':third_started.set()
@@ -348,7 +356,7 @@ def test_question_request_recovers_only_failed_section_once(monkeypatch):
             assert 'Second source definition' in child.note_context[1]
             yield '20 complete questions'
             return
-        name=child.note_context[0];counts[name]=counts.get(name,0)+1
+        name=child.note_context[0].split(' derin içerik satırı',1)[0];counts[name]=counts.get(name,0)+1
         if name.startswith('First') and counts[name]==1:
             raise transport_failure()
         yield 'Recovered first source' if name.startswith('First') else name
@@ -421,7 +429,7 @@ def test_recovery_is_bounded_and_never_synthesizes_incomplete_sources(monkeypatc
     counts={}
     def generate(course,question,history,child):
         assert child.study_task.get('batch_partial'), 'Incomplete source extraction reached synthesis'
-        name=child.note_context[0];counts[name]=counts.get(name,0)+1
+        name=child.note_context[0].split(' derin içerik satırı',1)[0];counts[name]=counts.get(name,0)+1
         if mode=='quota':raise transport_failure(429)
         if mode=='partial':
             yield 'Partial source facts'
@@ -465,7 +473,7 @@ def test_single_section_answer_does_not_add_a_synthesis_call(monkeypatch):
 def test_final_synthesis_retains_native_values_even_if_extraction_omits_them(monkeypatch):
     value=provider(monkeypatch,['Partial extraction','Another partial extraction','All ten measurements'])
     result=parent('compare')
-    result.source_batches[0].note_context=['[KANIT_NATIVE material_id=1 sayfa=68] Ideal value 87.8']
+    result.source_batches[0].note_context=['[KANIT_NATIVE material_id=1 sayfa=68] Ideal value 87.8 '+BATCH_PAD]
     assert ask_rag_v2('Course','Bütün ölçümler',[],result)=='All ten measurements'
     final=value.generate_stream.call_args.kwargs['prompt']
     assert 'Ideal value 87.8' in final and 'Partial extraction' in final

@@ -1,14 +1,15 @@
 """Real PostgreSQL locking tests; set DENTAL_TEST_DATABASE_URL to a disposable DB."""
 import asyncio
+import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import date, datetime, timedelta, timezone
 import os
 import uuid
 
 import pytest
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine, select
-from app import main, work_jobs, provider_budget
+from app import main, work_jobs, provider_budget, mobile_api
 
 
 @pytest.fixture
@@ -148,9 +149,66 @@ def test_release_migration_preserves_existing_records_and_repeats_on_postgres(pg
     with engine.connect() as connection:
         assert connection.execute(text('SELECT id, username, display_name, role FROM "user" ORDER BY id')).all() == before
         assert set(connection.execute(text('SELECT id FROM guestanalysis')).scalars()) == {resource.id for resource in resources}
-        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 12
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 21
+        assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
+        assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('authratebucket')")).scalar_one() is not None
         assert connection.execute(text("SELECT to_regclass('emailchangechallenge')")).scalar_one() is not None
+
+
+
+def test_program_idempotency_migration_upgrades_revision14_without_baseline_replay(pg):
+    from app import migrate
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        connection.execute(text('CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
+        connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,14)'))
+        connection.execute(text('DROP INDEX IF EXISTS uq_scheduleevent_owner_client_request'))
+        connection.execute(text('ALTER TABLE scheduleevent DROP COLUMN client_request_hash'))
+        connection.execute(text('ALTER TABLE scheduleevent DROP COLUMN client_payload_hash'))
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        columns={row.column_name for row in connection.execute(text(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='scheduleevent'"
+        ))}
+        assert {'client_request_hash','client_payload_hash'} <= columns
+        assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 21
+
+
+def test_program_create_receipt_is_atomic_under_concurrent_postgres_requests(pg, monkeypatch):
+    engine, _, resources = pg
+    owner_id=resources[0].owner_user_id
+    with Session(engine) as session:
+        owner=session.get(main.User,owner_id)
+    monkeypatch.setattr(mobile_api,'engine',engine)
+    monkeypatch.setattr(mobile_api,'on_loop',lambda *args:None)
+    monkeypatch.setattr(main,'_wake_program_reminder_worker',lambda:None)
+    payload=mobile_api.MobileScheduleCreate(
+        event_type='APPOINTMENT',title='Synthetic concurrent appointment',
+        start_at='2030-01-07T10:00',end_at='2030-01-07T10:30',
+        patient_id=None,reminder_minutes=30,notification_enabled=True,
+        recurrence_rule='NONE',request_key='program-postgres-concurrency-0001',
+    )
+    def create(_):
+        return mobile_api.mobile_create_schedule(payload,owner)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results=list(executor.map(create,range(2)))
+    assert results[0]['event']['id']==results[1]['event']['id']
+    assert sorted(result['replayed'] for result in results)==[False,True]
+    event_id=results[0]['event']['id']
+    with Session(engine) as session:
+        events=session.exec(select(main.ScheduleEvent).where(
+            main.ScheduleEvent.owner_user_id==owner_id,
+            main.ScheduleEvent.client_request_hash!=None,
+        )).all()
+        reminders=session.exec(select(main.ProgramReminderJob).where(
+            main.ProgramReminderJob.schedule_event_id==event_id
+        )).all()
+        assert len(events)==1
+        assert len(reminders)==1
+
 
 
 def test_email_change_code_is_consumed_once_under_concurrent_confirmation(pg, monkeypatch):
@@ -375,3 +433,696 @@ def test_recent_release_migration_avoids_legacy_session_lock(pg, monkeypatch):
         assert c.execute(text("SELECT to_regclass('consultationmediadeletion')")).scalar()
         cols = {row[0] for row in c.execute(text("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='consultationcase'"))}
         assert {'messages_deleted_at', 'chat_retention_started_at'} <= cols
+
+def test_consultation_receipt_revision_13_upgrade_on_postgres(pg):
+    from app import migrate
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        connection.execute(text('DROP TABLE IF EXISTS consultationmessagereceipt'))
+        connection.execute(text('CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
+        connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,13)'))
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 21
+        assert connection.execute(text("SELECT to_regclass('uq_scheduleevent_owner_client_request')")).scalar_one() is not None
+
+
+def test_consultation_receipt_revision_12_creates_both_receipt_tables(pg):
+    from app import migrate, mobile_api
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        connection.execute(text('DROP TABLE IF EXISTS consultationmessagereceipt'))
+        connection.execute(text('DROP TABLE IF EXISTS studyrun, studyattempt, studyreview, studylearningstate CASCADE'))
+        mobile_api.MobileSupportMutationReceipt.__table__.drop(connection, checkfirst=True)
+        connection.execute(text('CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
+        connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,12)'))
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT to_regclass('consultationmessagereceipt')")).scalar_one() is not None
+        assert connection.execute(text("SELECT to_regclass('mobilesupportmutationreceipt')")).scalar_one() is not None
+        # The study tables are additive revision-12 objects. The receipt upgrade
+        # advances through revisions 14, 15, and the additive releases to current revision 21, so they must be created before those bumps.
+        for table in ('studylearningstate', 'studyreview', 'studyattempt', 'studyrun'):
+            assert connection.execute(text("SELECT to_regclass(:name)"), {'name': table}).scalar_one() is not None
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 21
+
+def test_consultation_message_same_key_replays_once_under_concurrent_postgres_writes(pg, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import mobile_api
+
+    engine, _, resources = pg
+    monkeypatch.setattr(mobile_api, 'engine', engine)
+    requester_id = resources[0].owner_user_id
+    now = main._utcnow_naive()
+    requester_token = 'pg-consultation-requester-' + uuid.uuid4().hex
+    expert_token = 'pg-consultation-expert-' + uuid.uuid4().hex
+    with Session(engine, expire_on_commit=False) as session:
+        requester = session.get(main.User, requester_id)
+        requester.email_verified_at = now
+        requester.is_active = True
+        session.add(requester)
+        expert = main.User(username='pg-expert-' + uuid.uuid4().hex, role='DOCTOR',
+                           display_name='Synthetic expert', is_active=True, email_verified_at=now)
+        session.add(expert)
+        session.flush()
+        session.add_all([
+            main.SessionToken(user_id=requester_id, token_hash=main.hash_session_token(requester_token),
+                              expires_at=now + timedelta(days=1)),
+            main.SessionToken(user_id=expert.id, token_hash=main.hash_session_token(expert_token),
+                              expires_at=now + timedelta(days=1)),
+        ])
+        case = main.ConsultationCase(
+            requester_user_id=requester_id, expert_user_id=expert.id, specialty='Endodonti',
+            clinical_summary='Synthetic clinical summary', question='Synthetic question',
+            status='ACTIVE', expert_response_deadline=now + timedelta(hours=1),
+        )
+        session.add(case)
+        session.commit()
+        case_id = case.id
+
+    key = 'pg-consultation-same-key-' + uuid.uuid4().hex
+    body = {'content': 'Synthetic same-key message', 'client_message_id': key}
+
+    def submit(_):
+        client = TestClient(main.app)
+        response = client.post(
+            f'/api/mobile/v1/consultations/{case_id}/messages',
+            headers={'Authorization': 'Bearer ' + requester_token},
+            json=body,
+        )
+        return response.status_code, response.json()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(submit, range(2)))
+    assert [status for status, _ in results] == [200, 200]
+    message_ids = {payload['message']['id'] for _, payload in results}
+    assert len(message_ids) == 1
+    assert sorted(bool(payload.get('replayed')) for _, payload in results) == [False, True]
+
+    conflict_client = TestClient(main.app)
+    conflict = conflict_client.post(
+        f'/api/mobile/v1/consultations/{case_id}/messages',
+        headers={'Authorization': 'Bearer ' + requester_token},
+        json={'content': 'Different payload', 'client_message_id': key},
+    )
+    assert conflict.status_code == 409
+    with Session(engine) as session:
+        messages = session.exec(select(main.ConsultationMessage).where(
+            main.ConsultationMessage.case_id == case_id,
+            main.ConsultationMessage.sender_user_id == requester_id,
+        )).all()
+        receipts = session.exec(select(main.ConsultationMessageReceipt).where(
+            main.ConsultationMessageReceipt.case_id == case_id,
+            main.ConsultationMessageReceipt.sender_user_id == requester_id,
+            main.ConsultationMessageReceipt.client_message_id == key,
+        )).all()
+    assert len(messages) == 1
+    assert len(receipts) == 1
+
+
+def test_mobile_push_reservation_is_idempotent_under_concurrent_postgres_workers(pg):
+    from app.mobile_push_receipts import reserve_mobile_push_deliveries
+    from threading import Barrier
+
+    engine, _, resources = pg
+    user_id = resources[0].owner_user_id
+    device_id = str(uuid.uuid4())
+    token = "ExpoPushToken[postgresdevice123456]"
+    with Session(engine) as session:
+        session.add(main.MobilePushDevice(
+            user_id=user_id, device_id=device_id, expo_push_token=token,
+            platform="android", enabled=True,
+        ))
+        session.commit()
+
+    candidate = main.MobilePushDevice(
+        user_id=user_id, device_id=device_id, expo_push_token=token,
+        platform="android", enabled=True,
+    )
+    barrier = Barrier(2)
+
+    def reserve(_):
+        barrier.wait(timeout=5)
+        return reserve_mobile_push_deliveries(
+            engine, event_id=93001, user_id=user_id, devices=[candidate],
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(reserve, range(2)))
+
+    assert sum(len(result) for result in results) == 1
+    with Session(engine) as session:
+        rows = session.exec(select(main.MobilePushDelivery).where(
+            main.MobilePushDelivery.event_id == 93001,
+            main.MobilePushDelivery.device_id == device_id,
+        )).all()
+    assert len(rows) == 1
+    assert rows[0].user_id == user_id
+    assert rows[0].token_fingerprint
+    assert rows[0].status == "SENDING"
+
+
+def test_mobile_push_receipt_claim_uses_postgres_skip_locked(pg, monkeypatch):
+    from threading import Event
+    import app.mobile_push_receipts as receipts
+
+    engine, _, resources = pg
+    user_id = resources[0].owner_user_id
+    device_id = str(uuid.uuid4())
+    ticket_id = str(uuid.uuid4())
+    stamp = main._utcnow_naive()
+    with Session(engine) as session:
+        session.add(main.MobilePushDelivery(
+            event_id=93002, user_id=user_id, device_id=device_id,
+            token_fingerprint="f" * 64, ticket_id=ticket_id,
+            status="PENDING_RECEIPT", attempts=0,
+            next_check_at=stamp - timedelta(minutes=1),
+            created_at=stamp - timedelta(minutes=20),
+            updated_at=stamp - timedelta(minutes=1),
+        ))
+        session.commit()
+
+    locked = Event()
+    release = Event()
+    original_token_hex = receipts.secrets.token_hex
+
+    def pause_after_row_lock(length):
+        locked.set()
+        if not release.wait(timeout=8):
+            raise TimeoutError("test did not release the first receipt claimant")
+        return original_token_hex(length)
+
+    monkeypatch.setattr(receipts.secrets, "token_hex", pause_after_row_lock)
+    monkeypatch.setattr(receipts, "get_push_receipts", lambda ids: {
+        "ok": True, "receipts": {ticket_id: {"status": "ok"}},
+    })
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(receipts.poll_due_mobile_push_receipts, engine)
+        assert locked.wait(timeout=5)
+        second = executor.submit(receipts.poll_due_mobile_push_receipts, engine)
+        try:
+            # The second worker must skip the row lock rather than wait for the
+            # first worker's provider round-trip and then race to claim it.
+            assert second.result(timeout=2) == 0
+        finally:
+            release.set()
+        assert first.result(timeout=8) == 1
+
+    with Session(engine) as session:
+        row = session.exec(select(main.MobilePushDelivery).where(
+            main.MobilePushDelivery.event_id == 93002,
+        )).one()
+    assert row.status == "PROVIDER_ACCEPTED"
+    assert row.attempts == 1
+    assert row.lease_token is None and row.lease_until is None
+
+
+def test_mobile_push_installation_advisory_lock_serializes_account_switches(pg):
+    """Two accounts claiming one SecureStore installation cannot race each other."""
+    from threading import Event
+    from app.mobile_api import _lock_mobile_push_device_identity
+
+    engine, _, _ = pg
+    device_id = str(uuid.uuid4())
+    first_locked = Event()
+    second_started = Event()
+    second_locked = Event()
+    release_first = Event()
+
+    def first_claim():
+        with Session(engine) as session:
+            _lock_mobile_push_device_identity(session, device_id)
+            first_locked.set()
+            if not release_first.wait(timeout=5):
+                raise AssertionError("first installation claim was not released")
+            session.commit()
+
+    def second_claim():
+        if not first_locked.wait(timeout=5):
+            raise AssertionError("first installation claim did not acquire its lock")
+        second_started.set()
+        with Session(engine) as session:
+            _lock_mobile_push_device_identity(session, device_id)
+            second_locked.set()
+            session.commit()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(first_claim)
+        assert first_locked.wait(timeout=5)
+        second = executor.submit(second_claim)
+        assert second_started.wait(timeout=5)
+        assert not second_locked.wait(timeout=0.2)
+        release_first.set()
+        first.result(timeout=5)
+        second.result(timeout=5)
+
+    assert second_locked.is_set()
+
+
+def test_program_query_index_migration_upgrades_revision15_online(pg):
+    from app import migrate
+    engine, _, _ = pg
+    index_names = (
+        'ix_scheduleevent_owner_start_at',
+        'ix_scheduleevent_owner_created_at',
+        'ix_scheduleevent_owner_updated_at',
+        'ix_programreminderjob_pending_run_at',
+        'ix_programreminderjob_event_status',
+        'ix_programreminderjob_owner_status',
+        'ix_treatment_patient_created_id',
+    )
+    legacy_reminder_indexes = (
+        'ix_programreminderjob_status_run_at',
+        'ix_programreminderjob_run_at',
+    )
+    with engine.begin() as connection:
+        connection.execute(text('CREATE TABLE IF NOT EXISTS dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'))
+        connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,15) ON CONFLICT(id) DO UPDATE SET version=15'))
+        for name in (*index_names, *legacy_reminder_indexes):
+            connection.execute(text(f'DROP INDEX IF EXISTS {name}'))
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(text('SELECT version FROM dental_schema_revision WHERE id=1')).scalar_one() == 21
+        for name in index_names:
+            assert connection.execute(
+                text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
+                {'name': name},
+            ).scalar_one() is True
+        for name in legacy_reminder_indexes:
+            assert connection.execute(text('SELECT to_regclass(:name)'), {'name': name}).scalar_one() is None
+        definition = connection.execute(
+            text('SELECT indexdef FROM pg_indexes WHERE schemaname=current_schema() AND indexname=:name'),
+            {'name': 'ix_programreminderjob_pending_run_at'},
+        ).scalar_one()
+        assert 'WHERE' in definition.upper()
+        assert 'STATUS' in definition.upper() and 'PENDING' in definition.upper()
+
+
+
+def test_program_pending_reminder_index_migration_upgrades_revision19_and_is_idempotent(pg):
+    from app import migrate
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        # The pg fixture creates application metadata, not the release revision
+        # table. Build the exact pre-revision-20 state this migration test needs.
+        connection.execute(text(
+            'CREATE TABLE IF NOT EXISTS dental_schema_revision '
+            '(id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'
+        ))
+        connection.execute(text(
+            'INSERT INTO dental_schema_revision VALUES (1,19) '
+            'ON CONFLICT(id) DO UPDATE SET version=19'
+        ))
+        connection.execute(text('DROP INDEX IF EXISTS ix_programreminderjob_pending_run_at'))
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_programreminderjob_status_run_at '
+            'ON programreminderjob (status, run_at)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_programreminderjob_run_at '
+            'ON programreminderjob (run_at)'
+        ))
+
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(
+            text('SELECT version FROM dental_schema_revision WHERE id=1')
+        ).scalar_one() == 21
+        assert connection.execute(
+            text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
+            {'name': 'ix_programreminderjob_pending_run_at'},
+        ).scalar_one() is True
+        assert connection.execute(
+            text('SELECT to_regclass(:name)'),
+            {'name': 'ix_programreminderjob_status_run_at'},
+        ).scalar_one() is None
+        assert connection.execute(
+            text('SELECT to_regclass(:name)'),
+            {'name': 'ix_programreminderjob_run_at'},
+        ).scalar_one() is None
+
+    # A second release-migration invocation must validate, not rebuild or fail.
+    migrate.apply()
+    with engine.connect() as connection:
+        assert connection.execute(
+            text('SELECT version FROM dental_schema_revision WHERE id=1')
+        ).scalar_one() == 21
+
+
+def test_program_pending_reminder_index_rebuilds_broader_postgres_predicate(pg):
+    from app import main, migrate
+
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        connection.execute(text(
+            'CREATE TABLE IF NOT EXISTS dental_schema_revision '
+            '(id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'
+        ))
+        connection.execute(text(
+            'INSERT INTO dental_schema_revision VALUES (1,20) '
+            'ON CONFLICT(id) DO UPDATE SET version=20'
+        ))
+        connection.execute(text('DROP INDEX IF EXISTS ix_programreminderjob_pending_run_at'))
+        connection.execute(text(
+            "CREATE INDEX ix_programreminderjob_pending_run_at "
+            "ON programreminderjob (run_at) "
+            "WHERE status IN ('PENDING','FAILED')"
+        ))
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_programreminderjob_status_run_at '
+            'ON programreminderjob (status, run_at)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX IF NOT EXISTS ix_programreminderjob_run_at '
+            'ON programreminderjob (run_at)'
+        ))
+
+    # A broad predicate is not a valid revision-20 index even though it
+    # contains both words "status" and "pending".
+    assert migrate._upgrade_program_reminder_pending_index(main) is True
+    with engine.connect() as connection:
+        predicate = connection.execute(text(
+            "SELECT pg_get_expr(indpred, indrelid) FROM pg_index "
+            "WHERE indexrelid=to_regclass('ix_programreminderjob_pending_run_at')"
+        )).scalar_one()
+        normalized = "".join(predicate.lower().split()).replace("(", "").replace(")", "")
+        for cast in ("::character varying", "::charactervarying", "::varchar", "::text"):
+            normalized = normalized.replace(cast, "")
+        assert normalized == "status='pending'"
+        for name in ('ix_programreminderjob_status_run_at', 'ix_programreminderjob_run_at'):
+            assert connection.execute(
+                text('SELECT to_regclass(:name)'), {'name': name}
+            ).scalar_one() is None
+
+
+def test_program_pending_reminder_index_sqlite_migration_is_idempotent(tmp_path):
+    from types import SimpleNamespace
+    from app import migrate
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'program-reminder-index.db'}")
+    with engine.begin() as connection:
+        connection.execute(text(
+            'CREATE TABLE dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'
+        ))
+        connection.execute(text('INSERT INTO dental_schema_revision VALUES (1,19)'))
+        connection.execute(text(
+            'CREATE TABLE programreminderjob (id INTEGER PRIMARY KEY, status VARCHAR NOT NULL, run_at TIMESTAMP NOT NULL)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX ix_programreminderjob_status_run_at ON programreminderjob (status, run_at)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX ix_programreminderjob_run_at ON programreminderjob (run_at)'
+        ))
+
+    migration_target = SimpleNamespace(engine=engine)
+    assert migrate._upgrade_program_reminder_pending_index(migration_target) is True
+    assert migrate._upgrade_program_reminder_pending_index(migration_target) is True
+    with engine.connect() as connection:
+        assert connection.execute(
+            text('SELECT version FROM dental_schema_revision WHERE id=1')
+        ).scalar_one() == 20
+        definition = connection.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='index' AND name=:name"),
+            {'name': 'ix_programreminderjob_pending_run_at'},
+        ).scalar_one()
+        assert 'where status = \'pending\'' in definition.lower()
+        for name in ('ix_programreminderjob_status_run_at', 'ix_programreminderjob_run_at'):
+            assert connection.execute(
+                text("SELECT 1 FROM sqlite_master WHERE type='index' AND name=:name"),
+                {'name': name},
+            ).scalar_one_or_none() is None
+    # Revision 20 must repair an index that has the right name/column but
+    # accidentally includes FAILED rows in its predicate.
+    with engine.begin() as connection:
+        connection.execute(text('DROP INDEX ix_programreminderjob_pending_run_at'))
+        connection.execute(text(
+            "CREATE INDEX ix_programreminderjob_pending_run_at "
+            "ON programreminderjob (run_at) WHERE status IN ('PENDING','FAILED')"
+        ))
+    assert migrate._upgrade_program_reminder_pending_index(migration_target) is True
+    with engine.connect() as connection:
+        definition = connection.execute(text(
+            "SELECT sql FROM sqlite_master WHERE type='index' "
+            "AND name='ix_programreminderjob_pending_run_at'"
+        )).scalar_one()
+        normalized = "".join(definition.lower().split()).replace("(", "").replace(")", "")
+        assert "wherestatus='pending'" in normalized
+        assert "failed" not in normalized
+    engine.dispose()
+
+def test_program_pending_reminder_migration_refuses_unversioned_sqlite_schema(tmp_path):
+    from types import SimpleNamespace
+    from app import migrate
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'unversioned-reminders.db'}")
+    with engine.begin() as connection:
+        connection.execute(text(
+            'CREATE TABLE programreminderjob '
+            '(id INTEGER PRIMARY KEY, status VARCHAR NOT NULL, run_at TIMESTAMP NOT NULL)'
+        ))
+        connection.execute(text(
+            'CREATE INDEX ix_programreminderjob_run_at '
+            'ON programreminderjob (run_at)'
+        ))
+
+    target = SimpleNamespace(engine=engine)
+    assert migrate._upgrade_program_reminder_pending_index(target) is False
+    with engine.connect() as connection:
+        assert connection.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='dental_schema_revision'"
+        )).scalar_one_or_none() is None
+        assert connection.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='index' "
+            "AND name='ix_programreminderjob_run_at'"
+        )).scalar_one_or_none() == 1
+        assert connection.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='index' "
+            "AND name='ix_programreminderjob_pending_run_at'"
+        )).scalar_one_or_none() is None
+    engine.dispose()
+
+
+def _explain_analyze_index_names(connection, statement, params=None):
+    # SQLAlchemy 2.x removed Engine.execute(); accept the Engine used by the
+    # caller, open a short-lived Connection, and keep the helper reusable with
+    # an already-open Connection in focused tests.
+    if not hasattr(connection, "execute") and hasattr(connection, "connect"):
+        with connection.connect() as opened:
+            return _explain_analyze_index_names(opened, statement, params)
+    result = connection.execute(
+        text('EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ' + statement),
+        params or {},
+    ).scalar_one()
+    if isinstance(result, str):
+        result = json.loads(result)
+    root = result[0]['Plan'] if isinstance(result, list) else result['Plan']
+    names = set()
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        if node.get('Index Name'):
+            names.add(node['Index Name'])
+        pending.extend(node.get('Plans') or [])
+    return names
+
+
+def test_program_hot_queries_use_owner_and_due_queue_indexes_at_scale(pg):
+    engine, _, _ = pg
+    # Synthetic only: 60k distinct accounts plus a deliberately busy account.
+    # The due scan sees terminal past jobs, pending future jobs and a small due
+    # subset. A pending-only partial run_at index keeps terminal history out of
+    # the ordered LIMIT scan rather than relying on a tiny-table planner choice.
+    with engine.begin() as connection:
+        connection.execute(text("SET LOCAL TIME ZONE 'UTC'"))
+        connection.execute(text("""
+            INSERT INTO scheduleevent
+                (owner_user_id,event_type,title,start_at,end_at,patient_id,location,notes,
+                 status,reminder_minutes,notification_enabled,recurrence_rule,recurrence_until,
+                 timezone_name,created_at,updated_at,client_request_hash,client_payload_hash)
+            SELECT 100000 + n,'APPOINTMENT','Synthetic scale event',
+                   date_trunc('day',timezone('UTC',now())) + ((n % 28) * interval '1 day'),
+                   NULL,NULL,NULL,NULL,'ACTIVE',30,true,'NONE',NULL,'Europe/Istanbul',
+                   now() - interval '30 days',now() - interval '30 days',NULL,NULL
+            FROM generate_series(1,60000) AS n
+        """))
+        connection.execute(text("""
+            INSERT INTO scheduleevent
+                (owner_user_id,event_type,title,start_at,end_at,patient_id,location,notes,
+                 status,reminder_minutes,notification_enabled,recurrence_rule,recurrence_until,
+                 timezone_name,created_at,updated_at,client_request_hash,client_payload_hash)
+            SELECT 42,'APPOINTMENT','Synthetic busy-account event',
+                   date_trunc('day',timezone('UTC',now())) + ((n % 28) * interval '1 day'),
+                   NULL,NULL,NULL,NULL,'ACTIVE',30,true,'NONE',NULL,'Europe/Istanbul',
+                   now() - interval '30 days',
+                   CASE WHEN n=2000 THEN now() + interval '1 second' ELSE now() - interval '30 days' END,
+                   NULL,NULL
+            FROM generate_series(1,2000) AS n
+        """))
+        connection.execute(text("""
+            INSERT INTO programreminderjob
+                (schedule_event_id,owner_user_id,occurrence_start_at,run_at,reminder_minutes,
+                 event_updated_at,dedup_key,status,attempts,last_error,created_at,completed_at)
+            SELECT 100000+n,100000+n,now()-interval '30 minutes',now()-interval '30 minutes',30,
+                   now()-interval '30 days','scale-terminal-' || n,'DONE',0,NULL,
+                   now()-interval '30 days',now()-interval '29 minutes'
+            FROM generate_series(1,60000) AS n
+        """))
+        connection.execute(text("""
+            INSERT INTO programreminderjob
+                (schedule_event_id,owner_user_id,occurrence_start_at,run_at,reminder_minutes,
+                 event_updated_at,dedup_key,status,attempts,last_error,created_at,completed_at)
+            SELECT 200000+n,100000+n,now()+interval '2 days',now()+interval '2 days',30,
+                   now()-interval '30 days','scale-future-' || n,'PENDING',0,NULL,
+                   now()-interval '30 days',NULL
+            FROM generate_series(1,60000) AS n
+        """))
+        connection.execute(text("""
+            INSERT INTO programreminderjob
+                (schedule_event_id,owner_user_id,occurrence_start_at,run_at,reminder_minutes,
+                 event_updated_at,dedup_key,status,attempts,last_error,created_at,completed_at)
+            SELECT 900000+n,42,now()-interval '1 hour',now()-interval '30 minutes',30,
+                   now()-interval '30 days','scale-due-' || n,'PENDING',0,NULL,
+                   now()-interval '30 days',NULL
+            FROM generate_series(1,1000) AS n
+        """))
+        connection.execute(text('ANALYZE scheduleevent'))
+        connection.execute(text('ANALYZE programreminderjob'))
+
+    range_plan = _explain_analyze_index_names(
+        engine,
+        """
+        SELECT id FROM scheduleevent
+        WHERE owner_user_id=:owner
+          AND status <> 'DELETED'
+          AND start_at <= :range_end
+          AND (recurrence_rule='WEEKLY' OR start_at >= :range_start OR end_at >= :range_start)
+          AND (recurrence_rule <> 'WEEKLY' OR recurrence_until IS NULL
+               OR recurrence_until='' OR recurrence_until >= :range_date)
+        ORDER BY start_at LIMIT 50
+        """,
+        {
+            'owner': 42,
+            'range_start': datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1),
+            'range_end': datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30),
+            'range_date': datetime.now(timezone.utc).date().isoformat(),
+        },
+    )
+    snapshot_plan = _explain_analyze_index_names(
+        engine,
+        """
+        SELECT id FROM scheduleevent
+        WHERE owner_user_id=:owner
+          AND (created_at > :snapshot OR updated_at > :snapshot)
+        LIMIT 1
+        """,
+        {'owner': 42, 'snapshot': datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)},
+    )
+    # Match the real worker query, including row-lock skipping. The partial
+    # index must exclude terminal DONE/FAILED/CANCELLED history before LIMIT.
+    reminder_plan = _explain_analyze_index_names(
+        engine,
+        """
+        SELECT id FROM programreminderjob
+        WHERE status=:status AND run_at <= now()
+        ORDER BY run_at LIMIT 100
+        FOR UPDATE SKIP LOCKED
+        """,
+        {'status': 'PENDING'},
+    )
+    wakeup_plan = _explain_analyze_index_names(
+        engine,
+        """
+        SELECT run_at FROM programreminderjob
+        WHERE status=:status
+        ORDER BY run_at LIMIT 1
+        """,
+        {'status': 'PENDING'},
+    )
+    assert 'ix_scheduleevent_owner_start_at' in range_plan
+    assert {'ix_scheduleevent_owner_created_at','ix_scheduleevent_owner_updated_at'} & snapshot_plan
+    assert 'ix_programreminderjob_pending_run_at' in reminder_plan
+    assert 'ix_programreminderjob_pending_run_at' in wakeup_plan
+    assert 'ix_programreminderjob_run_at' not in reminder_plan
+    assert 'ix_programreminderjob_status_run_at' not in reminder_plan
+
+
+def test_treatment_history_index_migration_upgrades_revision18_online(pg):
+    from app import migrate
+    engine, _, _ = pg
+    with engine.begin() as connection:
+        connection.execute(text(
+            'CREATE TABLE IF NOT EXISTS dental_schema_revision (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)'
+        ))
+        connection.execute(text(
+            'INSERT INTO dental_schema_revision VALUES (1,18) ON CONFLICT(id) DO UPDATE SET version=18'
+        ))
+        connection.execute(text('DROP INDEX IF EXISTS ix_treatment_patient_created_id'))
+    migrate.apply()
+    migrate.require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(
+            text('SELECT version FROM dental_schema_revision WHERE id=1')
+        ).scalar_one() == 21
+        assert connection.execute(
+            text('SELECT indisvalid FROM pg_index WHERE indexrelid=to_regclass(:name)'),
+            {'name': 'ix_treatment_patient_created_id'},
+        ).scalar_one() is True
+        index = next(
+            item for item in __import__('sqlalchemy').inspect(connection).get_indexes('treatment')
+            if item.get('name') == 'ix_treatment_patient_created_id'
+        )
+        assert index['column_names'] == ['patient_id', 'created_at', 'id']
+
+
+def test_program_revision_row_lock_allows_only_one_concurrent_postgres_edit(pg):
+    from threading import Barrier
+
+    engine, _, resources = pg
+    owner_id = resources[0].owner_user_id
+    with Session(engine, expire_on_commit=False) as session:
+        event = main.ScheduleEvent(
+            owner_user_id=owner_id,
+            event_type="APPOINTMENT",
+            title="Synthetic concurrent Program edit",
+            start_at=datetime(2030, 1, 7, 7, 0),
+            end_at=datetime(2030, 1, 7, 7, 30),
+            created_at=datetime(2026, 1, 1),
+            updated_at=datetime(2026, 1, 1),
+        )
+        session.add(event)
+        session.commit()
+        event_id = event.id
+        expected_revision = main._schedule_event_revision(event)
+
+    barrier = Barrier(2)
+
+    def edit(title):
+        with Session(engine, expire_on_commit=False) as session:
+            barrier.wait(timeout=5)
+            locked, status = main._lock_schedule_event_for_edit(
+                session, owner_id, event_id, expected_revision
+            )
+            if status is not None:
+                return status
+            locked.title = title
+            main._touch_schedule_event(locked)
+            session.add(locked)
+            session.commit()
+            return 303
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(edit, ["Synthetic writer A", "Synthetic writer B"]))
+
+    assert sorted(results) == [303, 409]
+    with Session(engine) as session:
+        final = session.get(main.ScheduleEvent, event_id)
+        assert final.title in {"Synthetic writer A", "Synthetic writer B"}
+        assert main._schedule_event_revision(final) != expected_revision

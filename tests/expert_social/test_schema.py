@@ -21,7 +21,7 @@ def test_schema_idempotent_and_readiness_rejects_missing_table(tmp_path):
         require_schema(engine)
 
 
-def test_social_revision_one_upgrades_to_two_without_losing_posts(tmp_path):
+def test_social_revision_one_upgrades_to_three_without_losing_posts(tmp_path):
     from app.expert_social_models import SocialFollow, SocialPost
 
     engine = create_engine("sqlite:///" + str(tmp_path / "upgrade.db"))
@@ -37,7 +37,7 @@ def test_social_revision_one_upgrades_to_two_without_losing_posts(tmp_path):
     with engine.connect() as conn:
         assert (
             conn.execute(text("SELECT version FROM dental_social_revision")).scalar()
-            == 2
+            == 3
         )
     assert inspect(engine).has_table(SocialPost.__tablename__)
 
@@ -48,6 +48,8 @@ def test_upgrade_existing_social_tables_creates_queue_and_expiry_indexes(tmp_pat
         "socialcomment": "ix_socialcomment_moderation",
         "publication": "ix_publication_moderation",
         "doimatch": "ix_doimatch_created_at",
+        "socialadminstepupchallenge": "ix_socialadminstepupchallenge_user_expiry",
+        "socialadminstepupsession": "ix_socialadminstepupsession_session_expiry",
     }
     engine = create_engine("sqlite:///" + str(tmp_path / "indexes.db"))
     main.User.__table__.create(engine)
@@ -62,7 +64,7 @@ def test_upgrade_existing_social_tables_creates_queue_and_expiry_indexes(tmp_pat
     apply(engine)
     require_schema(engine)
     with engine.begin() as connection:
-        connection.execute(text("UPDATE dental_social_revision SET version=2"))
+        connection.execute(text("UPDATE dental_social_revision SET version=3"))
         for name in expected.values():
             connection.execute(text(f"DROP INDEX {name}"))
     with pytest.raises(RuntimeError):
@@ -73,17 +75,24 @@ def test_upgrade_existing_social_tables_creates_queue_and_expiry_indexes(tmp_pat
         assert name in {index["name"] for index in inspect(engine).get_indexes(table)}
 
 
-def test_additive_indexes_preserve_the_deployed_revision_two_contract(tmp_path):
+def test_native_stepup_schema_advances_revision_two_contract_to_three(tmp_path):
     engine = create_engine("sqlite:///" + str(tmp_path / "compatible.db"))
     main.User.__table__.create(engine)
     apply(engine)
-    with engine.connect() as c:
-        assert (
-            c.execute(
-                text("SELECT version FROM dental_social_revision WHERE id=1")
-            ).scalar_one()
-            == 2
-        )
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE dental_social_revision SET version=2"))
+        connection.execute(text("DROP TABLE socialadminstepupsession"))
+        connection.execute(text("DROP TABLE socialadminstepupchallenge"))
+    with pytest.raises(RuntimeError):
+        require_schema(engine)
+    apply(engine)
+    require_schema(engine)
+    with engine.connect() as connection:
+        assert connection.execute(
+            text("SELECT version FROM dental_social_revision WHERE id=1")
+        ).scalar_one() == 3
+    assert inspect(engine).has_table("socialadminstepupchallenge")
+    assert inspect(engine).has_table("socialadminstepupsession")
 
 
 def test_startup_rejects_missing_consultation_receipt_uniqueness(tmp_path):

@@ -202,7 +202,10 @@ class StudyDialogueTests(unittest.TestCase):
         import logging
         namespace = {'Iterator': Iterator, 'RetrievalResult': RetrievalResult,
                      'logger': logging.getLogger('test.study_dialogue'),
-                     '_generation_targets': forbidden_provider_call}
+                     '_generation_targets': forbidden_provider_call,
+                     # 35c2397a sonrası akış indexed-PDF kısayolunu sorar; yalıtılmış
+                     # test bunun dış kanıt üretmesini engelleyecek şekilde stub'lar.
+                     '_direct_indexed_pdf': lambda *args, **kwargs: None}
         exec(compile(ast.Module(body=[function], type_ignores=[]), 'study_ai_v2.py', 'exec'), namespace)
         for result in (RetrievalResult(resolved_query='Pulpitis anlat'),
                        RetrievalResult(resolved_query='Pulpitis tedavisi', note_context=['kanıt'],

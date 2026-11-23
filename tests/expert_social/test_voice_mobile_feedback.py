@@ -92,7 +92,7 @@ def test_calendar_edit_keeps_clinical_review_and_save_reports_result(voice_feedb
         page.locator('[data-voice-appointment-start]').fill('2026-12-15T12:00')
         page.locator('[data-voice-save]').click()
         page.wait_for_url('**/patients/1?voice_saved=1')
-        expect(page.get_by_role('status')).to_contain_text('kaydedildi')
+        expect(page.get_by_role('status').filter(has_text='Kaydedildi')).to_contain_text('kaydedildi')
         expect(page.locator('.patient-history-title')).to_have_text('Sesli muayene #1')
         expect(page.locator('.patient-history-row')).to_contain_text('Kaydedildi')
         assert 'Yarım kaldı' not in page.locator('.patient-history-row').inner_text()

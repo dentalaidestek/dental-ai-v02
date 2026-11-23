@@ -112,10 +112,14 @@ def test_only_admin_can_purge_dispute_and_block_new_messages(setup):
     url=f'/admin/consultation-review/{case_id}/delete-messages'
     assert client.post(url,headers={'x-user':'requester'},follow_redirects=False).status_code==403
     assert client.post(url,headers={'x-user':'admin'},follow_redirects=False).status_code==303
-    assert client.post(f'/expert-support/cases/{case_id}/message',data={'content':'New message'},headers={'Accept':'application/json'}).status_code==409
+    # Purged conversations answer 410 (messages are no longer kept); a merely
+    # closed case still answers 409. Ported web contract (2026-11-22).
+    assert client.post(f'/expert-support/cases/{case_id}/message',data={'content':'New message'},headers={'Accept':'application/json'}).status_code==410
     with Session(engine) as s:
         assert not s.exec(select(main.ConsultationMessage)).all()
         assert s.get(main.ConsultationCase,case_id).messages_deleted_at
+    closed_id=add_case(setup,'COMPLETED')
+    assert client.post(f'/expert-support/cases/{closed_id}/message',data={'content':'New message'},headers={'Accept':'application/json'}).status_code==409
 
 
 def test_manual_delete_hides_only_one_participant_without_restoring_on_get(setup):

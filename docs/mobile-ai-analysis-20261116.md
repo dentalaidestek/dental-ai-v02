@@ -1,0 +1,61 @@
+# Mobile AI analysis parity — 2026-11-16
+
+Branch: `feature/mobile-web-parity-20261110`  
+PR: #257 (base remains `feature/mobile-beta-20261110`)  
+Issue: #258
+
+## Web flow inspected
+
+- `app/templates/analysis_new.html`: anonymous patient ID, age label, chief complaint, optional FDI/clinical note, saved media plus new files, four-image cap, 15 MiB per new file and 48 MiB total new-file bytes.
+- `app/templates/analysis_viewer.html`: asset strip, modality-aware viewer selection, per-asset vision endpoints, retry and clinical-note/manual-finding/treatment-analysis actions.
+- `app/templates/result.html`: preliminary/final result sections and clinician-owned decision boundary.
+
+## Native changes
+
+- `NativeAnalysisUpload` receives the already-loaded patient summary and renders the same anonymous ID / age / chief complaint context. It does not request patient data again and does not display name, phone or national ID.
+- Patient summary is passed from both `NativeDentalAI` and the patient-profile media composer using already-loaded records.
+- Upload UI reports workflow phase and multipart byte progress. The 100% message explicitly distinguishes transfer completion from server receipt confirmation.
+- Cancellation still aborts only the active transfer. The durable intent and request key remain available for receipt reconciliation; a second analysis is not created blindly.
+- Saved media count remains part of the four-image cap, while the 48 MiB limit is correctly described as applying to new uploaded files only. Saved media IDs are sent as references, not re-uploaded bytes.
+- The result summary repeats anonymous patient ID, age and complaint from the returned analysis patient object.
+- Native vision viewer now has a modality-labelled asset strip matching the web viewer, using the already-authorized asset list returned by the clinical workspace; switching assets does not fetch another patient or asset list.
+- Pending vision-result polling uses bounded exponential backoff (10s, 20s, then at most 30s) and pauses while busy, unfocused or backgrounded.
+
+## Regression coverage added
+
+- Patient identity/age/complaint display, including age zero and missing-value fallbacks; no patient name disclosure.
+- Multipart byte-progress callback reports loaded and total bytes.
+- Cancelled transfer keeps the durable upload intent and exposes same-key retry/reconciliation.
+- Pending vision polling backs off and does not overlap requests.
+- Viewer asset switching and modality labels.
+
+The tests are registered in the existing `test:beta` and viewer test files. They are committed but were not executed in this run because GitHub Actions jobs failed before runner assignment; no test pass is claimed.
+
+## CI evidence
+
+At HEAD `ffb422ca101b5419296961745a65cc3a15ed059e`, GitHub Actions runs fail in 2–3 seconds with empty `steps`, `runner_id: 0`, empty `runner_name`, and no downloadable job log (`BlobNotFound`). The Android typecheck/APK and regression commands therefore did not start. This is runner provisioning/assignment evidence, not a TypeScript or test assertion failure. The exact account/billing/hosted-runner cause is not exposed by these records.
+
+No main merge, production deploy, database migration, or APK/IPA publication was performed.
+
+
+## Follow-up native clinical review parity — 2026-11-16
+
+A second web-flow inspection found additional clinical-result gaps and unsafe display metadata:
+
+- The native clinical result previously displayed the internal numeric patient database ID. The mobile clinical API now returns the patient's anonymous ID and the UI displays that label instead; no patient name, phone or national ID is added.
+- The result UI now explains `NEEDS_INFO` in the same clinical terms as the web result screen and labels `READY`, `INITIAL`, `FINAL`, and `AI_ANALYZING` explicitly.
+- Dentition switching now names its destination ("Süt Dişlerine Geç" / "Kalıcı Dişlere Geç") and clears selections hidden by the other dentition, preventing a stale, invisible FDI selection from being submitted.
+- Clinical workspace parsing validates the anonymous patient label, asset count and unique positive asset IDs, safe asset names/types, exact same-analysis relative asset URLs, nullable clinical fields, and job kind/status/retryability before rendering or enabling retry.
+- Added native regressions for dentition switching/selection clearing, internal patient-ID non-disclosure, `NEEDS_INFO` guidance, malformed/duplicate asset metadata, asset URL binding, anonymous patient label validation and malformed job states.
+- Added backend API regression asserting the anonymous patient label is returned.
+
+These tests are committed but remain unexecuted because Actions jobs continue to fail before runner assignment. At HEAD `96b0a49`, Android typecheck/APK jobs (runs `43921092862`, `43921092960`) ended with empty steps, `runner_id: 0`, and blank runner names. The security and regression workflows at the preceding code commit show the same signature. No source test or TypeScript compiler actually ran.
+
+
+## Follow-up — modality-specific finding parity (2026-11-16)
+
+A web-first review of `vision_service/templates/radiograph_viewer.js` and `vision_service/templates/intraoral_viewer.js` found that the radiograph viewer consumes `gradcam_attention`, while the intraoral viewer deliberately consumes only `findings`, `auxiliary_radiographic_findings` and `image_level_findings`. Native `visionModel.ts` previously pooled `gradcam_attention` for every asset type, so an intraoral photo could display a radiographic attention overlay that the web flow would not show.
+
+Native finding parsing now receives the selected, already-authorized asset's `image_type`. Grad-CAM attention is included only for the supported radiographic modalities (`PANORAMIC`, `BITEWING`, `PERIAPICAL`); `INTRAORAL_PHOTO` and unknown/missing modality values fail closed and do not render that overlay. The ordinary finding pools, confidence threshold, geometry validation, no-box list behavior and provider output are unchanged. Asset switching refreshes the parser with the selected asset's modality. No new API request, provider call, database write, polling loop or patient-data exposure was added.
+
+Regression coverage was added for panoramic, bitewing, intraoral and unknown modalities, plus the native viewer-to-parser modality handoff. `visionViewer.cjs` is already included in `npm run test:beta`. Isolated execution and strict helper compilation are reported separately in the run summary; the full mobile suite and Android CI remain separate acceptance gates.

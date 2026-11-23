@@ -1,32 +1,53 @@
-# DENTAL AI Android
+# Dental AI Android / iOS native beta
 
-Native React Native / Expo client for the existing Dental AI backend.
+React Native + Expo + TypeScript; no WebView. Uses the existing mobile API,
+session records, patient data, analysis jobs and social/moderation tables.
+AI providers and model routing are unchanged.
 
-- Backend remains FastAPI/PostgreSQL/R2/Gemini.
-- Android uses JSON APIs under /api/mobile/v1.
-- Authentication reuses the existing session-token system.
-- Session token is stored with Expo SecureStore.
-- The app is intentionally separate from the production web UI.
+## Develop and verify
 
-## Local development
+```sh
+cd mobile
+npm ci
+npm test
+npx expo start
+npx expo export --platform android --platform ios
+```
 
-    cd mobile
-    npm install
-    npx expo start
+Tabs: Ana Sayfa, Dental Akış, AI Analiz, Hastalar, Profil. Program, academic
+questions, consultation/messages and notifications remain available through the
+home/profile stacks. Native voice and academic document upload are not implemented.
 
-## Android APK
+## Internal Android APK
 
-The preview EAS profile is configured for an installable APK:
+```sh
+npx expo prebuild --platform android --no-install
+cd android
+./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --max-workers=2
+```
 
-    eas build --platform android --profile preview
+This embeds JS and uses the generated development signing key, for internal
+testing only. CI uploads the APK as `dental-ai-beta-arm64`. It targets ARM64
+phones; do not distribute it as a production store-signed app.
 
-Production Play Store artifact:
+The new native Dental Akış authorization and expert-photo endpoint require
+the backend changes in the same PR. Until the backend is approved and deployed,
+the existing production social API rejects the app's Bearer requests. Main and
+production were not changed by this work.
 
-    eas build --platform android --profile production
+## EAS and stores
 
-No production deployment or main-branch merge is performed by this branch.
+```sh
+eas build --platform android --profile preview
+eas build --platform android --profile production
+eas build --platform ios --profile simulator
+eas build --platform ios --profile production
+```
 
-Native workspace: realtime, notifications, consultation, Academic AI, analysis history and patient media are wired on the current branch.
-Verification retry after native API syntax repair.
-Backend consultation flow wired; final compile verification trigger.
-Final backend compile check after consultation hardening.
+EAS project association and store signing credentials must come from the owner's
+accounts. No invented project UUID or credential is checked in. iOS Metro export
+does not produce a signed IPA or prove TestFlight/device compatibility.
+
+See [audit](../docs/mobile-beta-2026-11-10.md) and
+[release gates](../docs/mobile-store-readiness-2026-11-10.md) for tested scope,
+deferred features, device acceptance and health/privacy obligations.

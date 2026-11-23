@@ -7,11 +7,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
+import time
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from sqlalchemy import Index, text, func, update, or_, and_
 from sqlalchemy.orm import aliased
 from sqlalchemy.exc import IntegrityError
@@ -58,6 +60,19 @@ class WorkCapacity(RuntimeError):
 
 
 current_job: ContextVar[WorkJob | None] = ContextVar("dental_work_job", default=None)
+
+# Voice receipt expiry is bounded and needs only minute-level precision. The
+# worker calls prune_history on every queue poll, so throttle this maintenance.
+_voice_receipt_prune_last = 0.0
+
+
+def _voice_receipt_prune_due() -> bool:
+    global _voice_receipt_prune_last
+    stamp = time.monotonic()
+    if stamp - _voice_receipt_prune_last < 300:
+        return False
+    _voice_receipt_prune_last = stamp
+    return True
 
 
 @lru_cache(maxsize=1)
@@ -251,14 +266,174 @@ def retry(session, job):
 
 
 class WorkGarbage(SQLModel, table=True):
+    """Durable cleanup for generated results, patient media and account-owned assets."""
     id: int | None = Field(default=None, primary_key=True)
     reference: str = Field(unique=True)
     available_at: datetime = Field(default_factory=lambda: now() + timedelta(days=1), index=True)
     attempts: int = 0
 
 
+_PATIENT_MEDIA_OBJECT = re.compile(
+    r"uploads/(?:patient_[1-9][0-9]*_[0-9a-f]{32}(?:\.thumb\.jpg|\.(?:jpg|jpeg|png|webp))|"
+    r"patient-media/patient_[1-9][0-9]*_[0-9a-f]{32}(?:\.thumb\.jpg|\.(?:jpg|jpeg|png|webp)))"
+)
+_GUEST_ANALYSIS_OBJECT = re.compile(
+    r"uploads/guest_analysis_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)"
+)
+_ANALYSIS_ASSET_OBJECT = re.compile(
+    r"uploads/analysis_[1-9][0-9]*_[0-9a-f]{32}\.(?:jpg|jpeg|png|webp)"
+)
+_ACCOUNT_ASSET_OBJECT = re.compile(
+    r"uploads/(?:"
+    r"profile_photos/user_[1-9][0-9]*_[0-9a-f]{16}\.jpg|"
+    r"expert_credentials/user_[1-9][0-9]*/credential_[0-9a-f]{32}\.(?:pdf|jpg|jpeg|png)|"
+    r"expert_title_changes/user_[1-9][0-9]*/title_[0-9a-f]{32}\.(?:pdf|jpg|jpeg|png)|"
+    r"membership_documents/user_[1-9][0-9]*/[0-9a-f]{32}\.(?:pdf|jpg|jpeg|png)"
+    r")"
+)
+
+
+def is_patient_media_reference(reference: str) -> bool:
+    """Accept only the two server-generated patient-media object-key layouts."""
+    return isinstance(reference, str) and _PATIENT_MEDIA_OBJECT.fullmatch(reference) is not None
+
+
+def is_guest_analysis_reference(reference: str) -> bool:
+    """Accept only server-generated guest-analysis upload object keys."""
+    return isinstance(reference, str) and _GUEST_ANALYSIS_OBJECT.fullmatch(reference) is not None
+
+
+def is_analysis_asset_reference(reference: str) -> bool:
+    """Accept only server-generated, analysis-owned image asset object keys."""
+    return isinstance(reference, str) and _ANALYSIS_ASSET_OBJECT.fullmatch(reference) is not None
+
+
+def is_account_asset_reference(reference: str) -> bool:
+    """Accept only current server-generated profile and identity-document keys."""
+    return isinstance(reference, str) and _ACCOUNT_ASSET_OBJECT.fullmatch(reference) is not None
+
+
+def is_ai_result_reference(reference: str) -> bool:
+    """Accept safe relative result keys under the private AI-result prefix."""
+    if not isinstance(reference, str) or "\\" in reference:
+        return False
+    path = PurePosixPath(reference)
+    return (
+        reference.startswith("uploads/ai_results/")
+        and not path.is_absolute()
+        and path.parts[:2] == ("uploads", "ai_results")
+        and all(part not in {"", ".", ".."} for part in path.parts)
+    )
+
+
+def _ensure_sqlite_outer_transaction(session: Session) -> None:
+    """Keep a SAVEPOINT inside the caller's transaction on sqlite3.
+
+    Python's sqlite3 driver does not begin a database transaction for a SELECT.
+    Releasing the first SAVEPOINT can therefore commit it implicitly, making a
+    later Session.rollback() unable to undo a cleanup receipt. Production uses
+    PostgreSQL; this guard keeps SQLite/dev and transactional tests equivalent.
+    """
+    if session.get_bind().dialect.name != "sqlite":
+        return
+    connection = session.connection()
+    proxied = connection.connection
+    driver = getattr(proxied, "driver_connection", proxied)
+    if not getattr(driver, "in_transaction", False):
+        connection.exec_driver_sql("BEGIN")
+
+
+def _enqueue_cleanup_reference(session: Session, reference: str, *, delay_seconds: int = 30) -> bool:
+    """Insert or re-arm a durable cleanup receipt without storing clinical content.
+
+    The attempts counter also fences a collector that claimed an older receipt
+    just before account erasure re-queued the same object.
+    """
+    stamp = now() + timedelta(seconds=max(0, delay_seconds))
+    existing = session.exec(
+        select(WorkGarbage).where(WorkGarbage.reference == reference)
+    ).first()
+    if existing is not None:
+        existing.attempts = int(existing.attempts or 0) + 1
+        existing.available_at = stamp
+        session.add(existing)
+        return True
+
+    row = WorkGarbage(reference=reference, available_at=stamp)
+    try:
+        _ensure_sqlite_outer_transaction(session)
+        with session.begin_nested():
+            session.add(row)
+            session.flush()
+    except IntegrityError:
+        existing = session.exec(
+            select(WorkGarbage).where(WorkGarbage.reference == reference)
+        ).first()
+        if existing is None:
+            raise
+        existing.attempts = int(existing.attempts or 0) + 1
+        existing.available_at = stamp
+        session.add(existing)
+    return True
+
+
+def enqueue_guest_analysis_cleanup(session: Session, reference: str) -> bool:
+    """Queue a server-generated guest upload for deletion after metadata removal."""
+    if not is_guest_analysis_reference(reference):
+        return False
+    return _enqueue_cleanup_reference(session, reference, delay_seconds=30)
+
+
+def enqueue_analysis_asset_cleanup(session: Session, reference: str) -> bool:
+    """Queue a generated analysis image after its asset row is rolled back or deleted."""
+    if not is_analysis_asset_reference(reference):
+        return False
+    # Give any cancelled threadpool-backed R2 write time to settle before the
+    # collector can remove the partially published object.
+    return _enqueue_cleanup_reference(session, reference, delay_seconds=30)
+
+
+def enqueue_ai_result_cleanup(session: Session, reference: str) -> bool:
+    """Queue a private generated result for deletion after its parent row is removed."""
+    if not is_ai_result_reference(reference):
+        return False
+    return _enqueue_cleanup_reference(session, reference, delay_seconds=30)
+
+
+def enqueue_patient_media_cleanup(session: Session, reference: str) -> bool:
+    """Queue a server-generated patient-media delete in the metadata transaction."""
+    if not is_patient_media_reference(reference):
+        return False
+    return _enqueue_cleanup_reference(session, reference, delay_seconds=0)
+
+def enqueue_account_asset_cleanup(session: Session, reference: str) -> bool:
+    """Queue a private account-owned profile/verification object in its metadata transaction."""
+    if not is_account_asset_reference(reference):
+        return False
+    return _enqueue_cleanup_reference(session, reference, delay_seconds=0)
+
+
+def enqueue_replaced_account_asset_cleanup(
+    session: Session,
+    previous_reference: str | None,
+    current_reference: str | None,
+) -> bool:
+    """Queue only a superseded allowlisted account asset in the caller's transaction.
+
+    The collector re-checks every supported metadata owner before deleting. A
+    same-path replacement is a no-op for idempotent callers and legacy references.
+    New profile-photo uploads use unique keys so an old receipt cannot target a
+    later upload of identical image bytes.
+    """
+    if not previous_reference or previous_reference == current_reference:
+        return False
+    return enqueue_account_asset_cleanup(session, str(previous_reference))
+
+
 def collect_garbage(engine):
     from app.object_storage import delete
+    from app.main import Analysis, ExpertProfile, ExpertTitleChange, GuestAnalysis, GuestImageAsset, ImageAsset, PatientMedia, User
+
     with Session(engine, expire_on_commit=False) as session:
         query = select(WorkGarbage).where(WorkGarbage.available_at <= now()).order_by(WorkGarbage.id).limit(1)
         if engine.dialect.name == 'postgresql':
@@ -266,35 +441,112 @@ def collect_garbage(engine):
         garbage = session.exec(query).first()
         if garbage is None:
             return
-        garbage.available_at = now() + timedelta(minutes=5)
         garbage.attempts += 1
+        # Bounded exponential backoff prevents a storage outage from turning
+        # the shared cleanup worker into a constant retry loop.
+        retry_minutes = min(360, 5 * (2 ** min(max(0, garbage.attempts - 1), 7)))
+        garbage.available_at = now() + timedelta(minutes=retry_minutes)
+        claim_attempts = garbage.attempts
         session.add(garbage)
         session.commit()
         session.close()
-        # Only immutable generated results belong in this queue.
-        if not str(garbage.reference).startswith('uploads/ai_results/'):
+
+        reference = str(garbage.reference)
+        patient_media = is_patient_media_reference(reference)
+        guest_asset = is_guest_analysis_reference(reference)
+        analysis_asset = is_analysis_asset_reference(reference)
+        ai_result = is_ai_result_reference(reference)
+        account_asset = is_account_asset_reference(reference)
+        if not ai_result and not patient_media and not guest_asset and not analysis_asset and not account_asset:
             return
-        # Never erase a successfully published result after an ambiguous commit.
-        in_use = session.exec(text("SELECT 1 FROM analysis WHERE result_path=:ref UNION ALL SELECT 1 FROM guestanalysis WHERE result_path=:ref LIMIT 1"), params={"ref": garbage.reference}).first()
+
+        # A cleanup receipt is visible only after metadata deletion commits.
+        # Re-check references before touching the object. The attempt counter
+        # fences an older collector if erasure re-armed this same receipt.
+        if patient_media:
+            in_use = session.exec(
+                select(PatientMedia.id).where(PatientMedia.file_path == reference).limit(1)
+            ).first()
+        elif guest_asset:
+            in_use = session.exec(
+                select(GuestImageAsset.id).where(GuestImageAsset.file_path == reference).limit(1)
+            ).first()
+        elif analysis_asset:
+            in_use = session.exec(
+                select(ImageAsset.id).where(ImageAsset.file_path == reference).limit(1)
+            ).first()
+            if not in_use:
+                in_use = session.exec(
+                    select(Analysis.id).where(Analysis.image_path == reference).limit(1)
+                ).first()
+            if not in_use:
+                in_use = session.exec(
+                    select(Analysis.id).where(Analysis.radiograph_path == reference).limit(1)
+                ).first()
+        elif account_asset:
+            # A path can be shared by a retained/other account record. Re-check
+            # every private identity-document owner before deleting the object.
+            from app.membership_verification import MembershipVerification
+            in_use = any(session.exec(statement).first() for statement in (
+                select(User.id).where(User.profile_photo_path == reference).limit(1),
+                select(ExpertProfile.id).where(ExpertProfile.credential_document_path == reference).limit(1),
+                select(ExpertTitleChange.id).where(ExpertTitleChange.credential_document_path == reference).limit(1),
+                select(MembershipVerification.id).where(MembershipVerification.document_path == reference).limit(1),
+            ))
+        else:
+            in_use = session.exec(
+                text("SELECT 1 FROM analysis WHERE result_path=:ref UNION ALL SELECT 1 FROM guestanalysis WHERE result_path=:ref LIMIT 1"),
+                params={"ref": reference},
+            ).first()
         session.close()
+
         if in_use:
-            session.exec(__import__('sqlalchemy').delete(WorkGarbage).where(WorkGarbage.id == garbage.id))
+            session.exec(__import__('sqlalchemy').delete(WorkGarbage).where(
+                WorkGarbage.id == garbage.id,
+                WorkGarbage.attempts == claim_attempts,
+            ))
             session.commit()
             return
         try:
-            delete(garbage.reference)
+            delete(reference)
         except Exception:
+            # Keep the durable row; its five-minute retry time was committed above.
+            import logging
+            logging.getLogger(__name__).warning(
+                "Private object cleanup failed; retry remains queued (attempt=%s)",
+                garbage.attempts,
+                exc_info=True,
+            )
             return
-        session.exec(__import__('sqlalchemy').delete(WorkGarbage).where(WorkGarbage.id == garbage.id))
+        session.exec(__import__('sqlalchemy').delete(WorkGarbage).where(
+            WorkGarbage.id == garbage.id,
+            WorkGarbage.attempts == claim_attempts,
+        ))
         session.commit()
 
 
 def prune_history(engine):
     from sqlalchemy import delete
+    from app.main import Analysis, Patient
+    from app.voice_asr_receipts import expire_voice_asr_receipts
+    from app.voice_clinical_receipts import expire_voice_clinical_receipts
+    # Upload and treatment receipts remain authoritative while their parent
+    # resource exists. Voice ASR and clinical extraction receipts have a 24h
+    # encrypted-result TTL and seven-day tombstone retention.
+    live_upload_receipt=and_(WorkJob.kind=='UPLOAD_RECEIPT',WorkJob.resource_type=='ANALYSIS',select(Analysis.id).where(Analysis.id==WorkJob.resource_id).exists())
+    live_treatment_receipt=and_(WorkJob.kind=='TREATMENT_RECEIPT',WorkJob.resource_type=='PATIENT',select(Patient.id).where(Patient.id==WorkJob.resource_id).exists())
+    live_patient_media_receipt=and_(WorkJob.kind=='PATIENT_MEDIA_RECEIPT',WorkJob.resource_type=='PATIENT',select(Patient.id).where(Patient.id==WorkJob.resource_id).exists())
     with Session(engine) as session:
+        if _voice_receipt_prune_due():
+            expire_voice_asr_receipts(session, patient_model=Patient, limit=100)
+            expire_voice_clinical_receipts(session, patient_model=Patient, limit=100)
         ids = session.exec(select(WorkJob.id).where(
             WorkJob.status.in_(["DONE", "CANCELLED", "FAILED"]),
-            WorkJob.updated_at < now() - timedelta(days=30)).order_by(WorkJob.id).limit(100)).all()
+            WorkJob.updated_at < now() - timedelta(days=30),
+            ~live_upload_receipt,
+            ~live_treatment_receipt,
+            ~live_patient_media_receipt,
+        ).order_by(WorkJob.id).limit(100)).all()
         if ids:
             session.exec(delete(WorkJob).where(WorkJob.id.in_(ids)))
         session.commit()

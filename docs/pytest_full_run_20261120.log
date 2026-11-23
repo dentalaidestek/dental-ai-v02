@@ -1,0 +1,9 @@
+hint: the same ref. If you want to integrate the remote changes, use
+hint: 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+ERROR tests/expert_social/test_publication_share_feedback_browser.py::test_link_only_publication_publishes_without_duplicating_title[publication_page3]
+ERROR tests/expert_social/test_publication_share_feedback_browser.py::test_removing_a_preparing_publication_restores_publish_and_ignores_late_result[publication_page0]
+ERROR tests/expert_social/test_publication_share_feedback_browser.py::test_removing_a_preparing_publication_restores_publish_and_ignores_late_result[publication_page1]
+ERROR tests/expert_social/test_publication_share_feedback_browser.py::test_removing_a_preparing_publication_restores_publish_and_ignores_late_result[publication_page2]
+ERROR tests/expert_social/test_publication_share_feedback_browser.py::test_removing_a_preparing_publication_restores_publish_and_ignores_late_result[publication_page3]
+178 failed, 2723 passed, 86 skipped, 1403 warnings, 43 errors, 594 subtests passed in 822.27s (0:13:42)

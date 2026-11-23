@@ -1,6 +1,7 @@
 import React,{createContext,useCallback,useContext,useEffect,useMemo,useState}from"react";
 import * as SecureStore from"expo-secure-store";
 import {RealtimeCursor} from './realtimeCursor';
+import {API_BASE} from './api';
 export type RealtimeEvent={id?:number;event_id?:number;event_type?:string;entity_type?:string;entity_id?:number|string;payload?:any;replay?:boolean;type?:string;[k:string]:any};
 type Ctx={lastEvent:RealtimeEvent|null;connected:boolean;lastEventId:number;invalidate:(types?:string[])=>void};
 const Context=createContext<Ctx>({lastEvent:null,connected:false,lastEventId:0,invalidate:()=>{}});
@@ -13,7 +14,7 @@ export function RealtimeProvider({token,userId,children}:{token:string;userId:nu
   setLastEvent(null);setLastEventId(0);setConnected(false);
   const connect=()=>{
    if(!active||!token)return;
-   const ws=new (WebSocket as any)('wss://dentalai.tr/ws/sync',undefined,{headers:{Authorization:'Bearer '+token}}) as WebSocket;
+   const ws=new (WebSocket as any)(API_BASE.replace(/^https:/,"wss:").replace(/\/api\/mobile\/v1\/?$/,"")+'/ws/sync',undefined,{headers:{Authorization:'Bearer '+token}}) as WebSocket;
    socket=ws;
    const current=()=>active&&socket===ws;
    const resume=(after:number)=>{if(current()&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'resume',after_id:after}));};
@@ -30,7 +31,7 @@ export function RealtimeProvider({token,userId,children}:{token:string;userId:nu
      }
      if(evt.type==='resync'){resume(cursor.resumeAfter());return;}
      if(!cursor.accept(evt))return;
-     setLastEventId(cursor.current);setLastEvent(evt);
+     setLastEventId(cursor.current);setLastEvent({...evt,replay:evt.replay===true||evt.payload?.replay===true});
      // Serialize writes; an older callback cannot overwrite a newer cursor.
      try{await SecureStore.setItemAsync(key,String(cursor.current));}catch{}
     }).catch(()=>{});

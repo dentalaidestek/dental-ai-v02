@@ -73,8 +73,51 @@ def _user(request):
         origin = request.headers.get('origin')
         if origin and (urlsplit(origin).scheme, urlsplit(origin).netloc) != (request.url.scheme, request.url.netloc):
             return None
+
+    # Web voice routes use the same-site session cookie. The native app deliberately
+    # omits cookies and sends its own Bearer session token, so resolve that token
+    # through the same persisted SessionToken table rather than treating the native
+    # request as anonymous. This is shared by the complete voice API, not just history.
+    # If an Authorization header is present it is authoritative. Never fall back
+    # to a different browser-cookie principal when a native Bearer token is invalid
+    # or belongs to another role; that would create a mixed-session confused deputy.
+    authorization = request.headers.get('authorization', '').strip()
+    if authorization:
+        scheme, separator, credential = authorization.partition(' ')
+        credential = credential.strip()
+        if scheme.lower() != 'bearer' or not separator or not credential or len(credential) > 512:
+            return None
+
+        token_hash = main.hash_session_token(credential)
+        with Session(main.engine, expire_on_commit=False) as session:
+            authenticated = session.exec(
+                select(main.SessionToken, main.User)
+                .join(main.User, main.User.id == main.SessionToken.user_id)
+                .where(main.SessionToken.token_hash == token_hash)
+            ).first()
+            if not authenticated:
+                return None
+            session_token, mobile_user = authenticated
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            if session_token.expires_at <= now:
+                session.delete(session_token)
+                session.commit()
+                return None
+            if not mobile_user.is_active or not mobile_user.email_verified_at:
+                return None
+            if mobile_user.role not in {'DOCTOR', 'ADMIN'}:
+                return None
+            if mobile_user.role == 'ADMIN':
+                verified = session.get(main.AdminVerifiedSession, token_hash)
+                if ((mobile_user.email or '').strip().lower() != 'dentalaidestek@gmail.com'
+                        or not verified or verified.user_id != mobile_user.id):
+                    return None
+            return mobile_user
+
     user = main.get_current_user(request)
-    return user if user and user.is_active and user.role in {'DOCTOR', 'ADMIN'} else None
+    if user and user.is_active and user.role in {'DOCTOR', 'ADMIN'}:
+        return user
+    return None
 
 
 def _owned(session, main, user, ident, *, lock=False):
@@ -218,34 +261,58 @@ def final_review(request: Request, patient_id: int, payload: FinalInput):
         return _reply({'ok': False, 'error': str(exc)}, 422)
 
 
+def reviewed_history_payload(session, main, user, patient_id, fingerprint=None):
+    """Return the latest explicitly approved value per field, with immutable provenance."""
+    from app.approved_anamnesis import ApprovedAnamnesis, HISTORY_LABELS
+
+    patient = _owned(session, main, user, patient_id)
+    if not patient:
+        return None
+    fingerprint = fingerprint or _fingerprint(session, main, patient)
+    from sqlalchemy import func
+    table = ApprovedAnamnesis.__table__
+    # Analysis IDs are allocated when the clinician's approval transaction
+    # creates its canonical Analysis row. Order by that source identity, not
+    # ledger insertion ID: a legacy backfill can insert an older Analysis after
+    # a newer approval already exists in a partially prepared ledger.
+    latest = (
+        select(table.c.field_key, func.max(table.c.analysis_id).label("latest_analysis_id"))
+        .where(table.c.patient_id == patient_id, table.c.owner_user_id == user.id)
+        .group_by(table.c.field_key)
+        .subquery()
+    )
+    rows = session.execute(
+        select(table.c.field_key, table.c.value, table.c.analysis_id)
+        .join(
+            latest,
+            (table.c.field_key == latest.c.field_key)
+            & (table.c.analysis_id == latest.c.latest_analysis_id),
+        )
+        .where(table.c.patient_id == patient_id, table.c.owner_user_id == user.id)
+        .order_by(table.c.field_key)
+    ).mappings()
+    fields = {}
+    for row in rows:
+        key = row["field_key"]
+        value = row["value"]
+        if key in HISTORY_LABELS and isinstance(value, str) and value and len(value) <= 3000:
+            fields[key] = {"value": value, "quote": "", "analysis_id": row["analysis_id"]}
+    return {"ok": True, "revision": fingerprint, "fields": fields,
+        "notice": "Önceki hekim onaylı sesli muayene kayıtlarıdır. Güncel kullanım veya hastalık durumu olarak kabul etmeden hastayla doğrulayın."}
+
+
 @router.get('/patients/{patient_id}/voice-exam/history')
 def reviewed_history(request: Request, patient_id: int):
     """Only explicitly saved voice clinical fields, never arbitrary notes or raw audio."""
     from app import main
-    from app.work_jobs import WorkJob
     user, fingerprint, error = _access(request, patient_id)
     if error is not None:
         return error
-    labels = {'family_history': 'Aile sağlık öyküsü', 'materials': 'Konuşulan materyaller', 'dental_history': 'Önceki diş tedavileri', 'oral_habits': 'Ağız bakımı ve alışkanlıklar', 'medical_history': 'Sistemik hastalık / hasta beyanı', 'medications': 'İlaç / hasta beyanı',
-              'allergies': 'Alerji / hasta beyanı'}
-    fields = {}
     with Session(main.engine) as session:
-        # Join prevents scanning the entire patient archive and excludes non-voice records.
-        rows = session.exec(select(main.Analysis).join(WorkJob, WorkJob.resource_id == main.Analysis.id)
-            .where(main.Analysis.patient_id == patient_id, WorkJob.owner_user_id == user.id,
-                   WorkJob.resource_type == 'ANALYSIS', WorkJob.kind == 'VOICE_REVIEW', WorkJob.status == 'DONE')
-            .order_by(main.Analysis.id.desc()).limit(12)).all()
-        for row in rows:
-            for paragraph in (row.clinical_notes or '').split('\n\n'):
-                for name, label in labels.items():
-                    prefix = label + ': '
-                    if name not in fields and paragraph.startswith(prefix):
-                        value = paragraph[len(prefix):].strip()
-                        if value and len(value) <= 3000:
-                            fields[name] = {'value': value, 'quote': value, 'analysis_id': row.id}
-    return _reply({'ok': True, 'revision': fingerprint, 'fields': fields,
-        'notice': 'Önceki hekim onaylı sesli muayene kayıtlarıdır. Güncel kullanım veya hastalık durumu olarak kabul etmeden hastayla doğrulayın.'})
-
+        result = reviewed_history_payload(session, main, user, patient_id, fingerprint)
+    if result is None:
+        return _reply({'ok': False}, 404)
+    return _reply(result)
 
 @router.post('/patients/{patient_id}/voice-exam/clinical')
 def clinical_review(request: Request, patient_id: int, payload: ClinicalInput):
@@ -475,6 +542,17 @@ def apply_review(request: Request, patient_id: int, payload: ApplyInput, backgro
             notes += '\n\nHekim tarafından onaylanan diş ' + item.tooth + ': ' + item.status + ' ' + item.note
         analysis = main.Analysis(patient_id=patient_id, status='DRAFT', clinical_notes=notes.strip() or 'Sesli muayene alanları hekim tarafından onaylandı.')
         session.add(analysis); session.flush(); session.add(patient)
+        # Keep the canonical Analysis as the source of truth and append only the
+        # explicitly approved anamnesis fields in the same transaction.
+        from app.approved_anamnesis import ApprovedAnamnesis, HISTORY_LABELS
+        approved_table = ApprovedAnamnesis.__table__
+        approved_rows = [
+            {"owner_user_id": user.id, "patient_id": patient_id, "field_key": key,
+             "value": value, "analysis_id": analysis.id}
+            for key, value in fields.items() if key in HISTORY_LABELS
+        ]
+        if approved_rows:
+            session.execute(approved_table.insert(), approved_rows)
         events += main._record_patient_realtime_events(session, patient, 'PATIENT_UPDATED')
         # Audit/idempotency only: no audio or transcript in generic job payloads.
         session.add(WorkJob(owner_user_id=user.id, resource_id=analysis.id, resource_type='ANALYSIS',
