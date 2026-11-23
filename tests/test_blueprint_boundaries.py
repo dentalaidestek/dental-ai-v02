@@ -322,7 +322,10 @@ def test_web_create_analysis_rejects_disallowed_extensions_with_422(database, mo
     assert 'Yalnızca JPEG, PNG veya WebP' in detail
     assert 'klinik_notu.txt' in detail
     with Session(engine) as s:
-        assert s.exec(select(main.Analysis)).all() == []
+        # The fixture itself creates one DRAFT Analysis; the rejected upload
+        # must not have created any additional row.
+        rows = s.exec(select(main.Analysis)).all()
+        assert [row.id for row in rows] == [ids.analysis]
 
 
 @pytest.mark.parametrize('guest', [False, True])

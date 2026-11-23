@@ -13295,11 +13295,7 @@ def create_analysis(
         if any(image is not None and not image.filename for image in images):
             return HTMLResponse("Her klinik görüntünün dosya adı bulunmalıdır.", status_code=400)
         new_images = [image for image in images if image and image.filename]
-        if any(
-            Path(Path(image.filename).name).suffix.lower() not in allowed_extensions
-            for image in new_images
-        ):
-            return HTMLResponse("Yalnızca JPEG, PNG veya WebP görüntüler yüklenebilir.", status_code=422)
+        new_images = [image for image in images if image and image.filename]
         new_image_count = len(new_images)
         if len(requested_media_ids) + new_image_count > MAX_ANALYSIS_IMAGES:
             return HTMLResponse(f"Tek analizde kayıtlı ve yeni görüntülerin toplamı en fazla {MAX_ANALYSIS_IMAGES} olabilir.", status_code=400)
