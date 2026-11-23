@@ -430,7 +430,7 @@ def mobile_patients(
     user: User = Depends(_mobile_user),
     q: str = Query(default="", max_length=100),
     limit: int = Query(default=30, ge=1, le=100),
-    offset: int = Query(default=0, ge=0, le=10000),
+    offset: int = Query(default=0, ge=0),
 ):
     search = " ".join(q.strip().split())
     with Session(engine, expire_on_commit=False) as session:
@@ -513,7 +513,7 @@ def mobile_create_patient(payload: MobilePatientCreate, user: User = Depends(_mo
         try:
             birth = datetime.strptime(payload.birth_date, "%Y-%m-%d").date()
             today = datetime.utcnow().date()
-            calculated_age = today.year - birth.year - ((today.month, birth.day) < (birth.month, birth.day))
+            calculated_age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
         except ValueError:
             raise HTTPException(status_code=422, detail="Doğum tarihi geçersiz.")
 
@@ -707,11 +707,15 @@ def mobile_patient_detail(
                 {
                     "id": t.id,
                     "tooth_number": t.tooth_number,
-                    "status": t.status,
-                    "note": t.note,
-                    "updated_at": t.updated_at,
+                    "treatment_name": t.treatment_name,
+                    "treatment_date": t.treatment_date,
+                    "material": t.material,
+                    "doctor_note": t.doctor_note,
+                    "result": t.result,
+                    "analysis_id": t.analysis_id,
+                    "created_at": t.created_at,
                 }
-                for t in teeth
+                for t in treatments
             ],
             "media": [
                 {
@@ -1165,3 +1169,4 @@ async def mobile_chat_upload(case_id: int, file: UploadFile = File(...),
             _mobile_request(token), case_id, clean, reply_to_message_id, client_message_id)
     finally:
         await clean.close()
+
