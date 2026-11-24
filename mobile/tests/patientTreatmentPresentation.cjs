@@ -34,8 +34,10 @@ test('treatment metadata follows the web history fields without inventing missin
 test('native treatment cards preserve web fields and disable edit during unresolved intents',()=>{
  const source=fs.readFileSync(require.resolve('../src/NativePatientProfile.tsx'),'utf8');
  assert.match(source,/patientTreatmentCanEdit/);
- assert.match(source,/disabled=\{!canEditTreatment\}/);
- assert.match(source,/accessibilityState=\{\{disabled:!canEditTreatment\}\}/);
+ // Rows without a usable 64-hex revision (web-created data) are display-only:
+ // the edit control stays disabled beyond the general intent gates.
+ assert.match(source,/disabled=\{!canEditTreatment\|\|!\(item\.edit_revision&&\/\^\[a-f0-9\]\{64\}\$\/\.test\(item\.edit_revision\)\)\}/);
+ assert.match(source,/accessibilityState=\{\{disabled:!canEditTreatment\|\|!\(item\.edit_revision&&\/\^\[a-f0-9\]\{64\}\$\/\.test\(item\.edit_revision\)\)\}\}/);
  assert.match(source,/styles\.treatmentCard/);
  assert.match(source,/patientTreatmentToothLabel\(item\.tooth_number\)/);
  assert.match(source,/patientTreatmentDateLabel\(item\.treatment_date\)/);

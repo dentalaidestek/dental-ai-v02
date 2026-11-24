@@ -100,14 +100,23 @@ export async function getPatient(token:string,id:number,includeChart=false,inclu
  const result=await request<PatientDetail>(path,token);
  if(!result?.patient||result.patient.id!==id||
     (result.edit_revision!==undefined&&(typeof result.edit_revision!=="string"||!/^[a-f0-9]{64}$/.test(result.edit_revision)))||
-    !Array.isArray(result.teeth)||!Array.isArray(result.surfaces)||!Array.isArray(result.treatments)||result.treatments.length>3||!Array.isArray(result.media)||
-    (result.treatments_next_cursor!==undefined&&result.treatments_next_cursor!==null&&(!validTreatmentHistoryCursor(result.treatments_next_cursor)||result.treatments.length!==3))||
+    !Array.isArray(result.teeth)||!Array.isArray(result.surfaces)||!Array.isArray(result.treatments)||!Array.isArray(result.media)||
+    (result.treatments_next_cursor!==undefined&&result.treatments_next_cursor!==null&&!validTreatmentHistoryCursor(result.treatments_next_cursor))||
     result.teeth.some(t=>!t||!validFdiTooth(t.tooth_number)||!validToothStatuses.has(t.status as ToothStatusCode))||
     result.surfaces.some(s=>!s||!validFdiTooth(s.tooth_number)||!validToothSurfaces.has(s.surface as ToothSurfaceCode)||!validToothStatuses.has(s.status as ToothStatusCode)||(s.updated_at!=null&&typeof s.updated_at!=="string"))||
-    result.treatments.some(t=>!t||!Number.isSafeInteger(t.id)||t.id<=0||typeof t.treatment_name!=="string"||(t.tooth_number!=null&&!validFdiTooth(t.tooth_number))||typeof t.edit_revision!=="string"||!/^[a-f0-9]{64}$/.test(t.edit_revision)||typeof t.created_at!=="string")||
+    result.treatments.some(t=>!t||!Number.isSafeInteger(t.id)||t.id<=0||typeof t.treatment_name!=="string"||typeof t.created_at!=="string")||
     result.media.some(m=>!m||!Number.isSafeInteger(m.id)||m.id<=0||typeof m.original_filename!=="string"||(m.tooth_number!=null&&!validFdiTooth(m.tooth_number))))
   throw Error("Hasta sunucusundan beklenmeyen profil alındı. Yeniden deneyin.");
- return result;
+ // Web-created rows may carry free-text tooth numbers or unusable revisions
+ // (the web treatment form does not validate FDI). Degrade those rows instead
+ // of failing the whole screen: invalid tooth numbers fall back to null and
+ // rows without a valid revision become display-only (edit disabled).
+ const treatments=result.treatments.slice(0,3).map(t=>({
+  ...t,
+  tooth_number:t.tooth_number!=null&&validFdiTooth(t.tooth_number)?t.tooth_number:null,
+  edit_revision:typeof t.edit_revision==="string"&&/^[a-f0-9]{64}$/.test(t.edit_revision)?t.edit_revision:"",
+ }));
+ return {...result,treatments};
 }
 export type PatientTreatmentPage={items:PatientTreatment[];next_cursor:string|null};
 export async function getPatientTreatments(token:string,id:number,cursor:string):Promise<PatientTreatmentPage>{

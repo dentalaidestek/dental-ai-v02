@@ -5096,6 +5096,7 @@ body.study-chat-active .study-chat-gap { height: 10px !important; }
 .chat-image-wrap .chat-clinical-image{margin-bottom:0}
 .chat-image-wrap .annotation-launch{position:absolute;right:7px;bottom:7px;width:32px;height:32px;padding:0!important;display:grid;place-items:center;border:1px solid rgba(255,255,255,.8)!important;border-radius:10px;background:rgba(15,23,42,.78)!important;color:#fff!important;font-size:18px!important;line-height:1;box-shadow:0 2px 8px rgba(15,23,42,.24);backdrop-filter:blur(5px)}
 .media-pending{opacity:.82}.media-pending .chat-clinical-image{filter:saturate(.9)}
+.chat-media-caption{margin:6px 0 0;font-size:13px;line-height:1.35;color:#0f172a;white-space:pre-wrap;word-break:break-word}
 .consultation-image-editor{width:min(96vw,760px);max-height:96dvh;padding:0;border-radius:18px;background:#070b12;color:#fff;overflow:hidden}
 .consultation-image-editor .image-editor-head{height:56px;display:grid;grid-template-columns:44px 1fr auto;align-items:center;gap:8px;padding:0 10px;background:#070b12}
 .consultation-image-editor .image-editor-head strong{text-align:left;font-size:14px}

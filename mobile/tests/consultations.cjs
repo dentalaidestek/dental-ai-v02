@@ -223,9 +223,9 @@ test('native consultation drafts persist one encrypted text copy and a stable in
  assert.equal(source.includes('content:intent.content'),false);
 });
 
-test('native consultation media intent stores no filename and reconciles before retry',()=>{
+test('native consultation media batch intent stores no filename and reconciles before retry',()=>{
  const source=fs.readFileSync(require.resolve('../src/ChatAttachmentComposer.tsx'),'utf8');
- assert.ok(source.includes('SecureStore.setItemAsync(pendingKey,JSON.stringify({version:1,...intent}))'));
+ assert.ok(source.includes('version:2,scope:userId+":"+caseId'));
  assert.ok(source.includes('getConsultationMessageReceipt'));
  assert.equal(source.includes('name:file.name'),false);
  assert.ok(source.includes('Crypto.randomUUID()'));
@@ -241,16 +241,16 @@ test('web consultation media retries keep the same session-scoped key',()=>{
 test('native consultation media blocks camera, document picker and send until receipt recovery finishes',()=>{
  const source=fs.readFileSync(require.resolve('../src/ChatAttachmentComposer.tsx'),'utf8');
  assert.ok(source.includes('[restoring,setRestoring]=useState(true)'));
- assert.ok(source.includes('if(lock.current||restoring||recoveryBlocked||disabled||uncertain)return;'));
- assert.ok(source.includes('if(!file||lock.current||restoring||recoveryBlocked||disabled||uncertain)return;'));
- assert.ok(source.includes('disabled={restoring||recoveryBlocked||busy||disabled||uncertain}'));
- assert.ok(source.includes('Bekleyen ek kaydı kontrol ediliyor; kontrol bitmeden yeni gönderim açılamaz.'));
+ assert.ok(source.includes('if(lock.current||restoring||recoveryBlocked||disabled)return;'));
+ assert.ok(source.includes('if(lock.current||restoring||recoveryBlocked||disabled)return{sentFiles:0,textConsumed:false}'));
+ assert.ok(source.includes('disabled={restoring||recoveryBlocked||busy||disabled}'));
+ assert.ok(source.includes('Bekleyen ek kaydı kontrol ediliyor…'));
 });
 
 test('corrupt consultation media intent fails closed and offers local recovery without deleting the intent',()=>{
  const source=fs.readFileSync(require.resolve('../src/ChatAttachmentComposer.tsx'),'utf8');
- const invalidStart=source.indexOf('if(!valid){');
- const validNext=source.indexOf('setPendingId(value.id)',invalidStart);
+ const invalidStart=source.indexOf('if(!scopeOk||!items.length){');
+ const validNext=source.indexOf('const recovered:StoredBatch',invalidStart);
  assert.ok(invalidStart>=0&&validNext>invalidStart);
  const invalidBranch=source.slice(invalidStart,validNext);
  assert.ok(invalidBranch.includes('setRecoveryBlocked(true)'));
@@ -321,7 +321,7 @@ test('native attachment acknowledgements append the persisted message without a 
  assert.ok(screen.includes('messageCursor.current=Math.max(messageCursor.current,message.id)'));
  assert.equal(screen.includes('onSent={async()=>{setReplyTo(null);await load()}}'),false);
  assert.ok(composer.includes('await onSent(result.message)'));
- assert.ok(composer.includes('await onSent(receipt.message||undefined)'));
+ assert.ok(composer.includes('await onSent(undefined)'));
 });
 
 test('native attachment viewer uses the exact participant-scoped route and bearer header',()=>{

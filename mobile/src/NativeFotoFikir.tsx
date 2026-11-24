@@ -13,7 +13,7 @@ import{
 const C={navy:"#071B35",bg:"#F5F7FA",white:"#FFF",text:"#102033",muted:"#718096",line:"#E5EAF0",soft:"#EEF3F8",green:"#16803C",red:"#B42318"};
 const card={backgroundColor:C.white,borderRadius:18,borderWidth:1,borderColor:C.line,padding:16,marginBottom:12} as any;
 const FF_SCENES=["Loupe takarken","Eldivenle kalp yaparken","Ağız içi tarayıcıyla çalışırken","Diş modeliyle anlatırken","Hastayla konuşurken","Resepsiyonda"];
-const FF_LEVEL_COLORS:Record<string,{bg:string;fg:string}>={OK:{bg:"#ECFDF5",fg:"#047857"},DİKKAT:{bg:"#FFF7ED",fg:"#C2410C"},KALDIR:{bg:"#FEF2F2",fg:"#B91C1C"}};
+const FF_LEVEL_COLORS:Record<string,{bg:string;fg:string}>={OK:{bg:"#ECFDF5",fg:"#047857"},DIKKAT:{bg:"#FFF7ED",fg:"#C2410C"},KALDIR:{bg:"#FEF2F2",fg:"#B91C1C"}};
 function Btn({title,onPress,disabled=false}:{title:string;onPress:()=>void;disabled?:boolean}){return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[s.btn,disabled&&{opacity:.5}]}><Text style={s.btnT}>{title}</Text></Pressable>}
 function Chip({label,active,onPress}:{label:string;active:boolean;onPress:()=>void}){return <Pressable accessibilityRole="button" accessibilityState={{selected:active}} onPress={onPress} style={{paddingVertical:7,paddingHorizontal:12,borderRadius:16,borderWidth:1,borderColor:active?C.navy:C.line,backgroundColor:active?C.soft:C.white,marginRight:8,marginBottom:8}}><Text style={{color:C.navy,fontSize:12,fontWeight:"700"}}>{label}</Text></Pressable>}
 function LevelBadge({level}:{level:string}){const v=FF_LEVEL_COLORS[level]||{bg:C.soft,fg:C.navy};return <Text style={{fontSize:10,fontWeight:"800",color:v.fg,backgroundColor:v.bg,paddingHorizontal:8,paddingVertical:4,borderRadius:10}}>{level}</Text>}
@@ -60,8 +60,10 @@ export default function NativeFotoFikir({token}:{token:string}){
   try{const r=await suggestFFIdeas(token,topic);if(activeToken.current===token){setIdeas(r.ideas||[]);setIdeaTips(r.tips||[])}}
   catch(e){if(activeToken.current===token)setFlowErr(e instanceof Error?e.message:"Fikir önerileri alınamadı.")}
   finally{if(activeToken.current===token)setIdeaBusy(false)}}
- async function makeSlides(){if(slideBusy)return;setSlideBusy(true);setFlowErr("");
-  try{const r=await prepareFFSlides(token,topic);if(activeToken.current!==token)return;
+ async function makeSlides(topicOverride?:string){if(slideBusy)return;setSlideBusy(true);setFlowErr("");
+  const chosen=(topicOverride??topic).trim();
+  try{if(!chosen)throw Error("Önce bir konu yazın veya fikir seçin.");
+   const r=await prepareFFSlides(token,chosen);if(activeToken.current!==token)return;
    setSlides(r.slides||[]);setMevzuat({});setStep(2)}
   catch(e){if(activeToken.current===token)setFlowErr(e instanceof Error?e.message:"Slayt metinleri hazırlanamadı.")}
   finally{if(activeToken.current===token)setSlideBusy(false)}}
@@ -124,7 +126,7 @@ export default function NativeFotoFikir({token}:{token:string}){
   {step===1&&<View style={card}>
    <Text style={s.title}>1. Konu</Text>
    <TextInput accessibilityLabel="Foto Fikir konusu" style={s.input} value={topic} onChangeText={setTopic} placeholder="Konu yazın (ör. diş fırçalama alışkanlıkları)" placeholderTextColor={C.muted} maxLength={200}/>
-   <View style={{flexDirection:"row",flexWrap:"wrap",marginTop:10}}>{ideas.map((idea,index)=><Chip key={index} label={idea.title} active={topic===idea.title} onPress={()=>setTopic(idea.title)}/>)}</View>
+   <View style={{flexDirection:"row",flexWrap:"wrap",marginTop:10}}>{ideas.map((idea,index)=><Chip key={index} label={idea.title} active={topic===idea.title} onPress={()=>{setTopic(idea.title);void makeSlides(idea.title)}}/>)}</View>
    {ideas.map((idea,index)=><Text key={"a"+index} style={s.meta}>{idea.angle}{idea.hook?" · Kanca: "+idea.hook:""}</Text>)}
    {!!ideaTips.length&&<View style={{marginTop:6}}>{ideaTips.map((tip,index)=><Text key={"t"+index} style={s.meta}>{"· "+tip}</Text>)}</View>}
    <Btn title={ideaBusy?"Öneriler hazırlanıyor…":"Fikir öner"} disabled={ideaBusy} onPress={()=>void suggestIdeas()}/>
@@ -197,7 +199,7 @@ export default function NativeFotoFikir({token}:{token:string}){
     <Text style={[s.meta,{marginTop:8}]}>Senaryo</Text>
     {(reels.senaryo||[]).map((row,index)=><View key={index} style={{marginTop:6}}>
      <Text style={s.body}>{row.aralik} — {row.metin}</Text>
-     {!!row.shot&&<Text style={s.meta}>Yönetmenlik: {row.shot}</Text>}
+     {!!row.shot&&<Text style={s.meta}>Yönetmenlik: {typeof row.shot==="string"?row.shot:[row.shot.plan,row.shot.kamera,row.shot.hareket,row.shot.isik,row.shot.overlay,row.shot.ses_ritim].filter(value=>typeof value==="string"&&value.trim()).join(" · ")}</Text>}
     </View>)}
     <Text style={[s.meta,{marginTop:8}]}>Kurgu adımları (CapCut)</Text>
     {(reels.capcut_adimlari||[]).map((item,index)=><Text key={index} style={s.body}>{(index+1)+". "+item}</Text>)}

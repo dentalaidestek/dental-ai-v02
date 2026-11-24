@@ -17,9 +17,9 @@ test('attachment options collapse behind the plus button without losing pending 
  const composer=src('ChatAttachmentComposer.tsx');
  assert.ok(composer.includes('optionsOpen=true'),'optionsOpen prop defaults open for other callers');
  assert.ok(composer.includes('{optionsOpen&&<View style={{flexDirection:"row",flexWrap:"wrap"}}>'),'photo/camera/pdf row is behind the toggle');
- assert.ok(composer.includes('if(!optionsOpen&&!file&&!pendingId&&!error&&!recoveryBlocked&&!uncertain&&!(busy||restoring))return null;'),'quiet closed state renders nothing, like the web room');
+ assert.ok(composer.includes('if(!optionsOpen&&!showQueue&&!error&&!recoveryBlocked&&!uncertain&&!(busy||restoring))return null;'),'quiet closed state renders nothing, like the web room');
  // Pending/preview/error panels stay available while closed.
- assert.ok(composer.includes('{pendingId&&file&&<Text'),'pending attachment notice survives the collapse');
+ assert.ok(composer.includes('{(recordRef.current?.items.length||0)>0&&!showQueue&&!recoveryBlocked&&<Text'),'pending batch notice survives the collapse');
  assert.ok(composer.includes('{!!error&&<Text style={{color:"#B42318"}}>{error}</Text>}'),'error text survives the collapse');
 });
 test('api maps a bare 404 Not Found to the shared server-route compatibility hint',()=>{
@@ -40,10 +40,9 @@ test('academic course create treats 404 as a definitive failure and unlocks the 
 
 test('missing attachment and receipt routes block retries while preserving the same pending intent',()=>{
  const composer=src('ChatAttachmentComposer.tsx');
- assert.ok(composer.includes('isMissingApiRoute404(receiptError)'),'restore must recognize a missing receipt route');
- assert.ok(composer.includes('isMissingApiRoute404(e)||isMissingApiRoute404(receiptFailure)'),'send and receipt failures must both recognize a missing route');
+ assert.ok(composer.includes('isMissingApiRoute404(probe.reason)'),'restore must recognize a missing receipt route');
+ assert.ok(composer.includes('isMissingApiRoute404(sendError)||route404'),'send and receipt failures must both recognize a missing route');
  assert.ok(composer.includes('setRecoveryBlocked(true)'),'missing routes must block a new attachment send');
- assert.ok(composer.includes('Bekleyen dosya ve aynı istek anahtarı güvenli alanda korunuyor'),'the same pending intent must remain available for post-deploy reconciliation');
- assert.ok(composer.includes('pendingMeta&&!file&&!recoveryBlocked'),'the ordinary retry notice must not appear when the server route is absent');
- assert.ok(composer.includes('Sunucu vaka eki gönderim/makbuz API rotasını desteklemiyor (404)'),'the clinician must see a server-side compatibility message');
+ assert.ok(composer.includes('Ekler cihazda güvende'),'the same pending intent must remain available for post-deploy reconciliation');
+ assert.ok(composer.includes('Sunucu ek gönderimini henüz desteklemiyor (404)'),'the clinician must see a server-side compatibility message');
 });

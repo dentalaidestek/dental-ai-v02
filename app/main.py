@@ -808,6 +808,7 @@ def _normalize_consultation_client_message_id(value: Optional[str]) -> Optional[
 def _consultation_message_payload_hash(
     case_id: int, sender_user_id: int, message_type: str, content: Optional[str],
     reply_to_message_id: Optional[int], raw_bytes: Optional[bytes] = None,
+    caption: Optional[str] = None,
 ) -> str:
     payload = {
         "case_id": case_id,
@@ -817,6 +818,11 @@ def _consultation_message_payload_hash(
         "reply_to_message_id": reply_to_message_id,
         "media_sha256": hashlib.sha256(raw_bytes).hexdigest() if raw_bytes is not None else None,
     }
+    # Only captioned (native text+attachment) sends enter the hash; legacy
+    # receipt payloads keep byte-identical hashes for replay compatibility.
+    caption_value = (caption or "").strip()[:4000]
+    if caption_value:
+        payload["caption"] = caption_value
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -9131,7 +9137,7 @@ def _prepare_consultation_attachment(raw: bytes, filename: str, *, max_bytes: in
 
 @app.post("/expert-support/cases/{case_id}/media-message")
 @offload
-def expert_support_media_message(request: Request, case_id: int, file: UploadFile = File(...), reply_to_message_id: Optional[int] = Form(None), client_message_id: str = Form("")):
+def expert_support_media_message(request: Request, case_id: int, file: UploadFile = File(...), reply_to_message_id: Optional[int] = Form(None), client_message_id: str = Form(""), content: Optional[str] = Form(None)):
     wants_json = request.headers.get("x-requested-with") == "fetch" or "application/json" in request.headers.get("accept", "")
     def upload_error(message: str, status_code: int = 400):
         return JSONResponse({"ok": False, "error": message}, status_code=status_code) if wants_json else RedirectResponse(f"/expert-support/cases/{case_id}?upload_error={quote_plus(message)}", status_code=303)
@@ -9144,6 +9150,13 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
         client_key = _normalize_consultation_client_message_id(client_message_id)
     except HTTPException as exc:
         return upload_error(str(exc.detail), exc.status_code)
+    # Optional native caption: text and attachment travel as one message.
+    # Empty/absent keeps the legacy filename-content behavior untouched.
+    caption_text = (content or "").strip()
+    if len(caption_text) > 4000:
+        return upload_error("Ek mesajı 4000 karakteri aşamaz.", 400)
+    if caption_text and _contains_profanity(caption_text):
+        return upload_error("Mesaj içerik filtresine takıldı.", 422)
     with Session(engine, expire_on_commit=False) as s:
         case = _locked_consultation_case(s, case_id)
         if not case or user.id not in {case.requester_user_id, case.expert_user_id} or case.messages_deleted_at:
@@ -9194,6 +9207,7 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
                 reply_to_message_id = None
         payload_hash = _consultation_message_payload_hash(
             case.id, user.id, kind, safe_filename, reply_to_message_id, raw,
+            caption=caption_text,
         )
         if client_key:
             replay, replay_error = _consultation_message_receipt_replay(
@@ -9249,6 +9263,7 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
                     reply_to_message_id = None
             payload_hash = _consultation_message_payload_hash(
                 case.id, user.id, kind, safe_filename, reply_to_message_id, raw,
+                caption=caption_text,
             )
             if client_key:
                 replay, replay_error = _consultation_message_receipt_replay(
@@ -9275,7 +9290,7 @@ def expert_support_media_message(request: Request, case_id: int, file: UploadFil
                 case.status = "ACTIVE"; _consultation_event(s, case.id, "REQUESTER_STARTED_AFTER_DEADLINE", user.id); s.add(case)
                 notification_events.extend(_resolve_notifications(s, user_id=case.expert_user_id, notice_type="CONSULTATION_DEADLINE_WARNING", related_type="consultation_case", related_id=case.id))
                 status_events.extend(_record_case_status_realtime_events(s, case))
-            message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=safe_filename, media_path=str(path), reply_to_message_id=reply_to_message_id)
+            message = ConsultationMessage(case_id=case.id, sender_user_id=user.id, message_type=kind, content=caption_text or safe_filename, media_path=str(path), reply_to_message_id=reply_to_message_id)
             s.add(message)
             if user.id == case.expert_user_id and case.expert_started_at is None:
                 case.expert_started_at = now

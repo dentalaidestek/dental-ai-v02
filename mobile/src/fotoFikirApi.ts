@@ -29,7 +29,8 @@ export type FFGenerateResult = { job_id: string; image_url?: string | null; imag
 export type FFBrandKitResult = { exists: boolean; photos_count: number; photos: string[]; saved: number; mock?: boolean; uyari?: string };
 export type FFBrandGenerateResult = { job_id: string; image_url: string; scene: string; reason: string; uretim_ms?: number; quota: FFQuota; mock?: boolean; uyari?: string };
 export type FFIgProfile = { bio: string; highlights: string[]; grid_plan: Array<{ idea: string; format: string }>; mock?: boolean; uyari?: string };
-export type FFReelsPlan = { hooks: string[]; senaryo: Array<{ aralik: string; metin: string; shot?: string }>; capcut_adimlari: string[]; tips?: string[]; mock?: boolean; uyari?: string };
+export type FFReelsShot = { plan?: string; kamera?: string; hareket?: string; isik?: string; overlay?: string; ses_ritim?: string };
+export type FFReelsPlan = { hooks: string[]; senaryo: Array<{ aralik: string; metin: string; shot?: FFReelsShot }>; capcut_adimlari: string[]; tips?: string[]; mock?: boolean; uyari?: string };
 export type FFHistory = { jobs: FFJob[] };
 
 const ffCount = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0;

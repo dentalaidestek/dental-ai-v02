@@ -47,6 +47,7 @@ from app.main import (
     Analysis,
     ApprovedAnamnesis,
     MobilePushDevice,
+    UserBlock,
     ImageAsset,
     PatientProfile,
     DoctorProfile,
@@ -2038,6 +2039,11 @@ def mobile_consultations(response: Response, user:User=Depends(_mobile_user), be
         case_ids=[c.id for c in cases]
         other_ids={c.expert_user_id if c.requester_user_id==user.id else c.requester_user_id for c in cases}
         peers={u.id:u for u in session.exec(select(User).where(User.id.in_(other_ids))).all()} if other_ids else {}
+        # Directional block flags for the inbox row menu (who blocked whom).
+        blocked_by_me_ids=set()
+        if case_ids and other_ids:
+            blocked_by_me_ids={row.blocked_user_id for row in session.exec(select(UserBlock).where(
+                UserBlock.blocker_user_id==user.id,UserBlock.blocked_user_id.in_(other_ids))).all()}
         read_rows=session.exec(select(
             ConsultationInboxState.case_id,func.max(ConsultationInboxState.last_read_at)
         ).where(
@@ -2093,7 +2099,8 @@ def mobile_consultations(response: Response, user:User=Depends(_mobile_user), be
                 "other_display_name":other.display_name if other else "Kullanıcı",
                 "last_message":last.content if last else None,"last_message_at":last.created_at if last else None,
                 "last_message_id":last.id if last else 0,
-                "messages_deleted_at":c.messages_deleted_at,"unread_count":0 if c.messages_deleted_at is not None else unread_by_case.get(c.id,0)})
+                "messages_deleted_at":c.messages_deleted_at,"unread_count":0 if c.messages_deleted_at is not None else unread_by_case.get(c.id,0),
+                "blocked_by_me":other_id in blocked_by_me_ids})
         return {"items":items,"next_before":cases[-1].id if len(page)>50 else None}
 
 @router.get("/consultations/{case_id}")
@@ -3912,6 +3919,7 @@ def mobile_case_shared_media(case_id: int, link_id: int, user: User = Depends(_m
 async def mobile_chat_upload(case_id: int, response: Response, file: UploadFile = File(...),
                              reply_to_message_id: Optional[int] = Form(None),
                              client_message_id: str = Form(..., min_length=16, max_length=96),
+                             content: Optional[str] = Form(None),
                              token: str = Depends(_mobile_access_token),
                              user: User = Depends(_mobile_user)):
     _mobile_private_no_store(response)
@@ -3956,7 +3964,7 @@ async def mobile_chat_upload(case_id: int, response: Response, file: UploadFile 
     try:
         return await _mobile_chat_dispatch(
             web.expert_support_media_message, request, case_id, clean,
-            reply_to_message_id, client_key,
+            reply_to_message_id, client_key, content,
         )
     finally:
         await clean.close()

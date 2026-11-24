@@ -151,7 +151,7 @@ export const replySupportTicket=async(t:string,id:number,message:string,key=supp
 
 export type Notice={id:number;title:string;message:string;notice_type:string;target_url?:string|null;read_at?:string|null;is_read?:boolean;created_at:string};
 export type Expert={user_id:number;display_name:string;specialty:string;academic_title?:string|null;institution?:string|null;bio?:string|null;availability:string;consultation_price:number;rating_avg?:number|null;review_count:number};
-export type Consultation={id:number;other_user_id:number;other_display_name:string;specialty:string;tooth_region?:string|null;status:string;status_key?:string;status_label?:string;question:string;requested_at:string;last_message?:string|null;last_message_at?:string|null;last_message_id?:number;messages_deleted_at?:string|null;unread_count:number};
+export type Consultation={id:number;other_user_id:number;other_display_name:string;specialty:string;tooth_region?:string|null;status:string;status_key?:string;status_label?:string;question:string;requested_at:string;last_message?:string|null;last_message_at?:string|null;last_message_id?:number;messages_deleted_at?:string|null;unread_count:number;blocked_by_me?:boolean|null};
 export type ChatMessage={id:number;sender_user_id:number;message_type:string;content:string;reply_to_message_id?:number|null;created_at:string;has_media?:boolean;client_message_id?:string};
 export type AnalysisHistory={id:number;patient_id:number;patient_name:string;tooth_number?:string|null;status:string;clinical_notes?:string|null;created_at:string;is_voice_review?:boolean};
 export type Course={id:number;title:string;description?:string|null;updated_at:string;material_count:number};
@@ -531,20 +531,23 @@ export function sendChatImage(token:string,caseId:number,file:ChatFile,replyTo?:
  if(!/^image\/(jpeg|png|webp)$/.test(file.type))return Promise.reject(Error("Geçerli bir hasta görüntüsü seçin."));
  return sendChatFile(token,caseId,file,replyTo,clientMessageId);
 }
-export async function sendChatFile(token:string,caseId:number,file:ChatFile,replyTo?:number,clientMessageId?:string){
+export async function sendChatFile(token:string,caseId:number,file:ChatFile,replyTo?:number,clientMessageId?:string,content?:string){
  if(!Number.isSafeInteger(caseId)||caseId<=0||(replyTo!==undefined&&(!Number.isSafeInteger(replyTo)||replyTo<=0)))throw Error("Geçersiz görüşme veya yanıt kimliği.");
  const key=clientMessageId||("native-media-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2));
  if(!/^[A-Za-z0-9_-]{16,96}$/.test(key))throw Error("Geçersiz ek istek anahtarı.");
+ const caption=(content||"").trim();
+ if(caption.length>4000)throw Error("Ek mesajı 4000 karakteri aşamaz.");
  const checked=validateChatFile(file),body=new FormData();
  body.append("file",{uri:checked.uri,name:checked.name,type:checked.type} as any);
  body.append("client_message_id",key);
  if(replyTo)body.append("reply_to_message_id",String(replyTo));
+ if(caption)body.append("content",caption);
  const result=await req<{ok:boolean;message:ChatMessage;replayed?:boolean}>(`/consultations/${caseId}/attachments`,token,{method:"POST",body});
  const message:any=result?.message;
  if(result?.ok!==true||!Number.isSafeInteger(message?.id)||message.id<=0||
     message.client_message_id!==key||message.has_media!==true||
     !["IMAGE","FILE","VOICE"].includes(message.message_type)||
-    typeof message.content!=="string"||message.content.length>180||
+    typeof message.content!=="string"||message.content.length>4000||
     typeof message.created_at!=="string"||!Number.isFinite(Date.parse(message.created_at))||
     (result.replayed!==undefined&&typeof result.replayed!=="boolean"))
   throw Error("Ek kaydı doğrulanamadı. Tekrar göndermeden önce görüşmeyi kontrol edin.");
