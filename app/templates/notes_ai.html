@@ -102,9 +102,20 @@ body>.study-academic-overflow-panel.study-overflow-portal{position:fixed!importa
 body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!important}
 
 /* ChatGPT-style inline stop control: same composer button, same footprint. */
-.study-chat-clean-composer #studySendButton.study-send-stop{font-size:0!important;display:grid!important;place-items:center!important;line-height:1!important;}
-.study-chat-clean-composer #studySendButton.study-send-stop::before{content:"";width:12px;height:12px;border-radius:2px;background:currentColor;display:block;}
-.study-chat-clean-composer #studySendButton.study-send-stop:disabled{opacity:.72;}
+.study-chat-clean-composer #studySendButton.study-send-stop{
+    font-size:0!important;display:grid!important;place-items:center!important;line-height:1!important;
+    width:44px!important;min-width:44px!important;height:44px!important;min-height:44px!important;
+    padding:0!important;border-radius:50%!important;background:#102a43!important;
+    border:0!important;box-shadow:0 2px 7px rgba(16,42,67,.22)!important;
+}
+.study-chat-clean-composer #studySendButton.study-send-stop::before{
+    content:"";width:11px;height:11px;border-radius:2px;background:#fff;display:block;
+}
+.study-chat-clean-composer #studySendButton.study-send-stop:disabled{opacity:.85!important;cursor:wait!important;}
+.study-chat-clean-composer #studySendButton:not(.study-send-stop){
+    width:44px!important;min-width:44px!important;height:44px!important;min-height:44px!important;
+    padding:0!important;border-radius:50%!important;display:grid!important;place-items:center!important;
+}
 </style>
 <div class="study-ai-page study-chat-shell study-chat-clean-shell">
     <header class="study-chat-clean-topbar">
@@ -216,7 +227,7 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
         <input type="file" id="studyChatFiles" accept=".pdf,.jpg,.jpeg,.png,.webp" multiple hidden>
         <div class="study-upload-files" id="studyChatUploadFiles" aria-live="polite"></div>
         {% endif %}
-        <form class="study-chat-composer study-chat-composer-fixed study-chat-clean-composer" id="studyChatForm">
+        <form class="study-chat-composer study-chat-composer-fixed study-chat-clean-composer" id="studyChatForm" novalidate>
             {% if chat_upload_enabled %}
             <button type="button" id="studyAttachButton" class="study-attach-button" aria-label="PDF veya görsel ekle">＋</button>
             {% endif %}
@@ -270,7 +281,7 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
     function applyIndexReadiness() {
         const blocked = materialCount > 0 && !v2Ready;
         input.disabled = !materialCount || blocked || uploading;
-        send.disabled = !materialCount || blocked || uploading || !!activeRun;
+        send.disabled = activeRun ? (cancelInFlight || cancelRequested) : (!materialCount || blocked || uploading);
     
     // Render the menu at document level: the chat shell clips absolute descendants.
     const academicMenu=document.getElementById('studyAcademicOverflow');
@@ -603,8 +614,9 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
     let activeRun=null, runTimer=null;
     function setWorking(value) {
         const canStop=!!activeRun;
-        send.disabled=value ? !canStop : materialCount===0;
-        send.textContent=canStop?'■':'↑';
+        const blocked=materialCount===0 || !v2Ready || uploading;
+        send.disabled=canStop ? (cancelInFlight || cancelRequested) : (value || blocked);
+        send.textContent=canStop?'':'↑';
         send.setAttribute('aria-label',canStop?'Durdur':'Gönder');
         send.title=canStop?'Devam eden yanıtı durdur':'Gönder';
         send.classList.toggle('study-send-stop',canStop);
@@ -660,11 +672,11 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
         } catch (_) {learningText('studyProgressState','Bağlantı bekleniyor');learningText('studyLearningUpdated','Kayıtlar güncellenemedi. Güncelle düğmesiyle tekrar deneyebilirsin.');}
         finally{learningBusy=false;if(learningQueued){learningQueued=false;refreshLearning();}}
     }
-    let activePending=null,activeUserMessage=null,cancelInFlight=false;
+    let activePending=null,activeUserMessage=null,cancelInFlight=false,cancelRequested=false;
     async function stopActiveRun() {
         const id=activeRun;
-        if(!id || cancelInFlight)return;
-        cancelInFlight=true;send.disabled=true;send.textContent='…';
+        if(!id || cancelInFlight || cancelRequested)return;
+        cancelInFlight=true;send.disabled=true;send.classList.add('study-stop-pending');send.setAttribute('aria-label','Durduruluyor');
         try {
             const response=await fetch('/notes/courses/'+courseId+'/ai/runs/'+id+'/cancel',{
                 method:'POST',credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}
@@ -677,19 +689,38 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
                 await followRun(id,activePending,activeUserMessage);
                 return;
             }
-            if(!data.run || data.run.status!=='CANCELLED')throw new Error('Sunucu iptali doğrulayamadı; çalışma devam ediyor.');
+            if(data.run && data.run.status==='CANCEL_REQUESTED') {
+                cancelRequested=true;
+                const thinking=activePending && activePending.querySelector('.study-thinking');
+                if(thinking)thinking.textContent='Durduruluyor; AI bağlantısı kapatılıyor...';
+                status.textContent='Sunucu, sağlayıcı akışının kapanmasını doğruluyor.';
+                setWorking(true);
+                clearTimeout(runTimer);
+                runTimer=setTimeout(()=>followRun(id,activePending,activeUserMessage),400);
+                return;
+            }
+            if(data.run && data.run.status==='CANCEL_FAILED') {
+                clearTimeout(runTimer);cancelRequested=false;
+                const thinking=activePending && activePending.querySelector('.study-thinking');
+                if(thinking)thinking.textContent='Durdurma doğrulanamadı.';
+                status.textContent=data.run.error || 'Sağlayıcı bağlantısının kapandığı doğrulanamadı.';
+                activeRun=null;activePending=null;activeUserMessage=null;setWorking(false);
+                return;
+            }
+            if(!data.run || data.run.status!=='CANCELLED')throw new Error('Sunucu iptali doğrulamadı; çalışma devam ediyor.');
             clearTimeout(runTimer);
+            cancelRequested=false;
             const pending=activePending;
             const thinking=pending && pending.querySelector('.study-thinking');
             if(thinking)thinking.textContent='İşlem iptal edildi.';
             if(pending)pending.classList.remove('pending');
             activeRun=null;activePending=null;activeUserMessage=null;
-            status.textContent='Çalışma sunucu tarafında iptal edildi. Yeni yanıt kaydedilmeyecek.';
+            status.textContent='Çalışma durduruldu; sunucu sağlayıcı akışının kapandığını doğruladı.';
             setWorking(false);
         } catch(error) {
             status.textContent=error.message || 'İşlem durdurulamadı.';
             setWorking(!!activeRun);
-        } finally {cancelInFlight=false;}
+        } finally {cancelInFlight=false;send.classList.remove('study-stop-pending');if(activeRun)setWorking(true);}
     }
     async function followRun(id,pending,userMessage) {
         try {
@@ -718,12 +749,26 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
                 status.textContent='';activeRun=null;activePending=null;activeUserMessage=null;setWorking(false);refreshLearning();refreshQuizzes();if(learningChannel)learningChannel.postMessage('updated');
                 scrollChatBottom();return;
             }
+            if (run.status==='CANCEL_FAILED') {
+                const failedThinking=pending.querySelector('.study-thinking');
+                if(failedThinking)failedThinking.textContent='Durdurma doğrulanamadı.';
+                pending.classList.remove('pending');
+                status.textContent=run.error || 'Sağlayıcı bağlantısının kapandığı doğrulanamadı.';
+                activeRun=null;activePending=null;activeUserMessage=null;cancelRequested=false;setWorking(false);return;
+            }
             if (run.status==='CANCELLED') {
                 const thinking=pending.querySelector('.study-thinking');
                 if(thinking)thinking.textContent='İşlem iptal edildi.';
                 pending.classList.remove('pending');
-                status.textContent='Çalışma sunucu tarafında iptal edildi.';
-                activeRun=null;activePending=null;activeUserMessage=null;setWorking(false);return;
+                status.textContent='Çalışma durduruldu; sağlayıcı akışı kapatıldı.';
+                activeRun=null;activePending=null;activeUserMessage=null;cancelRequested=false;setWorking(false);return;
+            }
+            if (run.status==='CANCEL_REQUESTED') {
+                cancelRequested=true;
+                const thinking=pending.querySelector('.study-thinking');
+                if(thinking)thinking.textContent='Durduruluyor; AI bağlantısı kapatılıyor...';
+                runTimer=setTimeout(()=>followRun(id,pending,userMessage),400);
+                return;
             }
             if (!['QUEUED','RUNNING'].includes(run.status)) {
                 pending.remove();userMessage.remove();
@@ -773,9 +818,10 @@ body>.study-academic-overflow-panel.study-overflow-portal[hidden]{display:none!i
             if (!data.ok || !data.run) return;
             const run=data.run;
             if (run.status==='INTERRUPTED') {status.textContent=run.error;return;}
+            if (run.status==='CANCELLED') {status.textContent=run.error || 'Çalışma iptal edildi.';return;}
             const userMessage=addMessage('user',run.question,false,true);
             const pending=addMessage('assistant','',true,true);
-            activeRun=run.id;activePending=pending;activeUserMessage=userMessage;setWorking(true);followRun(activeRun,pending,userMessage);
+            activeRun=run.id;activePending=pending;activeUserMessage=userMessage;cancelRequested=run.status==='CANCEL_REQUESTED';setWorking(true);followRun(activeRun,pending,userMessage);
         } catch (_) {}
     }
     document.addEventListener('visibilitychange',()=>{
