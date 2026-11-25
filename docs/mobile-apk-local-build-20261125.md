@@ -37,6 +37,15 @@ sha256 `b8e955d577e399e1ec8fc47706d40fcb5210458ab24fe614659caaff41bcfd18`).
    öldür, ≥1.5 GB boş alan tut; `disk_janitor.sh` boşluk <150 MB'a düşerse
    yenilenebilir önbellekleri (kotlin-dsl, journal, daemon logları) siler.
 
+5. **NDK 27.1.12297006 bozuk kurulum → CXX1214 (minSdk 22 tuzağı)**: Derleme
+   `User has minSdkVersion 22 but library was built for 24 [//ReactAndroid/hermestooling]`
+   hatası verirse sebep gradle config'i DEĞİLDİR (app/build.gradle, root ext,
+   finalizeDsl, ANDROID_PLATFORM arg'ları çözmez — hepsi denendi); bozuk/yarı
+   kalmış `android-sdk/ndk/27.1.12297006` klasörüdür (expo/expo#38667 ile aynı
+   imza). Çözüm: klasörü sil, Gradle NDK'yı taze indirir. 2026-11-25 v3
+   derlemesinde teyit edildi. Ayrıca disk: NDK ~2.5 GB yer ister;
+   `/tmp/my-project` benzeri eski kopyalar silinmelidir.
+
 ## Derleme adımları
 
 ```bash
