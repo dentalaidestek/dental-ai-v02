@@ -583,7 +583,7 @@ function Composer({
               onPress={() =>
                 Alert.alert(
                   "Taslak silinsin mi?",
-                  "Gönderim daha önce sunucuya ulaştıysa gönderi profilinizde bulunabilir.",
+                  "Silinse bile sunucuya ulaşmış gönderi profilde görünebilir.",
                   [
                     { text: "Vazgeç" },
                     {

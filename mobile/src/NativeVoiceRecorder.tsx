@@ -259,7 +259,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
   if(!segment)return;
   Alert.alert(
    'Yeni ses çözümleme denemesi',
-   'Önceki isteğin sonucu belirsiz. Yeni anahtar aynı ses dosyasını yeniden Gemini’ye gönderir; ek bir AI çağrısı ve ücret oluşturabilir. Yalnızca açık onay verirsen devam eder.',
+   'Önceki isteğin sonucu belirsiz. Devam ederseniz aynı ses dosyası yeniden AI’ya gönderilebilir; ek ücret doğabilir.',
    [
     {text:'Vazgeç',style:'cancel'},
     {text:'Yeni deneme',style:'destructive',onPress:()=>void(async()=>{
@@ -432,7 +432,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    {recording&&<View accessibilityRole="progressbar" accessibilityLabel="Mikrofon ses seviyesi" accessibilityValue={{min:0,max:100,now:Math.round(level*100)}} style={s.levelTrack}><View style={[s.levelFill,{width:(Math.round(level*100)+'%') as `${number}%`}]} /></View>}
    {recording&&<View style={s.wave} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{WAVE_BARS.map((height,index)=><View key={index} style={[s.waveBar,{height:Math.max(5,Math.round(height*(0.25+level)))}]} />)}</View>}
   </View>
-  <Text style={s.helper}>Konuşma, kısa ses bölümleri tamamlandıkça yazıya çevrilir. Klinik değerlendirme yalnızca “Muayeneyi bitir” işleminden sonra başlar. Ham ses ve tam konuşma metni hasta dosyasına otomatik kaydedilmez.</Text>
+  <Text style={s.helper}>Kısa ses bölümleri tamamlandıkça yazıya çevrilir; ham ses hasta dosyasına kaydedilmez.</Text>
   {transcriptPreview?<View style={s.preview}><Text style={s.previewLabel}>SON ALINAN KONUŞMA METNİ</Text><Text selectable numberOfLines={4} style={s.previewText}>{transcriptPreview}</Text></View>:null}
   {!ready&&<ActivityIndicator color="#1769AA"/>}
   <View style={s.controls}>
@@ -441,7 +441,7 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    {button('Muayeneyi bitir',()=>void finish(),working||view.ended||!recording&&!view.transcript&&!view.segments.length,true)}
   </View>
   {button('Ses dosyası seç',()=>void importAudioFile(),occupied||view.ended||view.segments.length>0||!audioInputAllowed())}
-  <Text style={s.helper}>Web ile aynı sınırlar: MP3, WAV, WebM, OGG veya M4A · en fazla 90 saniye ve 8 MB. Ses yalnızca yazıya çevrilir; klinik değerlendirme “Muayeneyi bitir” işleminde başlar.</Text>
+  <Text style={s.helper}>MP3, WAV, WebM, OGG veya M4A · en fazla 90 saniye ve 8 MB.</Text>
    {!audioInputAllowed()&&<Text accessibilityLiveRegion="polite" style={s.error}>{audioLimitMessage}</Text>}
   {view.segments.some(segment=>segment.ready)&&!recording&&button('Bekleyen sesleri yazıya çevir',()=>{setError('');void(async()=>{await persist({...draft.current,segments:draft.current.segments.map(s=>s.transcribed?s:{...s,ready:true})});await drain()})().catch(()=>setError('Ses taslağı güncellenemedi.'))},occupied)}
   {view.segments.filter(segment=>!segment.ready&&!segment.transcribed&&isPrivateVoiceRecordingUri(segment.uri,FileSystem.cacheDirectory,segment.mime)).map(segment=><Pressable key={segment.id} accessibilityRole="button" disabled={occupied||disabled||!ready} onPress={()=>discardInterruptedSegment(segment.id)} style={[s.cleanupButton,(occupied||disabled||!ready)&&s.disabledButton]}><Text style={s.cleanupText}>Yarım kalan ses bölümünü kaldır</Text></Pressable>)}

@@ -30,7 +30,7 @@ export default function NativeAccount({token,user,onChanged,signOut,onMessages,o
    setError('Hesabı silmek için kullanıcı adınızı eksiksiz yazın.');return;
   }
   if(!deletePassword){setError('Hesabı silmek için mevcut şifrenizi girin.');return;}
-  Alert.alert('Hesabı kalıcı olarak sil?', 'Bu işlem geri alınamaz. Kişisel profiliniz ve Akademik AI içerikleriniz silinir; hukuken saklanması gereken kayıtlar kimliğinizden ayrıştırılabilir.',[
+  Alert.alert('Hesabı kalıcı olarak sil?', 'İşlem geri alınamaz; kayıtlar yasal saklama gereği kimlikten ayrıştırılabilir.',[
    {text:'Vazgeç',style:'cancel'},
    {text:'Hesabı Kalıcı Olarak Sil',style:'destructive',onPress:()=>void perform('delete',{confirm_username:deleteUsername,password:deletePassword})}
   ]);
@@ -48,7 +48,7 @@ export default function NativeAccount({token,user,onChanged,signOut,onMessages,o
  {String(live.role||'').toUpperCase()!=='ADMIN'&&<View style={s.card}>
   {heading('account','Hesap İşlemleri')}
   {section==='account'&&<>
-   <Text style={s.meta}>Bu işlem geri alınamaz. Hesabınıza erişim hemen kapatılır; kişisel profiliniz ve Akademik AI içerikleriniz silinir. Hukuken saklanması gereken işlem kayıtları kimliğinizden ayrıştırılarak tutulabilir.</Text>
+   <Text style={s.meta}>İşlem geri alınamaz; yasal saklama gereği kayıtlar kimlikten ayrıştırılabilir.</Text>
    {field('Kullanıcı adını onayla',deleteUsername,setDeleteUsername)}
    {field('Mevcut şifre',deletePassword,setDeletePassword,true)}
    <Pressable accessibilityRole="button" accessibilityLabel="Hesabı Kalıcı Olarak Sil" disabled={busy||uncertain} onPress={confirmDeletion} style={{backgroundColor:'#B42318',padding:14,borderRadius:10,marginTop:12,minHeight:48,justifyContent:'center',opacity:busy||uncertain?0.5:1}}>
