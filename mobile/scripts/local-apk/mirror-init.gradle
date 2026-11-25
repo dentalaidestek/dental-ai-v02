@@ -1,0 +1,28 @@
+// Local mirror init for sandboxed/offline CI-free APK builds.
+// Maven Central returns HTTP 429 (rate limit) from some egress IPs; Aliyun
+// mirrors are appended (NOT replacing) so expo/react-native specific repo
+// URLs and the declared google()/mavenCentral() order stay intact. A 429
+// fails fast, so Gradle falls through to the next repository quickly.
+// Usage: ./gradlew assembleRelease ... -I mobile/scripts/local-apk/mirror-init.gradle
+def aliyunCentral='https://maven.aliyun.com/repository/central'
+def aliyunGoogle='https://maven.aliyun.com/repository/google'
+def aliyunPlugins='https://maven.aliyun.com/repository/gradle-plugin'
+gradle.beforeSettings { settings ->
+  settings.pluginManagement.repositories {
+    maven { url aliyunCentral }
+    maven { url aliyunGoogle }
+    maven { url aliyunPlugins }
+  }
+}
+allprojects { project ->
+  // build.gradle buildscript{} classpath resolution (kotlin/AGP plugin jars)
+  // only declares google()+mavenCentral(); append the mirrors there too.
+  project.buildscript.repositories {
+    maven { url aliyunCentral }
+    maven { url aliyunGoogle }
+  }
+  project.repositories {
+    maven { url aliyunCentral }
+    maven { url aliyunGoogle }
+  }
+}
