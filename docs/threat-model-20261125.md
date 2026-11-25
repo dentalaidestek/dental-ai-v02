@@ -21,7 +21,7 @@ seviyede saldırı yolu + mevcut savunma + kalan boşluk listeler.
 
 | # | Yol | Nasıl çalışır (mimari) | Bugünkü durum | Kalan boşluk |
 | --- | --- | --- | --- | --- |
-| 1 | **Uzman hesabının ele geçirilmesi (oltalama)** | En olası yol: sahte "hesabınız" maili → şifre/oturum → saldırgan o uzmanın hastalarını *meşru* yetkiyle okur. Argon2id'yi kırmaya gerek yok. | Şifre hashing, hız sınırları, hash'li token, SameSite ✓ | Uzmanlar için 2FA yok, yeni cihaz uyarısı yok, oturum listesi/uzaktan kapatma zayıf, anomalı giriş tespiti yok. Hassas okumalarda step-up yok (admin'de var olan desen uzmanlara taşınmalı) |
+| 1 | **Uzman hesabının ele geçirilmesi (oltalama)** | En olası yol: sahte "hesabınız" maili → şifre/oturum → saldırgan o uzmanın hastalarını *meşru* yetkiyle okur. Argon2id'yi kırmaya gerek yok. | Şifre hashing, hız sınırları, hash'li token, SameSite ✓ — **2026-11-25: yeni cihaz doğrulama eklendi** (tanımadığımız cihazdan girişte e-postaya 6 haneli kod gider: bildirim+doğrulama; web'de `dai_dev` çerezi, mobilde `X-Device-Id`; kod hash'li, 10 dk, 5 deneme kilidi, cihaz başına 5 güvenilir cihaz sınırı; eski APK fail-closed) | Kullanıcı tarafı oturum listesi/uzaktan kapatma ekranı henüz yok; anomalı giriş tespiti (imkânsız yolculuk) yok; hassas okumalarda step-up yok (admin'de var olan desen uzmanlara taşınmalı) |
 | 2 | **Uzman cihazının enfeksiyonu (infostealer)** | Uzmanın kendi bilgisayarı/telefonu ele geçer; çerez/token çalınır — siteye saldırı gerekmez. | Sunucu tarafı: token 7 gün, DB'de hash'li ✓ | Cihaz tarafı tamamen kullanıcının sorumluluğu; anormal eşzamanlı oturum uyarısı eklenmeli, hassas işlemde yeniden kimlik doğrulama |
 | 3 | **Admin merkezi hedefleme** | Gerçek zamanlı OTP aktarım oltası (sahte admin girişi + anında kod isteme) | Parola + Gmail OTP + gizli yol + hız sınırı + sec-fetch-site ✓ | WebAuthn/passkey, admin girişi e-posta uyarısı, mümkünse admin yolu IP kısıtı |
 | 4 | **Sahte/trojan APK dağıtımı** | Ürün APK linkiyle dağıtılıyor; saldırgan uzmanlara "yeni sürüm" diye mutasyonlu APK yollar → kimlik/oturum çalar. Sunucuya hiç dokunmaz. | Debug imzalı beta; imza uyuşmazlığı üstüne kurulum yapmayı engeller ✓ | Prod için gerçek release keystore zorunlu; SHA-256 resmi kanalda yayınlama; tek resmi dağıtım kanalı; ileride Play Store + bütünlük kontrolü |
@@ -36,15 +36,20 @@ seviyede saldırı yolu + mevcut savunma + kalan boşluk listeler.
 
 1. **GitHub PAT'ini hemen yenile** (bu oturumda düz metin kullanıldı) ve bir daha
    komut satırına yazma; CI için ayrı, salt-okunur token kullan.
-2. **Uzman hesaplarına 2FA (TOTP) + yeni cihaz e-posta uyarısı + oturum yönetimi** —
-   gerçekçi saldırının %80'i bu yoldan gelir; admin'deki OTP desenini uzmana taşı.
+2. **Yeni cihaz doğrulama + oturum yönetimi** — ✓ 2026-11-25: e-posta kodlu yeni
+   cihaz doğrulaması (2FA değil, kullanıcının tercihi) web + mobilde devrede;
+   kod e-postası aynı zamanda bildirimdür. Kalan: kullanıcı tarafı oturum
+   listesi / uzaktan kapatma ekranı.
 3. **Hassas okumalarda step-up** (hasta listesi dışa aktarma, toplu görüntüleme):
    `socialAdminStepUp` deseni uzman tarafına genelleştir.
 4. **Release keystore + APK SHA-256 yayınlama + tek dağıtım kanalı** — sahte APK
    vektörünü kapat.
 5. **Admin için passkey/WebAuthn + giriş uyarısı.**
 6. **Sırların rotasyon takvimi** (DB, R2, AI anahtarları) + en az yetki.
-7. **Önüne Cloudflare/WAF** (bot filtre, rate limit, DDoS) — Render starter tek başına yeterli değil.
+7. **Önüne Cloudflare/WAF** (bot filtre, rate limit, DDoS) — ✓ 2026-11-25 dış
+   denetim: dentalai.tr artık Cloudflare arkasında (cf-ray, TLS Google Trust
+   Services, HSTS canlı). Not: canlı yanıtta CSP başlığı hâlâ görünmüyor →
+   Render deploy'u eski sürümde; son push'tan sonra deploy tetiklenmeli.
 8. **Veri minimizasyonu + saklama politikası**; uçtan uca şifreleme isteğini bilinçli
    ürün kararı olarak ele al (KVKK + "devlet istese" barının tek gerçek cevabı).
 
