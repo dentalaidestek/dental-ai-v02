@@ -58,8 +58,25 @@ def test_unauthenticated_bootstrap_is_rejected():
         ff._ff_auth = lambda request: (fake_main, fake_user, None)
 
 
+def _recursive_paths(routes):
+    """FastAPI >=0.141 include_router yolları düzleştirmez; _IncludedRouter
+    mount'larının içini de gez (daha eski sürümlerde iç içe liste boştur)."""
+    paths = set()
+    for route in routes:
+        path = getattr(route, "path", "")
+        if path:
+            paths.add(path)
+        sub = getattr(route, "routes", None)
+        if sub:
+            paths |= _recursive_paths(sub)
+        original = getattr(route, "original_router", None)
+        if original is not None:
+            paths |= _recursive_paths(getattr(original, "routes", []))
+    return paths
+
+
 def test_route_list_contains_all_endpoints():
-    paths = {getattr(route, "path", "") for route in app.routes}
+    paths = _recursive_paths(app.routes)
     expected = {
         "/api/foto-fikir/bootstrap",
         "/api/foto-fikir/ideas",
