@@ -615,6 +615,10 @@ class ExpertDeviceChallenge(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(index=True)
     device_key_hash: str = Field(index=True)
+    # Cihaz doğrulama challenge'ının herkese açık adresi; hem web /verify-email
+    # formu hem mobil verify ucu bu token ile challenge'ı bulur. Nullable ve
+    # idempotent migrasyonla eklenir (create_all mevcut tabloya kolon eklemez).
+    public_token: Optional[str] = Field(default=None, index=True, unique=True)
     device_name: Optional[str] = None
     platform: Optional[str] = None
     public_key: Optional[str] = None
@@ -2137,6 +2141,19 @@ def init_db():
             if "email_verified_at" not in cols:
                 conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN email_verified_at DATETIME')
 
+    # expertdevicechallenge.public_token: yeni cihaz doğrulama akışı challenge'ı
+    # herkese açık token ile adresler. Additive, nullable ve idempotent.
+    with engine.begin() as conn:
+        if engine.dialect.name == "postgresql":
+            conn.exec_driver_sql('ALTER TABLE "expertdevicechallenge" ADD COLUMN IF NOT EXISTS public_token VARCHAR')
+            conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS ix_expertdevicechallenge_public_token ON "expertdevicechallenge" (public_token)')
+        elif engine.dialect.name == "sqlite":
+            cols = {row[1] for row in conn.exec_driver_sql('PRAGMA table_info("expertdevicechallenge")').fetchall()}
+            if cols and "public_token" not in cols:
+                conn.exec_driver_sql('ALTER TABLE "expertdevicechallenge" ADD COLUMN public_token VARCHAR')
+            if cols:
+                conn.exec_driver_sql('CREATE UNIQUE INDEX IF NOT EXISTS ix_expertdevicechallenge_public_token ON "expertdevicechallenge" (public_token)')
+
     # create_all() does not add columns to existing tables. Keep this additive,
     # nullable migration idempotent for both PostgreSQL (Render) and SQLite.
     with engine.begin() as conn:
@@ -2742,6 +2759,107 @@ def _is_verified_expert(session: Session, user_id: int) -> bool:
         and bool(p.credential_document_path)
         and bool(p.phone)
     )
+
+# --- Yeni cihaz doğrulama (web + mobil ortak) ---------------------------------
+# Hesap sahibi tanıdık cihazdan girerse oturum doğrudan açılır. Tanımadığımız
+# bir cihazdan girişte e-postaya 6 haneli kod gider: kod aynı zamanda "yeni
+# cihaz bildirimi"dir. Kod hash'li saklanır, 10 dakika geçerlidir, 5 hatalı
+# denemede kilitlenir. Web'de cihaz kimliği httpOnly dai_dev çerezidir; mobilde
+# istemcinin kalıcı olarak gönderdiği X-Device-Id başlığıdır.
+DAI_DEVICE_COOKIE = "dai_dev"
+TRUSTED_DEVICE_LIMIT = 5
+
+
+def _device_key_hash(device_key: str) -> str:
+    return hash_session_token(device_key)
+
+
+def _empty_device_hash() -> str:
+    return _device_key_hash("")
+
+
+def _set_device_cookie(response, device_key: str) -> None:
+    response.set_cookie(
+        key=DAI_DEVICE_COOKIE,
+        value=device_key,
+        max_age=365 * 24 * 60 * 60,
+        httponly=True,
+        samesite="lax",
+        secure=True,
+        path="/",
+    )
+
+
+def _register_trusted_device(s: Session, user_id: int, device_key_hash: str, device_name: str, platform: str, public_key: Optional[str] = None) -> None:
+    now = _utcnow_naive()
+    row = s.exec(select(ExpertTrustedDevice).where(ExpertTrustedDevice.user_id == user_id, ExpertTrustedDevice.device_key_hash == device_key_hash)).first()
+    if row:
+        row.is_active = True
+        row.revoked_at = None
+        row.verified_at = now
+        row.last_seen_at = now
+        row.device_name = (device_name or "").strip()[:120] or row.device_name
+        row.platform = (platform or "").strip()[:40] or row.platform
+        if public_key:
+            row.public_key = public_key.strip()[:8000] or row.public_key
+        s.add(row)
+        return
+    # Kullanıcı başına güvenilir cihaz sayısını sınırla; en eskisini pasifleştir.
+    active_rows = s.exec(
+        select(ExpertTrustedDevice)
+        .where(ExpertTrustedDevice.user_id == user_id, ExpertTrustedDevice.is_active == True)  # noqa: E712
+        .order_by(ExpertTrustedDevice.last_seen_at.desc())
+    ).all()
+    for stale in active_rows[TRUSTED_DEVICE_LIMIT - 1:]:
+        stale.is_active = False
+        stale.revoked_at = now
+        s.add(stale)
+    s.add(ExpertTrustedDevice(
+        user_id=user_id,
+        device_key_hash=device_key_hash,
+        device_name=(device_name or "").strip()[:120] or None,
+        platform=(platform or "").strip()[:40] or None,
+        public_key=(public_key or "").strip()[:8000] or None,
+    ))
+
+
+def _create_device_challenge(s: Session, user: User, device_key: str, device_name: str, platform: str, public_key: str = "") -> ExpertDeviceChallenge:
+    now = _utcnow_naive()
+    device_hash = _device_key_hash(device_key)
+    recent = s.exec(
+        select(ExpertDeviceChallenge)
+        .where(
+            ExpertDeviceChallenge.user_id == user.id,
+            ExpertDeviceChallenge.device_key_hash == device_hash,
+            ExpertDeviceChallenge.used_at == None,  # noqa: E711
+            ExpertDeviceChallenge.attempts < 5,
+        )
+        .order_by(ExpertDeviceChallenge.created_at.desc())
+    ).first()
+    # 60 saniye içinde aynı cihaz için yeniden kod istenirse mevcut challenge
+    # döner (e-posta pompalanmaz); süresi geçmişse yeni kod üretilir.
+    if recent and recent.expires_at > now and recent.created_at > now - timedelta(seconds=60):
+        return recent
+    code = f"{secrets.randbelow(1000000):06d}"
+    challenge = ExpertDeviceChallenge(
+        user_id=user.id,
+        device_key_hash=device_hash,
+        device_name=(device_name or "").strip()[:120] or None,
+        platform=(platform or "").strip()[:40] or None,
+        public_key=(public_key or "").strip()[:8000] or None,
+        code_hash=hash_session_token(code),
+        expires_at=now + timedelta(minutes=10),
+        public_token=secrets.token_urlsafe(32),
+    )
+    s.add(challenge)
+    s.commit()
+    s.refresh(challenge)
+    send_expert_device_code(user.email, code)
+    return challenge
+
+
+def _verify_device_challenge_code(ch: ExpertDeviceChallenge, code: str) -> bool:
+    return secrets.compare_digest(ch.code_hash, hash_session_token((code or "").strip()))
 
 def send_brevo_password_reset_email(
     recipient_email: str,
@@ -3967,6 +4085,12 @@ def verify_email(request: Request, challenge_token: str = Form(...), code: str =
     safe_next = _safe_login_next(next_url)
     with Session(engine, expire_on_commit=False) as s:
         challenge = s.exec(select(EmailVerificationChallenge).where(EmailVerificationChallenge.public_token == challenge_token)).first()
+        if challenge is None:
+            # E-posta doğrulama challenge'ı bulunamadıysa bu bir yeni cihaz
+            # doğrulama challenge'ı olabilir (login akışı bu formu kullanır).
+            device_challenge = s.exec(select(ExpertDeviceChallenge).where(ExpertDeviceChallenge.public_token == challenge_token)).first()
+            if device_challenge is not None:
+                return _complete_web_device_login(request, s, device_challenge, code, safe_next)
         user = s.get(User, challenge.user_id) if challenge else None
         if not challenge or not user or not _verify_email_code(s, user, challenge, code):
             if user:
@@ -3977,6 +4101,32 @@ def verify_email(request: Request, challenge_token: str = Form(...), code: str =
         response = RedirectResponse(url=safe_next, status_code=303)
         create_user_session(response, user.id)
         return response
+
+
+def _complete_web_device_login(request: Request, s: Session, ch: ExpertDeviceChallenge, code: str, safe_next: str):
+    now = _utcnow_naive()
+    user = s.get(User, ch.user_id)
+    if ch.used_at or ch.expires_at <= now or not user or not user.is_active:
+        return templates.TemplateResponse(request=request, name="login.html", context={"verification_mode": False, "next_url": safe_next, "error": "Kod geçersiz, süresi dolmuş veya daha önce kullanılmış. Lütfen tekrar giriş yapın."}, status_code=400)
+    if ch.attempts >= 5:
+        return templates.TemplateResponse(request=request, name="login.html", context={"verification_mode": False, "next_url": safe_next, "error": "Çok fazla hatalı deneme. Lütfen tekrar giriş yapıp yeni kod isteyin."}, status_code=429)
+    device_key = request.cookies.get(DAI_DEVICE_COOKIE, "")
+    if ch.device_key_hash != _empty_device_hash() and (len(device_key) < 16 or _device_key_hash(device_key) != ch.device_key_hash):
+        return templates.TemplateResponse(request=request, name="login.html", context={"verification_mode": False, "next_url": safe_next, "error": "Doğrulama bu cihazla eşleşmiyor. Lütfen tekrar giriş yapın."}, status_code=400)
+    if not _verify_device_challenge_code(ch, code):
+        ch.attempts += 1
+        s.add(ch)
+        s.commit()
+        remaining = max(0, 5 - ch.attempts)
+        return templates.TemplateResponse(request=request, name="login.html", context={"challenge_token": ch.public_token, "verification_mode": True, "next_url": safe_next, "error": f"Doğrulama kodu hatalı. {remaining} deneme hakkı kaldı."}, status_code=400)
+    ch.used_at = now
+    s.add(ch)
+    if ch.device_key_hash != _empty_device_hash():
+        _register_trusted_device(s, ch.user_id, ch.device_key_hash, ch.device_name or "", ch.platform or "web", ch.public_key)
+    s.commit()
+    response = RedirectResponse(url=safe_next, status_code=303)
+    create_user_session(response, user.id)
+    return response
 
 
 @app.post("/login")
@@ -4036,13 +4186,37 @@ def login_user(
                 return templates.TemplateResponse(request=request, name="login.html", context={"error": "Doğrulama e-postası gönderilemedi. Lütfen daha sonra tekrar deneyin.", "next_url": safe_next, "renewal_mode": renew_email_code == "1"}, status_code=503)
             return templates.TemplateResponse(request=request, name="login.html", context={"email": user.email, "challenge_token": challenge.public_token, "verification_mode": True, "next_url": safe_next}, status_code=200)
 
-        response = RedirectResponse(
-            url=safe_next,
-            status_code=303,
-        )
-
-        create_user_session(response, user.id)
-
+        # Tanıdık cihaz (dai_dev çerezi) → oturum doğrudan açılır. Tanımadığımız
+        # cihazda e-postaya kod gider; kod hem bildirim hem doğrulamadır.
+        device_key = request.cookies.get(DAI_DEVICE_COOKIE, "")
+        if not device_key or len(device_key) < 16:
+            device_key = secrets.token_urlsafe(32)
+        device_hash = _device_key_hash(device_key)
+        trusted = s.exec(
+            select(ExpertTrustedDevice)
+            .where(
+                ExpertTrustedDevice.user_id == user.id,
+                ExpertTrustedDevice.device_key_hash == device_hash,
+                ExpertTrustedDevice.is_active == True,  # noqa: E712
+            )
+        ).first()
+        if trusted:
+            trusted.last_seen_at = _utcnow_naive()
+            s.add(trusted)
+            s.commit()
+            response = RedirectResponse(
+                url=safe_next,
+                status_code=303,
+            )
+            create_user_session(response, user.id)
+            _set_device_cookie(response, device_key)
+            return response
+        try:
+            device_challenge = _create_device_challenge(s, user, device_key, request.headers.get("user-agent", ""), "web")
+        except Exception:
+            return templates.TemplateResponse(request=request, name="login.html", context={"error": "Doğrulama kodu gönderilemedi. Lütfen daha sonra tekrar deneyin.", "next_url": safe_next}, status_code=503)
+        response = templates.TemplateResponse(request=request, name="login.html", context={"email": user.email, "challenge_token": device_challenge.public_token, "verification_mode": True, "next_url": safe_next}, status_code=200)
+        _set_device_cookie(response, device_key)
         return response
 
 

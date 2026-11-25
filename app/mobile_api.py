@@ -347,6 +347,35 @@ def mobile_login(payload: LoginRequest, request: Request = None):
             except Exception:
                 raise HTTPException(status_code=503, detail='Doğrulama e-postası gönderilemedi. Lütfen daha sonra tekrar deneyin.')
             return MobileToken(access_token=None, token_type='Bearer', expires_at=challenge.expires_at, challenge_token=challenge.public_token)
+        # Yeni cihaz doğrulaması: istemci kalıcı X-Device-Id gönderiyorsa o anahtar
+        # hash'i güvenilir cihazlarda aranır. Bilinmeyen/eksik cihazda e-postaya
+        # 6 haneli kod gider (RN'in mevcut challenge_token akışıyla uyumlu).
+        from app.main import ExpertTrustedDevice, _device_key_hash, _create_device_challenge
+        device_key = (request.headers.get("x-device-id") or "").strip() if request is not None else ""
+        trusted = None
+        if len(device_key) >= 16:
+            device_hash = _device_key_hash(device_key)
+            trusted = session.exec(
+                select(ExpertTrustedDevice).where(
+                    ExpertTrustedDevice.user_id == user.id,
+                    ExpertTrustedDevice.device_key_hash == device_hash,
+                    ExpertTrustedDevice.is_active == True,  # noqa: E712
+                )
+            ).first()
+            if trusted:
+                trusted.last_seen_at = datetime.utcnow()
+                session.add(trusted)
+                session.commit()
+        if trusted is None:
+            try:
+                device_challenge = _create_device_challenge(
+                    session, user, device_key,
+                    ((request.headers.get("x-device-name") if request is not None else "") or "Mobil cihaz"),
+                    "mobile",
+                )
+            except Exception:
+                raise HTTPException(status_code=503, detail="Doğrulama kodu gönderilemedi. Lütfen daha sonra tekrar deneyin.")
+            return MobileToken(access_token=None, token_type='Bearer', expires_at=device_challenge.expires_at, challenge_token=device_challenge.public_token)
         token = create_session_token()
         expires_at = datetime.utcnow().replace(microsecond=0)
         from datetime import timedelta
@@ -366,9 +395,17 @@ def mobile_login(payload: LoginRequest, request: Request = None):
 
 
 @router.post('/auth/verify-email')
-def mobile_verify_email(payload: EmailVerifyRequest):
+def mobile_verify_email(payload: EmailVerifyRequest, request: Request = None):
     with Session(engine, expire_on_commit=False) as session:
         challenge = session.exec(select(EmailVerificationChallenge).where(EmailVerificationChallenge.public_token == payload.challenge_token)).first()
+        if challenge is None:
+            # E-posta doğrulama challenge'ı bulunamadıysa yeni cihaz doğrulama
+            # challenge'ı olabilir (login bu token'ı döndürür).
+            from app.main import ExpertDeviceChallenge
+            device_ch = session.exec(select(ExpertDeviceChallenge).where(ExpertDeviceChallenge.public_token == payload.challenge_token)).first()
+            if device_ch is not None:
+                return _complete_mobile_device_login(session, device_ch, payload.code, request)
+            raise HTTPException(status_code=400, detail='Kod hatalı, süresi dolmuş veya daha önce kullanılmış.')
         user = session.get(User, challenge.user_id) if challenge else None
         if not challenge or not user or not _verify_email_code(session, user, challenge, payload.code):
             raise HTTPException(status_code=400, detail='Kod hatalı, süresi dolmuş veya daha önce kullanılmış.')
@@ -377,6 +414,33 @@ def mobile_verify_email(payload: EmailVerifyRequest):
         session.add(SessionToken(token_hash=hash_session_token(token), user_id=user.id, expires_at=expires_at))
         session.commit()
         return MobileToken(access_token=token, expires_at=expires_at)
+
+
+def _complete_mobile_device_login(session: Session, ch, code: str, request) -> MobileToken:
+    from app.main import _device_key_hash, _empty_device_hash, _register_trusted_device
+    now = datetime.utcnow()
+    if ch.used_at or ch.expires_at <= now:
+        raise HTTPException(status_code=400, detail='Kod geçersiz veya süresi dolmuş.')
+    if ch.attempts >= 5:
+        raise HTTPException(status_code=429, detail='Çok fazla hatalı deneme. Yeni kod isteyin.')
+    device_key = (request.headers.get("x-device-id") or "").strip() if request is not None else ""
+    if ch.device_key_hash != _empty_device_hash():
+        if len(device_key) < 16 or _device_key_hash(device_key) != ch.device_key_hash:
+            raise HTTPException(status_code=400, detail='Doğrulama bu cihazla eşleşmiyor. Lütfen tekrar giriş yapın.')
+    if not hmac.compare_digest(ch.code_hash, hash_session_token((code or "").strip())):
+        ch.attempts += 1
+        session.add(ch)
+        session.commit()
+        raise HTTPException(status_code=400, detail='Doğrulama kodu hatalı.', headers={"X-Attempts-Left": str(max(0, 5 - ch.attempts))})
+    ch.used_at = now
+    session.add(ch)
+    if ch.device_key_hash != _empty_device_hash():
+        _register_trusted_device(session, ch.user_id, ch.device_key_hash, ch.device_name or "", ch.platform or "mobile", ch.public_key)
+    token = create_session_token()
+    expires_at = datetime.utcnow().replace(microsecond=0) + timedelta(days=7)
+    session.add(SessionToken(token_hash=hash_session_token(token), user_id=ch.user_id, expires_at=expires_at))
+    session.commit()
+    return MobileToken(access_token=token, expires_at=expires_at)
 
 
 @router.post("/auth/logout")

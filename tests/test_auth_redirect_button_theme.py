@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import re
+
 import pytest
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
@@ -32,6 +34,8 @@ def test_new_patient_login_returns_user_to_requested_page(monkeypatch):
         session.commit()
 
     monkeypatch.setattr(main, "engine", engine)
+    device_codes = []
+    monkeypatch.setattr(main, "send_expert_device_code", lambda email, code: device_codes.append(code))
     with TestClient(main.app, base_url="https://testserver") as client:
         guarded = client.get("/patients/new", follow_redirects=False)
         assert guarded.status_code == 303
@@ -50,6 +54,17 @@ def test_new_patient_login_returns_user_to_requested_page(monkeypatch):
             },
             follow_redirects=False,
         )
+        # Yeni cihaz: e-posta kodu adımı zorunlu; doğrulayınca istenen sayfaya dönülür.
+        if logged_in.status_code == 200:
+            match = re.search(r'name="challenge_token"\s+value="([^"]+)"', logged_in.text)
+            assert match, "yeni cihazda doğrulama formu gelmeli"
+            verified = client.post(
+                "/verify-email",
+                data={"challenge_token": match.group(1), "code": device_codes[-1], "next_url": "/patients/new"},
+                follow_redirects=False,
+            )
+            assert verified.status_code == 303, verified.text
+            logged_in = verified
         assert logged_in.status_code == 303
         assert logged_in.headers["location"] == "/patients/new"
         assert main.SESSION_COOKIE in logged_in.cookies

@@ -3,7 +3,27 @@ import {normalizePatientDirectorySearch} from './patientDirectoryPresentation';
 import {MISSING_API_ROUTE_MESSAGE} from './apiCompatibility';
 import {isDashboardProgramEvent} from './dashboardPresentation';
 import type {DashboardProgramEvent} from './dashboardPresentation';
+import * as SecureStore from 'expo-secure-store';
+import * as Crypto from 'expo-crypto';
 export const API_BASE = "https://dentalai.tr/api/mobile/v1";
+
+// Yeni cihaz doğrulaması için kalıcı anonim cihaz kimliği: ham değer sunucuya
+// bearer kimliği gibi gönderilir, sunucuda yalnızca hash'i saklanır. İlk
+// çalıştırmada üretilir ve SecureStore'da kalıcıdır.
+let daiDeviceIdCache:string|null=null;
+async function daiDeviceId():Promise<string>{
+ if(daiDeviceIdCache)return daiDeviceIdCache;
+ try{
+  let stored=await SecureStore.getItemAsync('dai.deviceId');
+  if(!stored){
+   const bytes=await Crypto.getRandomBytesAsync(16);
+   stored=Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join('');
+   await SecureStore.setItemAsync('dai.deviceId',stored);
+  }
+  daiDeviceIdCache=stored;
+  return stored;
+ }catch{return '';}
+}
 
 export type User={id:number;username:string;email?:string|null;display_name:string;role:string;is_active:boolean;email_verified_at?:string|null;professional_title?:string|null;specialty?:string|null;university?:string|null};
 export type Patient={id:number;tc_kimlik_no?:string|null;address?:string|null;anonymous_id:string;first_name?:string|null;last_name?:string|null;phone?:string|null;birth_date?:string|null;age?:number|null;chief_complaint?:string|null;created_at?:string};
@@ -29,7 +49,8 @@ export async function request<T>(path:string,token?:string,options:RequestInit={
  if(externalSignal?.aborted)controller.abort();
  else externalSignal?.addEventListener("abort",abort,{once:true});
  try{
-  const response=await fetch(API_BASE+path,{...options,credentials:"omit",signal:controller.signal,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{}),...(options.headers||{})}});
+  const deviceId=await daiDeviceId();
+  const response=await fetch(API_BASE+path,{...options,credentials:"omit",signal:controller.signal,headers:{"Content-Type":"application/json",...(deviceId?{"X-Device-Id":deviceId}:{}),...(token?{Authorization:"Bearer "+token}:{}),...(options.headers||{})}});
   const raw=await response.text();let body:any={};
   try{body=raw?JSON.parse(raw):{}}catch{
    // A reverse proxy or expired web session may return HTML with HTTP 200.
