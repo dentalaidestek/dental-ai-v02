@@ -28,6 +28,8 @@ envVarGroups:
         value: MIXED
       - key: STUDY_V2_OCR_BATCH_PAGES
         value: "1"
+      - key: AUTH_IP_RATE_MAX_ATTEMPTS
+        value: "40"
       - key: STUDY_V2_EMBED_BATCH_CHUNKS
         value: "4"
       - key: DENTAL_MAX_HTTP_REQUESTS
@@ -60,7 +62,7 @@ services:
     autoDeployTrigger: "off"
     buildCommand: pip install -r requirements-web.lock
     preDeployCommand: python -m app.migrate
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers --forwarded-allow-ips="*"
     healthCheckPath: /readyz
     envVars:
       - fromGroup: dental-runtime-bounds

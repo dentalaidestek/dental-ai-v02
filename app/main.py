@@ -2499,7 +2499,7 @@ def _record_registration_attempt(key: str) -> None:
 
 def _check_web_login_rate(request: Request, login: str) -> str:
     admit_auth_attempt(engine, "login-ip", request.client.host if request.client else "unknown",
-        limit=int(os.getenv("AUTH_IP_RATE_MAX_ATTEMPTS", "100")), window=WEB_LOGIN_RATE_WINDOW_SECONDS)
+        limit=int(os.getenv("AUTH_IP_RATE_MAX_ATTEMPTS", "40")), window=WEB_LOGIN_RATE_WINDOW_SECONDS)
     return admit_auth_attempt(engine, "login", login,
         limit=WEB_LOGIN_RATE_MAX_FAILURES, window=WEB_LOGIN_RATE_WINDOW_SECONDS)
 
@@ -3602,6 +3602,10 @@ def professional_title_document_upload(request: Request, credential_document: Up
     document_bytes = credential_document.file.read(EXPERT_CREDENTIAL_MAX_BYTES + 1)
     if not document_bytes or len(document_bytes) > EXPERT_CREDENTIAL_MAX_BYTES:
         return HTMLResponse("Belge boş olamaz ve 10 MB sınırını aşamaz.", status_code=400)
+    # Uzantıya ek olarak içerik imzası doğrulaması: etiketi yanlış/polyglot dosya admin akışına giremez.
+    content_signatures = {".pdf": b"%PDF-", ".jpg": b"\xff\xd8\xff", ".jpeg": b"\xff\xd8\xff", ".png": b"\x89PNG\r\n\x1a\n"}
+    if not document_bytes.startswith(content_signatures[suffix]):
+        return HTMLResponse("Belge içeriği seçilen dosya türüyle uyuşmuyor.", status_code=400)
 
     with Session(engine, expire_on_commit=False) as s:
         pending = s.exec(select(ExpertTitleChange).where(
@@ -13560,9 +13564,32 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(), payment=()")
-    if request.url.scheme == "https":
-        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss:; "
+        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+    )
+    # TLS edge proxy'de sonlandırılır; HSTS koşulsuz basılır (http yanıtta zararsızdır).
+    response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
+
+
+_MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+@app.middleware("http")
+async def cookie_csrf_guard(request: Request, call_next):
+    # Çerezle kimliklenen mutasyonlar aynı siteden gelmeli; Bearer (mobil) etkilenmez.
+    # SameSite=Lax üzerine derinlemesine savunma: sec-fetch-site + Origin kontrolü.
+    if request.method in _MUTATING_METHODS and request.cookies.get(SESSION_COOKIE) and not request.headers.get("authorization", "").lower().startswith("bearer "):
+        site = (request.headers.get("sec-fetch-site") or "").strip().lower()
+        if site and site not in {"same-origin", "same-site", "none"}:
+            return JSONResponse({"detail": "Cross-site istek reddedildi."}, status_code=403)
+        origin = (request.headers.get("origin") or "").strip()
+        if not site and origin and urlparse(origin).netloc != request.url.netloc:
+            return JSONResponse({"detail": "Cross-site istek reddedildi."}, status_code=403)
+    return await call_next(request)
 
 
 @app.middleware("http")

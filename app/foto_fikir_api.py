@@ -34,6 +34,8 @@ from pydantic import BaseModel
 from sqlmodel import Field, Session, SQLModel, select
 
 from app.http_transport import urlopen
+from app.auth_rate import admit
+from app import provider_budget
 from app.foto_fikir_creative import (
     CREATIVE_DIRECTOR_BRIEF,
     actionable_tips,
@@ -377,6 +379,26 @@ def _ff_engine_guard():
     except (json.JSONDecodeError, KeyError, TypeError, ValueError, IndexError, AttributeError) as exc:
         logger.warning("Foto Fikir motoru hatası: %r", exc)
         raise HTTPException(status_code=503, detail=FOTO_FIKIR_UNAVAILABLE) from exc
+
+
+def _ff_throttle(main_module, user_id: int, action: str, *, limit: int, window: int = 60) -> None:
+    """AI maliyeti doğuran uçlarda kullanıcı başına hız sınırı (ekonomik DoS koruması)."""
+    try:
+        admit(main_module.engine, "ff-" + action, str(user_id), limit=limit, window=window)
+    except HTTPException as exc:
+        if exc.status_code == 429:
+            exc.detail = "Çok hızlı istek yapıyorsunuz; kısa bir süre sonra tekrar deneyin."
+        raise
+
+
+@contextmanager
+def _ff_ai_budget(user_id: int):
+    """Kullanıcı başına eşzamanlı Anthropic çağrısını ve istek bütçelerini sınırlar."""
+    try:
+        with provider_budget.reservation("anthropic", FOTO_FIKIR_CLAUDE_MODEL, account_scope=f"foto-fikir:{user_id}"):
+            yield
+    except provider_budget.ProviderBusy as exc:
+        raise HTTPException(status_code=429, detail="Üretim hattı şu anda dolu; kısa bir süre sonra tekrar deneyin.") from exc
 
 
 def _ff_clean(value, limit: int) -> str:
@@ -1066,6 +1088,7 @@ def foto_fikir_ideas(request: Request, body: FFIdeasRequest):
     if auth_error:
         return auth_error
     with _ff_engine_guard():
+        _ff_throttle(main_module, user.id, "ideas", limit=10)
         topic = _ff_clean(body.topic_hint, 200)
         mock = _ff_mock()
         if mock:
@@ -1080,7 +1103,8 @@ def foto_fikir_ideas(request: Request, body: FFIdeasRequest):
                 "mevzuata uygun (garanti, üstünlük ve kampanya iddiası yok) olsun.\n"
                 'Yalnızca şu JSON biçimini döndür: {"ideas": [{"title": "...", "angle": "...", "hook": "..."}]}'
             )
-            data = _ff_json_object(_ff_claude_text(prompt, system=CREATIVE_DIRECTOR_BRIEF)) or {}
+            with _ff_ai_budget(user.id):
+                data = _ff_json_object(_ff_claude_text(prompt, system=CREATIVE_DIRECTOR_BRIEF)) or {}
             ideas = data.get("ideas") or []
             if len(ideas) < 3:
                 raise FFUnavailable("Fikir sağlayıcısının yanıtı okunamadı.")
@@ -1102,6 +1126,7 @@ def foto_fikir_slides(request: Request, body: FFSlidesRequest):
     if auth_error:
         return auth_error
     with _ff_engine_guard():
+        _ff_throttle(main_module, user.id, "slides", limit=10)
         topic = _ff_clean(body.topic, 200)
         slide_count = body.slide_count
         if slide_count < 3 or slide_count > FF_SLIDE_MAX_COUNT:
@@ -1120,7 +1145,8 @@ def foto_fikir_slides(request: Request, body: FFSlidesRequest):
                 "mevzuata uygun yaz (garanti, üstünlük, kampanya iddiası yok; öncesi/sonrası karşılaştırması yok).\n"
                 'Yalnızca şu JSON biçimini döndür: {"slides": [{"headline": "...", "body": "...", "note": "..."}]}'
             )
-            data = _ff_json_object(_ff_claude_text(prompt, system=CREATIVE_DIRECTOR_BRIEF)) or {}
+            with _ff_ai_budget(user.id):
+                data = _ff_json_object(_ff_claude_text(prompt, system=CREATIVE_DIRECTOR_BRIEF)) or {}
             slides = data.get("slides") or []
             if len(slides) < 3:
                 raise FFUnavailable("Slayt sağlayıcısının yanıtı okunamadı.")
@@ -1146,6 +1172,7 @@ def foto_fikir_mevzuat_check(request: Request, body: FFMevzuatRequest):
     if auth_error:
         return auth_error
     with _ff_engine_guard():
+        _ff_throttle(main_module, user.id, "mevzuat", limit=30)
         texts = [(_ff_clean(text, 300) if isinstance(text, str) else "") for text in body.texts][:FF_MEVZUAT_MAX_TEXTS]
         results = []
         for index, text in enumerate(texts):
@@ -1170,6 +1197,7 @@ def foto_fikir_generate_image(request: Request, body: FFGenerateImageRequest):
     if auth_error:
         return auth_error
     with _ff_engine_guard():
+        _ff_throttle(main_module, user.id, "generate", limit=3)
         topic = _ff_clean(body.topic, 200)
         style = FF_STYLE_MAP.get(_ff_clean(body.style_id, 60)) or FF_STYLES[0]
         if len(body.slides or []) > FF_SLIDE_MAX_COUNT:
@@ -1200,7 +1228,8 @@ def foto_fikir_generate_image(request: Request, body: FFGenerateImageRequest):
         else:
             if not _ff_has_gemini():
                 raise FFUnavailable("GEMINI_API_KEY tanımlı değil.")
-            drafts = _ff_visual_prompt_drafts(topic, style, slides)
+            with _ff_ai_budget(user.id):
+                drafts = _ff_visual_prompt_drafts(topic, style, slides)
             prompts: List[str] = []
             for index, slide in enumerate(slides):
                 try:
@@ -1275,6 +1304,7 @@ def foto_fikir_brand_kit(request: Request, files: List[UploadFile] = File(...)):
     if auth_error:
         return auth_error
     with _ff_engine_guard():
+        _ff_throttle(main_module, user.id, "brand-upload", limit=6)
         if len(files) > FF_BRAND_MAX_FILES:
             raise HTTPException(status_code=400, detail="En fazla 3 fotoğraf yükleyin.")
         saved = 0
@@ -1315,6 +1345,7 @@ def foto_fikir_brand_generate(request: Request, body: FFBrandGenerateRequest):
     if auth_error:
         return auth_error
     with _ff_engine_guard():
+        _ff_throttle(main_module, user.id, "brand-generate", limit=3)
         scene = _ff_clean(body.scene, 80)
         if scene not in FOTO_FIKIR_SCENES:
             raise HTTPException(status_code=400, detail="Geçerli bir sahne seçin.")
@@ -1368,6 +1399,7 @@ def foto_fikir_ig_profile(request: Request, body: FFIgRequest):
     if auth_error:
         return auth_error
     with _ff_engine_guard():
+        _ff_throttle(main_module, user.id, "ig", limit=5)
         mock = _ff_mock()
         if mock:
             plan = _ff_mock_ig()
@@ -1381,7 +1413,8 @@ def foto_fikir_ig_profile(request: Request, body: FFIgRequest):
                 'Yalnızca şu JSON biçimini döndür: {"bio": "...", "highlights": ["..."], '
                 '"grid_plan": [{"idea": "...", "format": "Tek Kare|Karusel|Reels"}]}'
             )
-            plan = _ff_json_object(_ff_claude_text(prompt)) or {}
+            with _ff_ai_budget(user.id):
+                plan = _ff_json_object(_ff_claude_text(prompt)) or {}
             if not plan.get("bio") or len(plan.get("highlights") or []) < 3 or len(plan.get("grid_plan") or []) < 6:
                 raise FFUnavailable("Instagram planı sağlayıcısının yanıtı okunamadı.")
             provider, model = "claude+local", FOTO_FIKIR_CLAUDE_MODEL
@@ -1395,6 +1428,7 @@ def foto_fikir_reels(request: Request, body: FFReelsRequest):
     if auth_error:
         return auth_error
     with _ff_engine_guard():
+        _ff_throttle(main_module, user.id, "reels", limit=5)
         topic = _ff_clean(body.topic, 200)
         if not topic:
             raise HTTPException(status_code=400, detail="Reels konusu gerekli.")
@@ -1411,7 +1445,8 @@ def foto_fikir_reels(request: Request, body: FFReelsRequest):
                 'Yalnızca şu JSON biçimini döndür: {"hooks": ["..."], "senaryo": [{"aralik": "0-3 sn", "metin": "..."}], '
                 '"capcut_adimlari": ["..."]}'
             )
-            plan = _ff_json_object(_ff_claude_text(prompt, system=CREATIVE_DIRECTOR_BRIEF)) or {}
+            with _ff_ai_budget(user.id):
+                plan = _ff_json_object(_ff_claude_text(prompt, system=CREATIVE_DIRECTOR_BRIEF)) or {}
             if len(plan.get("hooks") or []) < 2 or not plan.get("senaryo") or len(plan.get("capcut_adimlari") or []) < 4:
                 raise FFUnavailable("Reels planı sağlayıcısının yanıtı okunamadı.")
             provider, model = "claude+local", FOTO_FIKIR_CLAUDE_MODEL
