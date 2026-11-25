@@ -5,10 +5,10 @@ const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../App.tsx'),'utf8');
 test('patient profile appointment action carries selected patient identity',()=>{
  assert.match(source,/appointment:\(\)=>root\(\)\?\.navigate\("Program",\{patientId:id\}\)/);
- const profile=fs.readFileSync(path.join(__dirname,'../src/NativePatientProfile.tsx'),'utf8');
- // Quick actions were refactored into presentation-driven tiles; the appointment
- // handler must still be wired through to actions.appointment.
- assert.ok(profile.includes('appointment:actions.appointment'));
+ // The quick-action palette was retired from the profile screen; appointment
+ // creation keeps the selected patient identity on its route and is reached
+ // from the home screen (Program) rather than the profile tiles.
+ assert.ok(source.includes('["Programım",()=>nav.navigate("Program")]'),'appointment creation is reachable from the home screen');
  const presentationSrc=fs.readFileSync(path.join(__dirname,'../src/patientProfilePresentation.ts'),'utf8');
  assert.ok(presentationSrc.includes("key: 'appointment'")&&presentationSrc.includes("label: 'Randevu'"));
 });

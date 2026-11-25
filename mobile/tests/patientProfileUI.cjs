@@ -38,7 +38,7 @@ function component(api,file='NativePatientProfile',storage=new Map()){
  Wrapped.focusState=focusState;
  return Wrapped;
 }
-const actions=Object.fromEntries(['chart','analysis','appointment','expert','analysisResult','deleted'].map(k=>[k,()=>{}]));
+const actions=Object.fromEntries(['chart','analysis','appointment','expert','support','analysisResult','deleted'].map(k=>[k,()=>{}]));
 const patient=id=>({patient:{id,first_name:'Synthetic'+id,last_name:'Test',anonymous_id:'SYN-'+id,chief_complaint:'Complaint',age:0},edit_revision:'a'.repeat(64),teeth:[],surfaces:[],treatments:[{id:1,treatment_name:'Root canal',material:'Synthetic material',result:'Synthetic result',doctor_note:'Synthetic note',edit_revision:'c'.repeat(64),created_at:'2026-11-18T10:00:00'}],media:[]});
 const pagedPatient=(id,cursor)=>{const value=patient(id);value.treatments=[{id:1,treatment_name:'Root canal',edit_revision:'c'.repeat(64),created_at:'2026-11-18T10:00:00'},{id:2,treatment_name:'Second treatment',edit_revision:'d'.repeat(64),created_at:'2026-11-17T10:00:00'},{id:3,treatment_name:'Third treatment',edit_revision:'e'.repeat(64),created_at:'2026-11-16T10:00:00'}];value.treatments_next_cursor=cursor;return value};
 const text=node=>typeof node==='string'?node:Array.isArray(node)?node.map(text).join(''):node?.children?node.children.map(text).join(''):'';
@@ -73,43 +73,34 @@ test('three-way profile merge adopts unrelated server edits and reports same-fie
  assert.equal(merged.conflicts[0].currentValue,'Kırık');
 });
 
-test('patient profile quick-action tiles are accessible and retain their native actions',async()=>{
+test('patient profile support entry is accessible and routes to support requests',async()=>{
  const calls=[];
- const routed={...actions,chart:()=>calls.push('chart'),analysis:()=>calls.push('analysis'),appointment:()=>calls.push('appointment')};
+ const routed={...actions,support:()=>calls.push('support')};
  const Profile=component({getPatient:async()=>patient(8)});let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions:routed}))});
- const expected=['Diş Şeması','AI Analiz','Randevu','Tedavi'];
- const tiles=tree.root.findAllByType('Pressable').filter(node=>expected.includes(node.props.accessibilityLabel));
- assert.deepEqual(tiles.map(node=>node.props.accessibilityLabel),expected,'quick actions must preserve the web patient-detail order');
- for(const tile of tiles){
-  assert.equal(tile.props.accessibilityRole,'button');
-  assert.ok(tile.props.accessibilityHint);
-  assert.equal(tile.props.disabled,false);
-  const styles=Array.isArray(tile.props.style)?tile.props.style.flat(Infinity):[tile.props.style];
-  assert.ok(styles.some(style=>style&&style.minHeight>=44),'every action tile must retain a 44pt touch target');
- }
- for(const tile of tiles.slice(0,3))await renderer.act(async()=>tile.props.onPress());
- assert.deepEqual(calls,['chart','analysis','appointment']);
- await renderer.act(async()=>tiles[3].props.onPress());
- assert.ok(text(tree.toJSON()).includes('Yeni tedavi kaydı'),'treatment tile must open the existing treatment editor');
+ const support=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Destek Talebi Oluştur');
+ assert.ok(support,'the support entry must expose an accessible label');
+ assert.equal(support.props.accessibilityRole,'button');
+ const styles=Array.isArray(support.props.style)?support.props.style.flat(Infinity):[support.props.style];
+ assert.ok(styles.some(style=>style&&style.minHeight>=44),'the support entry must retain a 44pt touch target');
+ await renderer.act(async()=>support.props.onPress());
+ assert.deepEqual(calls,['support']);
  await renderer.act(async()=>tree.unmount());
 });
-test('mobile patient profile matches the web four-column action palette and compact hero',async()=>{
+test('mobile patient profile replaces the quick-action palette with the support request entry',async()=>{
  const Profile=component({getPatient:async()=>patient(8)});let tree;
  await renderer.act(async()=>{tree=renderer.create(React.createElement(Profile,{token:'one',patientId:8,actions}))});
  const flatten=value=>Array.isArray(value)?value.flatMap(flatten):value&&typeof value==='object'?[value]:[];
- const labels=['Diş Şeması','AI Analiz','Randevu','Tedavi'];
- const colors=['#1769F5','#8B39E8','#FF4F60','#08B978'];
- const tiles=tree.root.findAllByType('Pressable').filter(node=>labels.includes(node.props.accessibilityLabel));
- assert.deepEqual(tiles.map(node=>node.props.accessibilityLabel),labels);
- for(let i=0;i<tiles.length;i++){
-  const slot=flatten(tiles[i].parent.props.style);
-  const tile=flatten(tiles[i].props.style);
-  assert.ok(slot.some(style=>style.width==='25%'),'web mobile profile uses four equal quick-action columns');
-  assert.ok(tile.some(style=>style.minHeight===70&&style.flexDirection==='column'),'quick actions use the compact 70pt stacked tile');
-  assert.ok(tile.some(style=>style.backgroundColor===colors[i]),'quick action colors follow the web blue/purple/red/green order');
-  assert.ok(!text(tiles[i]).includes(presentationExports.patientProfileQuickActions()[i].description),'native tiles do not add the web-absent description text');
- }
+ // The four-column quick-action palette is retired; patient journeys move to
+ // the home screen, and the profile card offers the support request entry.
+ const paletteLabels=['Diş Şeması','AI Analiz','Randevu','Tedavi'];
+ const tiles=tree.root.findAllByType('Pressable').filter(node=>paletteLabels.includes(node.props.accessibilityLabel));
+ assert.deepEqual(tiles.map(node=>node.props.accessibilityLabel),[]);
+ const support=tree.root.findAllByType('Pressable').find(node=>node.props.accessibilityLabel==='Destek Talebi Oluştur');
+ assert.ok(support,'the profile card must offer the support request creation entry');
+ const supportContent=text(tree.toJSON());
+ assert.ok(supportContent.includes('Sorun Bildir'),'the support card points consultation reports at the conversation menu');
+ assert.ok(!supportContent.includes('HIZLI İŞLEMLER'),'the old palette kicker must be gone');
  const avatar=tree.root.findAllByType('View').find(node=>flatten(node.props.style).some(style=>style.width===50&&style.height===50&&style.borderRadius===25));
  assert.ok(avatar,'the mobile hero uses the web 50pt circular avatar');
  const chips=tree.root.findAllByType('View').filter(node=>flatten(node.props.style).some(style=>style.borderRadius===999&&style.backgroundColor==='#F8FAFC'));

@@ -34,6 +34,7 @@ import NativeFotoFikir from"./src/NativeFotoFikir";
 import NativeToothChart from"./src/NativeToothChart";
 import VoiceExamEntry from "./src/VoiceExamEntry";
 import NativeSupportRequests from "./src/NativeSupportRequests";
+import {LEGAL_DOCS,type LegalDoc} from "./src/legalContent";
 import{Academic,AnalysisHistory,ConsultationChat,Consultations,ExpertDirectory,Notifications,NewConsultation}from"./src/ModernScreens";
 import{RealtimeProvider,useRealtime}from"./src/realtime";
 
@@ -96,7 +97,7 @@ function Home({token,user}:{token:string;user:User}){
  const[d,setD]=useState<Dashboard|null>(null);
  const[recentAnalyses,setRecentAnalyses]=useState<AnalysisHistoryItem[]>([]);
  const[homeSearch,setHomeSearch]=useState("");
- const[menuOpen,setMenuOpen]=useState(false);
+ const[menuOpen,setMenuOpen]=useState(false),[infoDoc,setInfoDoc]=useState<LegalDoc|null>(null);
  const[refreshing,setRefreshing]=useState(false);
  const[unread,setUnread]=useState(0);
  const[homeError,setHomeError]=useState("");
@@ -141,7 +142,7 @@ function Home({token,user}:{token:string;user:User}){
   :(programEvent&&typeof programEvent.title==="string"?{title:programEvent.title,start_at:typeof programEvent.start_at==="string"?programEvent.start_at:undefined}:null);
  const upcomingRows=dashboardUpcomingRows(d?.upcoming_events,shownProgramEvent);
  // Web topbar menu-toggle parity (base.html #mainMenu): same entries mapped to native screens.
- const menuItems:Array<[string,()=>void]>=[["Hesabım (Profil)",()=>nav.navigate("Profile")],["Programım",()=>nav.navigate("Program")],["Dental Akış",()=>nav.navigate("DentalFlow")],["Diş Şemaları",()=>nav.navigate("Patients",{screen:"ToothChartBrowser"})],["Analiz Geçmişi",()=>nav.navigate("AnalysisHistory")],["Destek Taleplerim",()=>nav.navigate("SupportRequests")]];
+ const menuItems:Array<[string,()=>void]>= [["Hesabım (Profil)",()=>nav.navigate("Profile")],["Programım",()=>nav.navigate("Program")],["Dental Akış",()=>nav.navigate("DentalFlow")],["Diş Şemaları",()=>nav.navigate("Patients",{screen:"ToothChartBrowser"})],["Analiz Geçmişi",()=>nav.navigate("AnalysisHistory")],["Destek Taleplerim",()=>nav.navigate("SupportRequests")],["Hakkımızda",()=>setInfoDoc(LEGAL_DOCS.about)],["İletişim",()=>setInfoDoc(LEGAL_DOCS.contact)],["Kullanım ve Topluluk Kuralları",()=>setInfoDoc(LEGAL_DOCS.rules)],["Gizlilik",()=>setInfoDoc(LEGAL_DOCS.privacy)]];
  if(String(user.role||"").toUpperCase()==="ADMIN")menuItems.push(["Dental Akış Yönetimi",()=>nav.navigate("SocialAdmin")]);
  return <View style={{flex:1}}>
  <ScrollView style={s.page} contentContainerStyle={[s.content,{paddingHorizontal:10,paddingTop:8}]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async()=>{setRefreshing(true);await load();setRefreshing(false)}}/>}>
@@ -244,6 +245,23 @@ function Home({token,user}:{token:string;user:User}){
    <Pressable accessibilityRole="button" onPress={()=>setMenuOpen(false)} style={{paddingVertical:12}}><Text style={{color:C.muted,fontWeight:"800"}}>Kapat</Text></Pressable>
   </View>
  </View>}
+ {infoDoc&&<View style={{position:"absolute",left:0,right:0,top:0,bottom:0,backgroundColor:"rgba(7,27,53,.6)",justifyContent:"flex-end",zIndex:1001}}>
+  <Pressable accessibilityRole="button" accessibilityLabel="Sayfayı kapat" onPress={()=>setInfoDoc(null)} style={{flex:1}}/>
+  <View style={{backgroundColor:"#FFFFFF",borderTopLeftRadius:18,borderTopRightRadius:18,maxHeight:"82%"}}>
+   <View style={{flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingHorizontal:16,paddingTop:14,paddingBottom:6}}>
+    <Text style={{fontSize:18,fontWeight:"800",color:C.navy,flex:1,marginRight:8}}>{infoDoc.title}</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel="Kapat" onPress={()=>setInfoDoc(null)} style={{width:36,height:36,alignItems:"center",justifyContent:"center"}}><Text style={{fontSize:24,color:C.muted}}>×</Text></Pressable>
+   </View>
+   <ScrollView style={{paddingHorizontal:16,paddingBottom:26}}>
+    <Text style={{color:"#52657B",fontSize:13,lineHeight:19,marginBottom:10}}>{infoDoc.intro}</Text>
+    {infoDoc.sections.map(sec=><View key={sec.heading} style={{marginBottom:12}}>
+     <Text style={{fontSize:15,fontWeight:"800",color:"#10233F",marginBottom:5}}>{sec.heading}</Text>
+     {sec.paragraphs.map((paragraph,index)=><Text key={index} style={{color:"#10233F",fontSize:13,lineHeight:19,marginBottom:6}}>{paragraph}</Text>)}
+    </View>)}
+    {infoDoc.footnote&&<Text style={{color:"#52657B",fontSize:12,lineHeight:18}}>{infoDoc.footnote}</Text>}
+   </ScrollView>
+  </View>
+ </View>}
  </View>
 }
 function NewPatient({token,onCreated}:{token:string;onCreated:(p:Patient)=>void}){return <NativeNewPatient token={token} onCreated={onCreated}/>;}
@@ -320,7 +338,7 @@ function Patients({token,route,chartMode=false}:{token:string;route?:any;chartMo
 function PatientDetailScreen({token,userId,route,navigation}:{token:string;userId:number;route:any;navigation:any}){
  const id=route.params.id,root=()=>navigation.getParent()?.getParent();
  const profileRenderKey=useSessionRenderKey(`${token}:${userId}:${id}`);
- return <NativePatientProfile key={profileRenderKey} token={token} userId={userId} patientId={id} actions={{chart:()=>navigation.navigate("ToothChart",{id}),analysis:()=>root()?.navigate("AppTabs",{screen:"AI",params:{patientId:id}}),appointment:()=>root()?.navigate("Program",{patientId:id}),expert:()=>root()?.navigate("ExpertDirectory",{patientId:id}),analysisResult:analysisId=>root()?.navigate("AnalysisResult",{id:analysisId}),deleted:()=>navigation.goBack()}}/>;
+ return <NativePatientProfile key={profileRenderKey} token={token} userId={userId} patientId={id} actions={{chart:()=>navigation.navigate("ToothChart",{id}),analysis:()=>root()?.navigate("AppTabs",{screen:"AI",params:{patientId:id}}),appointment:()=>root()?.navigate("Program",{patientId:id}),expert:()=>root()?.navigate("ExpertDirectory",{patientId:id}),support:()=>root()?.navigate("SupportRequests"),analysisResult:analysisId=>root()?.navigate("AnalysisResult",{id:analysisId}),deleted:()=>navigation.goBack()}}/>;
 }
 
 function AI({token,userId,patientId}:{token:string;userId:number;patientId?:number}){return <ScrollView style={s.page} contentContainerStyle={s.content}><Header title="Dental AI" sub="Görüntü analizi"/><View style={s.aiHero}><Text style={s.aiStar}>✦</Text><Text style={s.aiTitle}>Klinik görüntünü analiz et</Text><Text style={s.aiSub}>Görüntünü seç, hastana bağla ve analiz sonucunu incele.</Text><NativeDentalAI key={patientId||"new-analysis"} token={token} userId={userId} initialPatientId={patientId}/></View><Text style={s.section}>Güvenli akış</Text>{["Görüntü hasta kaydına bağlanır","Mevcut Dental AI motoru kullanılır","Son klinik karar hekiminindir"].map(x=><View style={s.check} key={x}><Text style={s.checkMark}>✓</Text><Text style={s.cardSub}>{x}</Text></View>)}</ScrollView>}
