@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "android": {
       "package": "tr.dentalai.app",
-      "versionCode": 3,
+      "versionCode": 4,
       "minSdkVersion": 24,
       "allowBackup": false,
       "usesCleartextTraffic": false,
