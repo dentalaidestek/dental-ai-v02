@@ -302,7 +302,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
   }finally{if(processingOwner.current===request){processingLock.current=false;processingOwner.current=0;setProcessing(false)}}
  }
  
- if(stage==="exam")return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:42}}>
+ if(stage==="exam")return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:96}}>
   <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>{const back=()=>{generation.current++;processingLock.current=false;setProcessing(false);setStage("select")};if(transcript.trim())Alert.alert("Muayeneden ayrıl","Muayene metni bu hesaba ve hastaya bağlı cihaz taslağında korunur. Hasta dosyasına yalnız onaylanan alanlar kaydedilir.",[{text:"Vazgeç",style:"cancel"},{text:"Geri dön",style:"destructive",onPress:back}]);else back()}}><Text style={{color:navy,fontWeight:"700"}}>‹ Hasta seçimine dön</Text></Pressable>
   <Text style={{fontSize:25,fontWeight:"800",color:navy,marginTop:16}}>Sesli Muayene</Text>
   <Text style={{color:muted,marginTop:8}}>{selected?[selected.first_name,selected.last_name].filter(Boolean).join(" ")||selected.anonymous_id:"Hasta seçilmedi"}{selected&&selected.age!==null&&selected.age!==undefined?" · "+selected.age+" yaş":""}{selected?.chief_complaint?.trim()?" · "+selected.chief_complaint.trim():""}</Text>
@@ -325,7 +325,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    <NativeVoiceDeviceCheck disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onBusyChange={setDeviceCheckBusy}/>
    <View style={{marginTop:14,paddingTop:14,borderTopWidth:1,borderTopColor:line}}>
     <Text style={{fontWeight:"800",color:navy}}>Önceki hekim onaylı bilgiler</Text>
-    <Text style={{color:muted,lineHeight:20,marginTop:6}}>Yalnızca önceki sesli muayenede hekim tarafından kaydedilen beyanlar getirilir; kullanmadan önce hastayla doğrulayın.</Text>
+    <Text style={{color:muted,lineHeight:20,marginTop:6}}>Yalnızca önceki sesli muayenede hekim tarafından kaydedilen hastalık, ilaç ve alerji beyanları getirilir. Güncel olduklarını hastayla doğrulamadan kullanmayın.</Text>
     <Pressable accessibilityRole="button" disabled={historyLoading||processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>void loadPreviousVoiceHistory()} style={{marginTop:10,padding:12,borderRadius:10,backgroundColor:"#E8F0FF",alignItems:"center"}}>
      <Text style={{color:"#1769AA",fontWeight:"800"}}>{historyLoading?"Önceki kayıtlar getiriliyor…":"Önceki kayıtları göster"}</Text>
     </Pressable>
@@ -344,17 +344,17 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
       <Text style={{color:"white",fontWeight:"800"}}>Doğruladığım bilgileri muayeneye ekle</Text>
      </Pressable>
     </>}
-    {historyApplied&&<Text style={{color:"#1769AA",marginTop:9}}>Bilgiler taslağa eklendi. Önceki ve güncel beyanlar çelişiyorsa ayrıca gösterilir.</Text>}
+    {historyApplied&&<Text style={{color:"#1769AA",marginTop:9}}>Doğruladığınız bilgiler muayene taslağına eklendi. Önceki ve güncel beyanlar çelişiyorsa ayrıca gösterilir; hiçbir alan otomatik kaydedilmez.</Text>}
    </View>
    <Pressable accessibilityRole="checkbox" accessibilityState={{checked:consent,disabled:processing||deviceCheckBusy||applyBusy}} disabled={processing||deviceCheckBusy||applyBusy} onPress={()=>{if(consent){generation.current++;processingLock.current=false;setProcessing(false);setReview(null);setLastRemoved(null);setFinalResult(null);invalidateSourceReview();setClinicalError("")}setConsent(v=>!v)}} style={{flexDirection:"row",alignItems:"flex-start",gap:10,marginTop:18}}>
     <Text style={{fontSize:21,color:navy}}>{consent?"☑":"☐"}</Text><Text style={{flex:1,color:navy,lineHeight:21}}>Hastayı bilgilendirdim. Sesin Gemini ile yazıya çevrilmesini; muayene bitince geçici metnin klinik bilgiler ve kaynaklarla Claude tarafından değerlendirilmesini onaylıyorum.</Text>
    </Pressable>
    <Pressable accessibilityRole="button" accessibilityState={{expanded:privacyExpanded}} onPress={()=>setPrivacyExpanded(v=>!v)} style={{marginTop:14,paddingVertical:10}}><Text style={{fontWeight:"700",color:navy}}>Veriler ve taslak hakkında {privacyExpanded?"−":"+"}</Text></Pressable>
-   {privacyExpanded&&<Text style={{color:muted,lineHeight:20}}>Doğrudan kimlik ve iletişim bilgileri azaltılır; bu tam anonimleştirme garantisi değildir. Ham ses ve tam konuşma dökümü hasta dosyasına otomatik yazılmaz. Yalnız hekim tarafından seçilip onaylanan alanlar kaydedilir. Bekleyen ses ve metin taslaklarını bu ekrandan temizleyebilirsiniz.</Text>}
+   {privacyExpanded&&<Text style={{color:muted,lineHeight:20}}>Ses bölümleri, yazıya çevrilene kadar cihazın özel uygulama alanında geçici tutulur ve transkripsiyon için sunucu üzerinden Gemini'ye aktarılır. Klinik çıkarım ve kaynaklı değerlendirme yalnız muayeneyi bitirdiğinizde başlar; geçici görüşme metni Claude tarafından değerlendirilir. Doğrudan kimlik ve iletişim bilgileri azaltılır; bu tam anonimleştirme garantisi değildir. Gereksiz kimlik bilgilerini konuşmayın. Ham ses ve tam konuşma dökümü hasta dosyasına otomatik yazılmaz. Yalnız hekim tarafından seçilip onaylanan alanlar kaydedilir. Bekleyen ses ve metin taslaklarını bu ekrandan temizleyebilirsiniz.</Text>}
    {!!userId&&<NativeVoiceRecorder key={voiceRecorderRenderKey} token={token} userId={userId} patientId={selected!.id} consent={consent} value={transcript} disabled={processing||applyBusy||deviceCheckBusy} onBusyChanged={setAudioBusy} onSessionState={state=>{setAudioSession({started:state.started,finished:state.finished});setVoiceSessionId(state.sessionId)}} onTranscript={v=>{generation.current++;setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null);invalidateSourceReview()}} onFinished={(v,sessionId)=>{setVoiceSessionId(sessionId);setTranscript(v);void processText(v,sessionId)}}/>}
    <Text style={{fontWeight:"800",color:navy,marginTop:20}}>Muayene metni</Text>
    <TextInput multiline maxLength={72000} accessibilityLabel="Muayene metni" placeholder="Muayene notunu buraya yazabilirsiniz." value={transcript} editable={!processing&&!audioBusy&&!deviceCheckBusy&&!applyBusy} onChangeText={v=>{generation.current++;setClinicalError("");setTranscript(v);setReview(null);setLastRemoved(null);setFinalResult(null);invalidateSourceReview()}} style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,minHeight:160,textAlignVertical:"top",padding:12,color:navy}}/>
-   <Text style={{color:muted,fontSize:12,marginTop:8}}>{transcript.length}/72000 karakter · Uzun metinler güvenli bölümlere ayrılır.</Text>
+   <Text style={{color:muted,fontSize:12,marginTop:8}}>{transcript.length}/72000 karakter · Uzun görüşmeler 12.000 karakterlik güvenli bölümlere ayrılır; tamamlanan bölümler cihazın şifreli taslağında korunur.</Text>
    {!!extractionProgress&&<Text accessibilityLiveRegion="polite" style={{color:muted,marginTop:10}}>{extractionProgress}</Text>}
    {!!clinicalError&&<Text style={{color:"#B42318",marginTop:12}}>{clinicalError}</Text>}
    <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy||audioSession.started&&!audioSession.finished||!consent||!selected||!transcript.trim()||transcript.length>72000} onPress={()=>void processText()} style={{backgroundColor:processing||audioBusy||deviceCheckBusy||!consent||!selected||!transcript.trim()||transcript.length>72000?"#9BA7B7":"#1769AA",borderRadius:12,padding:15,alignItems:"center",marginTop:18}}><Text style={{color:"white",fontWeight:"800"}}>{processing?"Değerlendiriliyor…":"Muayeneyi Bitir ve Metni Çözümle"}</Text></Pressable>
@@ -374,9 +374,9 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
      </Pressable>
     </View>}
     {!!review.review.uncertain&&<ResultSection name="Belirsiz / doğrulanmamış beyanlar" items={review.review.uncertain} defaultOpen/>}
-    {!!review.review.appointment&&<Text style={{color:"#9A6700",marginTop:10,lineHeight:20}}>Randevu hekim onayıyla kesinleşir; tarih/saat seçilmeden oluşturulmaz.</Text>}
+    {!!review.review.appointment&&<Text style={{color:"#9A6700",marginTop:10,lineHeight:20}}>Randevu konuşmada geçiyor olabilir; kabul veya kesinleşme hekim tarafından ayrıca doğrulanmalıdır. Onay bölümünde tarih/saat seçilmeden randevu oluşturulmaz.</Text>}
     {!!lastRemoved&&<Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={undoRemovedItem} style={{paddingVertical:12}}><Text style={{color:"#1769AA",fontWeight:"800"}}>Son kaldırılan bulguyu geri al</Text></Pressable>}
-    <Text style={{color:muted,marginTop:10}}>Taslak bilgiler; hasta dosyasına kaydedilmedi.</Text>
+    <Text style={{color:muted,marginTop:10}}>Bunlar taslak bilgilerdir; hasta dosyasına kaydedilmedi. Muayeneyi bitirince kaynaklı klinik değerlendirme otomatik hazırlanır; alanları düzenlerseniz yeniden çalıştırabilirsiniz.</Text>
     <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy||!!finalResult&&!sourceRetryable} onPress={()=>finalize()} style={{backgroundColor:navy,padding:15,borderRadius:12,alignItems:"center",marginTop:14}}><Text style={{color:"white",fontWeight:"800"}}>{processing?"İşlem sürüyor…":finalResult&&sourceRetryable?"Eksik kaynakları yeniden dene":finalResult?"Değerlendirme hazır":"Klinik değerlendirmeyi yeniden çalıştır"}</Text></Pressable>
    </View>}
    {finalResult&&<View style={{marginTop:18,borderTopWidth:1,borderTopColor:line,paddingTop:15}}>
@@ -387,7 +387,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    {finalResult&&review&&selected&&userId&&(!audioSession.started||audioSession.finished)&&<NativeVoiceApproval key={voiceApprovalRenderKey} token={token} userId={userId} patientId={selected.id} review={review} labels={fieldLabels} onBusyChanged={setApplyBusy} onRecheck={()=>void recheckVoice()}/>}
   </View>
  </ScrollView>;
- return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:40}}>
+ return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:96}}>
   <View style={{backgroundColor:"#EAF7FF",borderWidth:1,borderColor:"#DCECF5",borderRadius:22,padding:20,overflow:"hidden"}}>
    <View style={{width:54,height:54,borderRadius:18,backgroundColor:"#D8ECF8",alignItems:"center",justifyContent:"center",marginBottom:14}}>
     <Text style={{fontSize:27}}>🎙️</Text>
@@ -407,6 +407,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
     <Text style={{fontSize:18,fontWeight:"900",color:navy}}>Yeni hastayla başla</Text>
     <Text style={{fontSize:11,color:muted}}>İsim bilgisi gerekmez</Text>
    </View>
+   <Text style={{fontSize:13,lineHeight:20,color:muted,marginBottom:14}}>Yeni bir hasta kaydı açılır. Görüşmede netleşen bilgileri muayene sonunda kontrol ederek ekleyebilirsiniz.</Text>
    <Pressable accessibilityRole="button" accessibilityState={{busy:creatingAnonymous,disabled:creatingAnonymous||!userId}} disabled={creatingAnonymous||!userId} onPress={()=>void createAnonymousPatient()} style={{backgroundColor:navy,padding:15,borderRadius:13,alignItems:"center",opacity:(creatingAnonymous||!userId)?0.5:1}}>
     {creatingAnonymous?<ActivityIndicator color="white"/>:<Text style={{color:"white",fontWeight:"800"}}>Yeni hasta ile devam et →</Text>}
    </Pressable>
@@ -417,7 +418,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
    <NativePatientSelect key={patientSelectRenderKey} token={token} value={selected} onChange={setSelected} disabled={creatingAnonymous} searchTitle="Mevcut hastayı seç" searchHint="Sesli muayeneye bağlanacak hastayı bulun" emptyLabel="Ad, soyad veya hasta kodu ile hasta seçin" searchPlaceholder="Ad, soyad veya hasta kodu ile ara"/>
    {!!error&&<Text accessibilityRole="alert" style={{color:"#B42318",marginTop:10,lineHeight:20}}>{error}</Text>}
    <Pressable accessibilityRole="button" accessibilityState={{disabled:creatingAnonymous}} disabled={creatingAnonymous} onPress={()=>{if(selected)setStage("exam");else setError("Önce bir hasta seçin.")}} style={{marginTop:16,backgroundColor:navy,padding:15,borderRadius:13,alignItems:"center",opacity:creatingAnonymous?0.5:1}}><Text style={{color:"white",fontWeight:"800"}}>{selected?"Muayeneye Devam Et":"Hasta Seçerek Devam Et"}</Text></Pressable>
-   <Text style={{fontSize:12,color:muted,marginTop:11,lineHeight:18}}>Bilgiler yalnızca hekim onayıyla hasta dosyasına kaydedilir.</Text>
+   <Text style={{fontSize:12,color:muted,marginTop:11,lineHeight:18}}>Muayene bilgileri yalnızca hekim onayıyla hasta dosyasına kaydedilir. Yeni hasta kaydı boş bir klinik dosya açar; bilgileri yalnızca hekim onayıyla eklersiniz.</Text>
   </View>
   <View style={{padding:16,backgroundColor:"#EEF8FD",borderWidth:1,borderColor:"#DCECF5",borderRadius:16,marginTop:12}}>
    <Text style={{fontSize:14,fontWeight:"900",color:"#173B58"}}>Mikrofon sizin kontrolünüzde</Text>
