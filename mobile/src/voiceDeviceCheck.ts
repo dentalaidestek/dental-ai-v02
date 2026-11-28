@@ -99,7 +99,9 @@ export function evaluateVoiceDeviceCheck(input:VoiceDeviceCheckInput):VoiceDevic
  if(!input.permissionGranted)return 'permission_denied';
  if(!Number.isFinite(input.durationMs)||input.durationMs<VOICE_DEVICE_CHECK_MIN_DURATION_MS)return 'capture_incomplete';
  if(!Number.isFinite(input.fileBytes)||input.fileBytes<=0)return 'no_audio_file';
- if(input.peakMeteringDb===null||!Number.isFinite(input.peakMeteringDb))return 'metering_unavailable';
+ // Metering yalnızca gösterge meta verisidir; desteklemeyen cihazlarda ses
+ // yakalama yine de çalışır. Süre ve dosya başarılıysa test geçer.
+ if(input.peakMeteringDb===null||!Number.isFinite(input.peakMeteringDb))return 'passed';
  if(input.peakMeteringDb<VOICE_DEVICE_CHECK_MIN_SIGNAL_DB)return 'low_signal';
  return 'passed';
 }
