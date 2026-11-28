@@ -19,7 +19,7 @@ const resultText:Record<VoiceDeviceCheckUiOutcome,string>={
  cleanup_failed:'Geçici mikrofon dosyasının güvenli konumu veya silinmesi doğrulanamadı. Yalnızca uygulamanın özel önbelleğindeki doğrudan dosyalar silinir; bu uyarı kalkmadan test yeniden başlatılamaz.',
  audio_mode_restore_failed:'Geçici dosya temizlendi ancak cihazın ses yönlendirmesi kayıt modundan çıkarılamadı. Mikrofon testine yeniden başlamadan önce aşağıdaki yeniden deneme düğmesini kullanın.',
  recorder_stop_failed:'Mikrofon kaydının durduğu doğrulanamadı. Geçici dosya silinmedi ve ses yönlendirmesi değiştirilmedi. Aynı durdurma işlemini yeniden deneyin.',
- passed:'Mikrofon izni, yerel ses yakalama ve ses seviyesi kontrolü başarılı. Bu sonuç konuşma tanıma veya Gemini bağlantısını doğrulamaz.'
+ passed:'Mikrofon izni ve ses kaydı başarılı; cihaz ses yakalıyor. Bu sonuç konuşma tanıma veya Gemini bağlantısını doğrulamaz.'
 };
 
 export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{disabled?:boolean;onBusyChange?:(busy:boolean)=>void}){
