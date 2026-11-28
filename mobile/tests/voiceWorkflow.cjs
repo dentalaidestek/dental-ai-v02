@@ -13,7 +13,7 @@ test('native recorder waits for an actual recording state after permission and r
  assert.equal(await recorderLifecycle.waitForVoiceRecorderStarted(()=>({isRecording:++reads>=3}),async ms=>{assert.equal(ms,100);waits++}),true);
  assert.equal(reads,3);assert.equal(waits,2);
  reads=0;waits=0;
- assert.equal(await recorderLifecycle.waitForVoiceRecorderStarted(()=>({isRecording:false}),async()=>{waits++}),false);
+ assert.equal(await recorderLifecycle.waitForVoiceRecorderStarted(()=>{reads++;return{isRecording:false}},async()=>{waits++}),false);
  assert.equal(reads,10);assert.equal(waits,9);
  assert.equal(await recorderLifecycle.waitForVoiceRecorderStarted(()=>{throw Error('native status unavailable')},async()=>{}),false);
 });
