@@ -11,7 +11,7 @@ import {addVoiceElapsed,discardInterruptedVoiceSegment,formatVoiceElapsed,markVo
 import {isPrivateVoiceRecordingUri,isPrivateVoiceCacheChildUri,removePrivateVoiceCacheChildFile,readPrivateVoiceAudioDuration,transcribeNativeRecording,VoiceAsrError} from './nativeVoiceAudio';
 import {resolveVoiceAudioAsset,validateVoiceAudioBytes,validateVoiceAudioDuration} from './voiceAudioImport';
 import {voiceDeviceSignalLevel} from './voiceDeviceCheck';
-import {isUnexpectedVoiceRecorderStop,restoreVoiceAudioMode} from './voiceRecorderLifecycle';
+import {isUnexpectedVoiceRecorderStop,restoreVoiceAudioMode,waitForVoiceRecorderStarted} from './voiceRecorderLifecycle';
 import {isVoiceDraftScopeCurrent} from './voiceDraftScope';
 
 const WAVE_BARS=[5,9,14,19,12,23,16,28,17,24,13,20,11,26,15,22,12,18,9,14,6];
@@ -357,7 +357,13 @@ useEffect(()=>{if(value===lastInput.current)return;lastInput.current=value;if(re
    throw error;
   }
   if(!wanted.current||!mounted.current||AppState.currentState!=='active'||!focus.current){await discardUnstartedSegment(id,uri);return;}
-  try{stopped.current=false;recorder.record();chunkStartedAt.current=Date.now();setElapsedMs(draft.current.elapsedMs||0);setRecording(true);timer.current=setTimeout(()=>void rotate(),15000);}
+  try{
+   stopped.current=false;recorder.record();
+   const recordingStarted=await waitForVoiceRecorderStarted(()=>recorder.getStatus());
+   if(!recordingStarted)throw Error('Mikrofon izni verildi ancak Android ses kaydedicisi kayıt durumuna geçmedi. Mikrofon iznini ve başka uygulamaların mikrofon kullanımını kontrol edin.');
+   if(!wanted.current||!mounted.current||AppState.currentState!=='active'||!focus.current){await discardUnstartedSegment(id,uri);return;}
+   chunkStartedAt.current=Date.now();setElapsedMs(draft.current.elapsedMs||0);setRecording(true);timer.current=setTimeout(()=>void rotate(),15000);
+  }
   catch(error){try{await recorder.stop();stopped.current=true;await discardUnstartedSegment(id,uri);}catch{}throw error;}
  }
  function cut():Promise<void>{
