@@ -116,7 +116,7 @@ test('an unverified microphone stop keeps the recorder and private file intact u
 
 
 test('voice examination uses the native navigation title only once',()=>{
- assert.doesNotMatch(entry,/<Text style=\{\{fontSize:25,fontWeight:"800",color:navy,marginTop:16\}\}>Sesli Muayene<\\/Text>/);
+ assert.doesNotMatch(entry,/fontSize:25,fontWeight:"800",color:navy,marginTop:16/);
  assert.match(entry,/Navigation header already shows the screen title/);
 });
 
