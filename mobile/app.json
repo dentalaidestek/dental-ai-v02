@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "android": {
       "package": "tr.dentalai.app",
-      "versionCode": 6,
+      "versionCode": 7,
       "allowBackup": false,
       "usesCleartextTraffic": false,
       "blockedPermissions": [
