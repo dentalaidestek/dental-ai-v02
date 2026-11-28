@@ -8,6 +8,15 @@ const button=(t,label)=>t.root.findAllByType('Pressable').find(n=>n.findAllByTyp
 const settle=async()=>{for(let i=0;i<4;i++)await new Promise(resolve=>setImmediate(resolve));};
 
 const recorderLifecycle=require('../src/voiceRecorderLifecycle.ts');
+test('native recorder waits for an actual recording state after permission and record()',async()=>{
+ let reads=0,waits=0;
+ assert.equal(await recorderLifecycle.waitForVoiceRecorderStarted(()=>({isRecording:++reads>=3}),async ms=>{assert.equal(ms,100);waits++}),true);
+ assert.equal(reads,3);assert.equal(waits,2);
+ reads=0;waits=0;
+ assert.equal(await recorderLifecycle.waitForVoiceRecorderStarted(()=>({isRecording:false}),async()=>{waits++}),false);
+ assert.equal(reads,10);assert.equal(waits,9);
+ assert.equal(await recorderLifecycle.waitForVoiceRecorderStarted(()=>{throw Error('native status unavailable')},async()=>{}),false);
+});
 test('native voice audio-mode restoration reports failure instead of silently claiming success',async()=>{
  const calls=[];
  assert.equal(await recorderLifecycle.restoreVoiceAudioMode(async()=>{calls.push('restored')}),true);
