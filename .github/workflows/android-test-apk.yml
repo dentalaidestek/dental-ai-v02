@@ -93,7 +93,7 @@ jobs:
             echo ""
             echo "- İndirme: bu sayfanın **Artifacts** bölümünden \`dental-ai-beta-arm64-v4\` (repo erişimi olan hesapla)"
             echo "- Kaynak commit: \`${{ github.sha }}\`"
-            echo "- versionCode: **4** (paket: tr.dentalai.app) — v3 kurulu cihazların üzerine yüklenebilir"
+            echo "- versionCode: **5** (paket: tr.dentalai.app) — kurulu sürümlerin üzerine yüklenebilir; canlı (main) sözleşme uyumluluk düzeltmeleri: Akademik çalışma kilidi, Foto Fikir bootstrap 404, Sesli Muayene mesaj temizliği"
             echo "- Dosya: dental-ai-beta-arm64-v4.apk (arm64-v8a, JS bundle gömülü)"
             echo "- sha256: \`$SHA\`"
           } >> "$GITHUB_STEP_SUMMARY"
