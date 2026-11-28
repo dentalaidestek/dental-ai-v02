@@ -14,7 +14,7 @@ const store=chunkedDraftStore(SecureStore,Crypto.randomUUID);
 type Props={token:string;userId:number;patientId:number;patient?:Pick<Patient,'anonymous_id'|'age'|'chief_complaint'>|null;onCreated:(id:number)=>Promise<void>;existingMediaIds?:number[];initialToothNumber?:string;initialClinicalNotes?:string;intentScope?:'ai'|'patient-media';onExistingMediaIdsLoaded?:(ids:number[])=>void};
 function storedIntent(intent:UploadIntent):UploadIntent{return {...intent,images:intent.images.map(({previewUri,...image})=>image)}}
 export default function NativeAnalysisUpload({token,userId,patientId,patient,onCreated,existingMediaIds=[],initialToothNumber='',initialClinicalNotes='',intentScope='ai',onExistingMediaIdsLoaded}:Props){
- const [files,setFiles]=useState<UploadImage[]>([]),[savedIds,setSavedIds]=useState<number[]>(existingMediaIds),[tooth,setTooth]=useState(initialToothNumber),[notes,setNotes]=useState(initialClinicalNotes),[intent,setIntent]=useState<UploadIntent|null>(null),[busy,setBusy]=useState(false),[ready,setReady]=useState(false),[error,setError]=useState(''),[progress,setProgress]=useState<number|null>(null),[transferBytes,setTransferBytes]=useState({loaded:0,total:0}),[phase,setPhase]=useState(''),[notice,setNotice]=useState(''),[blocked,setBlocked]=useState(false),[blockedByMissingReceiptRoute,setBlockedByMissingReceiptRoute]=useState(false),[blockedIntent,setBlockedIntent]=useState<UploadIntent|null>(null),[createdId,setCreatedId]=useState<number|null>(null);
+ const [files,setFiles]=useState<UploadImage[]>([]),[savedIds,setSavedIds]=useState<number[]>(existingMediaIds),[tooth,setTooth]=useState(initialToothNumber),[notes,setNotes]=useState(initialClinicalNotes),[intent,setIntent]=useState<UploadIntent|null>(null),[busy,setBusy]=useState(false),[ready,setReady]=useState(false),[error,setError]=useState(''),[progress,setProgress]=useState<number|null>(null),[transferBytes,setTransferBytes]=useState({loaded:0,total:0}),[transferInconsistent,setTransferInconsistent]=useState(false),[phase,setPhase]=useState(''),[notice,setNotice]=useState(''),[blocked,setBlocked]=useState(false),[blockedByMissingReceiptRoute,setBlockedByMissingReceiptRoute]=useState(false),[blockedIntent,setBlockedIntent]=useState<UploadIntent|null>(null),[createdId,setCreatedId]=useState<number|null>(null);
  const alive=useRef(true),lock=useRef(false),abort=useRef<AbortController|null>(null),key=intentScope==='patient-media'?`dai.analysis.upload.patient-media.${userId}.${patientId}`:`dai.analysis.upload.${userId}.${patientId}`;
  useEffect(()=>{void(async()=>{
    let hadSaved=false,cleanupCompleted=false;
@@ -93,7 +93,7 @@ export default function NativeAnalysisUpload({token,userId,patientId,patient,onC
    });
   }
   async function send(checkOnly=false){await perform(async()=>{
-  setPhase('Sunucudaki mevcut yükleme kaydı kontrol ediliyor');setProgress(null);setTransferBytes({loaded:0,total:0});
+  setPhase('Sunucudaki mevcut yükleme kaydı kontrol ediliyor');setProgress(null);setTransferBytes({loaded:0,total:0});setTransferInconsistent(false);
   let pending=intent;
   if(!pending){
    validateUploadFields(tooth,notes);
@@ -116,7 +116,7 @@ export default function NativeAnalysisUpload({token,userId,patientId,patient,onC
    setPhase('Şifreli görüntüler doğrulanıyor');await validateCachedAnalysisImages(pending.images,userId,patientId);if(!alive.current)return;
    const prepared=await prepareAnalysisUploadImages(pending.images,userId,patientId);
    abort.current=new AbortController();setProgress(0);setTransferBytes({loaded:0,total:0});setPhase('Görüntüler ve klinik bilgi aktarılıyor');
-   try{receipt=await uploadAnalysis(token,{...pending,images:prepared.images},(p,loaded,total)=>{if(alive.current){setProgress(p);if(Number.isFinite(loaded)&&Number.isFinite(total))setTransferBytes({loaded:Math.max(0,loaded),total:Math.max(0,total)})}},abort.current.signal)}
+   try{receipt=await uploadAnalysis(token,{...pending,images:prepared.images},(p,loaded,total)=>{if(alive.current){setProgress(p);if(Number.isFinite(loaded)&&Number.isFinite(total)&&loaded>=0&&total>0&&loaded<=total)setTransferBytes({loaded,total});else setTransferInconsistent(true)}},abort.current.signal)}
    catch(e){
     if(typeof e==='object'&&e!==null&&'status' in e&&[400,404,413,415,422].includes(Number(e.status))){
      await clearAnalysisImages(pending.images);await store.deleteItemAsync(key);if(alive.current){setIntent(null);setBlockedIntent(null)}
@@ -189,7 +189,7 @@ export default function NativeAnalysisUpload({token,userId,patientId,patient,onC
    <View style={s.safetyNote}><Text style={s.safetyText}>{ANALYSIS_COMPOSER_SAFETY_NOTE}</Text></View>
    {(!ready||busy)&&<ActivityIndicator/>}
    {!!phase&&<Text style={s.meta}>{phase}</Text>}
-   {progress!==null&&<Text style={s.meta}>Aktarım: %{progress} · {formatBytes(transferBytes.loaded)} / {formatBytes(transferBytes.total)}. %100 aktarım, sunucu kaydının onaylandığı anlamına gelmez.</Text>}
+   {progress!==null&&(transferInconsistent?<Text style={s.meta}>Aktarım ilerleme ölçümü tutarsız; byte sayıları gösterilmiyor. Sunucu fişi doğrulanmadan yükleme tamamlanmış sayılmaz.</Text>:<Text style={s.meta}>Aktarım: %{progress} · {formatBytes(transferBytes.loaded)} / {formatBytes(transferBytes.total)}. %100 aktarım, sunucu kaydının onaylandığı anlamına gelmez.</Text>)}
    {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
    {!!notice&&<Text accessibilityRole="alert" style={s.meta}>{notice}</Text>}
    {blocked&&<>
