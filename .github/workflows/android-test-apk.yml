@@ -47,7 +47,8 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
       # TypeScript/test dogrulamalari Mobile Android CI (PR tetikli) is akisinda
-      # ayri job'larda kosuyor; buradaki gorev derleyip Release olarak yayinlamak.
+      # ayri job'larda kosuyor; temiz CI ortaminda expo-secure-store stub cozumlemesi
+      # prebuild gerektirdigi icin test burada degil, orada dogrulanir.
       - name: Generate Android native project
         run: npx expo prebuild --platform android --non-interactive --no-install
       - name: Build standalone release APK (arm64-v8a, JS bundle embedded)
@@ -105,9 +106,13 @@ jobs:
         run: |
           set -o pipefail
           TAG="${{ steps.prep.outputs.tag }}"
+          # gh'nin FILE#label cozumu bazen ozgun dosya adini birakiyor;
+          # emin olmak icin dosyayi hedef adla kopyalayip oyle yukluyoruz.
+          NAMED_APK="$RUNNER_TEMP/dental-ai-beta-arm64-v4.apk"
+          cp "${{ steps.prep.outputs.apk }}" "$NAMED_APK"
           # Yeniden calistirmalarda ayni gunluk etiket cakismasin
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
-          gh release create "$TAG" "${{ steps.prep.outputs.apk }}#dental-ai-beta-arm64-v4.apk" \
+          gh release create "$TAG" "$NAMED_APK" \
             --prerelease \
             --title "Dental AI Beta APK v4 (arm64-v8a) — yalnızca iç test" \
             --notes-file "${{ steps.prep.outputs.notes }}"
