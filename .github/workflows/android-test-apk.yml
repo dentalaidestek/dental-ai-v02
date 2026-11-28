@@ -1,6 +1,7 @@
-name: Android beta APK (direct download)
+name: Android beta APK (artifact — non-public)
 
-# Beta APK GitHub Release olarak yayinlanir (prerelease + dogrudan indirme linki).
+# Beta APK YALNIZCA artifact olarak yayınlanir (Actions sayfasindan, repo erişimi
+# olan hesaplarla indirilebilir). Herkese açık GitHub Release OLUŞTURULMAZ.
 # YALNIZCA IC TEST: magaza yayini veya uretim surumu degildir; main'e merge edilmez,
 # canli deploy ve uretim veritabani bu is akisindan etkilenmez.
 on:
@@ -11,14 +12,14 @@ on:
     paths:
       - ".github/workflows/android-test-apk.yml"
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: android-test-apk-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 70
     defaults:
       run:
         working-directory: mobile
@@ -33,15 +34,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Cache Gradle distribution and dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json') }}
-          restore-keys: |
-            gradle-${{ runner.os }}-
+      # actions/cache (gradle) BILEREK YOK: RN gradle eklentisinin JS-bundle task'i
+      # gradle build-cache'den RESTORE edilerek bayat bundle'la paketleniyordu
+      # (kaynak yeni olsa bile). Cache'siz + clean + --rerun-tasks ile bundle
+      # her zaman kontrol edilen agactan sifirdan uretilir.
       # android-actions/setup-android bilerek yok: kaldirilmis 'tools' paketi hata
       # veriyordu; ubuntu-latest runner'inda calisan bir ANDROID_HOME SDK hazir gelir.
       - name: Install dependencies
@@ -51,77 +47,52 @@ jobs:
       # prebuild gerektirdigi icin test burada degil, orada dogrulanir.
       - name: Generate Android native project
         run: npx expo prebuild --platform android --non-interactive --no-install
-      - name: Build standalone release APK (arm64-v8a, JS bundle embedded)
+      - name: Build standalone release APK (arm64-v8a, JS bundle embedded, forced fresh)
         working-directory: mobile/android
-        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --max-workers=2
-      - name: Prepare release metadata
-        id: prep
+        run: ./gradlew clean assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --max-workers=2 --rerun-tasks
+      - name: Verify bundle freshness (feature strings must exist — fail on stale bundle)
         run: |
           set -o pipefail
-          APK="$GITHUB_WORKSPACE/mobile/android/app/build/outputs/apk/release/app-release.apk"
+          python3 - <<'PYEOF'
+          import zipfile, sys, glob
+          apks = glob.glob('android/app/build/outputs/apk/release/*.apk')
+          assert apks, 'release APK bulunamadi'
+          z = zipfile.ZipFile(apks[0])
+          bn = [n for n in z.namelist() if 'index.android.bundle' in n][0]
+          data = z.read(bn).decode('utf-8', errors='replace')
+          required = {
+            'Destek Talebi Oluştur': 'profil DESTEK bölümü (376ebd12)',
+            'Hakkımızda': 'anasayfa/profil bilgi penceresi (376ebd12)',
+            'Topluluk ve İletişim Kuralları': 'yasal metin (376ebd12)',
+            'Gönderiliyor': 'Destek Talepleri ekranı (376ebd12)',
+            'Sorun Bildir': 'görüşme menüsü (7288993f)',
+          }
+          missing = [f'{k} ({v})' for k, v in required.items() if k not in data]
+          if missing:
+            print('BAYAT BUNDLE — bu stringler bundle\'da YOK:')
+            for m in missing: print('  -', m)
+            sys.exit(1)
+          print('Bundle taze: tüm özellik stringleri bundle içinde.')
+          PYEOF
+      - name: Prepare named APK artifact
+        run: |
+          set -o pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
           test -f "$APK"
+          cp "$APK" "$RUNNER_TEMP/dental-ai-beta-arm64-v4.apk"
           SHA="$(sha256sum "$APK" | cut -d' ' -f1)"
-          TAG="beta-apk-v4-$(date -u +%Y%m%d)"
-          SIZE="$(du -h "$APK" | cut -f1)"
           {
-            echo "sha=$SHA"
-            echo "tag=$TAG"
-            echo "apk=$APK"
-          } >> "$GITHUB_OUTPUT"
-          NOTES="$RUNNER_TEMP/release-notes.md"
-          {
-            echo "## Dental AI Beta APK v4 (arm64-v8a) — yalnızca iç test"
+            echo "## Beta APK v4 hazır (artifact — herkese açık release YOK)"
             echo ""
-            echo "**Yalnızca iç test sürümü.** Mağaza/üretim yayını değildir; canlı site ve üretim veritabanı bu derlemeden etkilenmez."
-            echo ""
-            echo "- Kaynak commit: `${{ github.sha }}`"
+            echo "- İndirme: bu sayfanın **Artifacts** bölümünden \`dental-ai-beta-arm64-v4\` (repo erişimi olan hesapla)"
+            echo "- Kaynak commit: \`${{ github.sha }}\`"
             echo "- versionCode: **4** (paket: tr.dentalai.app) — v3 kurulu cihazların üzerine yüklenebilir"
-            echo "- Dosya: dental-ai-beta-arm64-v4.apk (~$SIZE)"
+            echo "- Dosya: dental-ai-beta-arm64-v4.apk (arm64-v8a, JS bundle gömülü)"
             echo "- sha256: \`$SHA\`"
-            echo ""
-            echo "### Bu sürümde (v2'ye göre)"
-            echo "- Yeni cihaz doğrulama: tanımadığımız cihazdan girişte e-postaya 6 haneli kod (güvenilir cihaz üst sınırı 5)"
-            echo "- Güvenlik sertleştirme: HSTS, CSRF, CSP, AUTH_IP rate-limit (40 istek)"
-            echo "- Mesajlaşma UX paritesi: metin+ek tek mesaj, çoklu ek kuyruğu, tek gönder butonu, görüşme menüsü (engelle/bildir/kaldır)"
-            echo "- Akademik AI kurtarma paneli, tedavi toleranslı parse, uzman listesi yerleşimi"
-            echo "- Yasal metinler: Topluluk ve İletişim Kuralları, terms fonksiyon rehberi, privacy güncellemesi, Hakkımızda/İletişim"
-            echo "- Profil Hızlı İşlemler → Destek Talebi Oluştur, anasayfa üç-nokta bilgi penceresi"
-            echo "- Foto Fikir akışı socialdent.com paritesi"
-            echo ""
-            echo "### Kurulum"
-            echo "1. Aşağıdaki **dental-ai-beta-arm64-v4.apk** dosyasını indirin."
-            echo "2. Telefonda bilinmeyen kaynaklardan kurulumaya izin verin ve APK'yı açın."
-            echo "3. v3 kuruluysa doğrudan üzerine kurulur; veriler korunur."
-          } > "$NOTES"
-          echo "notes=$NOTES" >> "$GITHUB_OUTPUT"
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: dental-ai-beta-arm64-v4
-          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          path: ${{ runner.temp }}/dental-ai-beta-arm64-v4.apk
           if-no-files-found: error
           retention-days: 14
-      - name: Publish prerelease (direct download link)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -o pipefail
-          TAG="${{ steps.prep.outputs.tag }}"
-          # gh'nin FILE#label cozumu bazen ozgun dosya adini birakiyor;
-          # emin olmak icin dosyayi hedef adla kopyalayip oyle yukluyoruz.
-          NAMED_APK="$RUNNER_TEMP/dental-ai-beta-arm64-v4.apk"
-          cp "${{ steps.prep.outputs.apk }}" "$NAMED_APK"
-          # Yeniden calistirmalarda ayni gunluk etiket cakismasin
-          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
-          gh release create "$TAG" "$NAMED_APK" \
-            --prerelease \
-            --title "Dental AI Beta APK v4 (arm64-v8a) — yalnızca iç test" \
-            --notes-file "${{ steps.prep.outputs.notes }}"
-          RELEASE_URL="$(gh release view "$TAG" --json url -q .url)"
-          ASSET_URL="https://github.com/${{ github.repository }}/releases/download/$TAG/dental-ai-beta-arm64-v4.apk"
-          {
-            echo "## Beta APK v4 hazır"
-            echo ""
-            echo "- Release: $RELEASE_URL"
-            echo "- Doğrudan indirme: $ASSET_URL"
-            echo "- sha256: ${{ steps.prep.outputs.sha }}"
-          } >> "$GITHUB_STEP_SUMMARY"
