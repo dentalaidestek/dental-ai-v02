@@ -5,7 +5,7 @@ import {RecordingPresets,requestRecordingPermissionsAsync,setAudioModeAsync,useA
 import * as FileSystem from 'expo-file-system/legacy';
 import {evaluateVoiceDeviceCheck,isPrivateVoiceDeviceCheckUri,removePrivateVoiceDeviceCheckFile,removePrivateVoiceDeviceCheckCacheChildFile,stopVoiceDeviceRecorderVerified,voiceDeviceSignalLevel,VOICE_DEVICE_CHECK_DURATION_MS} from './voiceDeviceCheck';
 import type {VoiceDeviceCheckOutcome} from './voiceDeviceCheck';
-import {restoreVoiceAudioMode} from './voiceRecorderLifecycle';
+import {restoreVoiceAudioMode,waitForVoiceRecorderStarted} from './voiceRecorderLifecycle';
 
 type Phase='idle'|'requesting'|'testing'|'finishing'|'complete';
 const navy='#071B35',muted='#63748A',line='#E1E7EF',blue='#1769AA';
