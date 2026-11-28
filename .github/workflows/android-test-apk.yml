@@ -1,21 +1,24 @@
-name: Android test APK
+name: Android beta APK (direct download)
+
+# Beta APK GitHub Release olarak yayinlanir (prerelease + dogrudan indirme linki).
+# YALNIZCA IC TEST: magaza yayini veya uretim surumu degildir; main'e merge edilmez,
+# canli deploy ve uretim veritabani bu is akisindan etkilenmez.
 on:
-  # Manual trigger + auto-build when this workflow file changes on the feature branch.
   workflow_dispatch:
   push:
     branches:
-      - feature/mobile-web-parity-20261110
+      - feature/mobile-ux-parity-20261125
     paths:
       - ".github/workflows/android-test-apk.yml"
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: android-test-apk-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 55
     defaults:
       run:
         working-directory: mobile
@@ -39,22 +42,81 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json') }}
           restore-keys: |
             gradle-${{ runner.os }}-
-      # android-actions/setup-android removed: it forces `sdkmanager install tools`,
-      # a package removed from the SDK ('Failed to find package tools', exit 1).
-      # ubuntu-latest runners already ship a working ANDROID_HOME SDK.
+      # android-actions/setup-android bilerek yok: kaldirilmis 'tools' paketi hata
+      # veriyordu; ubuntu-latest runner'inda calisan bir ANDROID_HOME SDK hazir gelir.
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
       - name: Validate TypeScript and tests
         run: npm test
       - name: Generate Android native project
         run: npx expo prebuild --platform android --non-interactive --no-install
-      - name: Build standalone release APK (JS bundle embedded; debug APK needs Metro)
+      - name: Build standalone release APK (arm64-v8a, JS bundle embedded)
         working-directory: mobile/android
-        run: ./gradlew assembleRelease --no-daemon
-      - name: Upload Android APK
-        uses: actions/upload-artifact@v4
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --max-workers=2
+      - name: Prepare release metadata
+        id: prep
+        run: |
+          set -o pipefail
+          APK="$GITHUB_WORKSPACE/mobile/android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$APK"
+          SHA="$(sha256sum "$APK" | cut -d' ' -f1)"
+          TAG="beta-apk-v4-$(date -u +%Y%m%d)"
+          SIZE="$(du -h "$APK" | cut -f1)"
+          {
+            echo "sha=$SHA"
+            echo "tag=$TAG"
+            echo "apk=$APK"
+          } >> "$GITHUB_OUTPUT"
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "## Dental AI Beta APK v4 (arm64-v8a) — yalnızca iç test"
+            echo ""
+            echo "**Yalnızca iç test sürümü.** Mağaza/üretim yayını değildir; canlı site ve üretim veritabanı bu derlemeden etkilenmez."
+            echo ""
+            echo "- Kaynak commit: `${{ github.sha }}`"
+            echo "- versionCode: **4** (paket: tr.dentalai.app) — v3 kurulu cihazların üzerine yüklenebilir"
+            echo "- Dosya: dental-ai-beta-arm64-v4.apk (~$SIZE)"
+            echo "- sha256: \`$SHA\`"
+            echo ""
+            echo "### Bu sürümde (v2'ye göre)"
+            echo "- Yeni cihaz doğrulama: tanımadığımız cihazdan girişte e-postaya 6 haneli kod (güvenilir cihaz üst sınırı 5)"
+            echo "- Güvenlik sertleştirme: HSTS, CSRF, CSP, AUTH_IP rate-limit (40 istek)"
+            echo "- Mesajlaşma UX paritesi: metin+ek tek mesaj, çoklu ek kuyruğu, tek gönder butonu, görüşme menüsü (engelle/bildir/kaldır)"
+            echo "- Akademik AI kurtarma paneli, tedavi toleranslı parse, uzman listesi yerleşimi"
+            echo "- Yasal metinler: Topluluk ve İletişim Kuralları, terms fonksiyon rehberi, privacy güncellemesi, Hakkımızda/İletişim"
+            echo "- Profil Hızlı İşlemler → Destek Talebi Oluştur, anasayfa üç-nokta bilgi penceresi"
+            echo "- Foto Fikir akışı socialdent.com paritesi"
+            echo ""
+            echo "### Kurulum"
+            echo "1. Aşağıdaki **dental-ai-beta-arm64-v4.apk** dosyasını indirin."
+            echo "2. Telefonda bilinmeyen kaynaklardan kurulumaya izin verin ve APK'yı açın."
+            echo "3. v3 kuruluysa doğrudan üzerine kurulur; veriler korunur."
+          } > "$NOTES"
+          echo "notes=$NOTES" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
         with:
-          name: dental-ai-android-apk
+          name: dental-ai-beta-arm64-v4
           path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Publish prerelease (direct download link)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          TAG="${{ steps.prep.outputs.tag }}"
+          # Yeniden calistirmalarda ayni gunluk etiket cakismasin
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" "${{ steps.prep.outputs.apk }}#dental-ai-beta-arm64-v4.apk" \
+            --prerelease \
+            --title "Dental AI Beta APK v4 (arm64-v8a) — yalnızca iç test" \
+            --notes-file "${{ steps.prep.outputs.notes }}"
+          RELEASE_URL="$(gh release view "$TAG" --json url -q .url)"
+          ASSET_URL="https://github.com/${{ github.repository }}/releases/download/$TAG/dental-ai-beta-arm64-v4.apk"
+          {
+            echo "## Beta APK v4 hazır"
+            echo ""
+            echo "- Release: $RELEASE_URL"
+            echo "- Doğrudan indirme: $ASSET_URL"
+            echo "- sha256: ${{ steps.prep.outputs.sha }}"
+          } >> "$GITHUB_STEP_SUMMARY"
