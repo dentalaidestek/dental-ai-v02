@@ -304,7 +304,7 @@ export default function VoiceExamEntry({token,userId,initialPatientId}:{token:st
  
  if(stage==="exam")return <ScrollView style={{flex:1,backgroundColor:"#F5F7FA"}} contentContainerStyle={{padding:16,paddingBottom:96}}>
   <Pressable accessibilityRole="button" disabled={processing||audioBusy||deviceCheckBusy||applyBusy} onPress={()=>{const back=()=>{generation.current++;processingLock.current=false;setProcessing(false);setStage("select")};if(transcript.trim())Alert.alert("Muayeneden ayrıl","Muayene metni bu hesaba ve hastaya bağlı cihaz taslağında korunur. Hasta dosyasına yalnız onaylanan alanlar kaydedilir.",[{text:"Vazgeç",style:"cancel"},{text:"Geri dön",style:"destructive",onPress:back}]);else back()}}><Text style={{color:navy,fontWeight:"700"}}>‹ Hasta seçimine dön</Text></Pressable>
-  <Text style={{fontSize:25,fontWeight:"800",color:navy,marginTop:16}}>Sesli Muayene</Text>
+  {/* Navigation header already shows the screen title; avoid rendering it twice. */}
   <Text style={{color:muted,marginTop:8}}>{selected?[selected.first_name,selected.last_name].filter(Boolean).join(" ")||selected.anonymous_id:"Hasta seçilmedi"}{selected&&selected.age!==null&&selected.age!==undefined?" · "+selected.age+" yaş":""}{selected?.chief_complaint?.trim()?" · "+selected.chief_complaint.trim():""}</Text>
   {!!safetySummary.length&&<View style={{marginTop:10,borderWidth:1,borderColor:line,borderRadius:12,backgroundColor:"white",overflow:"hidden"}}>
    <Pressable accessibilityRole="button" accessibilityState={{expanded:safetyOpen}} onPress={()=>setSafetyOpen(v=>!v)} style={{padding:12,flexDirection:"row",justifyContent:"space-between",alignItems:"center"}}>
