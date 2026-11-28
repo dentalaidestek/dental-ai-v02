@@ -3,8 +3,6 @@ import {normalizePatientDirectorySearch} from './patientDirectoryPresentation';
 import {MISSING_API_ROUTE_MESSAGE} from './apiCompatibility';
 import {isDashboardProgramEvent} from './dashboardPresentation';
 import type {DashboardProgramEvent} from './dashboardPresentation';
-import * as SecureStore from 'expo-secure-store';
-import * as Crypto from 'expo-crypto';
 export const API_BASE = "https://dentalai.tr/api/mobile/v1";
 
 // Yeni cihaz doğrulaması için kalıcı anonim cihaz kimliği: ham değer sunucuya
@@ -14,6 +12,11 @@ let daiDeviceIdCache:string|null=null;
 async function daiDeviceId():Promise<string>{
  if(daiDeviceIdCache)return daiDeviceIdCache;
  try{
+  // Load native-only modules lazily: Node contract tests do not have the
+  // Expo native module registry, while Metro resolves these static specifiers
+  // in the installed Android/iOS application. A missing native registry must
+  // not prevent importing the ordinary HTTP API client in tests or tooling.
+  const [SecureStore,Crypto]=await Promise.all([import('expo-secure-store'),import('expo-crypto')]);
   let stored=await SecureStore.getItemAsync('dai.deviceId');
   if(!stored){
    const bytes=await Crypto.getRandomBytesAsync(16);
