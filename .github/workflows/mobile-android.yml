@@ -6,6 +6,7 @@ on:
   pull_request:
     branches:
       - feature/mobile-beta-20261110
+      - feature/mobile-ux-parity-20261125
     paths:
       - ".github/workflows/mobile-android.yml"
       - "mobile/**"
