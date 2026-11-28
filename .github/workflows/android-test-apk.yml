@@ -48,6 +48,12 @@ jobs:
       # prebuild gerektirdigi icin test burada degil, orada dogrulanir.
       - name: Generate Android native project
         run: npx expo prebuild --platform android --non-interactive --no-install
+      - name: Verify generated Android microphone permission
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          test -f "$MANIFEST"
+          grep -q 'android.permission.RECORD_AUDIO' "$MANIFEST" || { echo 'RECORD_AUDIO missing from generated Android manifest'; exit 1; }
+          echo 'RECORD_AUDIO present in generated Android manifest.'
       - name: Build standalone release APK (arm64-v8a, JS bundle embedded, forced fresh)
         working-directory: mobile/android
         run: ./gradlew clean assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --max-workers=2 --rerun-tasks
