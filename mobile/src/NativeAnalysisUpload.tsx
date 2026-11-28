@@ -145,7 +145,7 @@ export default function NativeAnalysisUpload({token,userId,patientId,patient,onC
    </View>}
    <View style={s.intro}>
     <Text style={s.sectionTitle}>Klinik değerlendirme</Text>
-    
+    <Text style={s.meta}>Diş, hekim notu ve görüntüleri aynı analizde birleştirebilirsiniz.</Text>
    </View>
    <View style={s.stepBlock}>
     <View style={s.stepHeading}>
@@ -186,9 +186,9 @@ export default function NativeAnalysisUpload({token,userId,patientId,patient,onC
      </View>)}
     </ScrollView>}
    </View>
+   <View style={s.safetyNote}><Text style={s.safetyText}>{ANALYSIS_COMPOSER_SAFETY_NOTE}</Text></View>
    {(!ready||busy)&&<ActivityIndicator/>}
    {!!phase&&<Text style={s.meta}>{phase}</Text>}
-   <View style={s.safetyNote}><Text style={s.safetyText}>{ANALYSIS_COMPOSER_SAFETY_NOTE}</Text></View>
    {progress!==null&&<Text style={s.meta}>Aktarım: %{progress} · {formatBytes(transferBytes.loaded)} / {formatBytes(transferBytes.total)}. %100 aktarım, sunucu kaydının onaylandığı anlamına gelmez.</Text>}
    {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
    {!!notice&&<Text accessibilityRole="alert" style={s.meta}>{notice}</Text>}
@@ -201,7 +201,7 @@ export default function NativeAnalysisUpload({token,userId,patientId,patient,onC
    {createdId&&button('Analiz #'+createdId+' Kaydını Aç',()=>void perform(async()=>{await onCreated(createdId)}))}
    {intent
     ?<>
-      <Text style={s.meta}>Bekleyen yükleme korunuyor; önce sunucu kaydı kontrol edilir.</Text>
+      <Text style={s.meta}>Bekleyen yükleme aynı hasta, dosyalar ve anahtarla korunuyor. Yeni analiz oluşturmadan önce sunucudaki kayıt kontrol edilir.</Text>
       {button('Yükleme Fişini Kontrol Et',()=>void send(true))}
       {button('Aynı Yüklemeyi Sürdür',()=>void send(false))}
      </>
