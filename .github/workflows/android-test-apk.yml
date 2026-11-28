@@ -12,6 +12,7 @@ on:
       - fix/mobile-ai-flows-20261128
     paths:
       - ".github/workflows/android-test-apk.yml"
+      - "mobile/**"
 permissions:
   contents: read
 concurrency:
