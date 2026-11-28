@@ -16,6 +16,21 @@ export function isUnexpectedVoiceRecorderStop(
 }
 
 /**
+ * Wait for Expo Audio's native recorder to confirm that capture really began.
+ * Permission being granted and record() returning are not sufficient evidence.
+ */
+export async function waitForVoiceRecorderStarted(
+ getStatus:()=>{isRecording?:boolean},
+ wait:(milliseconds:number)=>Promise<void>=(milliseconds)=>new Promise(resolve=>setTimeout(resolve,milliseconds))
+):Promise<boolean>{
+ for(let attempt=0;attempt<10;attempt++){
+  try{if(getStatus()?.isRecording===true)return true;}catch{}
+  if(attempt<9)await wait(100);
+ }
+ return false;
+}
+
+/**
  * Restore the app-wide playback route after a native recording has stopped.
  * Expo Audio mode is global to the app, so every terminal/failed capture path
  * must attempt to leave recording mode. A false result is surfaced to the UI.
