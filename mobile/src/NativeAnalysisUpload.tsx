@@ -4,7 +4,7 @@ import * as Picker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import {chunkedDraftStore} from './socialDraft';
-import {analysisUploadReceipt,canStartAnalysis,parseUploadIntent,UploadImage,UploadIntent,uploadAnalysis,validateUploadFields} from './analysisUpload';
+import {analysisUploadReceipt,canStartAnalysis,parseUploadIntent,UploadImage,UploadIntent,uploadAnalysis,validateUploadFields,isConsistentUploadProgress} from './analysisUpload';
 import {ANALYSIS_MAX_IMAGES} from './analysisApi';
 import {isMissingApiRoute404} from './apiCompatibility';
 import {ANALYSIS_COMPOSER_SAFETY_NOTE,analysisComposerImageCountLabel,analysisComposerSteps} from './analysisComposerPresentation';
@@ -116,7 +116,7 @@ export default function NativeAnalysisUpload({token,userId,patientId,patient,onC
    setPhase('Şifreli görüntüler doğrulanıyor');await validateCachedAnalysisImages(pending.images,userId,patientId);if(!alive.current)return;
    const prepared=await prepareAnalysisUploadImages(pending.images,userId,patientId);
    abort.current=new AbortController();setProgress(0);setTransferBytes({loaded:0,total:0});setPhase('Görüntüler ve klinik bilgi aktarılıyor');
-   try{receipt=await uploadAnalysis(token,{...pending,images:prepared.images},(p,loaded,total)=>{if(alive.current){setProgress(p);if(Number.isFinite(loaded)&&Number.isFinite(total)&&loaded>=0&&total>0&&loaded<=total)setTransferBytes({loaded,total});else setTransferInconsistent(true)}},abort.current.signal)}
+   try{receipt=await uploadAnalysis(token,{...pending,images:prepared.images},(p,loaded,total)=>{if(alive.current){setProgress(p);if(isConsistentUploadProgress(loaded,total))setTransferBytes({loaded,total});else setTransferInconsistent(true)}},abort.current.signal)}
    catch(e){
     if(typeof e==='object'&&e!==null&&'status' in e&&[400,404,413,415,422].includes(Number(e.status))){
      await clearAnalysisImages(pending.images);await store.deleteItemAsync(key);if(alive.current){setIntent(null);setBlockedIntent(null)}
