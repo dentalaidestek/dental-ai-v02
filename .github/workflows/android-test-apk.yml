@@ -62,20 +62,24 @@ jobs:
           assert apks, 'release APK bulunamadi'
           z = zipfile.ZipFile(apks[0])
           bn = [n for n in z.namelist() if 'index.android.bundle' in n][0]
-          data = z.read(bn).decode('utf-8', errors='replace')
+          raw = z.read(bn)
+          # Hermes bytecode ASCII stringleri duz, Turkce (non-ASCII) stringleri
+          # UTF-16LE bolgesinde tutar; ikisini de aramadan 'yok' sonucu cikmaz.
+          def present(s):
+            return s.encode('utf-8') in raw or s.encode('utf-16-le') in raw
           required = {
-            'Destek Talebi Oluştur': 'profil DESTEK bölümü (376ebd12)',
+            'Destek Talebi Oluştur': 'profil DESTEK bölümü + Profil sekmesi girişi',
             'Hakkımızda': 'anasayfa/profil bilgi penceresi (376ebd12)',
             'Topluluk ve İletişim Kuralları': 'yasal metin (376ebd12)',
             'Gönderiliyor': 'Destek Talepleri ekranı (376ebd12)',
             'Sorun Bildir': 'görüşme menüsü (7288993f)',
           }
-          missing = [f'{k} ({v})' for k, v in required.items() if k not in data]
+          missing = [f'{k} ({v})' for k, v in required.items() if not present(k)]
           if missing:
             print('BAYAT BUNDLE — bu stringler bundle\'da YOK:')
             for m in missing: print('  -', m)
             sys.exit(1)
-          print('Bundle taze: tüm özellik stringleri bundle içinde.')
+          print('Bundle taze: tüm özellik stringleri bundle içinde (utf-8 + utf-16le araması).')
           PYEOF
       - name: Prepare named APK artifact
         run: |
