@@ -46,8 +46,8 @@ jobs:
       # veriyordu; ubuntu-latest runner'inda calisan bir ANDROID_HOME SDK hazir gelir.
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
-      - name: Validate TypeScript and tests
-        run: npm test
+      # TypeScript/test dogrulamalari Mobile Android CI (PR tetikli) is akisinda
+      # ayri job'larda kosuyor; buradaki gorev derleyip Release olarak yayinlamak.
       - name: Generate Android native project
         run: npx expo prebuild --platform android --non-interactive --no-install
       - name: Build standalone release APK (arm64-v8a, JS bundle embedded)
