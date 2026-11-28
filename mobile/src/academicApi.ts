@@ -54,8 +54,12 @@ function validateAcademicQuiz(value:unknown):Quiz{
  return value as unknown as Quiz;
 }
 
-function validateAcademicMessage(value:unknown,course:number):Message{
- if(!isRecord(value)||!safeId(value.id)||!['USER','ASSISTANT'].includes(String(value.role))||!boundedText(value.content,500000)||!boundedText(value.created_at,80,false)||!Number.isFinite(Date.parse(String(value.created_at)))||!Array.isArray(value.sources)||value.sources.length>100)throw Error('Akademik sohbet kaydı doğrulanamadı.');
+function validateAcademicMessage(input:unknown,course:number):Message{
+ if(!isRecord(input))throw Error('Akademik sohbet kaydı doğrulanamadı.');
+ // Canlı (main) sözleşme toleransı: role küçük/büyük harf, content null,
+ // sources null ve mikrosaniyeli tarih gelebilir; güvenle normalize edilir.
+ const value:Record<string,unknown>={...input,role:String(input.role??'').toUpperCase(),content:input.content??'',created_at:String(input.created_at??'').trim().replace(' ','T').replace(/(\.\d{3})\d+$/,'$1'),sources:Array.isArray(input.sources)?input.sources:[]};
+ if(!safeId(value.id)||!['USER','ASSISTANT'].includes(String(value.role))||!boundedText(value.content,500000)||!boundedText(value.created_at,80,false)||!Number.isFinite(Date.parse(String(value.created_at)))||!Array.isArray(value.sources)||value.sources.length>100)throw Error('Akademik sohbet kaydı doğrulanamadı.');
  if(value.quiz!==null&&value.quiz!==undefined){const quiz=validateAcademicQuiz(value.quiz);if(quiz.message_id!==value.id)throw Error('Soru seti başka bir sohbet kaydına bağlı.');}
  if(value.quiz_stale!==undefined&&typeof value.quiz_stale!=='boolean')throw Error('Soru kaynağı durumu doğrulanamadı.');
  if(value.vote!==undefined&&value.vote!==null&&!['like','dislike','none'].includes(String(value.vote)))throw Error('Yanıt geri bildirimi doğrulanamadı.');
