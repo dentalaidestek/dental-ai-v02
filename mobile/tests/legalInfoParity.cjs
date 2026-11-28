@@ -4,6 +4,7 @@ const src=f=>fs.readFileSync(require.resolve('../src/'+f),'utf8');
 const app=fs.readFileSync(require('node:path').join(__dirname,'../App.tsx'),'utf8');
 const legal=src('legalContent.ts');
 const profile=src('NativePatientProfile.tsx');
+const account=src('NativeAccount.tsx');
 const infoPage=fs.readFileSync(require('node:path').join(__dirname,'../../app/templates/info_page.html'),'utf8');
 const legalTexts=fs.readFileSync(require('node:path').join(__dirname,'../../app/legal_texts.py'),'utf8');
 
@@ -39,4 +40,11 @@ test('web legal index and contact page expose the new documents',()=>{
   assert.ok(infoPage.includes('href="'+href+'"'),'info page link missing: '+href);
  assert.ok(infoPage.includes('destek@dentalai.tr'));
  assert.ok(legalTexts.includes('"community"')&&legalTexts.includes('"about"')&&legalTexts.includes('"contact"'));
+});
+
+
+test('account (profile tab) offers the support request entry',()=>{
+ for(const fragment of ['onSupport?:()=>void',"{onSupport&&button('Destek Talebi Oluştur',onSupport)}"])
+  assert.ok(account.includes(fragment),'account support entry missing: '+fragment);
+ assert.ok(app.includes('onSupport={()=>nav.navigate("SupportRequests")}'),'profile tab wiring missing');
 });
