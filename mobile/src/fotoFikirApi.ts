@@ -10,7 +10,6 @@ export type FFStyle = { id: string; name: string; hint: string };
 export type FFIdea = { title: string; angle: string; hook: string };
 export type FFSlide = { headline: string; body: string; note?: string | null; role?: string | null };
 export type FFStyleRecommendation = { style_id: string; reason: string };
-export type FFCreativeAudit = { score: number; level?: string };
 export type FFMevzuatResult = { index: number; text: string; level: string; reason: string; suggestion: string; creative_alternative?: string };
 export type FFJob = { id: number; kind: string; label: string; topic: string; created_at: string; image_url?: string | null; status: string };
 export type FFQuota = { used: number; limit: number; period: string };
@@ -26,7 +25,7 @@ export type FFBootstrap = {
 export type FFIdeasResult = { ideas: FFIdea[]; creative_audit?: unknown; tips?: string[]; mock?: boolean; uyari?: string };
 export type FFSlidesResult = { slides: FFSlide[]; mock?: boolean; uyari?: string };
 export type FFMevzuatCheckResult = { results: FFMevzuatResult[]; disclaimer: string };
-export type FFGenerateResult = { job_id: string; image_url?: string | null; images: string[]; style: string; quota: FFQuota; style_recommendation?: FFStyleRecommendation; suggestion?: FFStyleRecommendation; tips?: string[]; uretim_ms?: number; skipped?: number; uyari?: string; mock?: boolean; creative_audit?: FFCreativeAudit };
+export type FFGenerateResult = { job_id: string; image_url?: string | null; images: string[]; style: string; quota: FFQuota; style_recommendation?: FFStyleRecommendation; suggestion?: FFStyleRecommendation; tips?: string[]; uretim_ms?: number; skipped?: number; uyari?: string; mock?: boolean };
 export type FFBrandKitResult = { exists: boolean; photos_count: number; photos: string[]; saved: number; mock?: boolean; uyari?: string };
 export type FFBrandGenerateResult = { job_id: string; image_url: string; scene: string; reason: string; uretim_ms?: number; quota: FFQuota; mock?: boolean; uyari?: string };
 export type FFIgProfile = { bio: string; highlights: string[]; grid_plan: Array<{ idea: string; format: string }>; mock?: boolean; uyari?: string };
@@ -65,8 +64,11 @@ async function ffRequest<T>(token: string, path: string, init: RequestInit = {})
     if (response.status === 401) await revalidateSession(token);
     if (response.ok && (!raw.trim() || !body || typeof body !== "object" || Array.isArray(body)))
       throw new ApiError(502, "Foto Fikir sunucusu geçersiz yanıt gönderdi. Tekrar deneyin.");
-    if (!response.ok)
+    if (!response.ok) {
+      if (response.status === 404 && body?.detail === "Not Found")
+        throw new ApiError(404, "Foto Fikir servisi bu işlemi desteklemiyor (404). Uygulama ile sunucu sürümü uyumsuz olabilir; uygulamayı güncel tutup tekrar deneyin, sürerse destek talebi açın.");
       throw new ApiError(response.status, typeof body?.detail === "string" ? body.detail : "İşlem tamamlanamadı. Tekrar deneyin.");
+    }
     return body as T;
   } catch (error) {
     if (controller.signal.aborted && !externalSignal?.aborted)
@@ -87,7 +89,7 @@ export function ffImageSource(token: string, path: string): { uri: string; heade
 }
 
 export const getFFBootstrap = async (t: string): Promise<FFBootstrap> => {
-  const r = await ffRequest<FFBootstrap>(t, "");
+  const r = await ffRequest<FFBootstrap>(t, "/bootstrap");
   if (!r?.profile || typeof r.profile.display_name !== "string" ||
     !Array.isArray(r.styles) || r.styles.some(s => !s || typeof s.id !== "string" || typeof s.name !== "string") ||
     !r.quota || !ffCount(r.quota.used) || !ffCount(r.quota.limit) ||
