@@ -113,3 +113,17 @@ test('an unverified microphone stop keeps the recorder and private file intact u
  assert.equal(preparedClears.length,1,'prepared state is cleared only by the verified-stop helper');
  assert.match(component,/if\(stopped\)prepared\.current=false/);
 });
+
+
+test('voice examination uses the native navigation title only once',()=>{
+ assert.doesNotMatch(entry,/fontSize:25,fontWeight:"800",color:navy,marginTop:16/);
+ assert.match(entry,/Navigation header already shows the screen title/);
+});
+
+test('Android build config requests microphone permission through expo-audio',()=>{
+ const config=JSON.parse(fs.readFileSync(require.resolve('../app.json'),'utf8')).expo;
+ const audio=config.plugins.find(plugin=>Array.isArray(plugin)&&plugin[0]==='expo-audio');
+ assert.ok(audio,'expo-audio config plugin must be installed');
+ assert.equal(audio[1].recordAudioAndroid,true);
+ assert.match(audio[1].microphonePermission,/mikrofon/i);
+});

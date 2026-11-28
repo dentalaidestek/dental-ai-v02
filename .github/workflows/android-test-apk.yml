@@ -9,8 +9,10 @@ on:
   push:
     branches:
       - feature/mobile-ux-parity-20261125
+      - fix/mobile-ai-flows-20261128
     paths:
       - ".github/workflows/android-test-apk.yml"
+      - "mobile/**"
 permissions:
   contents: read
 concurrency:
@@ -47,6 +49,12 @@ jobs:
       # prebuild gerektirdigi icin test burada degil, orada dogrulanir.
       - name: Generate Android native project
         run: npx expo prebuild --platform android --non-interactive --no-install
+      - name: Verify generated Android microphone permission
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          test -f "$MANIFEST"
+          grep -q 'android.permission.RECORD_AUDIO' "$MANIFEST" || { echo 'RECORD_AUDIO missing from generated Android manifest'; exit 1; }
+          echo 'RECORD_AUDIO present in generated Android manifest.'
       - name: Build standalone release APK (arm64-v8a, JS bundle embedded, forced fresh)
         working-directory: mobile/android
         run: ./gradlew clean assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --max-workers=2 --rerun-tasks
@@ -86,20 +94,20 @@ jobs:
           set -o pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
           test -f "$APK"
-          cp "$APK" "$RUNNER_TEMP/dental-ai-beta-arm64-v4.apk"
+          cp "$APK" "$RUNNER_TEMP/dental-ai-beta-arm64-v7.apk"
           SHA="$(sha256sum "$APK" | cut -d' ' -f1)"
           {
             echo "## Beta APK v4 hazır (artifact — herkese açık release YOK)"
             echo ""
-            echo "- İndirme: bu sayfanın **Artifacts** bölümünden \`dental-ai-beta-arm64-v4\` (repo erişimi olan hesapla)"
+            echo "- İndirme: bu sayfanın **Artifacts** bölümünden \`dental-ai-beta-arm64-v7\` (repo erişimi olan hesapla)"
             echo "- Kaynak commit: \`${{ github.sha }}\`"
-            echo "- versionCode: **6** (paket: tr.dentalai.app) — kurulu sürümlerin üzerine yüklenebilir; mikrofon preflight metering zorunluluğu kaldırıldı (ses testi metering'siz cihazlarda da geçer) + AI Analiz ilk hastayı otomatik seçer ve sadeleşti"
-            echo "- Dosya: dental-ai-beta-arm64-v4.apk (arm64-v8a, JS bundle gömülü)"
+            echo "- versionCode: **7** (paket: tr.dentalai.app) — kurulu sürümlerin üzerine yüklenebilir; mikrofon preflight metering zorunluluğu kaldırıldı (ses testi metering'siz cihazlarda da geçer) + AI Analiz ilk hastayı otomatik seçer ve sadeleşti"
+            echo "- Dosya: dental-ai-beta-arm64-v7.apk (arm64-v8a, JS bundle gömülü)"
             echo "- sha256: \`$SHA\`"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: dental-ai-beta-arm64-v4
-          path: ${{ runner.temp }}/dental-ai-beta-arm64-v4.apk
+          name: dental-ai-beta-arm64-v7
+          path: ${{ runner.temp }}/dental-ai-beta-arm64-v7.apk
           if-no-files-found: error
           retention-days: 14

@@ -37,9 +37,14 @@ export function uploadAnalysis(token:string,intent:UploadIntent,progress:(percen
   const uncertain=()=>new ApiError(408,'Aktarım sonucu belirsiz. Aynı yükleme kaydı korunuyor; sunucu fişini kontrol edin.');
   const cancel=()=>{try{xhr.abort()}finally{finish(uncertain())}},timer=setTimeout(cancel,600000);
   xhr.open('POST','https://dentalai.tr/api/mobile/v1/analyses');xhr.withCredentials=false;xhr.timeout=600000;xhr.setRequestHeader('Authorization','Bearer '+token);xhr.setRequestHeader('Cookie','');
-  if(xhr.upload)xhr.upload.onprogress=e=>{if(!settled&&e.lengthComputable&&e.total>0)progress(Math.max(0,Math.min(100,Math.round(e.loaded/e.total*100))),Math.max(0,e.loaded),Math.max(0,e.total))};
+  if(xhr.upload)xhr.upload.onprogress=e=>{if(!settled&&e.lengthComputable&&Number.isFinite(e.total)&&e.total>0){if(isConsistentUploadProgress(e.loaded,e.total))progress(Math.max(0,Math.min(100,Math.round(e.loaded/e.total*100))),e.loaded,e.total);else progress(0,e.loaded,e.total)}};
   xhr.onerror=()=>finish(uncertain());xhr.ontimeout=cancel;xhr.onabort=()=>finish(uncertain());
   xhr.onload=()=>{void(async()=>{try{if(xhr.status===401)await revalidateSession(token);let r:any;try{r=JSON.parse(xhr.responseText)}catch{throw new ApiError(502,'Aktarım fişi okunamadı; aynı yükleme kaydı korundu.')}if(xhr.status<200||xhr.status>=300)throw new ApiError(xhr.status,typeof r.detail==='string'?r.detail:'Görüntü yüklenemedi. Sunucu kaydını kontrol edin.');finish(undefined,validReceipt(r,intent.patientId))}catch(e){finish(e instanceof Error?e:new Error('Aktarım doğrulanamadı.'))}})()};
   signal?.addEventListener('abort',cancel,{once:true});try{xhr.send(body)}catch(e){finish(e instanceof Error?e:uncertain())}
  });
+}
+
+
+export function isConsistentUploadProgress(loaded:number,total:number):boolean{
+ return Number.isFinite(loaded)&&Number.isFinite(total)&&loaded>=0&&total>0&&loaded<=total;
 }
