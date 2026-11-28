@@ -280,3 +280,15 @@ test('native upload progress rejects loaded byte counts larger than the reported
  assert.equal(isConsistentUploadProgress(1,0),false);
  assert.equal(isConsistentUploadProgress(Number.NaN,100),false);
 });
+
+
+test('native composer reports impossible XHR byte counters instead of displaying false totals',async()=>{
+ const h=ui({uploadAnalysis:async(_token,_intent,progress)=>{progress(100,824*1024,492.1*1024);throw Error('Synthetic interrupted upload')}});
+ const tree=await mount(h);
+ await renderer.act(async()=>tree.root.findByProps({accessibilityLabel:'Analiz klinik bilgileri'}).props.onChangeText('Synthetic clinical note'));
+ await renderer.act(async()=>{button(tree,'Analizi Başlat').props.onPress();await new Promise(resolve=>setImmediate(resolve))});
+ const rendered=text(tree.toJSON());
+ assert.ok(rendered.includes('Aktarım ilerleme ölçümü tutarsız'));
+ assert.ok(!rendered.includes('824.0 KiB / 492.1 KiB'));
+ await renderer.act(async()=>tree.unmount());
+});
