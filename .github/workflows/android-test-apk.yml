@@ -50,6 +50,9 @@ jobs:
       - name: Build standalone release APK (arm64-v8a, JS bundle embedded, forced fresh)
         working-directory: mobile/android
         run: ./gradlew clean assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --max-workers=2 --rerun-tasks
+      # Kapı, Hermes bytecode'daki string tablosunu UTF-16LE olarak da arar:
+      # Türkçe stringler bytecode'da UTF-16 bolgesinde saklanir, yalniz UTF-8
+      # aramasi tum stringleri bulamaz (yanlis 'bayat bundle' teshisine yol acar).
       - name: Verify bundle freshness (feature strings must exist — fail on stale bundle)
         run: |
           set -o pipefail
