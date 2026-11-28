@@ -269,3 +269,14 @@ test('analysis upload receipt uses the patient and stable request key route',asy
   await assert.rejects(()=>model.analysisUploadReceipt('secret',uploadIntent),e=>e.status===502);
  }finally{global.fetch=original}
 });
+
+
+test('native upload progress rejects loaded byte counts larger than the reported total',()=>{
+ const {isConsistentUploadProgress}=require('../src/analysisUpload.ts');
+ assert.equal(isConsistentUploadProgress(0,100),true);
+ assert.equal(isConsistentUploadProgress(100,100),true);
+ assert.equal(isConsistentUploadProgress(824*1024,492.1*1024),false);
+ assert.equal(isConsistentUploadProgress(-1,100),false);
+ assert.equal(isConsistentUploadProgress(1,0),false);
+ assert.equal(isConsistentUploadProgress(Number.NaN,100),false);
+});
