@@ -55,7 +55,7 @@ test('ffRequest sends the Bearer header and skips Content-Type on the multipart 
   global.fetch=async(url,init)=>{calls.push({url,init});return new Response(JSON.stringify({profile:{display_name:'Dr. Test'},styles:[{id:'sade-klinik',name:'Sade Klinik',hint:'beyaz'}],quota:{used:1,limit:30,period:'ay'},brand_kit:{exists:false,photos_count:0,photos:[]},recent:[]}),{status:200})};
   const boot=await ffApi.getFFBootstrap('secret');
   assert.equal(boot.quota.limit,30);
-  assert.match(calls[1].url,/\/api\/foto-fikir$/);
+  assert.match(calls[1].url,/\/api\/foto-fikir\/bootstrap$/);
   assert.equal(calls[1].init.headers.Authorization,'Bearer secret');
   assert.equal(calls[1].init.headers['Content-Type'],'application/json');
  }finally{global.fetch=original}
