@@ -180,10 +180,12 @@ export default function NativeVoiceDeviceCheck({disabled=false,onBusyChange}:{di
  useEffect(()=>{
   const subscription=AppState.addEventListener('change',state=>{
    if(state!=='active'&&running.current)void cancel('Uygulama arka plana geçti. Test iptal edildi ve mikrofon kapatıldı.');
+   // Otomatik iptal mesajı ön plana dönüşte temizlenir; sürekli hata ekranında kalmaz.
+   if(state==='active'&&mounted.current)setResult(prev=>prev==='Uygulama arka plana geçti. Test iptal edildi ve mikrofon kapatıldı.'?'':prev);
   });
   return()=>subscription.remove();
  },[]);
- useEffect(()=>{if(!focused&&running.current)void cancel('Ekran değişti. Test iptal edildi ve mikrofon kapatıldı.');},[focused]);
+ useEffect(()=>{if(!focused&&running.current)void cancel('Ekran değişti. Test iptal edildi ve mikrofon kapatıldı.');if(focused&&mounted.current)setResult(prev=>prev==='Ekran değişti. Test iptal edildi ve mikrofon kapatıldı.'?'':prev);},[focused]);
  useEffect(()=>()=>{mounted.current=false;void cancelRef.current('Ekran kapandı. Geçici mikrofon testi temizlendi.');},[]);
  const busyPhase=phase==='requesting'||phase==='testing'||phase==='finishing';
  const buttonLabel=phase==='requesting'?'Mikrofon izni bekleniyor…':phase==='testing'?'Test sürüyor…':'Bu cihazın mikrofonunu test et';
