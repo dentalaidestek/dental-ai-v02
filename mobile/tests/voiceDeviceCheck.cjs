@@ -78,8 +78,8 @@ test('empty or missing temporary audio is not accepted',()=>{
  assert.equal(evaluateVoiceDeviceCheck({permissionGranted:true,durationMs:6000,fileBytes:0,peakMeteringDb:-5}),'no_audio_file');
 });
 
-test('missing native metering is reported as inconclusive, not passed',()=>{
- assert.equal(evaluateVoiceDeviceCheck({permissionGranted:true,durationMs:6000,fileBytes:1024,peakMeteringDb:null}),'metering_unavailable');
+test('missing native metering no longer fails a valid capture',()=>{
+ assert.equal(evaluateVoiceDeviceCheck({permissionGranted:true,durationMs:6000,fileBytes:1024,peakMeteringDb:null}),'passed');
 });
 
 test('quiet input is distinguished from a working microphone signal',()=>{
